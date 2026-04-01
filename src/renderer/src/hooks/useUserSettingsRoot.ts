@@ -196,6 +196,14 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ reducedMotion }), [reducedMotion]);
   const [ffmpegHwaccel, setFfmpegHwaccel] = useState(safeGetConfigInitial('ffmpegHwaccel'));
   useEffect(() => safeSetConfig({ ffmpegHwaccel }), [ffmpegHwaccel]);
+  const [exportEncodeMode, setExportEncodeMode] = useState(safeGetConfigInitial('exportEncodeMode'));
+  useEffect(() => safeSetConfig({ exportEncodeMode }), [exportEncodeMode]);
+  const [sizeLimitMb, setSizeLimitMb] = useState(safeGetConfigInitial('sizeLimitMb'));
+  useEffect(() => safeSetConfig({ sizeLimitMb }), [sizeLimitMb]);
+  const [sizeLimitCodec, setSizeLimitCodec] = useState(safeGetConfigInitial('sizeLimitCodec'));
+  useEffect(() => safeSetConfig({ sizeLimitCodec }), [sizeLimitCodec]);
+  const [sizeLimitQuality, setSizeLimitQuality] = useState(safeGetConfigInitial('sizeLimitQuality'));
+  useEffect(() => safeSetConfig({ sizeLimitQuality }), [sizeLimitQuality]);
 
 
   const resetKeyBindings = useCallback(() => {
@@ -315,6 +323,10 @@ export default function useUserSettingsRoot() {
     keyframesEnabled,
     reducedMotion,
     ffmpegHwaccel,
+    exportEncodeMode,
+    sizeLimitMb,
+    sizeLimitCodec,
+    sizeLimitQuality,
   };
 
   return {
@@ -398,6 +410,10 @@ export default function useUserSettingsRoot() {
     prefersReducedMotion,
     setReducedMotion,
     setFfmpegHwaccel,
+    setExportEncodeMode,
+    setSizeLimitMb,
+    setSizeLimitCodec,
+    setSizeLimitQuality,
   };
 }
 

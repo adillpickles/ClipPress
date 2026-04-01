@@ -12,6 +12,7 @@ import { IoMdMenu } from 'react-icons/io';
 import fromPairs from 'lodash/fromPairs';
 import sum from 'lodash/sum';
 import invariant from 'tiny-invariant';
+import prettyBytes from 'pretty-bytes';
 import type { SweetAlertOptions } from 'sweetalert2';
 
 import useTimelineScroll from './hooks/useTimelineScroll';
@@ -50,6 +51,7 @@ import * as Dialog from './components/Dialog';
 
 import { loadMifiLink, runStartupCheck } from './mifi';
 import { darkModeTransition } from './colors';
+import { exportSizeLimitedMerge, exportSizeLimitedSegment, pickSizeLimitedStreams } from './sizeLimitedExport';
 import { getSegColor } from './util/colors';
 import type {
   FileFfprobeMeta } from './ffmpeg';
@@ -92,7 +94,7 @@ import { generateCutFileNames as generateCutFileNamesRaw, generateCutMergedFileN
 import { rightBarWidth, leftBarWidth, ffmpegExtractWindow, zoomMax } from './util/constants';
 import BigWaveform from './components/BigWaveform';
 
-import type { BatchFile, Chapter, CustomTagsByFile, EdlExportType, EdlFileType, EdlImportType, FfmpegCommandLog, FilesMeta, FileStats, ParamsByStreamId, PlaybackMode, SegmentBase, SegmentColorIndex, SegmentTags, StateSegment, TunerType } from './types';
+import type { BatchFile, Chapter, CustomTagsByFile, EdlExportType, EdlFileType, EdlImportType, FfmpegCommandLog, FilesMeta, FileStats, ParamsByStreamId, PlaybackMode, SegmentBase, SegmentColorIndex, SegmentTags, SizeLimitedExecutionResult, StateSegment, TunerType } from './types';
 import { goToTimecodeDirectArgsSchema, openFilesActionArgsSchema } from './types';
 import type { CaptureFormat, KeyboardAction, ApiActionRequest } from '../../common/types.js';
 import type { FFprobeChapter, FFprobeStream } from '../../common/ffprobe.js';
@@ -187,7 +189,7 @@ function App() {
   const [selectedBatchFiles, setSelectedBatchFiles] = useState<string[]>([]);
 
   const allUserSettings = useUserSettingsRoot();
-  const { captureFormat, keyframeCut, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, autoMerge, timecodeFormat, invertCutSegments, autoExportExtraStreams, askBeforeClose, enableImportChapters, enableAskForFileOpenAction, playbackVolume, autoSaveProjectFile, wheelSensitivity, waveformHeight, invertTimelineScroll, language, ffmpegExperimental, hideNotifications, hideOsNotifications, autoLoadTimecode, autoDeleteMergedSegments, exportConfirmEnabled, segmentsToChapters, simpleMode, cutFileTemplate, cutMergedFileTemplate, mergedFileTemplate, keyboardSeekAccFactor, keyboardNormalSeekSpeed, keyboardSeekSpeed2, keyboardSeekSpeed3, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, outFormatLocked, safeOutputFileName, enableAutoHtml5ify, segmentsToChaptersOnly, keyBindings, enableSmartCut, customFfPath, storeProjectInWorkingDir, enableOverwriteOutput, mouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, captureFrameMethod, captureFrameQuality, captureFrameFileNameFormat, enableNativeHevc, cleanupChoices, darkMode, preferStrongColors, outputFileNameMinZeroPadding, cutFromAdjustmentFrames, cutToAdjustmentFrames, waveformMode: waveformModePreference, thumbnailsEnabled, keyframesEnabled, reducedMotion, ffmpegHwaccel } = allUserSettings.settings;
+  const { captureFormat, keyframeCut, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, autoMerge, timecodeFormat, invertCutSegments, autoExportExtraStreams, askBeforeClose, enableImportChapters, enableAskForFileOpenAction, playbackVolume, autoSaveProjectFile, wheelSensitivity, waveformHeight, invertTimelineScroll, language, ffmpegExperimental, hideNotifications, hideOsNotifications, autoLoadTimecode, autoDeleteMergedSegments, exportConfirmEnabled, segmentsToChapters, simpleMode, cutFileTemplate, cutMergedFileTemplate, mergedFileTemplate, keyboardSeekAccFactor, keyboardNormalSeekSpeed, keyboardSeekSpeed2, keyboardSeekSpeed3, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, outFormatLocked, safeOutputFileName, enableAutoHtml5ify, segmentsToChaptersOnly, keyBindings, enableSmartCut, customFfPath, storeProjectInWorkingDir, enableOverwriteOutput, mouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, captureFrameMethod, captureFrameQuality, captureFrameFileNameFormat, enableNativeHevc, cleanupChoices, darkMode, preferStrongColors, outputFileNameMinZeroPadding, cutFromAdjustmentFrames, cutToAdjustmentFrames, waveformMode: waveformModePreference, thumbnailsEnabled, keyframesEnabled, reducedMotion, ffmpegHwaccel, exportEncodeMode, sizeLimitMb, sizeLimitQuality } = allUserSettings.settings;
   const { setCaptureFormat, setCustomOutDir, setKeyframeCut, setPlaybackVolume, setExportConfirmEnabled, setSimpleMode, setOutFormatLocked, setSafeOutputFileName, setKeyBindings, resetKeyBindings, setStoreProjectInWorkingDir, setCleanupChoices, toggleDarkMode, setWaveformMode, setThumbnailsEnabled, setKeyframesEnabled, prefersReducedMotion, customOutDir } = allUserSettings;
 
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(!simpleMode);
@@ -305,6 +307,7 @@ function App() {
   const subtitleStreams = useMemo(() => getSubtitleStreams(mainStreams), [mainStreams]);
   const videoStreams = useMemo(() => getRealVideoStreams(mainStreams), [mainStreams]);
   const audioStreams = useMemo(() => getAudioStreams(mainStreams), [mainStreams]);
+  const sizeLimitedStreams = useMemo(() => pickSizeLimitedStreams(mainStreams), [mainStreams]);
 
   const mainVideoStream = useMemo(() => videoStreams[0], [videoStreams]);
   const mainAudioStream = useMemo(() => audioStreams[0], [audioStreams]);
@@ -581,8 +584,10 @@ function App() {
   const shouldShowWaveform = calcShouldShowWaveform(zoomedDuration) || overviewWaveform != null;
 
   const areWeCutting = useMemo(() => segmentsToExport.some(({ start, end }) => isCuttingStart(start) || isCuttingEnd(end, fileDuration)), [fileDuration, segmentsToExport]);
+  const isSizeLimitedExport = exportEncodeMode === 'size_limited';
   const needSmartCut = areWeCutting && enableSmartCut;
   const isEncoding = needSmartCut || lossyMode != null;
+  const isEncodingUi = isEncoding || isSizeLimitedExport;
 
   const {
     concatFiles, html5ifyDummy, cutMultiple, concatCutSegments, html5ify, fixInvalidDuration, extractStreams, tryDeleteFiles,
@@ -857,15 +862,50 @@ function App() {
     if (sendErrorReport) openSendConcatReportDialogWithState(err, reportState);
   }, [fileFormat, openSendConcatReportDialogWithState]);
 
-  const generateCutFileNames = useCallback(async (template: string) => {
+  const generateCutFileNamesForFormat = useCallback(async (template: string, outputFormatOverride?: string) => {
     invariant(fileFormat != null && outputDir != null && filePath != null);
-    return generateCutFileNamesRaw({ fileDuration, exportCount, currentFileExportCount, segmentsToExport, template, formatTimecode, isCustomFormatSelected, fileFormat, sourceFile: { path: filePath, ...mainFileMeta }, outputDir, safeOutputFileName, maxLabelLength, outputFileNameMinZeroPadding });
+    const outputFormat = outputFormatOverride ?? fileFormat;
+    const isFormatForced = outputFormatOverride != null;
+    return generateCutFileNamesRaw({
+      fileDuration,
+      exportCount,
+      currentFileExportCount,
+      segmentsToExport,
+      template,
+      formatTimecode,
+      isCustomFormatSelected: isFormatForced ? true : isCustomFormatSelected,
+      fileFormat: outputFormat,
+      sourceFile: { path: filePath, ...mainFileMeta },
+      outputDir,
+      safeOutputFileName,
+      maxLabelLength,
+      outputFileNameMinZeroPadding,
+    });
   }, [currentFileExportCount, exportCount, fileDuration, fileFormat, filePath, formatTimecode, isCustomFormatSelected, mainFileMeta, maxLabelLength, outputDir, outputFileNameMinZeroPadding, safeOutputFileName, segmentsToExport]);
 
-  const generateCutMergedFileNames = useCallback(async (template: string) => {
+  const generateCutFileNames = useCallback(async (template: string) => generateCutFileNamesForFormat(template), [generateCutFileNamesForFormat]);
+  const generateSizeLimitedCutFileNames = useCallback(async (template: string) => generateCutFileNamesForFormat(template, 'mp4'), [generateCutFileNamesForFormat]);
+
+  const generateCutMergedFileNamesForFormat = useCallback(async (template: string, outputFormatOverride?: string) => {
     invariant(fileFormat != null && outputDir != null && filePath != null);
-    return generateCutMergedFileNamesRaw({ template, isCustomFormatSelected, fileFormat, sourceFile: { path: filePath }, outputDir, safeOutputFileName, maxLabelLength, exportCount, currentFileExportCount, segLabels: segmentsToExport.map((seg) => seg.name ?? '') });
+    const outputFormat = outputFormatOverride ?? fileFormat;
+    const isFormatForced = outputFormatOverride != null;
+    return generateCutMergedFileNamesRaw({
+      template,
+      isCustomFormatSelected: isFormatForced ? true : isCustomFormatSelected,
+      fileFormat: outputFormat,
+      sourceFile: { path: filePath },
+      outputDir,
+      safeOutputFileName,
+      maxLabelLength,
+      exportCount,
+      currentFileExportCount,
+      segLabels: segmentsToExport.map((seg) => seg.name ?? ''),
+    });
   }, [currentFileExportCount, exportCount, fileFormat, filePath, isCustomFormatSelected, maxLabelLength, outputDir, safeOutputFileName, segmentsToExport]);
+
+  const generateCutMergedFileNames = useCallback(async (template: string) => generateCutMergedFileNamesForFormat(template), [generateCutMergedFileNamesForFormat]);
+  const generateSizeLimitedCutMergedFileNames = useCallback(async (template: string) => generateCutMergedFileNamesForFormat(template, 'mp4'), [generateCutMergedFileNamesForFormat]);
 
   const generateMergedFileNames = useCallback(async (params: GenerateMergedOutFileNamesParams) => (
     generateMergedFileNamesRaw({ ...params, isCustomFormatSelected, safeOutputFileName, maxLabelLength, exportCount })
@@ -1032,11 +1072,31 @@ function App() {
 
   const willMerge = segmentsToExport.length > 1 && autoMerge;
 
+  const appendSizeLimitedResultNotices = useCallback((results: SizeLimitedExecutionResult[], notices: Set<string>, warnings: Set<string>) => {
+    if (results.length === 0) return;
+
+    const [firstResult] = results;
+    invariant(firstResult != null);
+    const { targetBytes } = firstResult;
+    const largestResult = [...results].sort((a, b) => b.size - a.size)[0];
+    if (largestResult != null) {
+      notices.add(i18n.t('Size-limited target: {{targetSize}}. Largest produced file: {{actualSize}}.', {
+        targetSize: prettyBytes(targetBytes),
+        actualSize: prettyBytes(largestResult.size),
+      }));
+    }
+
+    const unmetTargetResult = results.find((result) => !result.metTarget);
+    if (unmetTargetResult != null) {
+      warnings.add(i18n.t('One or more exports could not be reduced any further, so the closest result was kept.'));
+    }
+  }, []);
+
   const onExportConfirm = useCallback(async () => {
     invariant(filePath != null && outputDir != null);
     emitEvent({ eventName: 'export-start', path: filePath });
 
-    if (numStreamsToCopy === 0) {
+    if (!isSizeLimitedExport && numStreamsToCopy === 0) {
       errorToast(i18n.t('No tracks selected for export'));
       return;
     }
@@ -1052,6 +1112,121 @@ function App() {
     if (workingRef.current) return;
     try {
       setWorking({ text: i18n.t('Exporting') });
+
+      if (isSizeLimitedExport) {
+        const notices = new Set<string>();
+        const warnings = new Set<string>();
+
+        const { videoStream: sizeLimitedVideoStream, audioStream: sizeLimitedAudioStream } = sizeLimitedStreams;
+        if (sizeLimitedVideoStream == null) throw new UserFacingError(i18n.t('Size-limited export currently requires a video track.'));
+
+        notices.add(i18n.t('ClipPress created a shareable MP4 and kept only the main video plus one audio track.'));
+        if (!exportConfirmEnabled) notices.add(i18n.t('Export options are not shown. You can enable export options by clicking the icon right next to the export button.'));
+
+        const results: SizeLimitedExecutionResult[] = [];
+        const shouldProduceSeparateOutputs = !willMerge || !autoDeleteMergedSegments;
+        const totalJobs = (shouldProduceSeparateOutputs ? segmentsToExport.length : 0) + (willMerge ? 1 : 0);
+        const updateJobProgress = (jobIndex: number, jobProgress: number) => {
+          const safeTotalJobs = Math.max(totalJobs, 1);
+          setProgress((jobIndex + jobProgress) / safeTotalJobs);
+        };
+
+        if (shouldProduceSeparateOutputs) {
+          const generated = await generateSizeLimitedCutFileNames(cutFileTemplateOrDefault);
+          const cutFileNames = generated.fileNames;
+          if (generated.problems.error != null) {
+            warnings.add(generated.problems.error);
+            warnings.add(t('Fell back to default output file name'));
+          }
+
+          for (const [index, segment] of segmentsToExport.entries()) {
+            const fileName = cutFileNames[index];
+            invariant(fileName != null);
+            const outPath = getOutPath({ customOutDir, filePath, fileName });
+            invariant(outPath != null);
+
+            const result = await exportSizeLimitedSegment({
+              filePath,
+              outPath,
+              segment,
+              sourceDuration: fileDuration,
+              targetSizeMb: sizeLimitMb,
+              quality: sizeLimitQuality,
+              videoStream: sizeLimitedVideoStream,
+              audioStream: sizeLimitedAudioStream,
+              enableOverwriteOutput,
+              ffmpegExperimental,
+              treatInputFileModifiedTimeAsStart,
+              treatOutputFileModifiedTimeAsStart,
+              outputPlaybackRate,
+              rotation: isRotationSet ? effectiveRotation : undefined,
+              appendFfmpegCommandLog,
+              onProgress: (jobProgress) => updateJobProgress(index, jobProgress),
+            });
+            results.push(result);
+          }
+        }
+
+        let mergedOutFilePath: string | undefined;
+        if (willMerge) {
+          const mergedJobIndex = shouldProduceSeparateOutputs ? segmentsToExport.length : 0;
+          setWorking({ text: i18n.t('Merging') });
+
+          const { fileNames, problems } = await generateSizeLimitedCutMergedFileNames(cutMergedFileTemplateOrDefault);
+          if (problems.error != null) {
+            warnings.add(problems.error);
+            warnings.add(t('Fell back to default output file name'));
+          }
+
+          const [mergedFileName] = fileNames;
+          invariant(mergedFileName != null);
+          mergedOutFilePath = getOutPath({ customOutDir, filePath, fileName: mergedFileName });
+          invariant(mergedOutFilePath != null);
+
+          const mergedResult = await exportSizeLimitedMerge({
+            filePath,
+            outPath: mergedOutFilePath,
+            segments: segmentsToExport,
+            targetSizeMb: sizeLimitMb,
+            quality: sizeLimitQuality,
+            videoStream: sizeLimitedVideoStream,
+            audioStream: sizeLimitedAudioStream,
+            enableOverwriteOutput,
+            ffmpegExperimental,
+            treatInputFileModifiedTimeAsStart,
+            treatOutputFileModifiedTimeAsStart,
+            outputPlaybackRate,
+            rotation: isRotationSet ? effectiveRotation : undefined,
+            appendFfmpegCommandLog,
+            onProgress: (jobProgress) => updateJobProgress(mergedJobIndex, jobProgress),
+          });
+          results.push(mergedResult);
+        }
+
+        appendSizeLimitedResultNotices(results, notices, warnings);
+        if (!enableOverwriteOutput) warnings.add(i18n.t('Overwrite output setting is disabled and some files might have been skipped.'));
+
+        if (simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
+
+        if (cleanupChoices.cleanupAfterExport) {
+          const newCleanupChoices = cleanupChoices.askForCleanup ? await askForCleanupChoices() : cleanupChoices;
+          if (newCleanupChoices) await cleanupFiles(newCleanupChoices);
+        }
+
+        const exportedPaths = willMerge && mergedOutFilePath != null ? [mergedOutFilePath] : results.map((result) => result.path);
+        const [revealPath] = exportedPaths;
+        invariant(revealPath != null);
+
+        if (!hideAllNotifications) {
+          showOsNotification(i18n.t('Export finished'));
+          openCutFinishedDialog({ filePath: revealPath, warnings: [...warnings], notices: [...notices] });
+        }
+
+        setExportCount((c) => c + 1);
+        setCurrentFileExportCount((c) => c + 1);
+        emitEvent({ eventName: 'export-complete', paths: exportedPaths });
+        return;
+      }
 
       // Special segments-to-chapters mode:
       let chaptersToAdd: Chapter[] | undefined;
@@ -1234,7 +1409,7 @@ function App() {
       setWorking(undefined);
       setProgress(undefined);
     }
-  }, [filePath, numStreamsToCopy, haveInvalidSegs, workingRef, setWorking, segmentsToChaptersOnly, cutFileTemplateOrDefault, generateCutFileNames, cutMultiple, outputDir, customOutDir, fileFormat, fileDuration, isRotationSet, effectiveRotation, copyFileStreams, allFilesMeta, keyframeCut, segmentsToExport, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, customTagsByFile, paramsByStreamId, detectedFps, willMerge, enableOverwriteOutput, exportConfirmEnabled, mainFileFormat, mainStreams, exportExtraStreams, areWeCutting, simpleMode, prefersReducedMotion, cleanupChoices, hideAllNotifications, segmentsOrInverse.selected, t, cutMergedFileTemplateOrDefault, segmentsToChapters, invertCutSegments, generateCutMergedFileNames, concatCutSegments, autoDeleteMergedSegments, tryDeleteFiles, nonCopiedExtraStreams, extractStreams, askForCleanupChoices, cleanupFiles, showOsNotification, openCutFinishedDialog, handleExportFailed]);
+  }, [allFilesMeta, appendFfmpegCommandLog, appendSizeLimitedResultNotices, areWeCutting, askForCleanupChoices, autoDeleteMergedSegments, avoidNegativeTs, cleanupChoices, cleanupFiles, concatCutSegments, copyFileStreams, customOutDir, customTagsByFile, cutFileTemplateOrDefault, cutMergedFileTemplateOrDefault, cutMultiple, detectedFps, effectiveRotation, enableOverwriteOutput, exportConfirmEnabled, exportExtraStreams, extractStreams, ffmpegExperimental, fileDuration, fileFormat, filePath, generateCutFileNames, generateCutMergedFileNames, generateSizeLimitedCutFileNames, generateSizeLimitedCutMergedFileNames, handleExportFailed, haveInvalidSegs, hideAllNotifications, invertCutSegments, isRotationSet, isSizeLimitedExport, keyframeCut, mainFileFormat, mainStreams, movFastStart, nonCopiedExtraStreams, numStreamsToCopy, openCutFinishedDialog, outputDir, outputPlaybackRate, paramsByStreamId, preserveChapters, preserveMetadata, preserveMetadataOnMerge, preserveMovData, prefersReducedMotion, setWorking, segmentsOrInverse.selected, segmentsToChapters, segmentsToChaptersOnly, segmentsToExport, shortestFlag, showOsNotification, simpleMode, sizeLimitMb, sizeLimitQuality, sizeLimitedStreams, t, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, tryDeleteFiles, willMerge, workingRef]);
 
   const onExportPress = useCallback(async () => {
     if (!filePath) return;
@@ -2697,7 +2872,7 @@ function App() {
 
               {/* Dialogs */}
 
-              <ExportConfirm areWeCutting={areWeCutting} segmentsOrInverse={segmentsOrInverse} segmentsToExport={segmentsToExport} willMerge={willMerge} visible={exportConfirmOpen} onClosePress={closeExportConfirm} onExportConfirm={onExportConfirm} renderOutFmt={renderOutFmt} outputDir={outputDir} numStreamsTotal={numStreamsTotal} numStreamsToCopy={numStreamsToCopy} onShowStreamsSelectorClick={handleShowStreamsSelectorClick} outFormat={fileFormat} cutFileTemplate={cutFileTemplateOrDefault} cutMergedFileTemplate={cutMergedFileTemplateOrDefault} generateCutFileNames={generateCutFileNames} generateCutMergedFileNames={generateCutMergedFileNames} currentSegIndexSafe={currentSegIndexSafe} mainCopiedThumbnailStreams={mainCopiedThumbnailStreams} needSmartCut={needSmartCut} isEncoding={isEncoding} encBitrate={encBitrate} setEncBitrate={setEncBitrate} toggleSettings={toggleSettings} outputPlaybackRate={outputPlaybackRate} lossyMode={lossyMode} neighbouringKeyFrames={neighbouringKeyFrames} findNearestKeyFrameTime={findNearestKeyFrameTime} />
+              <ExportConfirm areWeCutting={areWeCutting} segmentsOrInverse={segmentsOrInverse} segmentsToExport={segmentsToExport} willMerge={willMerge} visible={exportConfirmOpen} onClosePress={closeExportConfirm} onExportConfirm={onExportConfirm} renderOutFmt={renderOutFmt} outputDir={outputDir} numStreamsTotal={numStreamsTotal} numStreamsToCopy={numStreamsToCopy} onShowStreamsSelectorClick={handleShowStreamsSelectorClick} outFormat={fileFormat} cutFileTemplate={cutFileTemplateOrDefault} cutMergedFileTemplate={cutMergedFileTemplateOrDefault} generateCutFileNames={isSizeLimitedExport ? generateSizeLimitedCutFileNames : generateCutFileNames} generateCutMergedFileNames={isSizeLimitedExport ? generateSizeLimitedCutMergedFileNames : generateCutMergedFileNames} currentSegIndexSafe={currentSegIndexSafe} mainCopiedThumbnailStreams={mainCopiedThumbnailStreams} needSmartCut={needSmartCut} isEncoding={isEncodingUi} encBitrate={encBitrate} setEncBitrate={setEncBitrate} toggleSettings={toggleSettings} outputPlaybackRate={outputPlaybackRate} lossyMode={lossyMode} neighbouringKeyFrames={neighbouringKeyFrames} findNearestKeyFrameTime={findNearestKeyFrameTime} />
 
               <Dialog.Root open={streamsSelectorShown} onOpenChange={setStreamsSelectorShown}>
                 <Dialog.Portal>

@@ -172,6 +172,10 @@ const defaults: Config = {
   keyframesEnabled: true,
   reducedMotion: 'user',
   ffmpegHwaccel: 'none',
+  exportEncodeMode: 'lossless',
+  sizeLimitMb: 10,
+  sizeLimitCodec: 'h264',
+  sizeLimitQuality: 'fast',
 };
 
 const configFileName = 'config.json'; // note: this is also hard-coded inside electron-store

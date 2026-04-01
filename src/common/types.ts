@@ -23,6 +23,12 @@ export type WaveformMode = 'big-waveform' | 'waveform';
 
 export type EnableImportChapters = 'always' | 'never' | 'ask'
 
+export type ExportEncodeMode = 'lossless' | 'size_limited';
+
+export type SizeLimitCodec = 'h264' | 'av1';
+
+export type SizeLimitQuality = 'fast' | 'high_quality';
+
 export interface Config {
   version: number,
   lastAppVersion: string,
@@ -103,6 +109,10 @@ export interface Config {
   keyframesEnabled: boolean,
   reducedMotion: 'always' | 'never' | 'user',
   ffmpegHwaccel: FfmpegHwAccel,
+  exportEncodeMode: ExportEncodeMode,
+  sizeLimitMb: number,
+  sizeLimitCodec: SizeLimitCodec,
+  sizeLimitQuality: SizeLimitQuality,
 }
 
 export interface Waveform {

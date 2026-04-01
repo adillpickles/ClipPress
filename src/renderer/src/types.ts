@@ -1,6 +1,7 @@
 import type { MenuItem, MenuItemConstructorOptions } from 'electron';
 import { z } from 'zod';
 import type { FFprobeChapter, FFprobeFormat, FFprobeStream } from '../../common/ffprobe';
+import type { ExportEncodeMode, SizeLimitCodec, SizeLimitQuality } from '../../common/types.js';
 import type { FileStream } from './ffmpeg';
 
 
@@ -115,6 +116,36 @@ export interface OverviewWaveform extends WaveformBase {
 export type RenderableWaveform = WaveformSlice | OverviewWaveform;
 
 export type FfmpegCommandLog = { command: string, time: Date }[];
+
+export interface SizeLimitedExportOptions {
+  mode: ExportEncodeMode,
+  targetSizeMb: number,
+  codec: SizeLimitCodec,
+  quality: SizeLimitQuality,
+}
+
+export interface SizeLimitedRetryStep {
+  attemptNumber: number,
+  totalBitrate: number,
+  videoBitrate: number,
+  audioBitrate: number,
+}
+
+export interface SizeLimitedPlan {
+  targetBytes: number,
+  duration: number,
+  overheadBytes: number,
+  retries: SizeLimitedRetryStep[],
+}
+
+export interface SizeLimitedExecutionResult {
+  path: string,
+  size: number,
+  targetBytes: number,
+  attemptCount: number,
+  metTarget: boolean,
+  created: boolean,
+}
 
 export interface Thumbnail {
   time: number

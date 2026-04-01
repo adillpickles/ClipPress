@@ -1,5 +1,5 @@
-import type { CSSProperties, Dispatch, ReactNode, SetStateAction } from 'react';
-import { memo, useCallback, useMemo, useState } from 'react';
+import type { CSSProperties, ChangeEvent, Dispatch, ReactNode, SetStateAction } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { FaExclamationTriangle, FaInfoCircle, FaRegCheckCircle } from 'react-icons/fa';
 import i18n from 'i18next';
 import { useTranslation, Trans } from 'react-i18next';
@@ -23,7 +23,7 @@ import type { SegmentToExport } from '../types';
 import type { GenerateOutFileNames } from '../util/outputNameTemplate';
 import { defaultCutFileTemplate, defaultCutMergedFileTemplate } from '../util/outputNameTemplate';
 import type { FFprobeStream } from '../../../common/ffprobe';
-import type { AvoidNegativeTs, PreserveMetadata } from '../../../common/types';
+import type { AvoidNegativeTs, ExportEncodeMode, PreserveMetadata, SizeLimitCodec, SizeLimitQuality } from '../../../common/types';
 import TextInput from './TextInput';
 import type { UseSegments } from '../hooks/useSegments';
 import ExportSheet from './ExportSheet';
@@ -153,7 +153,7 @@ function ExportConfirm({
 }) {
   const { t } = useTranslation();
 
-  const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled } = useUserSettings();
+  const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, setSegmentsToChaptersOnly, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled, exportEncodeMode, setExportEncodeMode, sizeLimitMb, setSizeLimitMb, sizeLimitCodec, setSizeLimitCodec, sizeLimitQuality, setSizeLimitQuality } = useUserSettings();
 
   const [showAdvanced, setShowAdvanced] = useState(!simpleMode);
 
@@ -163,8 +163,16 @@ function ExportConfirm({
   const toggleSegmentsToChapters = useCallback(() => setSegmentsToChapters((v) => !v), [setSegmentsToChapters]);
   const togglePreserveMetadataOnMerge = useCallback(() => setPreserveMetadataOnMerge((v) => !v), [setPreserveMetadataOnMerge]);
 
-  const isMov = ffmpegIsMov(outFormat);
-  const isIpod = outFormat === 'ipod';
+  const isSizeLimited = exportEncodeMode === 'size_limited';
+  const effectiveOutFormat = isSizeLimited ? 'mp4' : outFormat;
+  const isMov = ffmpegIsMov(effectiveOutFormat);
+  const isIpod = effectiveOutFormat === 'ipod';
+
+  useEffect(() => {
+    if (!isSizeLimited) return;
+    if (effectiveExportMode === 'segments_to_chapters') setSegmentsToChaptersOnly(false);
+    if (sizeLimitCodec !== 'h264') setSizeLimitCodec('h264');
+  }, [effectiveExportMode, isSizeLimited, setSegmentsToChaptersOnly, setSizeLimitCodec, sizeLimitCodec]);
 
   // some thumbnail streams (png,jpg etc) cannot always be cut correctly, so we warn if they try to.
   const areWeCuttingProblematicStreams = areWeCutting && mainCopiedThumbnailStreams.length > 0;
@@ -183,7 +191,7 @@ function ExportConfirm({
   const notices = useMemo(() => {
     const specific: Record<'exportMode' | 'problematicStreams' | 'movFastStart' | 'preserveMovData' | 'smartCut' | 'cutMode' | 'avoidNegativeTs' | 'overwriteOutput', Notice | undefined> = {
       exportMode: effectiveExportMode === 'segments_to_chapters' ? { text: i18n.t('Segments to chapters mode is active, this means that the file will not be cut. Instead chapters will be created from the segments.') } : undefined,
-      problematicStreams: areWeCuttingProblematicStreams ? { warning: true, text: <Trans>Warning: Cutting thumbnail tracks is known to cause problems. Consider disabling track {{ trackNumber: mainCopiedThumbnailStreams[0] ? mainCopiedThumbnailStreams[0].index + 1 : 0 }}.</Trans> } : undefined,
+      problematicStreams: !isSizeLimited && areWeCuttingProblematicStreams ? { warning: true, text: <Trans>Warning: Cutting thumbnail tracks is known to cause problems. Consider disabling track {{ trackNumber: mainCopiedThumbnailStreams[0] ? mainCopiedThumbnailStreams[0].index + 1 : 0 }}.</Trans> } : undefined,
       movFastStart: isMov && isIpod && !movFastStart ? { warning: true, text: t('For the ipod format, it is recommended to activate this option') } : undefined,
       preserveMovData: isMov && isIpod && preserveMovData ? { warning: true, text: t('For the ipod format, it is recommended to deactivate this option') } : undefined,
       smartCut: areWeCutting && needSmartCut ? { warning: true, text: t('Smart cut is experimental and will not work on all files.') } : undefined,
@@ -211,7 +219,10 @@ function ExportConfirm({
 
     if (areWeCutting) {
       // https://github.com/mifi/lossless-cut/issues/1809
-      if (outFormat === 'flac') {
+      if (isSizeLimited) {
+        generic.push({ text: t('Size-limited export creates a shareable MP4 and keeps only the main video plus one audio track.') });
+      }
+      if (effectiveOutFormat === 'flac') {
         generic.push({ text: t('There is a known issue in FFmpeg with cutting FLAC files. The file will be re-encoded, which is still lossless, but the export may be slower.') });
       }
       if (outputPlaybackRate !== 1) {
@@ -227,7 +238,7 @@ function ExportConfirm({
       specific,
       totalNum: generic.filter((n) => n.warning).length + Object.values(specific).filter((n) => n != null && n.warning).length,
     };
-  }, [areWeCutting, areWeCuttingProblematicStreams, avoidNegativeTs, effectiveExportMode, enableOverwriteOutput, isEncoding, isIpod, isMov, keyframeCut, keyframesEnabled, mainCopiedThumbnailStreams, movFastStart, needSmartCut, outFormat, outputPlaybackRate, preserveMovData, haveSegmentWithProblematicKeyframe, t, willMerge]);
+  }, [areWeCutting, areWeCuttingProblematicStreams, avoidNegativeTs, effectiveExportMode, effectiveOutFormat, enableOverwriteOutput, haveSegmentWithProblematicKeyframe, isEncoding, isIpod, isMov, isSizeLimited, keyframeCut, keyframesEnabled, mainCopiedThumbnailStreams, movFastStart, needSmartCut, outputPlaybackRate, preserveMovData, t, willMerge]);
 
   const exportModeDescription = useMemo(() => ({
     segments_to_chapters: t('Don\'t cut the file, but instead export an unmodified original which has chapters generated from segments'),
@@ -255,8 +266,37 @@ function ExportConfirm({
   }, [showHelpText]);
 
   const onOutFmtHelpPress = useCallback(() => {
-    showHelpText({ text: i18n.t('Defaults to same format as input file. You can losslessly change the file format (container) of the file with this option. Not all formats support all codecs. Matroska/MP4/MOV support the most common codecs. Sometimes it\'s even impossible to export to the same output format as input.') });
-  }, [showHelpText]);
+    showHelpText({ text: isSizeLimited ? t('Size-limited export is forced to MP4 in MVP so the result is immediately shareable.') : i18n.t('Defaults to same format as input file. You can losslessly change the file format (container) of the file with this option. Not all formats support all codecs. Matroska/MP4/MOV support the most common codecs. Sometimes it\'s even impossible to export to the same output format as input.') });
+  }, [isSizeLimited, showHelpText, t]);
+
+  const onExportEncodeModeHelpPress = useCallback(() => {
+    showHelpText({ text: isSizeLimited ? t('Size-limited export makes a shareable MP4 and retries internally until the file lands under your requested size.') : t('Lossless export keeps the original LosslessCut behavior and exports without built-in re-encoding.') });
+  }, [isSizeLimited, showHelpText, t]);
+
+  const onTargetSizeHelpPress = useCallback(() => {
+    showHelpText({ text: t('ClipPress will try to keep every produced file slightly under this size, so it is ready to share.') });
+  }, [showHelpText, t]);
+
+  const onSizeLimitedCodecHelpPress = useCallback(() => {
+    showHelpText({ text: t('H.264 is the MVP codec for size-limited export. AV1 can be added later without changing this workflow.') });
+  }, [showHelpText, t]);
+
+  const onSizeLimitedQualityHelpPress = useCallback(() => {
+    showHelpText({ text: t('Fast uses 1-pass encoding for quicker exports. High Quality uses 2-pass encoding for better compression while still staying under the target size.') });
+  }, [showHelpText, t]);
+
+  const handleExportEncodeModeChange = useCallback((value: ExportEncodeMode) => {
+    setExportEncodeMode(value);
+    if (value === 'size_limited' && effectiveExportMode === 'segments_to_chapters') {
+      setSegmentsToChaptersOnly(false);
+    }
+  }, [effectiveExportMode, setExportEncodeMode, setSegmentsToChaptersOnly]);
+
+  const handleSizeLimitMbChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const nextValue = Number(e.target.value);
+    if (Number.isNaN(nextValue) || nextValue <= 0) return;
+    setSizeLimitMb(nextValue);
+  }, [setSizeLimitMb]);
 
   const onKeyframeCutHelpPress = useCallback(() => {
     showHelpText({ text: i18n.t('With "keyframe cut", we will cut at the nearest keyframe before the desired start cutpoint. This is recommended for most files. With "Normal cut" you may have to manually set the cutpoint a few frames before the next keyframe to achieve a precise cut') });
@@ -267,8 +307,8 @@ function ExportConfirm({
   }, [showHelpText]);
 
   const onTracksHelpPress = useCallback(() => {
-    showHelpText({ text: i18n.t('Not all formats support all track types, and LosslessCut is unable to properly cut some track types, so you may have to sacrifice some tracks by disabling them in order to get correct result.') });
-  }, [showHelpText]);
+    showHelpText({ text: isSizeLimited ? t('Size-limited export keeps only the main video plus one audio track in MVP to keep the output shareable and predictable.') : i18n.t('Not all formats support all track types, and LosslessCut is unable to properly cut some track types, so you may have to sacrifice some tracks by disabling them in order to get correct result.') });
+  }, [isSizeLimited, showHelpText, t]);
 
   const onSegmentsToChaptersHelpPress = useCallback(() => {
     showHelpText({ text: i18n.t('When merging, do you want to create chapters in the merged file, according to the cut segments? NOTE: This may dramatically increase processing time') });
@@ -363,11 +403,74 @@ function ExportConfirm({
 
           <tr>
             <td>
+              {t('Export type')}
+            </td>
+            <td>
+              <Select value={exportEncodeMode} onChange={withBlur((e) => handleExportEncodeModeChange(e.target.value as ExportEncodeMode))} style={{ height: '1.8em' }}>
+                <option value={'lossless' satisfies ExportEncodeMode}>{t('Lossless export')}</option>
+                <option value={'size_limited' satisfies ExportEncodeMode}>{t('Limit file size')}</option>
+              </Select>
+            </td>
+            <td>
+              <HelpIcon onClick={onExportEncodeModeHelpPress} />
+            </td>
+          </tr>
+
+          {isSizeLimited && (
+            <>
+              <tr>
+                <td>
+                  {t('Target file size')}
+                </td>
+                <td>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.4em' }}>
+                    <TextInput type="number" min={1} step={0.1} value={sizeLimitMb} onChange={handleSizeLimitMbChange} style={{ width: '6em', flexGrow: 0 }} />
+                    <span>{t('MB')}</span>
+                  </div>
+                </td>
+                <td>
+                  <HelpIcon onClick={onTargetSizeHelpPress} />
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  {t('Codec')}
+                </td>
+                <td>
+                  <Select value={sizeLimitCodec} onChange={withBlur((e) => setSizeLimitCodec(e.target.value as SizeLimitCodec))} style={{ height: '1.8em' }}>
+                    <option value={'h264' satisfies SizeLimitCodec}>H.264</option>
+                  </Select>
+                </td>
+                <td>
+                  <HelpIcon onClick={onSizeLimitedCodecHelpPress} />
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  {t('Quality mode')}
+                </td>
+                <td>
+                  <Select value={sizeLimitQuality} onChange={withBlur((e) => setSizeLimitQuality(e.target.value as SizeLimitQuality))} style={{ height: '1.8em' }}>
+                    <option value={'fast' satisfies SizeLimitQuality}>{t('Fast')}</option>
+                    <option value={'high_quality' satisfies SizeLimitQuality}>{t('High Quality')}</option>
+                  </Select>
+                </td>
+                <td>
+                  <HelpIcon onClick={onSizeLimitedQualityHelpPress} />
+                </td>
+              </tr>
+            </>
+          )}
+
+          <tr>
+            <td>
               {segmentsOrInverse.selected.length > 1 ? t('Export mode for {{segments}} segments', { segments: segmentsOrInverse.selected.length }) : t('Export mode')}
               {renderNotice(notices.specific['exportMode'], {})}
             </td>
             <td>
-              <ExportModeButton selectedSegments={segmentsOrInverse.selected} style={{ height: '1.8em' }} />
+              <ExportModeButton selectedSegments={segmentsOrInverse.selected} style={{ height: '1.8em' }} allowSegmentsToChapters={!isSizeLimited} />
             </td>
             <td>
               {renderNoticeIcon(notices.specific['exportMode'], rightIconStyle) ?? <HelpIcon onClick={onExportModeHelpPress} />}
@@ -379,7 +482,7 @@ function ExportConfirm({
               {t('Output container format:')}
             </td>
             <td>
-              {renderOutFmt({ height: '1.8em', maxWidth: 150 })}
+              {isSizeLimited ? <HighlightedText>mp4 - MPEG-4 Part 14</HighlightedText> : renderOutFmt({ height: '1.8em', maxWidth: 150 })}
             </td>
             <td>
               <HelpIcon onClick={onOutFmtHelpPress} />
@@ -392,7 +495,11 @@ function ExportConfirm({
               {renderNotice(notices.specific['problematicStreams'], {})}
             </td>
             <td>
-              <HighlightedText style={{ cursor: 'pointer' }} onClick={onShowStreamsSelectorClick}><Trans>Keeping {{ numStreamsToCopy }} tracks</Trans></HighlightedText>
+              {isSizeLimited ? (
+                <HighlightedText><Trans>Keeping main video + 1 audio track</Trans></HighlightedText>
+              ) : (
+                <HighlightedText style={{ cursor: 'pointer' }} onClick={onShowStreamsSelectorClick}><Trans>Keeping {{ numStreamsToCopy }} tracks</Trans></HighlightedText>
+              )}
             </td>
             <td>
               {renderNoticeIcon(notices.specific['problematicStreams'], rightIconStyle) ?? <HelpIcon onClick={onTracksHelpPress} />}
@@ -448,251 +555,255 @@ function ExportConfirm({
         </tbody>
       </table>
 
-      <h3 style={{ marginBottom: '.5em' }}>{t('Advanced options')}</h3>
+      {!isSizeLimited && (
+        <>
+          <h3 style={{ marginBottom: '.5em' }}>{t('Advanced options')}</h3>
 
-      <table className={styles['options']}>
-        <tbody>
-          <tr>
-            <td style={{ paddingTop: '.5em', color: 'var(--gray-11)', fontSize: '.9em' }} colSpan={2}>
-              {t('Depending on your specific file/player, you may have to try different options for best results.')}
-            </td>
-            <td />
-          </tr>
+          <table className={styles['options']}>
+            <tbody>
+              <tr>
+                <td style={{ paddingTop: '.5em', color: 'var(--gray-11)', fontSize: '.9em' }} colSpan={2}>
+                  {t('Depending on your specific file/player, you may have to try different options for best results.')}
+                </td>
+                <td />
+              </tr>
 
-          <tr>
-            <td>
-              {t('Show advanced options')}
-            </td>
-            <td>
-              <Switch checked={showAdvanced} onCheckedChange={setShowAdvanced} />
-            </td>
-            <td />
-          </tr>
+              <tr>
+                <td>
+                  {t('Show advanced options')}
+                </td>
+                <td>
+                  <Switch checked={showAdvanced} onCheckedChange={setShowAdvanced} />
+                </td>
+                <td />
+              </tr>
 
-          {showAdvanced && (
-            <>
-              {areWeCutting && (
+              {showAdvanced && (
                 <>
+                  {areWeCutting && (
+                    <>
+                      <AnimatedTr>
+                        <td>
+                          {t('Shift all start times')}
+                        </td>
+                        <td>
+                          <ShiftTimes values={adjustCutFromValues} num={cutFromAdjustmentFrames} setNum={setCutFromAdjustmentFrames} />
+                        </td>
+                        <td>
+                          <HelpIcon onClick={onCutFromAdjustmentFramesHelpPress} />
+                        </td>
+                      </AnimatedTr>
+                      <AnimatedTr>
+                        <td>
+                          {t('Shift all end times')}
+                        </td>
+                        <td>
+                          <ShiftTimes values={adjustCutToValues} num={cutToAdjustmentFrames} setNum={setCutToAdjustmentFrames} />
+                        </td>
+                        <td />
+                      </AnimatedTr>
+                    </>
+                  )}
+
+                  {isMov && (
+                    <>
+                      <AnimatedTr>
+                        <td>
+                          {t('Enable MOV Faststart?')}
+                        </td>
+                        <td>
+                          <Switch checked={movFastStart} onCheckedChange={toggleMovFastStart} />
+                          {renderNotice(notices.specific['movFastStart'], {})}
+                        </td>
+                        <td>
+                          {renderNoticeIcon(notices.specific['movFastStart'], rightIconStyle) ?? <HelpIcon onClick={onMovFastStartHelpPress} />}
+                        </td>
+                      </AnimatedTr>
+
+                      <AnimatedTr>
+                        <td>
+                          {t('Preserve all MP4/MOV metadata?')}
+                          {renderNotice(notices.specific['preserveMovData'], {})}
+                        </td>
+                        <td>
+                          <Switch checked={preserveMovData} onCheckedChange={togglePreserveMovData} />
+                        </td>
+                        <td>
+                          {renderNoticeIcon(notices.specific['preserveMovData'], rightIconStyle) ?? <HelpIcon onClick={onPreserveMovDataHelpPress} />}
+                        </td>
+                      </AnimatedTr>
+                    </>
+                  )}
+
                   <AnimatedTr>
                     <td>
-                      {t('Shift all start times')}
+                      {t('Preserve chapters')}
                     </td>
                     <td>
-                      <ShiftTimes values={adjustCutFromValues} num={cutFromAdjustmentFrames} setNum={setCutFromAdjustmentFrames} />
+                      <Switch checked={preserveChapters} onCheckedChange={togglePreserveChapters} />
                     </td>
                     <td>
-                      <HelpIcon onClick={onCutFromAdjustmentFramesHelpPress} />
+                      <HelpIcon onClick={onPreserveChaptersPress} />
                     </td>
                   </AnimatedTr>
+
                   <AnimatedTr>
                     <td>
-                      {t('Shift all end times')}
+                      {t('Preserve metadata')}
                     </td>
                     <td>
-                      <ShiftTimes values={adjustCutToValues} num={cutToAdjustmentFrames} setNum={setCutToAdjustmentFrames} />
+                      <Select value={preserveMetadata} onChange={(e) => setPreserveMetadata(e.target.value as PreserveMetadata)} style={{ height: 20, marginLeft: 5 }}>
+                        <option value={'default' satisfies PreserveMetadata}>{t('Default')}</option>
+                        <option value={'none' satisfies PreserveMetadata}>{t('None')}</option>
+                        <option value={'nonglobal' satisfies PreserveMetadata}>{t('Non-global')}</option>
+                      </Select>
+                    </td>
+                    <td>
+                      <HelpIcon onClick={onPreserveMetadataHelpPress} />
+                    </td>
+                  </AnimatedTr>
+
+                  {willMerge && (
+                    <>
+                      <AnimatedTr>
+                        <td>
+                          {t('Create chapters from merged segments? (slow)')}
+                        </td>
+                        <td>
+                          <Switch checked={segmentsToChapters} onCheckedChange={toggleSegmentsToChapters} />
+                        </td>
+                        <td>
+                          <HelpIcon onClick={onSegmentsToChaptersHelpPress} />
+                        </td>
+                      </AnimatedTr>
+
+                      <AnimatedTr>
+                        <td>
+                          {t('Preserve original metadata when merging? (slow)')}
+                        </td>
+                        <td>
+                          <Switch checked={preserveMetadataOnMerge} onCheckedChange={togglePreserveMetadataOnMerge} />
+                        </td>
+                        <td>
+                          <HelpIcon onClick={onPreserveMetadataOnMergeHelpPress} />
+                        </td>
+                      </AnimatedTr>
+                    </>
+                  )}
+
+                  {areWeCutting && (
+                    <>
+                      <AnimatedTr>
+                        <td>
+                          {t('Smart cut (experimental):')}
+                          {renderNotice(notices.specific['smartCut'], {})}
+                        </td>
+                        <td>
+                          <Switch checked={enableSmartCut} onCheckedChange={() => setEnableSmartCut((v) => !v)} />
+                        </td>
+                        <td>
+                          {renderNoticeIcon(notices.specific['smartCut'], rightIconStyle) ?? <HelpIcon onClick={onSmartCutHelpPress} />}
+                        </td>
+                      </AnimatedTr>
+
+                      {!isEncoding && (
+                        <AnimatedTr>
+                          <td>
+                            {t('Keyframe cut mode')}
+                            {renderNotice(notices.specific['cutMode'], {})}
+                          </td>
+                          <td>
+                            <Switch checked={keyframeCut} onCheckedChange={() => toggleKeyframeCut()} />
+                          </td>
+                          <td>
+                            {renderNoticeIcon(notices.specific['cutMode'], rightIconStyle) ?? <HelpIcon onClick={onKeyframeCutHelpPress} />}
+                          </td>
+                        </AnimatedTr>
+                      )}
+                    </>
+                  )}
+
+
+                  {isEncoding && (
+                    <AnimatedTr>
+                      <td>
+                        {t('Smart cut auto detect bitrate')}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                          {encBitrate != null && (
+                            <>
+                              <TextInput value={encBitrate} onChange={handleEncBitrateChange} style={{ width: '4em', flexGrow: 0, marginRight: '.3em' }} />
+                              <span style={{ marginRight: '.3em' }}>{t('kbit/s')}</span>
+                            </>
+                          )}
+                          <span><Switch checked={encBitrate == null} onCheckedChange={handleEncBitrateToggle} /></span>
+                        </div>
+                      </td>
+                      <td />
+                    </AnimatedTr>
+                  )}
+
+                  {lossyMode != null && (
+                    <AnimatedTr>
+                      <td>
+                        {t('Lossy mode')}
+                      </td>
+                      <td>
+                        <Switch disabled checked={lossyMode != null} />
+                        <div>{lossyMode.videoEncoder}</div>
+                      </td>
+                      <td />
+                    </AnimatedTr>
+                  )}
+
+                  {!isEncoding && (
+                    <AnimatedTr>
+                      <td>
+                        &quot;ffmpeg&quot; <code className="highlighted">avoid_negative_ts</code>
+                        {renderNotice(notices.specific['avoidNegativeTs'], {})}
+                      </td>
+                      <td>
+                        <Select value={avoidNegativeTs} onChange={(e) => setAvoidNegativeTs(e.target.value as AvoidNegativeTs)} style={{ height: 20, marginLeft: 5 }}>
+                          <option value={'auto' satisfies AvoidNegativeTs}>auto</option>
+                          <option value={'make_zero' satisfies AvoidNegativeTs}>make_zero</option>
+                          <option value={'make_non_negative' satisfies AvoidNegativeTs}>make_non_negative</option>
+                          <option value={'disabled' satisfies AvoidNegativeTs}>disabled</option>
+                        </Select>
+                      </td>
+                      <td>
+                        {renderNoticeIcon(notices.specific['avoidNegativeTs'], rightIconStyle) ?? <HelpIcon onClick={onAvoidNegativeTsHelpPress} />}
+                      </td>
+                    </AnimatedTr>
+                  )}
+
+                  <AnimatedTr>
+                    <td>
+                      {t('"ffmpeg" experimental flag')}
+                    </td>
+                    <td>
+                      <Switch checked={ffmpegExperimental} onCheckedChange={setFfmpegExperimental} />
+                    </td>
+                    <td>
+                      <HelpIcon onClick={onFfmpegExperimentalHelpPress} />
+                    </td>
+                  </AnimatedTr>
+
+                  <AnimatedTr>
+                    <td>
+                      {t('More settings')}
+                    </td>
+                    <td>
+                      <IoIosSettings size={24} role="button" onClick={toggleSettings} style={{ marginLeft: 5 }} />
                     </td>
                     <td />
                   </AnimatedTr>
                 </>
               )}
-
-              {isMov && (
-                <>
-                  <AnimatedTr>
-                    <td>
-                      {t('Enable MOV Faststart?')}
-                    </td>
-                    <td>
-                      <Switch checked={movFastStart} onCheckedChange={toggleMovFastStart} />
-                      {renderNotice(notices.specific['movFastStart'], {})}
-                    </td>
-                    <td>
-                      {renderNoticeIcon(notices.specific['movFastStart'], rightIconStyle) ?? <HelpIcon onClick={onMovFastStartHelpPress} />}
-                    </td>
-                  </AnimatedTr>
-
-                  <AnimatedTr>
-                    <td>
-                      {t('Preserve all MP4/MOV metadata?')}
-                      {renderNotice(notices.specific['preserveMovData'], {})}
-                    </td>
-                    <td>
-                      <Switch checked={preserveMovData} onCheckedChange={togglePreserveMovData} />
-                    </td>
-                    <td>
-                      {renderNoticeIcon(notices.specific['preserveMovData'], rightIconStyle) ?? <HelpIcon onClick={onPreserveMovDataHelpPress} />}
-                    </td>
-                  </AnimatedTr>
-                </>
-              )}
-
-              <AnimatedTr>
-                <td>
-                  {t('Preserve chapters')}
-                </td>
-                <td>
-                  <Switch checked={preserveChapters} onCheckedChange={togglePreserveChapters} />
-                </td>
-                <td>
-                  <HelpIcon onClick={onPreserveChaptersPress} />
-                </td>
-              </AnimatedTr>
-
-              <AnimatedTr>
-                <td>
-                  {t('Preserve metadata')}
-                </td>
-                <td>
-                  <Select value={preserveMetadata} onChange={(e) => setPreserveMetadata(e.target.value as PreserveMetadata)} style={{ height: 20, marginLeft: 5 }}>
-                    <option value={'default' satisfies PreserveMetadata}>{t('Default')}</option>
-                    <option value={'none' satisfies PreserveMetadata}>{t('None')}</option>
-                    <option value={'nonglobal' satisfies PreserveMetadata}>{t('Non-global')}</option>
-                  </Select>
-                </td>
-                <td>
-                  <HelpIcon onClick={onPreserveMetadataHelpPress} />
-                </td>
-              </AnimatedTr>
-
-              {willMerge && (
-                <>
-                  <AnimatedTr>
-                    <td>
-                      {t('Create chapters from merged segments? (slow)')}
-                    </td>
-                    <td>
-                      <Switch checked={segmentsToChapters} onCheckedChange={toggleSegmentsToChapters} />
-                    </td>
-                    <td>
-                      <HelpIcon onClick={onSegmentsToChaptersHelpPress} />
-                    </td>
-                  </AnimatedTr>
-
-                  <AnimatedTr>
-                    <td>
-                      {t('Preserve original metadata when merging? (slow)')}
-                    </td>
-                    <td>
-                      <Switch checked={preserveMetadataOnMerge} onCheckedChange={togglePreserveMetadataOnMerge} />
-                    </td>
-                    <td>
-                      <HelpIcon onClick={onPreserveMetadataOnMergeHelpPress} />
-                    </td>
-                  </AnimatedTr>
-                </>
-              )}
-
-              {areWeCutting && (
-                <>
-                  <AnimatedTr>
-                    <td>
-                      {t('Smart cut (experimental):')}
-                      {renderNotice(notices.specific['smartCut'], {})}
-                    </td>
-                    <td>
-                      <Switch checked={enableSmartCut} onCheckedChange={() => setEnableSmartCut((v) => !v)} />
-                    </td>
-                    <td>
-                      {renderNoticeIcon(notices.specific['smartCut'], rightIconStyle) ?? <HelpIcon onClick={onSmartCutHelpPress} />}
-                    </td>
-                  </AnimatedTr>
-
-                  {!isEncoding && (
-                    <AnimatedTr>
-                      <td>
-                        {t('Keyframe cut mode')}
-                        {renderNotice(notices.specific['cutMode'], {})}
-                      </td>
-                      <td>
-                        <Switch checked={keyframeCut} onCheckedChange={() => toggleKeyframeCut()} />
-                      </td>
-                      <td>
-                        {renderNoticeIcon(notices.specific['cutMode'], rightIconStyle) ?? <HelpIcon onClick={onKeyframeCutHelpPress} />}
-                      </td>
-                    </AnimatedTr>
-                  )}
-                </>
-              )}
-
-
-              {isEncoding && (
-                <AnimatedTr>
-                  <td>
-                    {t('Smart cut auto detect bitrate')}
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                      {encBitrate != null && (
-                        <>
-                          <TextInput value={encBitrate} onChange={handleEncBitrateChange} style={{ width: '4em', flexGrow: 0, marginRight: '.3em' }} />
-                          <span style={{ marginRight: '.3em' }}>{t('kbit/s')}</span>
-                        </>
-                      )}
-                      <span><Switch checked={encBitrate == null} onCheckedChange={handleEncBitrateToggle} /></span>
-                    </div>
-                  </td>
-                  <td />
-                </AnimatedTr>
-              )}
-
-              {lossyMode != null && (
-                <AnimatedTr>
-                  <td>
-                    {t('Lossy mode')}
-                  </td>
-                  <td>
-                    <Switch disabled checked={lossyMode != null} />
-                    <div>{lossyMode.videoEncoder}</div>
-                  </td>
-                  <td />
-                </AnimatedTr>
-              )}
-
-              {!isEncoding && (
-                <AnimatedTr>
-                  <td>
-                    &quot;ffmpeg&quot; <code className="highlighted">avoid_negative_ts</code>
-                    {renderNotice(notices.specific['avoidNegativeTs'], {})}
-                  </td>
-                  <td>
-                    <Select value={avoidNegativeTs} onChange={(e) => setAvoidNegativeTs(e.target.value as AvoidNegativeTs)} style={{ height: 20, marginLeft: 5 }}>
-                      <option value={'auto' satisfies AvoidNegativeTs}>auto</option>
-                      <option value={'make_zero' satisfies AvoidNegativeTs}>make_zero</option>
-                      <option value={'make_non_negative' satisfies AvoidNegativeTs}>make_non_negative</option>
-                      <option value={'disabled' satisfies AvoidNegativeTs}>disabled</option>
-                    </Select>
-                  </td>
-                  <td>
-                    {renderNoticeIcon(notices.specific['avoidNegativeTs'], rightIconStyle) ?? <HelpIcon onClick={onAvoidNegativeTsHelpPress} />}
-                  </td>
-                </AnimatedTr>
-              )}
-
-              <AnimatedTr>
-                <td>
-                  {t('"ffmpeg" experimental flag')}
-                </td>
-                <td>
-                  <Switch checked={ffmpegExperimental} onCheckedChange={setFfmpegExperimental} />
-                </td>
-                <td>
-                  <HelpIcon onClick={onFfmpegExperimentalHelpPress} />
-                </td>
-              </AnimatedTr>
-
-              <AnimatedTr>
-                <td>
-                  {t('More settings')}
-                </td>
-                <td>
-                  <IoIosSettings size={24} role="button" onClick={toggleSettings} style={{ marginLeft: 5 }} />
-                </td>
-                <td />
-              </AnimatedTr>
-            </>
-          )}
-        </tbody>
-      </table>
+            </tbody>
+          </table>
+        </>
+      )}
     </ExportSheet>
   );
 }

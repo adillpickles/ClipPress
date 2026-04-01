@@ -8,7 +8,7 @@ import Select from './Select';
 import type { ExportMode } from '../types';
 
 
-function ExportModeButton({ selectedSegments, style }: { selectedSegments: unknown[], style?: CSSProperties }) {
+function ExportModeButton({ selectedSegments, style, allowSegmentsToChapters = true }: { selectedSegments: unknown[], style?: CSSProperties, allowSegmentsToChapters?: boolean }) {
   const { t } = useTranslation();
 
   const { effectiveExportMode, setAutoMerge, setAutoDeleteMergedSegments, setSegmentsToChaptersOnly } = useUserSettings();
@@ -47,8 +47,8 @@ function ExportModeButton({ selectedSegments, style }: { selectedSegments: unkno
     'separate' as const,
     ...(selectedSegments.length >= 2 || effectiveExportMode === 'merge' ? ['merge'] as const : []),
     ...(selectedSegments.length >= 2 || effectiveExportMode === 'merge+separate' ? ['merge+separate'] as const : []),
-    'segments_to_chapters' as const,
-  ], [effectiveExportMode, selectedSegments.length]);
+    ...(allowSegmentsToChapters ? ['segments_to_chapters'] as const : []),
+  ], [allowSegmentsToChapters, effectiveExportMode, selectedSegments.length]);
 
   return (
     // eslint-disable-next-line react/jsx-props-no-spreading

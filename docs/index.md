@@ -68,6 +68,7 @@ If you have a problem with the app or with a file, please see the [🤔 Troubles
 - *(optional)* In the right-hand segments panel, right click a segment for options, or drag-drop to reorder. Segments will appear in this order in the merged output.
 - **When done, press the `Export` button (or <kbd>E</kbd>) to show an overview with export options.**
 - *(optional)* Adjust any export options.
+- *(optional)* Choose **Limit file size** if you want ClipPress to create a shareable MP4 that stays under a target size.
 - *(optional)* Change the [Output file name template](file-name-template.md).
 - **Then press `Export` again to confirm the export**
 - Press the **Camera** button (or <kbd>C</kbd>) if you want to take a JPEG/PNG snapshot from the current time.
