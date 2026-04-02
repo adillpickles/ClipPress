@@ -1,23 +1,86 @@
 import type { FFprobeStream } from '../../common/ffprobe.js';
-import type { SizeLimitQuality } from '../../common/types.js';
-import { getExperimentalArgs, logStdoutStderr, runFfmpegWithProgress } from './ffmpeg';
+import type { SizeLimitCodec, SizeLimitQuality } from '../../common/types.js';
+import { getExperimentalArgs, logStdoutStderr, runFfmpeg, runFfmpegWithProgress } from './ffmpeg';
 import mainApi from './mainApi';
-import { planSizeLimitedEncode } from './sizeLimitedPlanner';
-import type { SegmentToExport, SizeLimitedExecutionResult } from './types';
+import { getNextSizeLimitedRetryStep, planSizeLimitedEncode } from './sizeLimitedPlanner';
+import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
+import type { SegmentToExport, SizeLimitedEncoderCapabilities, SizeLimitedExecutionResult, SizeLimitedResolvedStrategy, SizeLimitedRetryStep } from './types';
 import { assertFileExists, readFileSize, transferTimestamps, unlinkWithRetry } from './util';
 import { UserFacingError } from '../errors';
 
-const { access, constants: { W_OK }, mkdir } = window.require('fs/promises');
+const { access, constants: { W_OK }, mkdir, rename } = window.require('fs/promises');
 const { dirname } = window.require('path');
 
 const retryTempSuffix = 'clippress-size-limit';
+const fastCpuX264Params = 'aq-mode=3:aq-strength=0.8:deblock=-1,-1:rc-lookahead=20:me=hex:subme=6';
+const premiumCpuX264Params = 'aq-mode=3:aq-strength=0.9:deblock=-1,-1:rc-lookahead=40:me=umh:subme=8:ref=4';
+const svtAv1Preset = '6';
+const nvencProbeSource = 'color=c=black:s=640x360:r=30:d=0.2';
+const nvencProbeFrames = '3';
 
-function getQualityPreset(quality: SizeLimitQuality) {
-  return quality === 'high_quality' ? 'slow' : 'veryfast';
-}
+let encoderCapabilitiesPromise: Promise<SizeLimitedEncoderCapabilities> | undefined;
 
 function toKbitrateArg(bitrate: number) {
   return `${Math.max(1, Math.floor(bitrate / 1000))}k`;
+}
+
+function decodeProcessOutput({ stdout, stderr }: { stdout: Uint8Array, stderr: Uint8Array }) {
+  return `${new TextDecoder().decode(stdout)}\n${new TextDecoder().decode(stderr)}`;
+}
+
+async function probeNvencEncoder(encoder: 'h264_nvenc' | 'av1_nvenc') {
+  const ffmpegArgs = [
+    '-hide_banner',
+    '-f', 'lavfi',
+    '-i', nvencProbeSource,
+    '-frames:v', nvencProbeFrames,
+    '-an',
+    '-c:v', encoder,
+    '-f', 'null',
+    '-',
+  ];
+
+  try {
+    await runFfmpeg(ffmpegArgs, undefined, { logCli: false });
+    return true;
+  } catch (error) {
+    console.warn(`Failed to initialize ${encoder}`, error);
+    return false;
+  }
+}
+
+export async function getSizeLimitedEncoderCapabilities() {
+  if (encoderCapabilitiesPromise == null) {
+    encoderCapabilitiesPromise = (async () => {
+      try {
+        const result = await runFfmpeg(['-hide_banner', '-encoders'], undefined, { logCli: false });
+        const output = decodeProcessOutput(result);
+        const encoders = parseFfmpegEncoderNames(output);
+        const libx264 = encoders.has('libx264');
+        const libsvtav1 = encoders.has('libsvtav1');
+        const h264Nvenc = encoders.has('h264_nvenc') ? await probeNvencEncoder('h264_nvenc') : false;
+        const av1Nvenc = encoders.has('av1_nvenc') ? await probeNvencEncoder('av1_nvenc') : false;
+        return { h264Nvenc, av1Nvenc, libx264, libsvtav1 };
+      } catch (error) {
+        console.warn('Failed to detect size-limited encoder capabilities, falling back to CPU encoders when available', error);
+        return { h264Nvenc: false, av1Nvenc: false, libx264: true, libsvtav1: false };
+      }
+    })();
+  }
+
+  return encoderCapabilitiesPromise;
+}
+
+function assertStrategySupported({ strategy, capabilities }: {
+  strategy: SizeLimitedResolvedStrategy,
+  capabilities: SizeLimitedEncoderCapabilities,
+}) {
+  if (strategy.encoder === 'libx264' && !capabilities.libx264) {
+    throw new UserFacingError('Size-limited export could not find a usable H.264 encoder.');
+  }
+  if (strategy.encoder === 'libsvtav1' && !capabilities.libsvtav1) {
+    throw new UserFacingError('Size-limited export could not find a usable AV1 encoder.');
+  }
 }
 
 async function pathExists(path: string) {
@@ -65,44 +128,115 @@ function getRotationArgs(rotation: number | undefined) {
   return rotation !== undefined ? ['-display_rotation:v:0', String(360 - rotation)] : [];
 }
 
-function getSegmentInputArgs({ filePath, segment, outputPlaybackRate }: {
-  filePath: string,
-  segment: SegmentToExport,
-  outputPlaybackRate: number,
+function getBitrateWindowArgs({ videoBitrate, maxRateFactor, bufferFactor }: {
+  videoBitrate: number,
+  maxRateFactor: number,
+  bufferFactor: number,
 }) {
-  const duration = segment.end - segment.start;
   return [
-    ...(outputPlaybackRate !== 1 ? ['-itsscale', String(1 / outputPlaybackRate)] : []),
-    '-ss', segment.start.toFixed(5),
-    '-i', filePath,
-    '-ss', '0',
-    '-t', duration.toFixed(5),
+    '-b:v', toKbitrateArg(videoBitrate),
+    '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * maxRateFactor))),
+    '-bufsize', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * bufferFactor))),
   ];
 }
 
-function getEncodeArgs({
-  quality,
+function getAudioArgs({ audioInputLabel, audioBitrate }: {
+  audioInputLabel: string | undefined,
+  audioBitrate: number,
+}) {
+  if (audioInputLabel == null) return ['-an'];
+  return ['-map', audioInputLabel, '-c:a', 'aac', '-b:a', toKbitrateArg(audioBitrate), '-ac', '2'];
+}
+
+function getStrategyVideoArgs({ strategy, videoBitrate }: {
+  strategy: SizeLimitedResolvedStrategy,
+  videoBitrate: number,
+}) {
+  switch (strategy.id) {
+    case 'fast_h264_nvenc': {
+      return [
+        '-c:v', 'h264_nvenc',
+        '-preset', 'p6',
+        '-tune', 'hq',
+        '-profile:v', 'high',
+        '-rc', 'vbr',
+        '-multipass', 'qres',
+        '-cq', '23',
+        '-rc-lookahead', '20',
+        '-spatial-aq', '1',
+        '-temporal-aq', '1',
+        '-aq-strength', '8',
+        '-b_ref_mode', 'middle',
+        '-pix_fmt', 'yuv420p',
+        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.1, bufferFactor: 2 }),
+      ];
+    }
+    case 'high_quality_av1_nvenc': {
+      return [
+        '-c:v', 'av1_nvenc',
+        '-preset', 'p7',
+        '-tune', 'uhq',
+        '-rc', 'vbr',
+        '-multipass', 'fullres',
+        '-cq', '26',
+        '-rc-lookahead', '32',
+        '-spatial-aq', '1',
+        '-temporal-aq', '1',
+        '-aq-strength', '10',
+        '-b_ref_mode', 'middle',
+        '-pix_fmt', 'yuv420p',
+        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.08, bufferFactor: 2.2 }),
+      ];
+    }
+    case 'high_quality_av1_cpu': {
+      return [
+        '-c:v', 'libsvtav1',
+        '-preset', svtAv1Preset,
+        '-pix_fmt', 'yuv420p',
+        '-b:v', toKbitrateArg(videoBitrate),
+      ];
+    }
+    case 'fast_h264_cpu': {
+      return [
+        '-c:v', 'libx264',
+        '-preset', 'medium',
+        '-pix_fmt', 'yuv420p',
+        '-x264-params', fastCpuX264Params,
+        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.08, bufferFactor: 2 }),
+      ];
+    }
+    case 'high_quality_h264_cpu': {
+      return [
+        '-c:v', 'libx264',
+        '-preset', 'slower',
+        '-pix_fmt', 'yuv420p',
+        '-x264-params', premiumCpuX264Params,
+        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.05, bufferFactor: 2.2 }),
+      ];
+    }
+    default: {
+      return [];
+    }
+  }
+}
+
+function getCommonEncodeArgs({
+  strategy,
   videoBitrate,
   audioBitrate,
   videoInputLabel,
   audioInputLabel,
   ffmpegExperimental,
   rotation,
-  pass,
-  passlogFile,
-  faststart = true,
   outPath,
 }: {
-  quality: SizeLimitQuality,
+  strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
   audioBitrate: number,
   videoInputLabel: string,
   audioInputLabel: string | undefined,
   ffmpegExperimental: boolean,
   rotation: number | undefined,
-  pass?: 2 | undefined,
-  passlogFile?: string | undefined,
-  faststart?: boolean,
   outPath: string,
 }) {
   return [
@@ -112,25 +246,17 @@ function getEncodeArgs({
     '-dn',
     '-ignore_unknown',
     '-map', videoInputLabel,
-    ...(audioInputLabel != null ? ['-map', audioInputLabel] : []),
-    '-c:v', 'libx264',
-    '-preset', getQualityPreset(quality),
-    '-pix_fmt', 'yuv420p',
-    '-b:v', toKbitrateArg(videoBitrate),
-    '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 1.05))),
-    '-bufsize', toKbitrateArg(Math.max(videoBitrate * 2, 1)),
+    ...getStrategyVideoArgs({ strategy, videoBitrate }),
     ...getRotationArgs(rotation),
-    ...(audioInputLabel != null ? ['-c:a', 'aac', '-b:a', toKbitrateArg(audioBitrate), '-ac', '2'] : ['-an']),
-    ...(pass != null ? ['-pass', String(pass), '-passlogfile', passlogFile ?? ''] : []),
-    ...(faststart ? ['-movflags', '+faststart'] : []),
+    ...getAudioArgs({ audioInputLabel, audioBitrate }),
+    '-movflags', '+faststart',
     ...getExperimentalArgs(ffmpegExperimental),
     '-f', 'mp4',
     '-y', outPath,
   ];
 }
 
-function getPass1Args({
-  quality,
+function getCpuH264Pass1Args({
   videoBitrate,
   videoInputLabel,
   ffmpegExperimental,
@@ -138,7 +264,6 @@ function getPass1Args({
   passlogFile,
   outPath,
 }: {
-  quality: SizeLimitQuality,
   videoBitrate: number,
   videoInputLabel: string,
   ffmpegExperimental: boolean,
@@ -154,9 +279,10 @@ function getPass1Args({
     '-ignore_unknown',
     '-map', videoInputLabel,
     '-c:v', 'libx264',
-    '-preset', getQualityPreset(quality),
+    '-preset', 'slower',
     '-pix_fmt', 'yuv420p',
-    '-b:v', toKbitrateArg(videoBitrate),
+    '-x264-params', premiumCpuX264Params,
+    ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.05, bufferFactor: 2.2 }),
     '-pass', '1',
     '-passlogfile', passlogFile,
     ...getRotationArgs(rotation),
@@ -165,6 +291,91 @@ function getPass1Args({
     '-f', 'mp4',
     '-y', outPath,
   ];
+}
+
+function getCpuH264Pass2Args({
+  videoBitrate,
+  audioBitrate,
+  videoInputLabel,
+  audioInputLabel,
+  ffmpegExperimental,
+  rotation,
+  passlogFile,
+  outPath,
+}: {
+  videoBitrate: number,
+  audioBitrate: number,
+  videoInputLabel: string,
+  audioInputLabel: string | undefined,
+  ffmpegExperimental: boolean,
+  rotation: number | undefined,
+  passlogFile: string,
+  outPath: string,
+}) {
+  return [
+    '-map_metadata', '-1',
+    '-map_chapters', '-1',
+    '-sn',
+    '-dn',
+    '-ignore_unknown',
+    '-map', videoInputLabel,
+    '-c:v', 'libx264',
+    '-preset', 'slower',
+    '-pix_fmt', 'yuv420p',
+    '-x264-params', premiumCpuX264Params,
+    ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.05, bufferFactor: 2.2 }),
+    '-pass', '2',
+    '-passlogfile', passlogFile,
+    ...getRotationArgs(rotation),
+    ...getAudioArgs({ audioInputLabel, audioBitrate }),
+    '-movflags', '+faststart',
+    ...getExperimentalArgs(ffmpegExperimental),
+    '-f', 'mp4',
+    '-y', outPath,
+  ];
+}
+
+function getSegmentInputArgs({ filePath, segment, outputPlaybackRate }: {
+  filePath: string,
+  segment: SegmentToExport,
+  outputPlaybackRate: number,
+}) {
+  const duration = segment.end - segment.start;
+  return [
+    ...(outputPlaybackRate !== 1 ? ['-itsscale', String(1 / outputPlaybackRate)] : []),
+    '-ss', segment.start.toFixed(5),
+    '-i', filePath,
+    '-ss', '0',
+    '-t', duration.toFixed(5),
+  ];
+}
+
+function getMergeInputArgs({ filePath, segments, outputPlaybackRate }: {
+  filePath: string,
+  segments: SegmentToExport[],
+  outputPlaybackRate: number,
+}) {
+  return segments.flatMap((segment) => [
+    ...(outputPlaybackRate !== 1 ? ['-itsscale', String(1 / outputPlaybackRate)] : []),
+    '-ss', segment.start.toFixed(5),
+    '-i', filePath,
+    '-ss', '0',
+    '-t', (segment.end - segment.start).toFixed(5),
+  ]);
+}
+
+function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex }: {
+  segments: SegmentToExport[],
+  videoStreamIndex: number,
+  audioStreamIndex: number | undefined,
+}) {
+  if (audioStreamIndex == null) {
+    const labels = segments.map((_, index) => `[${index}:${videoStreamIndex}]`).join('');
+    return `${labels}concat=n=${segments.length}:v=1:a=0[v]`;
+  }
+
+  const labels = segments.map((_, index) => `[${index}:${videoStreamIndex}][${index}:${audioStreamIndex}]`).join('');
+  return `${labels}concat=n=${segments.length}:v=1:a=1[v][a]`;
 }
 
 async function runSinglePassEncode({
@@ -206,29 +417,33 @@ async function runTwoPassEncode({
   logStdoutStderr(pass2Result);
 }
 
+interface AttemptFiles {
+  outPath: string,
+  ffmpegArgs: string[],
+  passlogFile?: string | undefined,
+  pass1Args?: string[] | undefined,
+  pass1OutPath?: string | undefined,
+}
+
 async function executeWithRetries({
-  duration,
-  targetSizeMb,
-  hasAudio,
-  quality,
+  plan,
+  strategy,
   buildAttempt,
   onProgress,
 }: {
-  duration: number,
-  targetSizeMb: number,
-  hasAudio: boolean,
-  quality: SizeLimitQuality,
-  buildAttempt: (attempt: { videoBitrate: number, audioBitrate: number, attemptNumber: number }) => Promise<{ outPath: string, passlogFile?: string | undefined, pass1Args?: string[] | undefined, pass1OutPath?: string | undefined, ffmpegArgs: string[] }>,
+  plan: ReturnType<typeof planSizeLimitedEncode>,
+  strategy: SizeLimitedResolvedStrategy,
+  buildAttempt: (attempt: SizeLimitedRetryStep) => Promise<AttemptFiles>,
   onProgress: (progress: number) => void,
 }) {
-  const plan = planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, quality });
   let bestResult: SizeLimitedExecutionResult | undefined;
+  let currentAttempt: SizeLimitedRetryStep | undefined = plan.initialAttempt;
 
-  for (const retry of plan.retries) {
-    const attemptFiles = await buildAttempt(retry);
+  while (currentAttempt != null) {
+    const attemptFiles = await buildAttempt(currentAttempt);
 
     try {
-      if (quality === 'high_quality') {
+      if (strategy.executionMode === 'ffmpeg_two_pass') {
         const { pass1Args } = attemptFiles;
         if (pass1Args == null) throw new UserFacingError('2-pass encoding was not configured correctly');
         await runTwoPassEncode({ pass1Args, pass2Args: attemptFiles.ffmpegArgs, duration: plan.duration, onProgress });
@@ -242,9 +457,10 @@ async function executeWithRetries({
         path: attemptFiles.outPath,
         size,
         targetBytes: plan.targetBytes,
-        attemptCount: retry.attemptNumber,
+        attemptCount: currentAttempt.attemptNumber,
         metTarget,
         created: true,
+        strategy,
       } satisfies SizeLimitedExecutionResult;
 
       if (metTarget) {
@@ -258,6 +474,12 @@ async function executeWithRetries({
       } else {
         await deleteIfExists(candidate.path);
       }
+
+      currentAttempt = getNextSizeLimitedRetryStep({
+        plan,
+        previousAttempt: currentAttempt,
+        previousOutputSize: size,
+      });
     } catch (error) {
       await deleteIfExists(attemptFiles.outPath);
       throw error;
@@ -283,6 +505,26 @@ function makePasslogPath(outPath: string, attemptNumber: number) {
   return `${outPath}.${retryTempSuffix}.passlog.${attemptNumber}`;
 }
 
+async function resolveSizeLimitedPlan({
+  codec,
+  quality,
+  targetSizeMb,
+  duration,
+  hasAudio,
+}: {
+  codec: SizeLimitCodec,
+  quality: SizeLimitQuality,
+  targetSizeMb: number,
+  duration: number,
+  hasAudio: boolean,
+}) {
+  const capabilities = await getSizeLimitedEncoderCapabilities();
+  const strategy = resolveSizeLimitedStrategy({ requestedCodec: codec, quality, capabilities });
+  assertStrategySupported({ strategy, capabilities });
+  const plan = planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strategy });
+  return { capabilities, strategy, plan };
+}
+
 export function pickSizeLimitedStreams(streams: FFprobeStream[]) {
   const videoStream = streams.find((stream) => stream.codec_type === 'video' && stream.disposition?.attached_pic !== 1);
   const audioStream = streams.find((stream) => stream.codec_type === 'audio');
@@ -295,6 +537,7 @@ export async function exportSizeLimitedSegment({
   segment,
   sourceDuration,
   targetSizeMb,
+  codec,
   quality,
   videoStream,
   audioStream,
@@ -312,6 +555,7 @@ export async function exportSizeLimitedSegment({
   segment: SegmentToExport,
   sourceDuration: number | undefined,
   targetSizeMb: number,
+  codec: SizeLimitCodec,
   quality: SizeLimitQuality,
   videoStream: Pick<FFprobeStream, 'index'>,
   audioStream: Pick<FFprobeStream, 'index'> | undefined,
@@ -328,11 +572,12 @@ export async function exportSizeLimitedSegment({
   await ensureOutputDir(outPath);
 
   const plannedDuration = (segment.end - segment.start) / outputPlaybackRate;
-  const { targetBytes } = planSizeLimitedEncode({
+  const { strategy, plan } = await resolveSizeLimitedPlan({
+    codec,
+    quality,
     targetSizeMb,
     duration: plannedDuration,
     hasAudio: audioStream != null,
-    quality,
   });
 
   const shouldSkip = await ensureWritableOutput(outPath, enableOverwriteOutput);
@@ -341,86 +586,80 @@ export async function exportSizeLimitedSegment({
     return {
       path: outPath,
       size: existingSize,
-      targetBytes,
+      targetBytes: plan.targetBytes,
       attemptCount: 0,
-      metTarget: existingSize <= targetBytes,
+      metTarget: existingSize <= plan.targetBytes,
       created: false,
+      strategy,
     } satisfies SizeLimitedExecutionResult;
   }
 
   const result = await executeWithRetries({
-    duration: plannedDuration,
-    targetSizeMb,
-    hasAudio: audioStream != null,
-    quality,
+    plan,
+    strategy,
     buildAttempt: async (attempt) => {
       const attemptOutPath = makeAttemptPath(outPath, attempt.attemptNumber);
       const inputArgs = getSegmentInputArgs({ filePath, segment, outputPlaybackRate });
+
+      if (strategy.executionMode === 'ffmpeg_two_pass') {
+        const passlogFile = makePasslogPath(outPath, attempt.attemptNumber);
+        const pass1OutPath = makePass1Path(outPath, attempt.attemptNumber);
+        const pass1Args = [
+          '-hide_banner',
+          ...inputArgs,
+          ...getCpuH264Pass1Args({
+            videoBitrate: attempt.videoBitrate,
+            videoInputLabel: `0:${videoStream.index}`,
+            ffmpegExperimental,
+            rotation,
+            passlogFile,
+            outPath: pass1OutPath,
+          }),
+        ];
+
+        const pass2Args = [
+          '-hide_banner',
+          ...inputArgs,
+          ...getCpuH264Pass2Args({
+            videoBitrate: attempt.videoBitrate,
+            audioBitrate: attempt.audioBitrate,
+            videoInputLabel: `0:${videoStream.index}`,
+            audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
+            ffmpegExperimental,
+            rotation,
+            passlogFile,
+            outPath: attemptOutPath,
+          }),
+        ];
+
+        appendFfmpegCommandLog(pass1Args);
+        appendFfmpegCommandLog(pass2Args);
+        return { ffmpegArgs: pass2Args, outPath: attemptOutPath, passlogFile, pass1Args, pass1OutPath };
+      }
+
       const ffmpegArgs = [
         '-hide_banner',
         ...inputArgs,
-        ...getEncodeArgs({
-          quality,
+        ...getCommonEncodeArgs({
+          strategy,
           videoBitrate: attempt.videoBitrate,
           audioBitrate: attempt.audioBitrate,
           videoInputLabel: `0:${videoStream.index}`,
           audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
           ffmpegExperimental,
           rotation,
-          faststart: true,
           outPath: attemptOutPath,
         }),
       ];
 
-      if (quality !== 'high_quality') {
-        appendFfmpegCommandLog(ffmpegArgs);
-        return { ffmpegArgs, outPath: attemptOutPath };
-      }
-
-      const passlogFile = makePasslogPath(outPath, attempt.attemptNumber);
-      const pass1OutPath = makePass1Path(outPath, attempt.attemptNumber);
-      const pass1Args = [
-        '-hide_banner',
-        ...inputArgs,
-        ...getPass1Args({
-          quality,
-          videoBitrate: attempt.videoBitrate,
-          videoInputLabel: `0:${videoStream.index}`,
-          ffmpegExperimental,
-          rotation,
-          passlogFile,
-          outPath: pass1OutPath,
-        }),
-      ];
-
-      const pass2Args = [
-        '-hide_banner',
-        ...inputArgs,
-        ...getEncodeArgs({
-          quality,
-          videoBitrate: attempt.videoBitrate,
-          audioBitrate: attempt.audioBitrate,
-          videoInputLabel: `0:${videoStream.index}`,
-          audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
-          ffmpegExperimental,
-          rotation,
-          pass: 2,
-          passlogFile,
-          faststart: true,
-          outPath: attemptOutPath,
-        }),
-      ];
-
-      appendFfmpegCommandLog(pass1Args);
-      appendFfmpegCommandLog(pass2Args);
-      return { ffmpegArgs: pass2Args, outPath: attemptOutPath, passlogFile, pass1Args, pass1OutPath };
+      appendFfmpegCommandLog(ffmpegArgs);
+      return { ffmpegArgs, outPath: attemptOutPath };
     },
     onProgress,
   });
 
   if (result.path !== outPath) {
     await deleteIfExists(outPath);
-    const { rename } = window.require('fs/promises');
     await rename(result.path, outPath);
   }
 
@@ -437,39 +676,12 @@ export async function exportSizeLimitedSegment({
   return { ...result, path: outPath };
 }
 
-function getMergeInputArgs({ filePath, segments, outputPlaybackRate }: {
-  filePath: string,
-  segments: SegmentToExport[],
-  outputPlaybackRate: number,
-}) {
-  return segments.flatMap((segment) => [
-    ...(outputPlaybackRate !== 1 ? ['-itsscale', String(1 / outputPlaybackRate)] : []),
-    '-ss', segment.start.toFixed(5),
-    '-i', filePath,
-    '-ss', '0',
-    '-t', (segment.end - segment.start).toFixed(5),
-  ]);
-}
-
-function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex }: {
-  segments: SegmentToExport[],
-  videoStreamIndex: number,
-  audioStreamIndex: number | undefined,
-}) {
-  if (audioStreamIndex == null) {
-    const labels = segments.map((_, index) => `[${index}:${videoStreamIndex}]`).join('');
-    return `${labels}concat=n=${segments.length}:v=1:a=0[v]`;
-  }
-
-  const labels = segments.map((_, index) => `[${index}:${videoStreamIndex}][${index}:${audioStreamIndex}]`).join('');
-  return `${labels}concat=n=${segments.length}:v=1:a=1[v][a]`;
-}
-
 export async function exportSizeLimitedMerge({
   filePath,
   outPath,
   segments,
   targetSizeMb,
+  codec,
   quality,
   videoStream,
   audioStream,
@@ -486,6 +698,7 @@ export async function exportSizeLimitedMerge({
   outPath: string,
   segments: SegmentToExport[],
   targetSizeMb: number,
+  codec: SizeLimitCodec,
   quality: SizeLimitQuality,
   videoStream: Pick<FFprobeStream, 'index'>,
   audioStream: Pick<FFprobeStream, 'index'> | undefined,
@@ -503,30 +716,31 @@ export async function exportSizeLimitedMerge({
 
   const totalSourceDuration = segments.reduce((sum, segment) => sum + (segment.end - segment.start), 0);
   const plannedDuration = totalSourceDuration / outputPlaybackRate;
-  const { targetBytes } = planSizeLimitedEncode({
+  const { strategy, plan } = await resolveSizeLimitedPlan({
+    codec,
+    quality,
     targetSizeMb,
     duration: plannedDuration,
     hasAudio: audioStream != null,
-    quality,
   });
+
   const shouldSkip = await ensureWritableOutput(outPath, enableOverwriteOutput);
   if (shouldSkip) {
     const existingSize = await readFileSize(outPath);
     return {
       path: outPath,
       size: existingSize,
-      targetBytes,
+      targetBytes: plan.targetBytes,
       attemptCount: 0,
-      metTarget: existingSize <= targetBytes,
+      metTarget: existingSize <= plan.targetBytes,
       created: false,
+      strategy,
     } satisfies SizeLimitedExecutionResult;
   }
 
   const result = await executeWithRetries({
-    duration: plannedDuration,
-    targetSizeMb,
-    hasAudio: audioStream != null,
-    quality,
+    plan,
+    strategy,
     buildAttempt: async (attempt) => {
       const attemptOutPath = makeAttemptPath(outPath, attempt.attemptNumber);
       const inputArgs = getMergeInputArgs({ filePath, segments, outputPlaybackRate });
@@ -541,71 +755,65 @@ export async function exportSizeLimitedMerge({
         '-filter_complex', filterComplex,
       ];
 
+      if (strategy.executionMode === 'ffmpeg_two_pass') {
+        const passlogFile = makePasslogPath(outPath, attempt.attemptNumber);
+        const pass1OutPath = makePass1Path(outPath, attempt.attemptNumber);
+        const pass1Args = [
+          '-hide_banner',
+          ...commonArgs,
+          ...getCpuH264Pass1Args({
+            videoBitrate: attempt.videoBitrate,
+            videoInputLabel: '[v]',
+            ffmpegExperimental,
+            rotation,
+            passlogFile,
+            outPath: pass1OutPath,
+          }),
+        ];
+
+        const pass2Args = [
+          '-hide_banner',
+          ...commonArgs,
+          ...getCpuH264Pass2Args({
+            videoBitrate: attempt.videoBitrate,
+            audioBitrate: attempt.audioBitrate,
+            videoInputLabel: '[v]',
+            audioInputLabel: audioStream != null ? '[a]' : undefined,
+            ffmpegExperimental,
+            rotation,
+            passlogFile,
+            outPath: attemptOutPath,
+          }),
+        ];
+
+        appendFfmpegCommandLog(pass1Args);
+        appendFfmpegCommandLog(pass2Args);
+        return { ffmpegArgs: pass2Args, outPath: attemptOutPath, passlogFile, pass1Args, pass1OutPath };
+      }
+
       const ffmpegArgs = [
         '-hide_banner',
         ...commonArgs,
-        ...getEncodeArgs({
-          quality,
+        ...getCommonEncodeArgs({
+          strategy,
           videoBitrate: attempt.videoBitrate,
           audioBitrate: attempt.audioBitrate,
           videoInputLabel: '[v]',
           audioInputLabel: audioStream != null ? '[a]' : undefined,
           ffmpegExperimental,
           rotation,
-          faststart: true,
           outPath: attemptOutPath,
         }),
       ];
 
-      if (quality !== 'high_quality') {
-        appendFfmpegCommandLog(ffmpegArgs);
-        return { ffmpegArgs, outPath: attemptOutPath };
-      }
-
-      const passlogFile = makePasslogPath(outPath, attempt.attemptNumber);
-      const pass1OutPath = makePass1Path(outPath, attempt.attemptNumber);
-      const pass1Args = [
-        '-hide_banner',
-        ...commonArgs,
-        ...getPass1Args({
-          quality,
-          videoBitrate: attempt.videoBitrate,
-          videoInputLabel: '[v]',
-          ffmpegExperimental,
-          rotation,
-          passlogFile,
-          outPath: pass1OutPath,
-        }),
-      ];
-
-      const pass2Args = [
-        '-hide_banner',
-        ...commonArgs,
-        ...getEncodeArgs({
-          quality,
-          videoBitrate: attempt.videoBitrate,
-          audioBitrate: attempt.audioBitrate,
-          videoInputLabel: '[v]',
-          audioInputLabel: audioStream != null ? '[a]' : undefined,
-          ffmpegExperimental,
-          rotation,
-          pass: 2,
-          passlogFile,
-          faststart: true,
-          outPath: attemptOutPath,
-        }),
-      ];
-
-      appendFfmpegCommandLog(pass1Args);
-      appendFfmpegCommandLog(pass2Args);
-      return { ffmpegArgs: pass2Args, outPath: attemptOutPath, passlogFile, pass1Args, pass1OutPath };
+      appendFfmpegCommandLog(ffmpegArgs);
+      return { ffmpegArgs, outPath: attemptOutPath };
     },
     onProgress,
   });
 
   if (result.path !== outPath) {
     await deleteIfExists(outPath);
-    const { rename } = window.require('fs/promises');
     await rename(result.path, outPath);
   }
 

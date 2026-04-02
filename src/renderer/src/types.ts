@@ -124,6 +124,33 @@ export interface SizeLimitedExportOptions {
   quality: SizeLimitQuality,
 }
 
+export interface SizeLimitedEncoderCapabilities {
+  h264Nvenc: boolean,
+  av1Nvenc: boolean,
+  libx264: boolean,
+  libsvtav1: boolean,
+}
+
+export type SizeLimitedStrategyId = 'fast_h264_nvenc' | 'fast_h264_cpu' | 'high_quality_av1_cpu' | 'high_quality_av1_nvenc' | 'high_quality_h264_cpu';
+
+export type SizeLimitedEncoderName = 'h264_nvenc' | 'av1_nvenc' | 'libx264' | 'libsvtav1';
+
+export type SizeLimitedHardwareTarget = 'nvidia' | 'cpu';
+
+export type SizeLimitedExecutionMode = 'single_pass' | 'ffmpeg_two_pass';
+
+export interface SizeLimitedResolvedStrategy {
+  requestedCodec: SizeLimitCodec,
+  effectiveCodec: SizeLimitCodec,
+  quality: SizeLimitQuality,
+  id: SizeLimitedStrategyId,
+  encoder: SizeLimitedEncoderName,
+  hardware: SizeLimitedHardwareTarget,
+  usesGpu: boolean,
+  executionMode: SizeLimitedExecutionMode,
+  fallbackReason?: 'av1_unavailable' | 'h264_nvenc_unavailable' | 'svt_av1_unavailable' | undefined,
+}
+
 export interface SizeLimitedRetryStep {
   attemptNumber: number,
   totalBitrate: number,
@@ -132,10 +159,18 @@ export interface SizeLimitedRetryStep {
 }
 
 export interface SizeLimitedPlan {
+  strategyId: SizeLimitedStrategyId,
   targetBytes: number,
   duration: number,
   overheadBytes: number,
-  retries: SizeLimitedRetryStep[],
+  hasAudio: boolean,
+  maxAttempts: number,
+  retrySafetyFactor: number,
+  retryMinFactor: number,
+  retryMaxFactor: number,
+  minAttemptDropPercent: number,
+  minTotalBitrate: number,
+  initialAttempt: SizeLimitedRetryStep,
 }
 
 export interface SizeLimitedExecutionResult {
@@ -145,6 +180,7 @@ export interface SizeLimitedExecutionResult {
   attemptCount: number,
   metTarget: boolean,
   created: boolean,
+  strategy: SizeLimitedResolvedStrategy,
 }
 
 export interface Thumbnail {
