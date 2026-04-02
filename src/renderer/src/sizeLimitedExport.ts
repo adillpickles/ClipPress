@@ -4,11 +4,11 @@ import { getExperimentalArgs, logStdoutStderr, runFfmpeg, runFfmpegWithProgress 
 import mainApi from './mainApi';
 import { getNextSizeLimitedRetryStep, planSizeLimitedEncode } from './sizeLimitedPlanner';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
-import type { SegmentToExport, SizeLimitedEncoderCapabilities, SizeLimitedExecutionResult, SizeLimitedResolvedStrategy, SizeLimitedRetryStep } from './types';
-import { assertFileExists, readFileSize, transferTimestamps, unlinkWithRetry } from './util';
+import type { SegmentToExport, SizeLimitedEncoderCapabilities, SizeLimitedExecutionResult, SizeLimitedProgressMetadata, SizeLimitedResolvedStrategy, SizeLimitedRetryStep } from './types';
+import { assertFileExists, readFileSize, renameWithRetry, transferTimestamps, unlinkWithRetry } from './util';
 import { UserFacingError } from '../errors';
 
-const { access, constants: { W_OK }, mkdir, rename } = window.require('fs/promises');
+const { access, constants: { W_OK }, mkdir } = window.require('fs/promises');
 const { dirname } = window.require('path');
 
 const retryTempSuffix = 'clippress-size-limit';
@@ -378,16 +378,27 @@ function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex }: {
   return `${labels}concat=n=${segments.length}:v=1:a=1[v][a]`;
 }
 
+function makeProgressMetadata({
+  attemptNumber,
+  maxAttempts,
+  phaseNumber,
+  phaseCount,
+}: SizeLimitedProgressMetadata) {
+  return { attemptNumber, maxAttempts, phaseNumber, phaseCount } satisfies SizeLimitedProgressMetadata;
+}
+
 async function runSinglePassEncode({
   ffmpegArgs,
   duration,
   onProgress,
+  progressMetadata,
 }: {
   ffmpegArgs: string[],
   duration: number,
-  onProgress: (progress: number) => void,
+  onProgress: (progress: number, metadata?: SizeLimitedProgressMetadata) => void,
+  progressMetadata: SizeLimitedProgressMetadata,
 }) {
-  const result = await runFfmpegWithProgress({ ffmpegArgs, duration, onProgress });
+  const result = await runFfmpegWithProgress({ ffmpegArgs, duration, onProgress: (progress) => onProgress(progress, progressMetadata) });
   logStdoutStderr(result);
 }
 
@@ -396,23 +407,27 @@ async function runTwoPassEncode({
   pass2Args,
   duration,
   onProgress,
+  pass1ProgressMetadata,
+  pass2ProgressMetadata,
 }: {
   pass1Args: string[],
   pass2Args: string[],
   duration: number,
-  onProgress: (progress: number) => void,
+  onProgress: (progress: number, metadata?: SizeLimitedProgressMetadata) => void,
+  pass1ProgressMetadata: SizeLimitedProgressMetadata,
+  pass2ProgressMetadata: SizeLimitedProgressMetadata,
 }) {
   const pass1Result = await runFfmpegWithProgress({
     ffmpegArgs: pass1Args,
     duration,
-    onProgress: (progress) => onProgress(progress / 2),
+    onProgress: (progress) => onProgress(progress / 2, pass1ProgressMetadata),
   });
   logStdoutStderr(pass1Result);
 
   const pass2Result = await runFfmpegWithProgress({
     ffmpegArgs: pass2Args,
     duration,
-    onProgress: (progress) => onProgress(0.5 + (progress / 2)),
+    onProgress: (progress) => onProgress(0.5 + (progress / 2), pass2ProgressMetadata),
   });
   logStdoutStderr(pass2Result);
 }
@@ -434,7 +449,7 @@ async function executeWithRetries({
   plan: ReturnType<typeof planSizeLimitedEncode>,
   strategy: SizeLimitedResolvedStrategy,
   buildAttempt: (attempt: SizeLimitedRetryStep) => Promise<AttemptFiles>,
-  onProgress: (progress: number) => void,
+  onProgress: (progress: number, metadata?: SizeLimitedProgressMetadata) => void,
 }) {
   let bestResult: SizeLimitedExecutionResult | undefined;
   let currentAttempt: SizeLimitedRetryStep | undefined = plan.initialAttempt;
@@ -446,9 +461,36 @@ async function executeWithRetries({
       if (strategy.executionMode === 'ffmpeg_two_pass') {
         const { pass1Args } = attemptFiles;
         if (pass1Args == null) throw new UserFacingError('2-pass encoding was not configured correctly');
-        await runTwoPassEncode({ pass1Args, pass2Args: attemptFiles.ffmpegArgs, duration: plan.duration, onProgress });
+        await runTwoPassEncode({
+          pass1Args,
+          pass2Args: attemptFiles.ffmpegArgs,
+          duration: plan.duration,
+          onProgress,
+          pass1ProgressMetadata: makeProgressMetadata({
+            attemptNumber: currentAttempt.attemptNumber,
+            maxAttempts: plan.maxAttempts,
+            phaseNumber: 1,
+            phaseCount: 2,
+          }),
+          pass2ProgressMetadata: makeProgressMetadata({
+            attemptNumber: currentAttempt.attemptNumber,
+            maxAttempts: plan.maxAttempts,
+            phaseNumber: 2,
+            phaseCount: 2,
+          }),
+        });
       } else {
-        await runSinglePassEncode({ ffmpegArgs: attemptFiles.ffmpegArgs, duration: plan.duration, onProgress });
+        await runSinglePassEncode({
+          ffmpegArgs: attemptFiles.ffmpegArgs,
+          duration: plan.duration,
+          onProgress,
+          progressMetadata: makeProgressMetadata({
+            attemptNumber: currentAttempt.attemptNumber,
+            maxAttempts: plan.maxAttempts,
+            phaseNumber: 1,
+            phaseCount: 1,
+          }),
+        });
       }
 
       const size = await readFileSize(attemptFiles.outPath);
@@ -549,6 +591,7 @@ export async function exportSizeLimitedSegment({
   rotation,
   appendFfmpegCommandLog,
   onProgress,
+  onStageChange,
 }: {
   filePath: string,
   outPath: string,
@@ -566,7 +609,8 @@ export async function exportSizeLimitedSegment({
   outputPlaybackRate: number,
   rotation: number | undefined,
   appendFfmpegCommandLog: (args: string[]) => void,
-  onProgress: (progress: number) => void,
+  onProgress: (progress: number, metadata?: SizeLimitedProgressMetadata) => void,
+  onStageChange?: ((metadata: SizeLimitedProgressMetadata | undefined) => void) | undefined,
 }) {
   await assertFileExists(filePath);
   await ensureOutputDir(outPath);
@@ -655,12 +699,15 @@ export async function exportSizeLimitedSegment({
       appendFfmpegCommandLog(ffmpegArgs);
       return { ffmpegArgs, outPath: attemptOutPath };
     },
-    onProgress,
+    onProgress: (progress, metadata) => {
+      onStageChange?.(metadata);
+      onProgress(progress, metadata);
+    },
   });
 
   if (result.path !== outPath) {
     await deleteIfExists(outPath);
-    await rename(result.path, outPath);
+    await renameWithRetry(result.path, outPath);
   }
 
   await transferTimestamps({
@@ -693,6 +740,7 @@ export async function exportSizeLimitedMerge({
   rotation,
   appendFfmpegCommandLog,
   onProgress,
+  onStageChange,
 }: {
   filePath: string,
   outPath: string,
@@ -709,7 +757,8 @@ export async function exportSizeLimitedMerge({
   outputPlaybackRate: number,
   rotation: number | undefined,
   appendFfmpegCommandLog: (args: string[]) => void,
-  onProgress: (progress: number) => void,
+  onProgress: (progress: number, metadata?: SizeLimitedProgressMetadata) => void,
+  onStageChange?: ((metadata: SizeLimitedProgressMetadata | undefined) => void) | undefined,
 }) {
   await assertFileExists(filePath);
   await ensureOutputDir(outPath);
@@ -809,12 +858,15 @@ export async function exportSizeLimitedMerge({
       appendFfmpegCommandLog(ffmpegArgs);
       return { ffmpegArgs, outPath: attemptOutPath };
     },
-    onProgress,
+    onProgress: (progress, metadata) => {
+      onStageChange?.(metadata);
+      onProgress(progress, metadata);
+    },
   });
 
   if (result.path !== outPath) {
     await deleteIfExists(outPath);
-    await rename(result.path, outPath);
+    await renameWithRetry(result.path, outPath);
   }
 
   const mergedDuration = segments.reduce((sum, segment) => sum + (segment.end - segment.start), 0);

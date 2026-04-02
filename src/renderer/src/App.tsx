@@ -72,15 +72,17 @@ import {
   getOutPath, getOutDir,
   isStoreBuild, dragPreventer,
   havePermissionToReadFile, resolvePathIfNeeded, getPathReadAccessError, findExistingHtml5FriendlyFile,
-  isOutOfSpaceError, readFileSize, readFileSizes, checkFileSizes, setDocumentTitle, readVideoTs, readDirRecursively, getImportProjectType,
+  filenamify, isOutOfSpaceError, readFileSize, readFileSizes, checkFileSizes, setDocumentTitle, readVideoTs, readDirRecursively, getImportProjectType,
   calcShouldShowWaveform, calcShouldShowKeyframes, mediaSourceQualities, isExecaError, getStdioString,
   isMuxNotSupported,
   getDownloadMediaOutPath,
   isAbortedError,
+  renameWithRetry,
   shootConfetti,
   isMasBuild,
   readFileStats,
   makeSourceFileAccessError,
+  unlinkWithRetry,
 } from './util';
 import getSwal, { errorToast, showPlaybackFailedMessage } from './swal';
 import { adjustRate } from './util/rate-calculator';
@@ -94,7 +96,7 @@ import { generateCutFileNames as generateCutFileNamesRaw, generateCutMergedFileN
 import { rightBarWidth, leftBarWidth, ffmpegExtractWindow, zoomMax } from './util/constants';
 import BigWaveform from './components/BigWaveform';
 
-import type { BatchFile, Chapter, CustomTagsByFile, EdlExportType, EdlFileType, EdlImportType, FfmpegCommandLog, FilesMeta, FileStats, ParamsByStreamId, PlaybackMode, SegmentBase, SegmentColorIndex, SegmentTags, SizeLimitedExecutionResult, StateSegment, TunerType } from './types';
+import type { BatchFile, Chapter, CustomTagsByFile, EdlExportType, EdlFileType, EdlImportType, FfmpegCommandLog, FilesMeta, FileStats, ParamsByStreamId, PlaybackMode, SegmentBase, SegmentColorIndex, SegmentTags, SizeLimitedExecutionResult, SizeLimitedProgressMetadata, StateSegment, TunerType } from './types';
 import { goToTimecodeDirectArgsSchema, openFilesActionArgsSchema } from './types';
 import type { CaptureFormat, KeyboardAction, ApiActionRequest } from '../../common/types.js';
 import type { FFprobeChapter, FFprobeStream } from '../../common/ffprobe.js';
@@ -195,7 +197,7 @@ function App() {
 
   const { withErrorHandling, handleError, genericError, setGenericError } = useErrorHandling();
 
-  const { showGenericDialog, genericDialog, closeGenericDialog, confirmDialog, openExportFinishedDialog, openCutFinishedDialog, openConcatFinishedDialog, openCleanupFilesDialog } = useDialog();
+  const { showGenericDialog, genericDialog, closeGenericDialog, confirmDialog, openExportFinishedDialog, openCutFinishedDialog, openSizeLimitedFinishedDialog, openConcatFinishedDialog, openCleanupFilesDialog } = useDialog();
 
   // Note that each action may be multiple key bindings and this will only be the first binding for each action
   const keyBindingByAction = useMemo(() => Object.fromEntries(keyBindings.map((binding) => [binding.action, binding])), [keyBindings]);
@@ -1071,26 +1073,191 @@ function App() {
 
   const willMerge = segmentsToExport.length > 1 && autoMerge;
 
-  const appendSizeLimitedResultNotices = useCallback((results: SizeLimitedExecutionResult[], notices: Set<string>, warnings: Set<string>) => {
+  const formatRequestedSizeLimit = useCallback((targetMb: number) => (
+    i18n.t('{{size}} MB', {
+      size: new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(targetMb),
+    })
+  ), []);
+
+  const formatSizeLimitedStageText = useCallback((metadata: SizeLimitedProgressMetadata | undefined) => {
+    if (metadata == null) return undefined;
+
+    const parts: string[] = [];
+    if (metadata.maxAttempts > 1) {
+      parts.push(i18n.t('Attempt {{attempt}}/{{maxAttempts}}', {
+        attempt: metadata.attemptNumber,
+        maxAttempts: metadata.maxAttempts,
+      }));
+    }
+    if (metadata.phaseCount > 1) {
+      parts.push(i18n.t('Pass {{phase}}/{{phaseCount}}', {
+        phase: metadata.phaseNumber,
+        phaseCount: metadata.phaseCount,
+      }));
+    }
+    return parts.length > 0 ? parts.join(' • ') : undefined;
+  }, []);
+
+  const formatSizeLimitedJobStageText = useCallback(({
+    jobIndex,
+    totalJobs,
+    metadata,
+  }: {
+    jobIndex: number,
+    totalJobs: number,
+    metadata: SizeLimitedProgressMetadata | undefined,
+  }) => {
+    const stageText = formatSizeLimitedStageText(metadata);
+    if (totalJobs <= 1) return stageText;
+    if (stageText == null) return i18n.t('File {{current}}/{{total}}', { current: jobIndex + 1, total: totalJobs });
+    return i18n.t('File {{current}}/{{total}} • {{stage}}', { current: jobIndex + 1, total: totalJobs, stage: stageText });
+  }, [formatSizeLimitedStageText]);
+
+  const sanitizeSizeLimitedNamePart = useCallback((value: string) => {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) return '';
+    return safeOutputFileName ? filenamify(trimmed) : trimmed;
+  }, [safeOutputFileName]);
+
+  const maybeRenameSizeLimitedOutputs = useCallback(async ({
+    results,
+    shouldDecorateSeparateOutputs,
+    shouldDecorateMergedOutput,
+  }: {
+    results: SizeLimitedExecutionResult[],
+    shouldDecorateSeparateOutputs: boolean,
+    shouldDecorateMergedOutput: boolean,
+  }) => {
+    if (filePath == null) return { results, warnings: [] as string[] };
+
+    const updatedResults = [...results];
+    const renameWarnings = new Set<string>();
+    const sourceBaseName = sanitizeSizeLimitedNamePart(parsePath(filePath).name);
+
+    const formatCodecLabel = (codec: 'av1' | 'h264') => (codec === 'av1' ? 'AV1' : 'H.264');
+    const formatFileSizeForName = (size: number) => `${new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(size / (1024 * 1024))}MB`;
+
+    interface RenameCandidate {
+      resultIndex: number,
+      currentPath: string,
+      stem: string,
+      preferredSuffix: string,
+    }
+
+    const candidates: RenameCandidate[] = [];
+
+    if (shouldDecorateSeparateOutputs) {
+      for (const [index, segment] of segmentsToExport.entries()) {
+        const result = updatedResults[index];
+        if (result != null && result.created) {
+          const sanitizedSegmentName = sanitizeSizeLimitedNamePart(segment.name ?? '');
+          const preferredSuffix = sanitizedSegmentName.length > 0 ? `-${sanitizedSegmentName}` : (segmentsToExport.length > 1 ? `-seg${index + 1}` : '');
+          candidates.push({
+            resultIndex: index,
+            currentPath: result.path,
+            stem: `${formatCodecLabel(result.strategy.effectiveCodec)} ${formatFileSizeForName(result.size)} ${sourceBaseName}`,
+            preferredSuffix,
+          });
+        }
+      }
+    }
+
+    if (shouldDecorateMergedOutput && willMerge) {
+      const mergedResultIndex = updatedResults.length - 1;
+      const mergedResult = updatedResults[mergedResultIndex];
+      if (mergedResult != null && mergedResult.created) {
+        candidates.push({
+          resultIndex: mergedResultIndex,
+          currentPath: mergedResult.path,
+          stem: `${formatCodecLabel(mergedResult.strategy.effectiveCodec)} ${formatFileSizeForName(mergedResult.size)} ${sourceBaseName}`,
+          preferredSuffix: '-merged',
+        });
+      }
+    }
+
+    const stemCounts = new Map<string, number>();
+    candidates.forEach(({ stem }) => stemCounts.set(stem, (stemCounts.get(stem) ?? 0) + 1));
+    const reservedFileNames = new Set<string>();
+
+    for (const candidate of candidates) {
+      const {
+        currentPath,
+        preferredSuffix,
+        resultIndex,
+        stem: candidateStem,
+      } = candidate;
+
+      let stem = candidateStem;
+      if ((stemCounts.get(candidateStem) ?? 0) > 1) {
+        stem = `${stem}${preferredSuffix}`;
+      }
+
+      let fileName = `${stem}.mp4`;
+      let disambiguator = 2;
+      while (reservedFileNames.has(fileName)) {
+        fileName = `${stem}-${disambiguator}.mp4`;
+        disambiguator += 1;
+      }
+      reservedFileNames.add(fileName);
+
+      const targetPath = getOutPath({ customOutDir, filePath, fileName });
+      if (targetPath != null && targetPath !== currentPath) {
+        try {
+          const targetExists = await mainApi.pathExists(targetPath);
+          if (targetExists) {
+            if (!enableOverwriteOutput) {
+              renameWarnings.add(i18n.t('ClipPress kept one exported file\'s original name because the cleaner final name already exists and overwrite is off.'));
+            } else {
+              await unlinkWithRetry(targetPath);
+              await renameWithRetry(currentPath, targetPath);
+              const result = updatedResults[resultIndex];
+              if (result != null) updatedResults[resultIndex] = { ...result, path: targetPath };
+            }
+          } else {
+            await renameWithRetry(currentPath, targetPath);
+            const result = updatedResults[resultIndex];
+            if (result != null) updatedResults[resultIndex] = { ...result, path: targetPath };
+          }
+        } catch (error) {
+          console.warn('Failed to apply cleaner size-limited file name', currentPath, error);
+          renameWarnings.add(i18n.t('ClipPress kept one exported file\'s original name because the cleaner final name could not be applied.'));
+        }
+      }
+    }
+
+    return { results: updatedResults, warnings: [...renameWarnings] };
+  }, [customOutDir, enableOverwriteOutput, filePath, sanitizeSizeLimitedNamePart, segmentsToExport, willMerge]);
+
+  const appendSizeLimitedResultNotices = useCallback((results: SizeLimitedExecutionResult[], notices: Set<string>, warnings: Set<string>, requestedTargetSizeMb: number) => {
     if (results.length === 0) return;
 
-    const [firstResult] = results;
-    invariant(firstResult != null);
-    const { targetBytes } = firstResult;
-    const largestResult = [...results].sort((a, b) => b.size - a.size)[0];
-    if (largestResult != null) {
-      notices.add(i18n.t('Size-limited target: {{targetSize}}. Largest produced file: {{actualSize}}.', {
-        targetSize: prettyBytes(targetBytes),
-        actualSize: prettyBytes(largestResult.size),
+    const createdResults = results.filter((result) => result.created);
+    const skippedCount = results.length - createdResults.length;
+
+    if (createdResults.length > 0) {
+      const largestResult = [...createdResults].sort((a, b) => b.size - a.size)[0];
+      if (largestResult != null) {
+        notices.add(i18n.t('Target: {{targetSize}}. Largest new file: {{actualSize}}.', {
+          targetSize: formatRequestedSizeLimit(requestedTargetSizeMb),
+          actualSize: prettyBytes(largestResult.size),
+        }));
+      }
+    } else if (skippedCount > 0) {
+      notices.add(i18n.t('Target: {{targetSize}}.', {
+        targetSize: formatRequestedSizeLimit(requestedTargetSizeMb),
       }));
     }
 
-    const unmetTargetResult = results.find((result) => !result.metTarget);
+    if (skippedCount > 0) {
+      notices.add(i18n.t('Overwrite is off, so {{count}} existing output files were kept.', { count: skippedCount }));
+    }
+
+    const unmetTargetResult = createdResults.find((result) => !result.metTarget);
     if (unmetTargetResult != null) {
       warnings.add(i18n.t('One or more exports could not be reduced any further, so the closest result was kept.'));
     }
 
-    const uniqueStrategies = new Map(results.map((result) => [`${result.strategy.id}:${result.strategy.fallbackReason ?? 'none'}`, result.strategy]));
+    const uniqueStrategies = new Map(createdResults.map((result) => [`${result.strategy.id}:${result.strategy.fallbackReason ?? 'none'}`, result.strategy]));
     for (const strategy of uniqueStrategies.values()) {
       switch (strategy.id) {
         case 'fast_h264_nvenc': {
@@ -1126,7 +1293,7 @@ function App() {
         }
       }
     }
-  }, []);
+  }, [formatRequestedSizeLimit]);
 
   const onExportConfirm = useCallback(async () => {
     invariant(filePath != null && outputDir != null);
@@ -1162,9 +1329,26 @@ function App() {
         const results: SizeLimitedExecutionResult[] = [];
         const shouldProduceSeparateOutputs = !willMerge || !autoDeleteMergedSegments;
         const totalJobs = (shouldProduceSeparateOutputs ? segmentsToExport.length : 0) + (willMerge ? 1 : 0);
-        const updateJobProgress = (jobIndex: number, jobProgress: number) => {
+        let currentWorkingText = i18n.t('Exporting');
+        let currentWorkingDetailText: string | undefined;
+        const updateWorkingState = ({ text, detailText }: { text: string, detailText?: string | undefined }) => {
+          if (currentWorkingText === text && currentWorkingDetailText === detailText) return;
+          currentWorkingText = text;
+          currentWorkingDetailText = detailText;
+          setWorking({ text, detailText });
+        };
+        const updateJobProgress = ({ jobIndex, jobText, jobProgress, metadata }: {
+          jobIndex: number,
+          jobText: string,
+          jobProgress: number,
+          metadata?: SizeLimitedProgressMetadata | undefined,
+        }) => {
           const safeTotalJobs = Math.max(totalJobs, 1);
           setProgress((jobIndex + jobProgress) / safeTotalJobs);
+          updateWorkingState({
+            text: jobText,
+            detailText: formatSizeLimitedJobStageText({ jobIndex, totalJobs, metadata }),
+          });
         };
 
         if (shouldProduceSeparateOutputs) {
@@ -1180,6 +1364,10 @@ function App() {
             invariant(fileName != null);
             const outPath = getOutPath({ customOutDir, filePath, fileName });
             invariant(outPath != null);
+            updateWorkingState({
+              text: i18n.t('Exporting'),
+              detailText: formatSizeLimitedJobStageText({ jobIndex: index, totalJobs, metadata: undefined }),
+            });
 
             const result = await exportSizeLimitedSegment({
               filePath,
@@ -1198,7 +1386,7 @@ function App() {
               outputPlaybackRate,
               rotation: isRotationSet ? effectiveRotation : undefined,
               appendFfmpegCommandLog,
-              onProgress: (jobProgress) => updateJobProgress(index, jobProgress),
+              onProgress: (jobProgress, metadata) => updateJobProgress({ jobIndex: index, jobText: i18n.t('Exporting'), jobProgress, metadata }),
             });
             results.push(result);
           }
@@ -1207,7 +1395,10 @@ function App() {
         let mergedOutFilePath: string | undefined;
         if (willMerge) {
           const mergedJobIndex = shouldProduceSeparateOutputs ? segmentsToExport.length : 0;
-          setWorking({ text: i18n.t('Merging') });
+          updateWorkingState({
+            text: i18n.t('Merging'),
+            detailText: formatSizeLimitedJobStageText({ jobIndex: mergedJobIndex, totalJobs, metadata: undefined }),
+          });
 
           const { fileNames, problems } = await generateSizeLimitedCutMergedFileNames(cutMergedFileTemplateOrDefault);
           if (problems.error != null) {
@@ -1236,13 +1427,23 @@ function App() {
             outputPlaybackRate,
             rotation: isRotationSet ? effectiveRotation : undefined,
             appendFfmpegCommandLog,
-            onProgress: (jobProgress) => updateJobProgress(mergedJobIndex, jobProgress),
+            onProgress: (jobProgress, metadata) => updateJobProgress({ jobIndex: mergedJobIndex, jobText: i18n.t('Merging'), jobProgress, metadata }),
           });
           results.push(mergedResult);
         }
 
-        appendSizeLimitedResultNotices(results, notices, warnings);
-        if (!enableOverwriteOutput) warnings.add(i18n.t('Overwrite output setting is disabled and some files might have been skipped.'));
+        const shouldDecorateSeparateOutputs = shouldProduceSeparateOutputs && (cutFileTemplate == null || cutFileTemplate === defaultCutFileTemplate);
+        const shouldDecorateMergedOutput = willMerge && (cutMergedFileTemplate == null || cutMergedFileTemplate === defaultCutMergedFileTemplate);
+        const renamedOutputs = await maybeRenameSizeLimitedOutputs({
+          results,
+          shouldDecorateSeparateOutputs,
+          shouldDecorateMergedOutput,
+        });
+        renamedOutputs.warnings.forEach((warning) => warnings.add(warning));
+
+        const finalizedResults = renamedOutputs.results;
+        const createdResults = finalizedResults.filter((result) => result.created);
+        appendSizeLimitedResultNotices(finalizedResults, notices, warnings, sizeLimitMb);
 
         if (simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
 
@@ -1251,13 +1452,14 @@ function App() {
           if (newCleanupChoices) await cleanupFiles(newCleanupChoices);
         }
 
-        const exportedPaths = willMerge && mergedOutFilePath != null ? [mergedOutFilePath] : results.map((result) => result.path);
-        const [revealPath] = exportedPaths;
-        invariant(revealPath != null);
+        const revealResult = (willMerge ? finalizedResults.at(-1) : undefined) ?? createdResults[0] ?? finalizedResults[0];
+        invariant(revealResult != null);
+        const exportedPaths = willMerge ? [revealResult.path] : finalizedResults.map((result) => result.path);
+        const revealPath = revealResult.path;
 
         if (!hideAllNotifications) {
           showOsNotification(i18n.t('Export finished'));
-          openCutFinishedDialog({ filePath: revealPath, warnings: [...warnings], notices: [...notices] });
+          openSizeLimitedFinishedDialog({ filePath: revealPath, warnings: [...warnings], notices: [...notices], createdCount: createdResults.length });
         }
 
         setExportCount((c) => c + 1);
@@ -1447,7 +1649,7 @@ function App() {
       setWorking(undefined);
       setProgress(undefined);
     }
-  }, [allFilesMeta, appendFfmpegCommandLog, appendSizeLimitedResultNotices, areWeCutting, askForCleanupChoices, autoDeleteMergedSegments, avoidNegativeTs, cleanupChoices, cleanupFiles, concatCutSegments, copyFileStreams, customOutDir, customTagsByFile, cutFileTemplateOrDefault, cutMergedFileTemplateOrDefault, cutMultiple, detectedFps, effectiveRotation, enableOverwriteOutput, exportConfirmEnabled, exportExtraStreams, extractStreams, ffmpegExperimental, fileDuration, fileFormat, filePath, generateCutFileNames, generateCutMergedFileNames, generateSizeLimitedCutFileNames, generateSizeLimitedCutMergedFileNames, handleExportFailed, haveInvalidSegs, hideAllNotifications, invertCutSegments, isRotationSet, isSizeLimitedExport, keyframeCut, mainFileFormat, mainStreams, movFastStart, nonCopiedExtraStreams, numStreamsToCopy, openCutFinishedDialog, outputDir, outputPlaybackRate, paramsByStreamId, preserveChapters, preserveMetadata, preserveMetadataOnMerge, preserveMovData, prefersReducedMotion, setWorking, segmentsOrInverse.selected, segmentsToChapters, segmentsToChaptersOnly, segmentsToExport, shortestFlag, showOsNotification, simpleMode, sizeLimitCodec, sizeLimitMb, sizeLimitQuality, sizeLimitedStreams, t, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, tryDeleteFiles, willMerge, workingRef]);
+  }, [allFilesMeta, appendFfmpegCommandLog, appendSizeLimitedResultNotices, areWeCutting, askForCleanupChoices, autoDeleteMergedSegments, avoidNegativeTs, cleanupChoices, cleanupFiles, concatCutSegments, copyFileStreams, customOutDir, customTagsByFile, cutFileTemplate, cutFileTemplateOrDefault, cutMergedFileTemplate, cutMergedFileTemplateOrDefault, cutMultiple, detectedFps, effectiveRotation, enableOverwriteOutput, exportConfirmEnabled, exportExtraStreams, extractStreams, ffmpegExperimental, fileDuration, fileFormat, filePath, formatSizeLimitedJobStageText, generateCutFileNames, generateCutMergedFileNames, generateSizeLimitedCutFileNames, generateSizeLimitedCutMergedFileNames, handleExportFailed, haveInvalidSegs, hideAllNotifications, invertCutSegments, isRotationSet, isSizeLimitedExport, keyframeCut, mainFileFormat, mainStreams, maybeRenameSizeLimitedOutputs, movFastStart, nonCopiedExtraStreams, numStreamsToCopy, openCutFinishedDialog, openSizeLimitedFinishedDialog, outputDir, outputPlaybackRate, paramsByStreamId, preserveChapters, preserveMetadata, preserveMetadataOnMerge, preserveMovData, prefersReducedMotion, setWorking, segmentsOrInverse.selected, segmentsToChapters, segmentsToChaptersOnly, segmentsToExport, shortestFlag, showOsNotification, simpleMode, sizeLimitCodec, sizeLimitMb, sizeLimitQuality, sizeLimitedStreams, t, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, tryDeleteFiles, willMerge, workingRef]);
 
   const onExportPress = useCallback(async () => {
     if (!filePath) return;
@@ -2983,7 +3185,7 @@ function App() {
 
               {/* This should probably be last, so that it's always on top */}
               <AnimatePresence>
-                {working && <Working text={working.text} progress={progress} onAbortClick={abortWorking} />}
+                {working && <Working text={working.text} detailText={working.detailText} progress={progress} onAbortClick={abortWorking} />}
               </AnimatePresence>
 
               <GenericDialog dialog={genericDialog} onOpenChange={(open) => !open && closeGenericDialog()} />

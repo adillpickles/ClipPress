@@ -5,6 +5,7 @@ import { abortFfmpegs } from '../ffmpeg';
 
 export interface WorkingState {
   text: string,
+  detailText?: string | undefined,
   abortController?: AbortController | undefined,
 }
 

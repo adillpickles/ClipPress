@@ -19,6 +19,8 @@ export function parseFfmpegProgressLine({ line, customMatcher, duration: duratio
   if (duration === 0) return undefined;
 
   const timeStr = match[1];
+  if (timeStr == null) return undefined;
+  if (timeStr.toUpperCase() === 'N/A') return undefined;
   // console.log(timeStr);
   const match2 = timeStr!.match(/^(-?)(\d+):(\d+):(\d+)\.(\d+)$/);
   if (!match2) throw new Error(`Invalid time from ffmpeg progress ${timeStr}`);

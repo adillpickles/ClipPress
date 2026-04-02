@@ -9,8 +9,9 @@ import Button from './Button';
 import styles from './Working.module.css';
 
 
-function Working({ text, progress, onAbortClick }: {
+function Working({ text, detailText, progress, onAbortClick }: {
   text: string,
+  detailText?: string | undefined,
   progress?: number | undefined,
   onAbortClick: () => void
 }) {
@@ -47,6 +48,12 @@ function Working({ text, progress, onAbortClick }: {
         <div style={{ marginBottom: '.2em', textAlign: 'center' }}>
           {text}...
         </div>
+
+        {detailText != null && (
+          <div style={{ marginBottom: '.2em', fontSize: '.95em', color: 'var(--gray-12)', textAlign: 'center' }}>
+            {detailText}
+          </div>
+        )}
 
         <div style={{ marginBottom: '.5em', fontSize: '.9em', color: 'var(--gray-11)', textAlign: 'center' }}>
           {t('Elapsed: {{seconds}} seconds', { seconds: (elapsedMs / 1000).toFixed(1) })}

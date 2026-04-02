@@ -19,7 +19,7 @@ import getSwal from '../swal';
 import { isMov as ffmpegIsMov } from '../util/streams';
 import useUserSettings from '../hooks/useUserSettings';
 import styles from './ExportConfirm.module.css';
-import type { SegmentToExport, SizeLimitedEncoderCapabilities } from '../types';
+import type { SegmentToExport } from '../types';
 import type { GenerateOutFileNames } from '../util/outputNameTemplate';
 import { defaultCutFileTemplate, defaultCutMergedFileTemplate } from '../util/outputNameTemplate';
 import type { FFprobeStream } from '../../../common/ffprobe';
@@ -34,8 +34,6 @@ import type { Frame } from '../ffmpeg';
 import type { FindNearestKeyframeTime } from '../hooks/useKeyframes';
 import { troubleshootingUrl } from '../../../common/constants';
 import OutDirSelector from './OutDirSelector';
-import { getSizeLimitedEncoderCapabilities } from '../sizeLimitedExport';
-import { getEffectiveSizeLimitCodec } from '../sizeLimitedStrategy';
 
 const remote = window.require('@electron/remote');
 const { shell } = remote;
@@ -158,8 +156,6 @@ function ExportConfirm({
   const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, setSegmentsToChaptersOnly, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled, exportEncodeMode, setExportEncodeMode, sizeLimitMb, setSizeLimitMb, sizeLimitCodec, setSizeLimitCodec, sizeLimitQuality, setSizeLimitQuality } = useUserSettings();
 
   const [showAdvanced, setShowAdvanced] = useState(!simpleMode);
-  const [encoderCapabilities, setEncoderCapabilities] = useState<SizeLimitedEncoderCapabilities>();
-
   const togglePreserveChapters = useCallback(() => setPreserveChapters((val) => !val), [setPreserveChapters]);
   const togglePreserveMovData = useCallback(() => setPreserveMovData((val) => !val), [setPreserveMovData]);
   const toggleMovFastStart = useCallback(() => setMovFastStart((val) => !val), [setMovFastStart]);
@@ -167,7 +163,6 @@ function ExportConfirm({
   const togglePreserveMetadataOnMerge = useCallback(() => setPreserveMetadataOnMerge((v) => !v), [setPreserveMetadataOnMerge]);
 
   const isSizeLimited = exportEncodeMode === 'size_limited';
-  const effectiveSizeLimitCodec = useMemo(() => getEffectiveSizeLimitCodec({ requestedCodec: sizeLimitCodec, quality: sizeLimitQuality }), [sizeLimitCodec, sizeLimitQuality]);
   const effectiveOutFormat = isSizeLimited ? 'mp4' : outFormat;
   const isMov = ffmpegIsMov(effectiveOutFormat);
   const isIpod = effectiveOutFormat === 'ipod';
@@ -178,26 +173,6 @@ function ExportConfirm({
       setSegmentsToChaptersOnly(false);
     }
   }, [effectiveExportMode, isSizeLimited, setSegmentsToChaptersOnly]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!visible || !isSizeLimited) {
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    getSizeLimitedEncoderCapabilities().then((capabilities) => {
-      if (!cancelled) setEncoderCapabilities(capabilities);
-    }).catch((error) => {
-      console.warn('Failed to load size-limited encoder capabilities', error);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isSizeLimited, visible]);
 
   // some thumbnail streams (png,jpg etc) cannot always be cut correctly, so we warn if they try to.
   const areWeCuttingProblematicStreams = areWeCutting && mainCopiedThumbnailStreams.length > 0;
@@ -264,37 +239,6 @@ function ExportConfirm({
       totalNum: generic.filter((n) => n.warning).length + Object.values(specific).filter((n) => n != null && n.warning).length,
     };
   }, [areWeCutting, areWeCuttingProblematicStreams, avoidNegativeTs, effectiveExportMode, effectiveOutFormat, enableOverwriteOutput, haveSegmentWithProblematicKeyframe, isEncoding, isIpod, isMov, isSizeLimited, keyframeCut, keyframesEnabled, mainCopiedThumbnailStreams, movFastStart, needSmartCut, outputPlaybackRate, preserveMovData, t, willMerge]);
-
-  const sizeLimitedCodecNotice = useMemo<Notice | undefined>(() => {
-    if (!isSizeLimited) return undefined;
-    if (sizeLimitQuality === 'fast') {
-      if (encoderCapabilities && !encoderCapabilities.h264Nvenc) {
-        return { text: t('Fast mode will use CPU H.264 here because NVIDIA H.264 encoding is unavailable.') };
-      }
-      return { text: t('Fast mode stays on H.264 for a strong shareable speed-to-quality balance.') };
-    }
-
-    if (encoderCapabilities == null) {
-      if (effectiveSizeLimitCodec === 'av1') {
-        return { text: t('High Quality prefers AV1-first quality and checks the best available AV1 path before export.') };
-      }
-      return { text: t('High Quality H.264 is the compatibility path. AV1 usually looks better under the same cap.') };
-    }
-
-    if (effectiveSizeLimitCodec === 'av1' && encoderCapabilities.libsvtav1) {
-      return { text: t('High Quality AV1 uses CPU SVT-AV1 for the best low-bitrate result.') };
-    }
-
-    if (effectiveSizeLimitCodec === 'av1' && encoderCapabilities.av1Nvenc) {
-      return { text: t('SVT-AV1 is unavailable here, so High Quality AV1 will fall back to NVIDIA AV1.') };
-    }
-
-    if (effectiveSizeLimitCodec === 'av1') {
-      return { text: t('AV1 encoders are unavailable here, so High Quality AV1 will fall back to H.264.') };
-    }
-
-    return { text: t('High Quality H.264 is the compatibility path. AV1 usually looks better under the same cap.') };
-  }, [effectiveSizeLimitCodec, encoderCapabilities, isSizeLimited, sizeLimitQuality, t]);
 
   const exportModeDescription = useMemo(() => ({
     segments_to_chapters: t('Don\'t cut the file, but instead export an unmodified original which has chapters generated from segments'),
@@ -479,8 +423,8 @@ function ExportConfirm({
                   {t('Target file size')}
                 </td>
                 <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '.4em' }}>
-                    <TextInput type="number" min={1} step={0.1} value={sizeLimitMb} onChange={handleSizeLimitMbChange} style={{ width: '6em', flexGrow: 0 }} />
+                  <div style={{ display: 'inline-flex', justifyContent: 'flex-end', alignItems: 'center', gap: '.4em', width: '100%' }}>
+                    <TextInput type="number" min={1} step={0.1} value={sizeLimitMb} onChange={handleSizeLimitMbChange} style={{ width: '6em', flexGrow: 0, textAlign: 'right' }} />
                     <span>{t('MB')}</span>
                   </div>
                 </td>
@@ -495,18 +439,12 @@ function ExportConfirm({
                 </td>
                 <td>
                   {sizeLimitQuality === 'fast' ? (
-                    <>
-                      <HighlightedText>H.264</HighlightedText>
-                      {renderNotice(sizeLimitedCodecNotice, { style: { marginTop: '.4em' } })}
-                    </>
+                    <HighlightedText>H.264</HighlightedText>
                   ) : (
-                    <>
-                      <Select value={sizeLimitCodec} onChange={withBlur((e) => setSizeLimitCodec(e.target.value as SizeLimitCodec))} style={{ height: '1.8em' }}>
-                        <option value={'h264' satisfies SizeLimitCodec}>H.264</option>
-                        <option value={'av1' satisfies SizeLimitCodec}>AV1</option>
-                      </Select>
-                      {renderNotice(sizeLimitedCodecNotice, { style: { marginTop: '.4em' } })}
-                    </>
+                    <Select value={sizeLimitCodec} onChange={withBlur((e) => setSizeLimitCodec(e.target.value as SizeLimitCodec))} style={{ height: '1.8em' }}>
+                      <option value={'h264' satisfies SizeLimitCodec}>H.264</option>
+                      <option value={'av1' satisfies SizeLimitCodec}>AV1</option>
+                    </Select>
                   )}
                 </td>
                 <td>

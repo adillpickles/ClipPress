@@ -19,4 +19,8 @@ describe('parseFfmpegProgressLine', () => {
     const str = 'size=     501kB time=00:00:32.02 bitrate= 128.2kbits/s speed=2.29e+03x    ';
     expect(parseFfmpegProgressLine({ line: str, duration: 32.02 })).toBe(1);
   });
+  test('ignore N/A time', () => {
+    const str = 'frame=   19 fps=0.0 q=0.0 size=N/A time=N/A bitrate=N/A speed=N/A    ';
+    expect(parseFfmpegProgressLine({ line: str, duration: 100 })).toBeUndefined();
+  });
 });

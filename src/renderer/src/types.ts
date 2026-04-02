@@ -158,6 +158,13 @@ export interface SizeLimitedRetryStep {
   audioBitrate: number,
 }
 
+export interface SizeLimitedProgressMetadata {
+  attemptNumber: number,
+  maxAttempts: number,
+  phaseNumber: number,
+  phaseCount: number,
+}
+
 export interface SizeLimitedPlan {
   strategyId: SizeLimitedStrategyId,
   targetBytes: number,

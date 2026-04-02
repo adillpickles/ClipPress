@@ -196,6 +196,32 @@ export function useDialog() {
     });
   }, [openExportFinishedDialog, t]);
 
+  const openSizeLimitedFinishedDialog = useCallback(async ({ filePath, warnings, notices, createdCount }: {
+    filePath: string,
+    warnings: string[],
+    notices: string[],
+    createdCount: number,
+  }) => {
+    const hasWarnings = warnings.length > 0;
+    const wroteNewFiles = createdCount > 0;
+
+    await openExportFinishedDialog({
+      filePath,
+      width: '52em',
+      children: (
+        <UnorderedList>
+          <ListItem icon={<FaCheckCircle />} iconColor={hasWarnings ? warningColor : saveColor} style={{ fontWeight: 'bold' }}>
+            {wroteNewFiles
+              ? (hasWarnings ? t('Size-limited export finished with warning(s)', { count: warnings.length }) : t('Size-limited export is done!'))
+              : t('No new files were written')}
+          </ListItem>
+          <Warnings warnings={warnings} />
+          <Notices notices={notices} />
+        </UnorderedList>
+      ),
+    });
+  }, [openExportFinishedDialog, t]);
+
   const openConcatFinishedDialog = useCallback(async ({ filePath, warnings, notices }: { filePath: string, warnings: string[], notices: string[] }) => {
     const hasWarnings = warnings.length > 0;
 
@@ -305,6 +331,7 @@ export function useDialog() {
     confirmDialog,
     openExportFinishedDialog,
     openCutFinishedDialog,
+    openSizeLimitedFinishedDialog,
     openConcatFinishedDialog,
     openCleanupFilesDialog,
   };
