@@ -118,7 +118,6 @@ import useHtml5ify from './hooks/useHtml5ify';
 import WhatsNew from './components/WhatsNew';
 import mainApi from './mainApi.js';
 import type { AppEvent } from '../../main/index.js';
-import { appName } from '../../main/common.js';
 
 const electron = window.require('electron');
 const { lstat } = window.require('fs/promises');
@@ -263,7 +262,7 @@ function App() {
   const showOsNotification = useCallback((text: string) => {
     if (hideOsNotifications == null) {
       // on Linux app name is not shown in notification, see https://github.com/mifi/lossless-cut/issues/2794
-      if (isLinux) mainApi.sendOsNotification({ title: appName, body: text });
+      if (isLinux) mainApi.sendOsNotification({ title: 'ClipPress', body: text });
       else mainApi.sendOsNotification({ title: text });
     }
   }, [hideOsNotifications]);
@@ -1855,7 +1854,7 @@ function App() {
     const newStartTimeOffset = await promptTimecode({
       initialValue: startTimeOffset !== undefined ? formatTimecode({ seconds: startTimeOffset }) : undefined,
       title: i18n.t('Set custom start time offset'),
-      description: i18n.t('Instead of video apparently starting at 0, you can offset by a specified value. This only applies to the preview inside LosslessCut and does not modify the file in any way. (Useful for viewing/cutting videos according to timecodes)'),
+      description: i18n.t('Instead of video apparently starting at 0, you can offset by a specified value. This only applies to the preview inside ClipPress and does not modify the file in any way. (Useful for viewing/cutting videos according to timecodes)'),
       inputPlaceholder: timecodePlaceholder,
       allowRelative: true,
     });

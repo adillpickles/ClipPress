@@ -3,10 +3,9 @@ import type { AboutPanelOptionsOptions } from 'electron';
 import { app } from 'electron';
 import { t } from 'i18next';
 
-import { appName, copyrightYear } from './common.js';
+import { copyrightYear } from './common.js';
 import { isLinux } from './util.js';
 import isStoreBuild from './isStoreBuild.js';
-import { githubUrl, homepageUrl } from '../common/constants.js';
 
 
 // eslint-disable-next-line import/prefer-default-export
@@ -14,13 +13,13 @@ export function getAboutPanelOptions() {
   const appVersion = app.getVersion();
 
   const aboutPanelLines = [
-    isStoreBuild ? homepageUrl : githubUrl,
+    t('Fast, lightweight desktop video clipping with built-in size-limited export for shareable clips.'),
     '',
-    `${t('Copyright')} © 2016-${copyrightYear} Mikael Finstad ❤️ 🇳🇴`,
+    `${t('Copyright')} Ã‚Â© 2016-${copyrightYear} Mikael Finstad Ã¢ÂÂ¤Ã¯Â¸Â Ã°Å¸â€¡Â³Ã°Å¸â€¡Â´`,
   ];
 
   const aboutPanelOptions: AboutPanelOptionsOptions = {
-    applicationName: appName,
+    applicationName: 'ClipPress',
     copyright: aboutPanelLines.join('\n'),
     version: '', // not very useful (supported on MacOS only, and same as applicationVersion)
   };

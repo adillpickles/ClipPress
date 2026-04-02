@@ -9,7 +9,6 @@ import confetti from 'canvas-confetti';
 import invariant from 'tiny-invariant';
 
 import { ffmpegExtractWindow } from './util/constants';
-import { appName } from '../../main/common';
 import type { EnableImportChapters, Html5ifyMode } from '../../common/types';
 import { UserFacingError } from '../errors';
 import type { FFprobeFormat } from '../../common/ffprobe';
@@ -24,6 +23,8 @@ const appVersion = remote.app.getVersion();
 const appPath = remote.app.getAppPath();
 
 export { isWindows, isMac, appVersion, appPath };
+
+const displayAppName = 'ClipPress';
 
 
 export const trashFile = async (path: string) => ipcRenderer.invoke('tryTrashItem', path);
@@ -296,7 +297,7 @@ export const isAbortedError = (err: unknown) => (
 
 export const getStdioString = (stdio: string | Uint8Array) => (stdio instanceof Uint8Array ? Buffer.from(stdio).toString('utf8') : stdio);
 
-// A bit hacky but it works, unless someone has a file called "No space left on device" ( ͡° ͜ʖ ͡°)
+// A bit hacky but it works, unless someone has a file called "No space left on device" ( ÃÂ¡Ã‚Â° ÃÅ“ÃŠâ€“ ÃÂ¡Ã‚Â°)
 export const isOutOfSpaceError = (err: InvariantExecaError) => (
   err.exitCode !== 0
   && !!getStdioString(err.stderr)?.includes('No space left on device')
@@ -366,7 +367,7 @@ export function setDocumentTitle({ filePath, working, progress }: {
     parts.push(basename(filePath));
   }
 
-  parts.push(isStoreBuild ? appName : `${appName} ${appVersion}`);
+  parts.push(isStoreBuild ? displayAppName : `${displayAppName} ${appVersion}`);
 
   document.title = parts.join(' - ');
 }
@@ -426,8 +427,8 @@ export const allModifiers = new Set([...shiftModifiers, ...controlModifiers, ...
 
 
 export function getMetaKeyName() {
-  if (isMac) return i18n.t('⌘ Cmd');
-  if (isWindows) return i18n.t('⊞ Win');
+  if (isMac) return i18n.t('Ã¢Å’Ëœ Cmd');
+  if (isWindows) return i18n.t('Ã¢Å Å¾ Win');
   return i18n.t('Meta');
 }
 

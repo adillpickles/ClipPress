@@ -746,7 +746,7 @@ const KeyboardShortcuts = memo(({
         category: otherCategory,
       },
       quit: {
-        name: t('Quit LosslessCut'),
+        name: t('Quit ClipPress'),
         category: otherCategory,
       },
     };

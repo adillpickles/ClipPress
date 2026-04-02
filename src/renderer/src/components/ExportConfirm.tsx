@@ -270,7 +270,7 @@ function ExportConfirm({
   }, [isSizeLimited, showHelpText, t]);
 
   const onExportEncodeModeHelpPress = useCallback(() => {
-    showHelpText({ text: isSizeLimited ? t('Size-limited export makes a shareable MP4 and retries internally until the file lands under your requested size.') : t('Lossless export keeps the original LosslessCut behavior and exports without built-in re-encoding.') });
+    showHelpText({ text: isSizeLimited ? t('Size-limited export makes a shareable MP4 and retries internally until the file lands under your requested size.') : t('Lossless export keeps the original ClipPress workflow and exports without built-in re-encoding.') });
   }, [isSizeLimited, showHelpText, t]);
 
   const onTargetSizeHelpPress = useCallback(() => {
@@ -303,11 +303,11 @@ function ExportConfirm({
   }, [showHelpText]);
 
   const onSmartCutHelpPress = useCallback(() => {
-    showHelpText({ text: i18n.t('This experimental feature will re-encode the part of the video from the cutpoint until the next keyframe in order to attempt to make a 100% accurate cut. Only works on some files. I\'ve had success with some h264 files, and only a few h265 files. See more here: {{url}}', { url: 'https://github.com/mifi/lossless-cut/issues/126' }) });
+    showHelpText({ text: i18n.t('This experimental feature will re-encode the part of the video from the cutpoint until the next keyframe in order to attempt to make a 100% accurate cut. It only works on some files. Reports so far suggest better luck with some h264 files and only a few h265 files. See more here: {{url}}', { url: 'https://github.com/mifi/lossless-cut/issues/126' }) });
   }, [showHelpText]);
 
   const onTracksHelpPress = useCallback(() => {
-    showHelpText({ text: isSizeLimited ? t('Size-limited export keeps only the main video plus one audio track in MVP to keep the output shareable and predictable.') : i18n.t('Not all formats support all track types, and LosslessCut is unable to properly cut some track types, so you may have to sacrifice some tracks by disabling them in order to get correct result.') });
+    showHelpText({ text: isSizeLimited ? t('Size-limited export keeps only the main video plus one audio track in MVP to keep the output shareable and predictable.') : i18n.t('Not all formats support all track types, and ClipPress is unable to properly cut some track types, so you may have to sacrifice some tracks by disabling them in order to get correct result.') });
   }, [isSizeLimited, showHelpText, t]);
 
   const onSegmentsToChaptersHelpPress = useCallback(() => {
@@ -335,7 +335,7 @@ function ExportConfirm({
     // https://github.com/mifi/lossless-cut/issues/1206
     const texts = {
       make_non_negative: i18n.t('Shift timestamps to make them non-negative. Also note that this affects only leading negative timestamps, and not non-monotonic negative timestamps.'),
-      make_zero: i18n.t('Shift timestamps so that the first timestamp is 0. (LosslessCut default)'),
+      make_zero: i18n.t('Shift timestamps so that the first timestamp is 0. (ClipPress default)'),
       auto: i18n.t('Enables shifting when required by the target format.'),
       disabled: i18n.t('Disables shifting of timestamp.'),
     };

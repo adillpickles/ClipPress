@@ -4,12 +4,12 @@
 
 ## Development environment setup
 
-This app is built using Electron.
+ClipPress is built using Electron.
 Make sure you have at least Node v16. The app uses ffmpeg from PATH when developing.
 
 ```bash
-git clone https://github.com/mifi/lossless-cut.git
-cd lossless-cut
+git clone <your ClipPress repository URL>
+cd ClipPress
 yarn
 ```
 
@@ -71,7 +71,7 @@ Before releasing, consider [Maintainence chores](#maintainence-chores) first.
 
 - `git checkout master`
 - `git merge stores` (in case there's an old unmerged stores hotfix)
-- **Manually prepare release notes** from [commit history](https://github.com/mifi/lossless-cut/commits/master/) since last version.
+- **Manually prepare release notes** from the repository commit history since the last version.
 - Create a new file `versions/x.y.z.md` and write the most important highlights from the release notes, but **remove github issue #references**
 - `node script/generateVersions.ts && git add versions/*.md src/renderer/src/versions.json && git commit -m 'Update change log'`
 - *If Store-only hotfix release*
@@ -113,7 +113,7 @@ For per-platform build/signing setup, see [this article](https://mifi.no/blog/au
 
 `yarn scan-i18n` to get the newest English strings and push so Weblate gets them.
 
-Find the [latest PR](https://github.com/mifi/lossless-cut/pulls) from Weblate and **rebase+merge** it.
+Find the latest Weblate PR in the repository pull request list and **rebase+merge** it.
 
 **Warning:** Do not squash and merge (see [here why](docs/translation.md#weblate))!
 
@@ -127,6 +127,7 @@ How to check the value:
 
 ```bash
 yarn pack-mas-dev
+# Current packaged app names may still use legacy LosslessCut identifiers:
 cat dist/mas-dev-arm64/LosslessCut.app/Contents/Info.plist
 ```
 
@@ -167,7 +168,7 @@ Then deploy.
 
 ### Dependabot
 
-https://github.com/mifi/lossless-cut/security/dependabot
+Use the repository Dependabot page in GitHub security settings.
 
 ## FFmpeg builds
 

@@ -1,12 +1,12 @@
-# HTTP API 🧪
+# HTTP API
 
-LosslessCut can be controlled via a HTTP API, if it is being run with the command line option `--http-api`. **Note that the HTTP API is experimental and may change at any time.**
+ClipPress can be controlled through an HTTP API when it is started with `--http-api`. The API is experimental and may change.
 
-See also [CLI](cli.md).
+See also the [CLI](cli.md).
 
 ## Enabling the API
 
-To enable the API, run LosslessCut from the command line with this flag:
+Current packaged binaries may still use legacy executable names, so examples below continue to use `LosslessCut`:
 
 ```bash
 LosslessCut --http-api
@@ -14,61 +14,65 @@ LosslessCut --http-api
 
 ## Action endpoint: `POST /api/action/:action`
 
-Execute a keyboard shortcut `action`, similar to the `--keyboard-action` CLI option. This is different from the CLI in that most of the actions (but not all) will wait for the action to finish before responding to the HTTP request.
+Run a keyboard shortcut action, similar to the `--keyboard-action` CLI option. Unlike the CLI, many actions wait for completion before the HTTP request returns.
 
-See [Available keyboard actions](cli.md#available-keyboard-actions).
+See [available keyboard actions](cli.md#keyboard-actions).
 
 ### Example actions
 
 Export the currently opened file:
+
 ```bash
 curl -X POST http://localhost:8080/api/action/export
 ```
 
-Seek to time:
+Seek to a time:
+
 ```bash
 curl -X POST http://localhost:8080/api/action/goToTimecodeDirect --json '{"time": "09:11"}'
 ```
 
 Open one or more files:
+
 ```bash
 curl -X POST http://localhost:8080/api/action/openFiles --json '["/path/to/file.mp4"]'
 ```
 
 ### Batch example
 
-Start the main LosslessCut in one terminal with the HTTP API enabled:
+Start the app with the HTTP API enabled:
 
 ```bash
 LosslessCut --http-api
 ```
 
-Then run the script in a different terminal:
+Then run a script in another terminal:
 
 ```bash
 for PROJECT in /path/to/folder/with/projects/*.llc
     LosslessCut $PROJECT
-    sleep 5 # wait for the file to open
+    sleep 5
     curl -X POST http://localhost:8080/api/action/export
     curl -X POST http://localhost:8080/api/action/closeCurrentFile
 done
 ```
 
-## Await event endpoint
+## Await-event endpoint
 
-This special endpoint allows you to wait for a certain event to occur in the app. The endpoint will hang and respond/return only when the event fires. Below are supported events.
+This endpoint waits until a specific event occurs in the app.
 
 ### Event: `export-start`
 
-Emitted when the export operation starts. The endpoint will return JSON `{ path: string }`.
+Emitted when export starts. Returns JSON like `{ path: string }`.
 
 ### Event: `export-complete`
 
-Emitted when the export operation completes (either success or failure). If successful, the endpoint will return JSON `{ paths: string[] }`.
+Emitted when export completes, whether successful or failed. On success it returns JSON like `{ paths: string[] }`.
 
-#### Examples
+### Example
 
-Run a command after each file that has completed exporting:
+Run a follow-up command after each completed export:
+
 ```bash
 while true; do
   echo 'Do something with exported file path:' $(curl -s -X POST http://localhost:8080/api/await-event/export-complete | jq -r '.paths[0]')

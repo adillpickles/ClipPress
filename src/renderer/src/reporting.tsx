@@ -26,10 +26,10 @@ export function openSendReportDialog({ err, message, state }: {
     ) : (
       <Trans>
         <p>
-          If you&apos;re having a problem or question about LosslessCut, please first check the links in the <b>Help</b> menu. If you cannot find any resolution, you may ask a question in <span className="link-button" role="button" onClick={() => electron.shell.openExternal(discussionsUrl)}>GitHub discussions</span> or on <span className="link-button" role="button" onClick={() => electron.shell.openExternal(githubUrl)}>Discord.</span>
+          If you&apos;re having a problem or question about ClipPress, please first check the links in the <b>Help</b> menu. If you still need help, you can ask a question in <span className="link-button" role="button" onClick={() => electron.shell.openExternal(discussionsUrl)}>GitHub discussions</span> or review the <span className="link-button" role="button" onClick={() => electron.shell.openExternal(githubUrl)}>project repository</span>.
         </p>
         <p>
-          If you believe that you found a bug in LosslessCut, you may <span className="link-button" role="button" onClick={() => electron.shell.openExternal(publicBugReportUrl)}>report a bug</span>.
+          If you believe that you found a bug in ClipPress, you may <span className="link-button" role="button" onClick={() => electron.shell.openExternal(publicBugReportUrl)}>report a bug</span>.
         </p>
       </Trans>
     );

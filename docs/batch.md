@@ -1,49 +1,51 @@
-# Batch processing ⏩
+# Batch processing
 
-I get a lot of questions about whether LosslessCut can help automate the **exact same operation on X number of files**. For example given a folder of 100 files, cut off 10 seconds from the beginning of every file, or split each file into 30 second files. LosslessCut was not designed to be a fully auomated batch processing toolkit and generally cannot not do these things, however the good news is that often it's not very hard to automate with a simple script.
+ClipPress is built for fast interactive clipping, not fully automated batch processing. If you need to repeat the exact same FFmpeg operation across many files, the most practical approach is usually to script that operation directly.
 
-See also [#868](https://github.com/mifi/lossless-cut/issues/868) and see [recipes](recipes.md).
+See also [recipes](recipes.md).
 
-## Setup FFmpeg 📀
+## Set up FFmpeg
 
-First you need to [download and install FFmpeg](https://ffmpeg.org/) on your computer. Make sure you install it properly so that you can open a Bash terminal (Linux/macOS) or Console (Windows) and type the command `ffmpeg` (or `ffmpeg.exe` on Windows) and press <kbd>Enter</kbd>. It should then print out something like this:
+Install [FFmpeg](https://ffmpeg.org/) and make sure the `ffmpeg` command works in your terminal or shell.
 
 ```bash
 ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers
 ```
 
-If you cannot get it working, there here are lots of resources online on how to do this. Or you can ask an AI (for example ChatGPT) to assist you.
+## Build your script
 
-## Create your script 📜
+Create a script file such as:
 
-Make a file `myscript.sh` (macOS/Linux) or `myscript.bat` (Windows) and edit it with a plain text editor like `nano` or Notepad.
+- `myscript.sh` on macOS or Linux
+- `myscript.ps1` or `myscript.bat` on Windows
 
-If there's a particular operation from LosslessCut you want to automate across multiple files, you can find the command from the "Last FFmpeg commands" page. Then copy paste this command into your script. Note: if you're on Windows, the command might have to be altered slightly to be compatible (you can use an AI for this).
+If there is a specific operation you already performed in ClipPress, open the "Last FFmpeg commands" view and copy the command from there. That gives you a strong starting point for your script.
 
-## Using AI 🤖
+## Using AI to help
 
-> AI opposers are strong in their faith. They swore they'd never [kneel before the LLM](https://github.com/mifi/lossless-cut/discussions/1490#discussioncomment-12014019) — now they're [prompting psalms](https://github.com/mifi/lossless-cut/discussions/1490#discussioncomment-12019277) about the [divine GPT.](https://github.com/mifi/lossless-cut/discussions/1490#discussioncomment-12018982)
+Large language models can be useful for turning a one-off FFmpeg command into a reusable script.
 
-I wish more people were aware of this: large language models like ChatGPT can be incredibly useful for helping non-programmers with simple scripting tasks as well as helping you learn things and debug error messages, and it's free! Basically you just ask the AI to write a script for you to do whatever you need. If it doesn't work, you can continue the conversation with the AI and give it the error messages you received and it will try to help your get it working.
+Be specific:
 
-Start your sentence with your operating system, e.g. "I am using Windows 10", then try to be so exact and concise as possible to describe what kind of files you have and what you want to do with them to the AI using FFmpeg. Example prompt to the AI:
+- say which operating system you are on
+- describe the source files clearly
+- explain exactly what should happen to each file
+- include a working FFmpeg command when you have one
 
-> I am on macOS. Please help me write a script that for each *.mp4 file in a specified folder, losslessly removes the first 10 seconds from each file? Also how do I run the script? The files are inside the folder `/Users/user/my-files`. I have FFmpeg installed and running as `ffmpeg`.
+### Example prompt
 
-### Action from LosslessCut
+> I am on macOS. Please help me write a script that, for each `*.mp4` file in a folder, losslessly removes the first 10 seconds and writes the result to a new file in the same folder. I already have FFmpeg installed and available as `ffmpeg`.
 
-If there's a particular operation from LosslessCut you want to automate, you can find the command from the "Last FFmpeg commands" page. Then copy it and paste it into your AI prompt. For example:
+### Example using a command copied from ClipPress
 
-> I am on Windows 11. I have this (UNIX bash) command: `ffmpeg -hide_banner -i 'C:\path\to\input.mp4' -map '0:1' -c copy -f adts -y 'c:\path\to\lofoten-stream-1-audio-aac.aac'`, that I want to run automatically on every *.mp4 file in a specified folder. Please help me write a script that achieves this. The files are inside the folder `C:\path\to\folder`. I have FFmpeg installed and running as `ffmpeg.exe`.
+> I am on Windows 11. I have this FFmpeg command from ClipPress: `ffmpeg -hide_banner -i "C:\\path\\to\\input.mp4" -map "0:1" -c copy -f adts -y "C:\\path\\to\\output.aac"`. Please help me turn it into a PowerShell script that runs on every `*.mp4` file in `C:\\path\\to\\folder`.
 
-If you are on Windows and what you want to do is more complex, it might be a good idea to instruct the AI to use PowerShell instead of Batch.
+## More ideas
 
-### More examples
+Split files into equal-length segments:
 
-Split files into equal length segments:
+> Write a script that takes a folder of `*.mp4` files and splits each file into an unknown number of files of approximately 299 seconds each.
 
-> Write a script that takes a folder of *.mp4 files, then for each file, split it into an (unknown) number of files, each file of an equal length of approximately 299 seconds.
+Batch rotate files to 90 degrees:
 
-Batch rotate all files to 90 degrees:
-
-> Write a script that takes a folder of *.mp4 files, then for each file, losslessly change the rotation to 90 degrees and output to the same folder.
+> Write a script that takes a folder of `*.mp4` files and losslessly changes the rotation metadata to 90 degrees for each file.
