@@ -140,6 +140,10 @@ export const defaultCutFileTemplate = '${FILENAME}-${CUT_FROM}-${CUT_TO}${SEG_SU
 export const defaultCutMergedFileTemplate = '${FILENAME}-cut-merged-${EPOCH_MS}${EXT}';
 // eslint-disable-next-line no-template-curly-in-string
 export const defaultMergedFileTemplate = '${FILENAME}-merged-${EPOCH_MS}${EXT}';
+// eslint-disable-next-line no-template-curly-in-string
+export const defaultSizeLimitedCutFileTemplate = '${FILENAME}${SEG_SUFFIX}${EXT}';
+// eslint-disable-next-line no-template-curly-in-string
+export const defaultSizeLimitedCutMergedFileTemplate = '${FILENAME}-merged${EXT}';
 
 
 async function interpolateOutFileName(template: string, {
@@ -274,10 +278,11 @@ async function generateWithFallback({ generate, desiredTemplate, defaultTemplate
   return { fileNames: originalFileNames, problems };
 }
 
-export async function generateCutFileNames({ fileDuration, segmentsToExport: segmentsToExportIn, template: desiredTemplate, formatTimecode, isCustomFormatSelected, fileFormat, sourceFile, outputDir, safeOutputFileName, maxLabelLength, outputFileNameMinZeroPadding, exportCount, currentFileExportCount }: {
+export async function generateCutFileNames({ fileDuration, segmentsToExport: segmentsToExportIn, template: desiredTemplate, fallbackTemplate, formatTimecode, isCustomFormatSelected, fileFormat, sourceFile, outputDir, safeOutputFileName, maxLabelLength, outputFileNameMinZeroPadding, exportCount, currentFileExportCount }: {
   fileDuration: number | undefined,
   segmentsToExport: SegmentToExport[],
   template: string,
+  fallbackTemplate?: string | undefined,
   formatTimecode: FormatTimecode,
   isCustomFormatSelected: boolean,
   fileFormat: string,
@@ -340,7 +345,7 @@ export async function generateCutFileNames({ fileDuration, segmentsToExport: seg
       }, { concurrency: 5 });
     },
     desiredTemplate,
-    defaultTemplate: defaultCutFileTemplate,
+    defaultTemplate: fallbackTemplate ?? defaultCutFileTemplate,
     filePath: sourceFile.path,
     outputDir,
     maxLabelLength,
@@ -350,8 +355,9 @@ export async function generateCutFileNames({ fileDuration, segmentsToExport: seg
 
 export type GenerateMergedOutFileNames = (params: GenerateMergedOutFileNamesParams) => Promise<GeneratedOutFileNames>;
 
-export async function generateCutMergedFileNames({ template: desiredTemplate, isCustomFormatSelected, fileFormat, sourceFile, outputDir, safeOutputFileName, maxLabelLength, exportCount, currentFileExportCount, segLabels, epochMs = Date.now() }: {
+export async function generateCutMergedFileNames({ template: desiredTemplate, fallbackTemplate, isCustomFormatSelected, fileFormat, sourceFile, outputDir, safeOutputFileName, maxLabelLength, exportCount, currentFileExportCount, segLabels, epochMs = Date.now() }: {
   template: string,
+  fallbackTemplate?: string | undefined,
   isCustomFormatSelected: boolean,
   fileFormat: string,
   sourceFile: SourceFile,
@@ -380,7 +386,7 @@ export async function generateCutMergedFileNames({ template: desiredTemplate, is
       return [maybeTruncatePath(fileName, safeOutputFileName2)];
     },
     desiredTemplate,
-    defaultTemplate: defaultCutMergedFileTemplate,
+    defaultTemplate: fallbackTemplate ?? defaultCutMergedFileTemplate,
     filePath: sourceFile.path,
     outputDir,
     maxLabelLength,
@@ -388,8 +394,9 @@ export async function generateCutMergedFileNames({ template: desiredTemplate, is
   });
 }
 
-export async function generateMergedFileNames({ template: desiredTemplate, isCustomFormatSelected, fileFormat, sourceFiles, outputDir, safeOutputFileName, maxLabelLength, exportCount, epochMs }: {
+export async function generateMergedFileNames({ template: desiredTemplate, fallbackTemplate, isCustomFormatSelected, fileFormat, sourceFiles, outputDir, safeOutputFileName, maxLabelLength, exportCount, epochMs }: {
   template: string,
+  fallbackTemplate?: string | undefined,
   isCustomFormatSelected: boolean,
   fileFormat: string,
   sourceFiles: SourceFile[],
@@ -418,7 +425,7 @@ export async function generateMergedFileNames({ template: desiredTemplate, isCus
       return [maybeTruncatePath(fileName, safeOutputFileName2)];
     },
     desiredTemplate,
-    defaultTemplate: defaultCutMergedFileTemplate,
+    defaultTemplate: fallbackTemplate ?? defaultCutMergedFileTemplate,
     filePath: firstFile.path,
     outputDir,
     maxLabelLength,

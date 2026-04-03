@@ -180,6 +180,8 @@ const defaults: Config = {
   sizeLimitPreset: 'fast',
   sizeLimitAdvancedEncoder: 'h264_nvenc',
   sizeLimitAdvancedTwoPass: false,
+  sizeLimitSeparateNamingMode: 'auto',
+  sizeLimitMergedNamingMode: 'auto',
 };
 
 const configFileName = 'config.json'; // note: this is also hard-coded inside electron-store
@@ -305,6 +307,29 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
       if (!hasSizeLimitPreset) set('sizeLimitPreset', 'max_quality');
       if (!hasSizeLimitAdvancedEncoder) set('sizeLimitAdvancedEncoder', 'h264_cpu');
       if (!hasSizeLimitAdvancedTwoPass) set('sizeLimitAdvancedTwoPass', true);
+    }
+  }
+
+  const hasSizeLimitSeparateNamingMode = store.has('sizeLimitSeparateNamingMode');
+  const hasSizeLimitMergedNamingMode = store.has('sizeLimitMergedNamingMode');
+
+  if (!hasSizeLimitSeparateNamingMode || !hasSizeLimitMergedNamingMode) {
+    logger.info('Migrating size-limited export naming mode settings');
+
+    const legacySeparateTemplate = store.get('outSegTemplate');
+    const legacyMergedTemplate = store.get('mergedFileTemplate');
+
+    // eslint-disable-next-line no-template-curly-in-string
+    const legacyDefaultCutFileTemplate = '${FILENAME}-${CUT_FROM}-${CUT_TO}${SEG_SUFFIX}${EXT}';
+    // eslint-disable-next-line no-template-curly-in-string
+    const legacyDefaultCutMergedFileTemplate = '${FILENAME}-cut-merged-${EPOCH_MS}${EXT}';
+
+    if (!hasSizeLimitSeparateNamingMode) {
+      set('sizeLimitSeparateNamingMode', legacySeparateTemplate != null && legacySeparateTemplate !== legacyDefaultCutFileTemplate ? 'custom_template' : 'auto');
+    }
+
+    if (!hasSizeLimitMergedNamingMode) {
+      set('sizeLimitMergedNamingMode', legacyMergedTemplate != null && legacyMergedTemplate !== legacyDefaultCutMergedFileTemplate ? 'custom_template' : 'auto');
     }
   }
 

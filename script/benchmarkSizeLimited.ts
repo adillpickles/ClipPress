@@ -35,6 +35,7 @@ interface BenchmarkProfile {
   description: string,
   encoder: CapabilityName,
   mode: 'single_pass' | 'two_pass',
+  initialTargetFactor: number,
   overheadRatio: number,
   preferredAudioBitrate: number,
   minAudioBitrate: number,
@@ -73,6 +74,7 @@ const profiles: BenchmarkProfile[] = [
     description: 'Current MVP fast x264 baseline',
     encoder: 'libx264',
     mode: 'single_pass',
+    initialTargetFactor: 1,
     overheadRatio: 0.03,
     preferredAudioBitrate: 96_000,
     minAudioBitrate: 24_000,
@@ -94,6 +96,7 @@ const profiles: BenchmarkProfile[] = [
     description: 'Current MVP high-quality x264 baseline',
     encoder: 'libx264',
     mode: 'two_pass',
+    initialTargetFactor: 1,
     overheadRatio: 0.03,
     preferredAudioBitrate: 128_000,
     minAudioBitrate: 24_000,
@@ -115,6 +118,7 @@ const profiles: BenchmarkProfile[] = [
     description: 'New everyday fast NVIDIA H.264 path',
     encoder: 'h264_nvenc',
     mode: 'single_pass',
+    initialTargetFactor: 0.955,
     overheadRatio: 0.022,
     preferredAudioBitrate: 72_000,
     minAudioBitrate: 24_000,
@@ -143,9 +147,10 @@ const profiles: BenchmarkProfile[] = [
   },
   {
     id: 'high_quality_av1_nvenc',
-    description: 'Faster AV1 fallback using NVIDIA AV1',
+    description: 'New premium NVIDIA AV1 2-pass path',
     encoder: 'av1_nvenc',
-    mode: 'single_pass',
+    mode: 'two_pass',
+    initialTargetFactor: 0.985,
     overheadRatio: 0.018,
     preferredAudioBitrate: 64_000,
     minAudioBitrate: 24_000,
@@ -158,7 +163,6 @@ const profiles: BenchmarkProfile[] = [
       '-preset', 'p7',
       '-tune', 'uhq',
       '-rc', 'vbr',
-      '-multipass', 'fullres',
       '-cq', '26',
       '-rc-lookahead', '32',
       '-spatial-aq', '1',
@@ -173,9 +177,10 @@ const profiles: BenchmarkProfile[] = [
   },
   {
     id: 'high_quality_av1_cpu',
-    description: 'New premium CPU SVT-AV1 path',
+    description: 'New premium CPU SVT-AV1 2-pass path',
     encoder: 'libsvtav1',
-    mode: 'single_pass',
+    mode: 'two_pass',
+    initialTargetFactor: 0.99,
     overheadRatio: 0.017,
     preferredAudioBitrate: 64_000,
     minAudioBitrate: 24_000,
@@ -195,6 +200,7 @@ const profiles: BenchmarkProfile[] = [
     description: 'Compatibility H.264 fallback path',
     encoder: 'libx264',
     mode: 'two_pass',
+    initialTargetFactor: 0.982,
     overheadRatio: 0.022,
     preferredAudioBitrate: 64_000,
     minAudioBitrate: 24_000,
@@ -349,7 +355,8 @@ function planProfile({ targetMb, duration, hasAudio, profile }: {
   const overheadBytes = Math.max(24 * 1024, Math.floor(targetBytes * profile.overheadRatio));
   const safeDuration = Math.max(duration, 0.5);
   const availableBytes = Math.max(targetBytes - overheadBytes, 24 * 1024);
-  const totalBitrate = Math.max(Math.floor((availableBytes * 8) / safeDuration), profile.minVideoBitrate + (hasAudio ? profile.minAudioBitrate : 0));
+  const planningTargetBytes = Math.max(Math.floor(availableBytes * profile.initialTargetFactor), 24 * 1024);
+  const totalBitrate = Math.max(Math.floor((planningTargetBytes * 8) / safeDuration), profile.minVideoBitrate + (hasAudio ? profile.minAudioBitrate : 0));
 
   if (!hasAudio) {
     return {

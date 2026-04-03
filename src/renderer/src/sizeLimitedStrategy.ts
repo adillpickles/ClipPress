@@ -22,11 +22,11 @@ function resolveSimplePresetStrategy({
           controlMode: 'simple',
           preset,
           effectiveCodec: 'av1',
-          id: 'max_quality_av1_cpu',
+          id: 'max_quality_av1_cpu_two_pass',
           encoder: 'libsvtav1',
           hardware: 'cpu',
           usesGpu: false,
-          executionMode: 'single_pass',
+          executionMode: 'ffmpeg_two_pass',
         };
       }
 
@@ -35,12 +35,26 @@ function resolveSimplePresetStrategy({
           controlMode: 'simple',
           preset,
           effectiveCodec: 'av1',
-          id: 'max_quality_av1_nvenc',
+          id: 'max_quality_av1_nvenc_two_pass',
           encoder: 'av1_nvenc',
           hardware: 'nvidia',
           usesGpu: true,
-          executionMode: 'single_pass',
+          executionMode: 'ffmpeg_two_pass',
           fallbackReason: 'svt_av1_unavailable',
+        };
+      }
+
+      if (capabilities.libx264) {
+        return {
+          controlMode: 'simple',
+          preset,
+          effectiveCodec: 'h264',
+          id: 'max_quality_h264_cpu_two_pass',
+          encoder: 'libx264',
+          hardware: 'cpu',
+          usesGpu: false,
+          executionMode: 'ffmpeg_two_pass',
+          fallbackReason: 'av1_unavailable',
         };
       }
 
@@ -48,10 +62,10 @@ function resolveSimplePresetStrategy({
         controlMode: 'simple',
         preset,
         effectiveCodec: 'h264',
-        id: 'max_quality_h264_cpu_two_pass',
-        encoder: 'libx264',
-        hardware: 'cpu',
-        usesGpu: false,
+        id: 'max_quality_h264_nvenc_two_pass',
+        encoder: 'h264_nvenc',
+        hardware: 'nvidia',
+        usesGpu: true,
         executionMode: 'ffmpeg_two_pass',
         fallbackReason: 'av1_unavailable',
       };
@@ -166,39 +180,39 @@ function resolveAdvancedStrategy({
       return {
         controlMode: 'advanced',
         requestedAdvancedEncoder: advancedEncoder,
-        requestedAdvancedTwoPass: false,
+        requestedAdvancedTwoPass: advancedTwoPass,
         effectiveCodec: 'av1',
-        id: 'advanced_av1_cpu',
+        id: advancedTwoPass ? 'advanced_av1_cpu_two_pass' : 'advanced_av1_cpu_single_pass',
         encoder: 'libsvtav1',
         hardware: 'cpu',
         usesGpu: false,
-        executionMode: 'single_pass',
+        executionMode: advancedTwoPass ? 'ffmpeg_two_pass' : 'single_pass',
       };
     }
     case 'av1_nvenc': {
       return {
         controlMode: 'advanced',
         requestedAdvancedEncoder: advancedEncoder,
-        requestedAdvancedTwoPass: false,
+        requestedAdvancedTwoPass: advancedTwoPass,
         effectiveCodec: 'av1',
-        id: 'advanced_av1_nvenc',
+        id: advancedTwoPass ? 'advanced_av1_nvenc_two_pass' : 'advanced_av1_nvenc_single_pass',
         encoder: 'av1_nvenc',
         hardware: 'nvidia',
         usesGpu: true,
-        executionMode: 'single_pass',
+        executionMode: advancedTwoPass ? 'ffmpeg_two_pass' : 'single_pass',
       };
     }
     case 'h264_nvenc': {
       return {
         controlMode: 'advanced',
         requestedAdvancedEncoder: advancedEncoder,
-        requestedAdvancedTwoPass: false,
+        requestedAdvancedTwoPass: advancedTwoPass,
         effectiveCodec: 'h264',
-        id: 'advanced_h264_nvenc',
+        id: advancedTwoPass ? 'advanced_h264_nvenc_two_pass' : 'advanced_h264_nvenc_single_pass',
         encoder: 'h264_nvenc',
         hardware: 'nvidia',
         usesGpu: true,
-        executionMode: 'single_pass',
+        executionMode: advancedTwoPass ? 'ffmpeg_two_pass' : 'single_pass',
       };
     }
     case 'h264_cpu': {

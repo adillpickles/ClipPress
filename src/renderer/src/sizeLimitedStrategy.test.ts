@@ -30,8 +30,9 @@ describe('resolveSizeLimitedStrategy', () => {
       capabilities: fullCapabilities,
     });
 
-    expect(strategy.id).toBe('max_quality_av1_cpu');
+    expect(strategy.id).toBe('max_quality_av1_cpu_two_pass');
     expect(strategy.effectiveCodec).toBe('av1');
+    expect(strategy.executionMode).toBe('ffmpeg_two_pass');
   });
 
   it('uses av1 nvenc for quality when available', () => {
@@ -100,7 +101,7 @@ describe('resolveSizeLimitedStrategy', () => {
     expect(strategy.executionMode).toBe('ffmpeg_two_pass');
   });
 
-  it('resolves advanced av1 nvenc exactly', () => {
+  it('resolves advanced av1 nvenc single-pass exactly', () => {
     const strategy = resolveSizeLimitedStrategy({
       controlMode: 'advanced',
       preset: 'fast',
@@ -109,7 +110,50 @@ describe('resolveSizeLimitedStrategy', () => {
       capabilities: { h264Nvenc: true, av1Nvenc: false, libx264: true, libsvtav1: true },
     });
 
-    expect(strategy.id).toBe('advanced_av1_nvenc');
+    expect(strategy.id).toBe('advanced_av1_nvenc_single_pass');
     expect(strategy.encoder).toBe('av1_nvenc');
+    expect(strategy.executionMode).toBe('single_pass');
+  });
+
+  it('resolves advanced av1 nvenc two-pass exactly', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'advanced',
+      preset: 'fast',
+      advancedEncoder: 'av1_nvenc',
+      advancedTwoPass: true,
+      capabilities: fullCapabilities,
+    });
+
+    expect(strategy.id).toBe('advanced_av1_nvenc_two_pass');
+    expect(strategy.encoder).toBe('av1_nvenc');
+    expect(strategy.executionMode).toBe('ffmpeg_two_pass');
+  });
+
+  it('resolves advanced av1 cpu two-pass exactly', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'advanced',
+      preset: 'fast',
+      advancedEncoder: 'av1_cpu',
+      advancedTwoPass: true,
+      capabilities: fullCapabilities,
+    });
+
+    expect(strategy.id).toBe('advanced_av1_cpu_two_pass');
+    expect(strategy.encoder).toBe('libsvtav1');
+    expect(strategy.executionMode).toBe('ffmpeg_two_pass');
+  });
+
+  it('resolves advanced h264 nvenc two-pass exactly', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'advanced',
+      preset: 'fast',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: true,
+      capabilities: fullCapabilities,
+    });
+
+    expect(strategy.id).toBe('advanced_h264_nvenc_two_pass');
+    expect(strategy.encoder).toBe('h264_nvenc');
+    expect(strategy.executionMode).toBe('ffmpeg_two_pass');
   });
 });

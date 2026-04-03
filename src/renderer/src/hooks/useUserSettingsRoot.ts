@@ -212,6 +212,10 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ sizeLimitAdvancedEncoder }), [sizeLimitAdvancedEncoder]);
   const [sizeLimitAdvancedTwoPass, setSizeLimitAdvancedTwoPass] = useState(safeGetConfigInitial('sizeLimitAdvancedTwoPass'));
   useEffect(() => safeSetConfig({ sizeLimitAdvancedTwoPass }), [sizeLimitAdvancedTwoPass]);
+  const [sizeLimitSeparateNamingMode, setSizeLimitSeparateNamingMode] = useState(safeGetConfigInitial('sizeLimitSeparateNamingMode'));
+  useEffect(() => safeSetConfig({ sizeLimitSeparateNamingMode }), [sizeLimitSeparateNamingMode]);
+  const [sizeLimitMergedNamingMode, setSizeLimitMergedNamingMode] = useState(safeGetConfigInitial('sizeLimitMergedNamingMode'));
+  useEffect(() => safeSetConfig({ sizeLimitMergedNamingMode }), [sizeLimitMergedNamingMode]);
 
 
   const resetKeyBindings = useCallback(() => {
@@ -339,6 +343,8 @@ export default function useUserSettingsRoot() {
     sizeLimitPreset,
     sizeLimitAdvancedEncoder,
     sizeLimitAdvancedTwoPass,
+    sizeLimitSeparateNamingMode,
+    sizeLimitMergedNamingMode,
   };
 
   return {
@@ -430,6 +436,8 @@ export default function useUserSettingsRoot() {
     setSizeLimitPreset,
     setSizeLimitAdvancedEncoder,
     setSizeLimitAdvancedTwoPass,
+    setSizeLimitSeparateNamingMode,
+    setSizeLimitMergedNamingMode,
   };
 }
 

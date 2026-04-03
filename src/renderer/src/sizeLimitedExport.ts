@@ -195,25 +195,8 @@ function getStrategyVideoArgs({ strategy, videoBitrate }: {
         ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.12, bufferFactor: 2 }),
       ];
     }
-    case 'max_quality_av1_nvenc': {
-      return [
-        '-c:v', 'av1_nvenc',
-        '-preset', 'p7',
-        '-tune', 'uhq',
-        '-rc', 'vbr',
-        '-multipass', 'fullres',
-        '-cq', '26',
-        '-rc-lookahead', '32',
-        '-spatial-aq', '1',
-        '-temporal-aq', '1',
-        '-aq-strength', '10',
-        '-b_ref_mode', 'middle',
-        '-pix_fmt', 'yuv420p',
-        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.08, bufferFactor: 2.2 }),
-      ];
-    }
     case 'quality_av1_nvenc':
-    case 'advanced_av1_nvenc': {
+    case 'advanced_av1_nvenc_single_pass': {
       return [
         '-c:v', 'av1_nvenc',
         '-preset', 'p6',
@@ -229,8 +212,7 @@ function getStrategyVideoArgs({ strategy, videoBitrate }: {
         ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.1, bufferFactor: 2 }),
       ];
     }
-    case 'max_quality_av1_cpu':
-    case 'advanced_av1_cpu': {
+    case 'advanced_av1_cpu_single_pass': {
       return [
         '-c:v', 'libsvtav1',
         '-preset', svtAv1MaxQualityPreset,
@@ -274,6 +256,75 @@ function getStrategyVideoArgs({ strategy, videoBitrate }: {
         ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.08, bufferFactor: 2.2 }),
       ];
     }
+    case 'advanced_h264_nvenc_single_pass': {
+      return [
+        '-c:v', 'h264_nvenc',
+        '-preset', 'p6',
+        '-tune', 'hq',
+        '-profile:v', 'high',
+        '-rc', 'vbr',
+        '-multipass', 'qres',
+        '-cq', '23',
+        '-rc-lookahead', '20',
+        '-spatial-aq', '1',
+        '-temporal-aq', '1',
+        '-aq-strength', '8',
+        '-b_ref_mode', 'middle',
+        '-pix_fmt', 'yuv420p',
+        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.1, bufferFactor: 2 }),
+      ];
+    }
+    default: {
+      return [];
+    }
+  }
+}
+
+function getTwoPassStrategyVideoArgs({ strategy, videoBitrate }: {
+  strategy: SizeLimitedResolvedStrategy,
+  videoBitrate: number,
+}) {
+  switch (strategy.id) {
+    case 'max_quality_av1_cpu_two_pass':
+    case 'advanced_av1_cpu_two_pass': {
+      return [
+        '-c:v', 'libsvtav1',
+        '-preset', svtAv1MaxQualityPreset,
+        '-pix_fmt', 'yuv420p',
+        '-b:v', toKbitrateArg(videoBitrate),
+      ];
+    }
+    case 'max_quality_av1_nvenc_two_pass': {
+      return [
+        '-c:v', 'av1_nvenc',
+        '-preset', 'p7',
+        '-tune', 'uhq',
+        '-rc', 'vbr',
+        '-cq', '26',
+        '-rc-lookahead', '32',
+        '-spatial-aq', '1',
+        '-temporal-aq', '1',
+        '-aq-strength', '10',
+        '-b_ref_mode', 'middle',
+        '-pix_fmt', 'yuv420p',
+        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.08, bufferFactor: 2.2 }),
+      ];
+    }
+    case 'advanced_av1_nvenc_two_pass': {
+      return [
+        '-c:v', 'av1_nvenc',
+        '-preset', 'p6',
+        '-tune', 'hq',
+        '-rc', 'vbr',
+        '-cq', '28',
+        '-rc-lookahead', '24',
+        '-spatial-aq', '1',
+        '-temporal-aq', '1',
+        '-aq-strength', '8',
+        '-pix_fmt', 'yuv420p',
+        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.1, bufferFactor: 2 }),
+      ];
+    }
     case 'max_quality_h264_cpu_two_pass':
     case 'advanced_h264_cpu_two_pass': {
       return [
@@ -284,14 +335,14 @@ function getStrategyVideoArgs({ strategy, videoBitrate }: {
         ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.05, bufferFactor: 2.2 }),
       ];
     }
-    case 'advanced_h264_nvenc': {
+    case 'max_quality_h264_nvenc_two_pass':
+    case 'advanced_h264_nvenc_two_pass': {
       return [
         '-c:v', 'h264_nvenc',
         '-preset', 'p6',
         '-tune', 'hq',
         '-profile:v', 'high',
         '-rc', 'vbr',
-        '-multipass', 'qres',
         '-cq', '23',
         '-rc-lookahead', '20',
         '-spatial-aq', '1',
@@ -344,44 +395,8 @@ function getCommonEncodeArgs({
   ];
 }
 
-function getCpuH264Pass1Args({
-  videoBitrate,
-  videoInputLabel,
-  ffmpegExperimental,
-  rotation,
-  passlogFile,
-  outPath,
-}: {
-  videoBitrate: number,
-  videoInputLabel: string,
-  ffmpegExperimental: boolean,
-  rotation: number | undefined,
-  passlogFile: string,
-  outPath: string,
-}) {
-  return [
-    '-map_metadata', '-1',
-    '-map_chapters', '-1',
-    '-sn',
-    '-dn',
-    '-ignore_unknown',
-    '-map', videoInputLabel,
-    '-c:v', 'libx264',
-    '-preset', 'slower',
-    '-pix_fmt', 'yuv420p',
-    '-x264-params', premiumCpuX264Params,
-    ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.05, bufferFactor: 2.2 }),
-    '-pass', '1',
-    '-passlogfile', passlogFile,
-    ...getRotationArgs(rotation),
-    '-an',
-    ...getExperimentalArgs(ffmpegExperimental),
-    '-f', 'mp4',
-    '-y', outPath,
-  ];
-}
-
-function getCpuH264Pass2Args({
+function getTwoPassEncodeArgs({
+  strategy,
   videoBitrate,
   audioBitrate,
   videoInputLabel,
@@ -390,7 +405,9 @@ function getCpuH264Pass2Args({
   rotation,
   passlogFile,
   outPath,
+  passNumber,
 }: {
+  strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
   audioBitrate: number,
   videoInputLabel: string,
@@ -399,6 +416,7 @@ function getCpuH264Pass2Args({
   rotation: number | undefined,
   passlogFile: string,
   outPath: string,
+  passNumber: 1 | 2,
 }) {
   return [
     '-map_metadata', '-1',
@@ -407,16 +425,12 @@ function getCpuH264Pass2Args({
     '-dn',
     '-ignore_unknown',
     '-map', videoInputLabel,
-    '-c:v', 'libx264',
-    '-preset', 'slower',
-    '-pix_fmt', 'yuv420p',
-    '-x264-params', premiumCpuX264Params,
-    ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.05, bufferFactor: 2.2 }),
-    '-pass', '2',
+    ...getTwoPassStrategyVideoArgs({ strategy, videoBitrate }),
+    '-pass', String(passNumber),
     '-passlogfile', passlogFile,
     ...getRotationArgs(rotation),
-    ...getAudioArgs({ audioInputLabel, audioBitrate }),
-    '-movflags', '+faststart',
+    ...(passNumber === 1 ? ['-an'] : getAudioArgs({ audioInputLabel, audioBitrate })),
+    ...(passNumber === 2 ? ['-movflags', '+faststart'] : []),
     ...getExperimentalArgs(ffmpegExperimental),
     '-f', 'mp4',
     '-y', outPath,
@@ -749,20 +763,25 @@ export async function exportSizeLimitedSegment({
         const pass1Args = [
           '-hide_banner',
           ...inputArgs,
-          ...getCpuH264Pass1Args({
+          ...getTwoPassEncodeArgs({
+            strategy,
             videoBitrate: attempt.videoBitrate,
+            audioBitrate: attempt.audioBitrate,
             videoInputLabel: `0:${videoStream.index}`,
+            audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
             ffmpegExperimental,
             rotation,
             passlogFile,
             outPath: pass1OutPath,
+            passNumber: 1,
           }),
         ];
 
         const pass2Args = [
           '-hide_banner',
           ...inputArgs,
-          ...getCpuH264Pass2Args({
+          ...getTwoPassEncodeArgs({
+            strategy,
             videoBitrate: attempt.videoBitrate,
             audioBitrate: attempt.audioBitrate,
             videoInputLabel: `0:${videoStream.index}`,
@@ -771,6 +790,7 @@ export async function exportSizeLimitedSegment({
             rotation,
             passlogFile,
             outPath: attemptOutPath,
+            passNumber: 2,
           }),
         ];
 
@@ -914,20 +934,25 @@ export async function exportSizeLimitedMerge({
         const pass1Args = [
           '-hide_banner',
           ...commonArgs,
-          ...getCpuH264Pass1Args({
+          ...getTwoPassEncodeArgs({
+            strategy,
             videoBitrate: attempt.videoBitrate,
+            audioBitrate: attempt.audioBitrate,
             videoInputLabel: '[v]',
+            audioInputLabel: audioStream != null ? '[a]' : undefined,
             ffmpegExperimental,
             rotation,
             passlogFile,
             outPath: pass1OutPath,
+            passNumber: 1,
           }),
         ];
 
         const pass2Args = [
           '-hide_banner',
           ...commonArgs,
-          ...getCpuH264Pass2Args({
+          ...getTwoPassEncodeArgs({
+            strategy,
             videoBitrate: attempt.videoBitrate,
             audioBitrate: attempt.audioBitrate,
             videoInputLabel: '[v]',
@@ -936,6 +961,7 @@ export async function exportSizeLimitedMerge({
             rotation,
             passlogFile,
             outPath: attemptOutPath,
+            passNumber: 2,
           }),
         ];
 

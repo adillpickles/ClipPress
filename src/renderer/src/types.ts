@@ -134,9 +134,10 @@ export interface SizeLimitedEncoderCapabilities {
 }
 
 export type SizeLimitedStrategyId =
-  | 'max_quality_av1_cpu'
-  | 'max_quality_av1_nvenc'
+  | 'max_quality_av1_cpu_two_pass'
+  | 'max_quality_av1_nvenc_two_pass'
   | 'max_quality_h264_cpu_two_pass'
+  | 'max_quality_h264_nvenc_two_pass'
   | 'quality_av1_nvenc'
   | 'quality_av1_cpu'
   | 'quality_h264_cpu'
@@ -144,11 +145,14 @@ export type SizeLimitedStrategyId =
   | 'fast_h264_cpu'
   | 'ultra_fast_h264_nvenc'
   | 'ultra_fast_h264_cpu'
-  | 'advanced_av1_cpu'
-  | 'advanced_av1_nvenc'
+  | 'advanced_av1_cpu_single_pass'
+  | 'advanced_av1_cpu_two_pass'
+  | 'advanced_av1_nvenc_single_pass'
+  | 'advanced_av1_nvenc_two_pass'
   | 'advanced_h264_cpu_single_pass'
   | 'advanced_h264_cpu_two_pass'
-  | 'advanced_h264_nvenc';
+  | 'advanced_h264_nvenc_single_pass'
+  | 'advanced_h264_nvenc_two_pass';
 
 export type SizeLimitedEncoderName = 'h264_nvenc' | 'av1_nvenc' | 'libx264' | 'libsvtav1';
 
@@ -187,6 +191,7 @@ export interface SizeLimitedProgressMetadata {
 export interface SizeLimitedPlan {
   strategyId: SizeLimitedStrategyId,
   targetBytes: number,
+  planningTargetBytes: number,
   duration: number,
   overheadBytes: number,
   hasAudio: boolean,

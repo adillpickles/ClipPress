@@ -35,6 +35,8 @@ export type SizeLimitPreset = 'max_quality' | 'quality' | 'fast' | 'ultra_fast';
 
 export type SizeLimitAdvancedEncoder = 'av1_cpu' | 'av1_nvenc' | 'h264_cpu' | 'h264_nvenc';
 
+export type SizeLimitNamingMode = 'auto' | 'custom_template';
+
 export interface Config {
   version: number,
   lastAppVersion: string,
@@ -123,6 +125,8 @@ export interface Config {
   sizeLimitPreset: SizeLimitPreset,
   sizeLimitAdvancedEncoder: SizeLimitAdvancedEncoder,
   sizeLimitAdvancedTwoPass: boolean,
+  sizeLimitSeparateNamingMode: SizeLimitNamingMode,
+  sizeLimitMergedNamingMode: SizeLimitNamingMode,
 }
 
 export interface Waveform {

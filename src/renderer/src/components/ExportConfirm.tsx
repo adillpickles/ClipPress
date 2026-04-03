@@ -22,7 +22,7 @@ import useUserSettings from '../hooks/useUserSettings';
 import styles from './ExportConfirm.module.css';
 import type { SegmentToExport, SizeLimitedEncoderCapabilities } from '../types';
 import type { GenerateOutFileNames, GeneratedOutFileNames } from '../util/outputNameTemplate';
-import { defaultCutFileTemplate, defaultCutMergedFileTemplate } from '../util/outputNameTemplate';
+import { defaultCutFileTemplate, defaultCutMergedFileTemplate, defaultSizeLimitedCutFileTemplate, defaultSizeLimitedCutMergedFileTemplate } from '../util/outputNameTemplate';
 import type { FFprobeStream } from '../../../common/ffprobe';
 import type { AvoidNegativeTs, ExportEncodeMode, PreserveMetadata, SizeLimitAdvancedEncoder, SizeLimitControlMode, SizeLimitPreset } from '../../../common/types';
 import TextInput from './TextInput';
@@ -207,7 +207,7 @@ function ExportConfirm({
 }) {
   const { t } = useTranslation();
 
-  const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, setSegmentsToChaptersOnly, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled, exportEncodeMode, setExportEncodeMode, sizeLimitMb, setSizeLimitMb, sizeLimitControlMode, setSizeLimitControlMode, sizeLimitPreset, setSizeLimitPreset, sizeLimitAdvancedEncoder, setSizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, setSizeLimitAdvancedTwoPass } = useUserSettings();
+  const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, setSegmentsToChaptersOnly, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled, exportEncodeMode, setExportEncodeMode, sizeLimitMb, setSizeLimitMb, sizeLimitControlMode, setSizeLimitControlMode, sizeLimitPreset, setSizeLimitPreset, sizeLimitAdvancedEncoder, setSizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, setSizeLimitAdvancedTwoPass, sizeLimitSeparateNamingMode, setSizeLimitSeparateNamingMode, sizeLimitMergedNamingMode, setSizeLimitMergedNamingMode } = useUserSettings();
 
   const [showAdvanced, setShowAdvanced] = useState(!simpleMode);
   const togglePreserveChapters = useCallback(() => setPreserveChapters((val) => !val), [setPreserveChapters]);
@@ -240,12 +240,6 @@ function ExportConfirm({
       cancelled = true;
     };
   }, [isSizeLimited]);
-
-  useEffect(() => {
-    if (sizeLimitAdvancedEncoder !== 'h264_cpu' && sizeLimitAdvancedTwoPass) {
-      setSizeLimitAdvancedTwoPass(false);
-    }
-  }, [setSizeLimitAdvancedTwoPass, sizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass]);
 
   useEffect(() => {
     if (!isSizeLimited) return;
@@ -370,7 +364,7 @@ function ExportConfirm({
   }, [showHelpText, t]);
 
   const onSizeLimitedAdvancedTwoPassHelpPress = useCallback(() => {
-    showHelpText({ text: t('2-pass is currently available for H.264 CPU. It shows Pass 1/2 and Pass 2/2 during export and prioritizes tighter bitrate targeting.') });
+    showHelpText({ text: t('Turn this on to use true ffmpeg 2-pass encoding for the selected encoder path. ClipPress will show Pass 1/2 and Pass 2/2 during export when this is enabled.') });
   }, [showHelpText, t]);
 
   const handleExportEncodeModeChange = useCallback((value: ExportEncodeMode) => {
@@ -393,7 +387,6 @@ function ExportConfirm({
     ultra_fast: t('Fastest turnaround when speed matters most.'),
   })[sizeLimitPreset], [sizeLimitPreset, t]);
 
-  const isAdvancedTwoPassAvailable = sizeLimitAdvancedEncoder === 'h264_cpu';
   const advancedEncoderUnavailableMessage = useMemo(() => {
     if (encoderCapabilities == null) return undefined;
 
@@ -467,6 +460,16 @@ function ExportConfirm({
     if (Number.isNaN(v) || v <= 0) return;
     setEncBitrate(v);
   }, [setEncBitrate]);
+
+  const enableSizeLimitedSeparateCustomNaming = useCallback(() => {
+    if (cutFileTemplate == null) setCutFileTemplate(defaultSizeLimitedCutFileTemplate);
+    setSizeLimitSeparateNamingMode('custom_template');
+  }, [cutFileTemplate, setCutFileTemplate, setSizeLimitSeparateNamingMode]);
+
+  const enableSizeLimitedMergedCustomNaming = useCallback(() => {
+    if (cutMergedFileTemplate == null) setCutMergedFileTemplate(defaultSizeLimitedCutMergedFileTemplate);
+    setSizeLimitMergedNamingMode('custom_template');
+  }, [cutMergedFileTemplate, setCutMergedFileTemplate, setSizeLimitMergedNamingMode]);
 
   return (
     <ExportSheet
@@ -592,10 +595,7 @@ function ExportConfirm({
                     {t('2-pass')}
                   </td>
                   <td>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '.6em' }}>
-                      {!isAdvancedTwoPassAvailable && <span style={{ fontSize: '.88em', color: 'var(--gray-11)' }}>{t('Only available for H.264 CPU')}</span>}
-                      <Switch checked={sizeLimitAdvancedTwoPass} disabled={!isAdvancedTwoPassAvailable} onCheckedChange={setSizeLimitAdvancedTwoPass} />
-                    </div>
+                    <Switch checked={sizeLimitAdvancedTwoPass} onCheckedChange={setSizeLimitAdvancedTwoPass} />
                   </td>
                   <td>
                     <HelpIcon onClick={onSizeLimitedAdvancedTwoPassHelpPress} />
@@ -662,17 +662,17 @@ function ExportConfirm({
           {canEditSegTemplate && (
             <tr>
               <td colSpan={2}>
-                {isSizeLimited && cutFileTemplate == null && generateAutoCutFileNames != null ? (
-                  <AutoNamePreview title={t('Output name(s):', { count: segmentsToExport.length })} generateFileNames={generateAutoCutFileNames} onCustomize={() => setCutFileTemplate(defaultCutFileTemplate)} currentSegIndexSafe={currentSegIndexSafe} />
+                {isSizeLimited && sizeLimitSeparateNamingMode === 'auto' && generateAutoCutFileNames != null ? (
+                  <AutoNamePreview title={t('Output name(s):', { count: segmentsToExport.length })} generateFileNames={generateAutoCutFileNames} onCustomize={enableSizeLimitedSeparateCustomNaming} currentSegIndexSafe={currentSegIndexSafe} />
                 ) : (
                   <FileNameTemplateEditor
                     mode="separate"
-                    template={cutFileTemplate ?? defaultCutFileTemplate}
+                    template={isSizeLimited ? (cutFileTemplate ?? defaultSizeLimitedCutFileTemplate) : (cutFileTemplate ?? defaultCutFileTemplate)}
                     setTemplate={setCutFileTemplate}
-                    defaultTemplate={defaultCutFileTemplate}
+                    defaultTemplate={isSizeLimited ? defaultSizeLimitedCutFileTemplate : defaultCutFileTemplate}
                     generateFileNames={generateCutFileNames}
                     currentSegIndexSafe={currentSegIndexSafe}
-                    onReset={isSizeLimited ? (() => setCutFileTemplate(undefined)) : undefined}
+                    onReset={isSizeLimited ? (() => setSizeLimitSeparateNamingMode('auto')) : undefined}
                     resetLabel={isSizeLimited ? t('Use auto naming') : undefined}
                   />
                 )}
@@ -686,16 +686,16 @@ function ExportConfirm({
           {willMerge && (
             <tr>
               <td colSpan={2}>
-                {isSizeLimited && cutMergedFileTemplate == null && generateAutoCutMergedFileNames != null ? (
-                  <AutoNamePreview title={t('Merged output file name:')} generateFileNames={generateAutoCutMergedFileNames} onCustomize={() => setCutMergedFileTemplate(defaultCutMergedFileTemplate)} />
+                {isSizeLimited && sizeLimitMergedNamingMode === 'auto' && generateAutoCutMergedFileNames != null ? (
+                  <AutoNamePreview title={t('Merged output file name:')} generateFileNames={generateAutoCutMergedFileNames} onCustomize={enableSizeLimitedMergedCustomNaming} />
                 ) : (
                   <FileNameTemplateEditor
                     mode="merge-segments"
-                    template={cutMergedFileTemplate ?? defaultCutMergedFileTemplate}
+                    template={isSizeLimited ? (cutMergedFileTemplate ?? defaultSizeLimitedCutMergedFileTemplate) : (cutMergedFileTemplate ?? defaultCutMergedFileTemplate)}
                     setTemplate={setCutMergedFileTemplate}
-                    defaultTemplate={defaultCutMergedFileTemplate}
+                    defaultTemplate={isSizeLimited ? defaultSizeLimitedCutMergedFileTemplate : defaultCutMergedFileTemplate}
                     generateFileNames={generateCutMergedFileNames}
-                    onReset={isSizeLimited ? (() => setCutMergedFileTemplate(undefined)) : undefined}
+                    onReset={isSizeLimited ? (() => setSizeLimitMergedNamingMode('auto')) : undefined}
                     resetLabel={isSizeLimited ? t('Use auto naming') : undefined}
                   />
                 )}
