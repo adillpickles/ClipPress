@@ -32,13 +32,15 @@ function FileNameTemplateEditor(opts: {
   defaultTemplate: string,
   generateFileNames: GenerateOutFileNames,
   ignoreMissingExtensionWarning?: boolean,
+  onReset?: (() => void) | undefined,
+  resetLabel?: string | undefined,
 } & ({
   currentSegIndexSafe: number,
   mode: 'separate'
 } | {
   mode: 'merge-segments' | 'merge-files'
 })) {
-  const { template: templateIn, setTemplate, defaultTemplate, generateFileNames, mode } = opts;
+  const { template: templateIn, setTemplate, defaultTemplate, generateFileNames, mode, onReset, resetLabel } = opts;
 
   const { safeOutputFileName, toggleSafeOutputFileName, outputFileNameMinZeroPadding, setOutputFileNameMinZeroPadding, simpleMode } = useUserSettings();
 
@@ -122,9 +124,13 @@ function FileNameTemplateEditor(opts: {
   }, [open]);
 
   const reset = useCallback(() => {
+    if (onReset != null) {
+      onReset();
+      return;
+    }
     setTemplate(defaultTemplate);
     setText(defaultTemplate);
-  }, [defaultTemplate, setTemplate]);
+  }, [defaultTemplate, onReset, setTemplate]);
 
   const handleSampleClick = useCallback(() => {
     setOpen((v) => !v);
@@ -223,7 +229,7 @@ function FileNameTemplateEditor(opts: {
                   </Dialog.Root>
                 )}
 
-                <Button onClick={reset} style={{ marginLeft: '.3em', padding: '.3em' }}><FaUndo style={{ fontSize: '.8em', color: dangerColor, marginRight: '.5em' }} />{t('Reset')}</Button>
+                <Button onClick={reset} style={{ marginLeft: '.3em', padding: '.3em' }}><FaUndo style={{ fontSize: '.8em', color: dangerColor, marginRight: '.5em' }} />{resetLabel ?? t('Reset')}</Button>
               </div>
 
               <div style={{ fontSize: '.9em', color: 'var(--gray-11)', display: 'flex', gap: '.3em', flexWrap: 'wrap', alignItems: 'center', marginBottom: '.7em' }}>

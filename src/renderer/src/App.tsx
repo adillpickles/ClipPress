@@ -12,7 +12,6 @@ import { IoMdMenu } from 'react-icons/io';
 import fromPairs from 'lodash/fromPairs';
 import sum from 'lodash/sum';
 import invariant from 'tiny-invariant';
-import prettyBytes from 'pretty-bytes';
 import type { SweetAlertOptions } from 'sweetalert2';
 
 import useTimelineScroll from './hooks/useTimelineScroll';
@@ -51,7 +50,9 @@ import * as Dialog from './components/Dialog';
 
 import { loadMifiLink, runStartupCheck } from './mifi';
 import { darkModeTransition } from './colors';
-import { exportSizeLimitedMerge, exportSizeLimitedSegment, pickSizeLimitedStreams } from './sizeLimitedExport';
+import { exportSizeLimitedMerge, exportSizeLimitedSegment, getSizeLimitedEncoderCapabilities, pickSizeLimitedStreams } from './sizeLimitedExport';
+import { bytesPerMb } from './sizeLimitedPlanner';
+import { resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import { getSegColor } from './util/colors';
 import type {
   FileFfprobeMeta } from './ffmpeg';
@@ -190,7 +191,7 @@ function App() {
   const [selectedBatchFiles, setSelectedBatchFiles] = useState<string[]>([]);
 
   const allUserSettings = useUserSettingsRoot();
-  const { captureFormat, keyframeCut, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, autoMerge, timecodeFormat, invertCutSegments, autoExportExtraStreams, askBeforeClose, enableImportChapters, enableAskForFileOpenAction, playbackVolume, autoSaveProjectFile, wheelSensitivity, waveformHeight, invertTimelineScroll, language, ffmpegExperimental, hideNotifications, hideOsNotifications, autoLoadTimecode, autoDeleteMergedSegments, exportConfirmEnabled, segmentsToChapters, simpleMode, cutFileTemplate, cutMergedFileTemplate, mergedFileTemplate, keyboardSeekAccFactor, keyboardNormalSeekSpeed, keyboardSeekSpeed2, keyboardSeekSpeed3, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, outFormatLocked, safeOutputFileName, enableAutoHtml5ify, segmentsToChaptersOnly, keyBindings, enableSmartCut, customFfPath, storeProjectInWorkingDir, enableOverwriteOutput, mouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, captureFrameMethod, captureFrameQuality, captureFrameFileNameFormat, enableNativeHevc, cleanupChoices, darkMode, preferStrongColors, outputFileNameMinZeroPadding, cutFromAdjustmentFrames, cutToAdjustmentFrames, waveformMode: waveformModePreference, thumbnailsEnabled, keyframesEnabled, reducedMotion, ffmpegHwaccel, exportEncodeMode, sizeLimitMb, sizeLimitCodec, sizeLimitQuality } = allUserSettings.settings;
+  const { captureFormat, keyframeCut, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, autoMerge, timecodeFormat, invertCutSegments, autoExportExtraStreams, askBeforeClose, enableImportChapters, enableAskForFileOpenAction, playbackVolume, autoSaveProjectFile, wheelSensitivity, waveformHeight, invertTimelineScroll, language, ffmpegExperimental, hideNotifications, hideOsNotifications, autoLoadTimecode, autoDeleteMergedSegments, exportConfirmEnabled, segmentsToChapters, simpleMode, cutFileTemplate, cutMergedFileTemplate, mergedFileTemplate, keyboardSeekAccFactor, keyboardNormalSeekSpeed, keyboardSeekSpeed2, keyboardSeekSpeed3, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, outFormatLocked, safeOutputFileName, enableAutoHtml5ify, segmentsToChaptersOnly, keyBindings, enableSmartCut, customFfPath, storeProjectInWorkingDir, enableOverwriteOutput, mouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, captureFrameMethod, captureFrameQuality, captureFrameFileNameFormat, enableNativeHevc, cleanupChoices, darkMode, preferStrongColors, outputFileNameMinZeroPadding, cutFromAdjustmentFrames, cutToAdjustmentFrames, waveformMode: waveformModePreference, thumbnailsEnabled, keyframesEnabled, reducedMotion, ffmpegHwaccel, exportEncodeMode, sizeLimitMb, sizeLimitControlMode, sizeLimitPreset, sizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass } = allUserSettings.settings;
   const { setCaptureFormat, setCustomOutDir, setKeyframeCut, setPlaybackVolume, setExportConfirmEnabled, setSimpleMode, setOutFormatLocked, setSafeOutputFileName, setKeyBindings, resetKeyBindings, setStoreProjectInWorkingDir, setCleanupChoices, toggleDarkMode, setWaveformMode, setThumbnailsEnabled, setKeyframesEnabled, prefersReducedMotion, customOutDir } = allUserSettings;
 
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(!simpleMode);
@@ -1073,21 +1074,46 @@ function App() {
 
   const willMerge = segmentsToExport.length > 1 && autoMerge;
 
-  const formatRequestedSizeLimit = useCallback((targetMb: number) => (
-    i18n.t('{{size}} MB', {
-      size: new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(targetMb),
-    })
+  interface SizeLimitedResultSummary {
+    requestedLimitLabel: string,
+    createdCount: number,
+    skippedCount: number,
+    overTargetCount: number,
+    largestCreatedSizeLabel?: string | undefined,
+    singleCreatedSizeLabel?: string | undefined,
+  }
+
+  interface SizeLimitedAutoNameItem {
+    codec: 'av1' | 'h264',
+    sizeLabel: number | '[final size]',
+    preferredSuffix: string,
+  }
+
+  const formatSizeLimitedMbValue = useCallback((sizeMb: number) => (
+    new Intl.NumberFormat(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(sizeMb)
   ), []);
+
+  const formatRequestedSizeLimit = useCallback((targetMb: number) => (
+    i18n.t('{{size}} MB', { size: formatSizeLimitedMbValue(targetMb) })
+  ), [formatSizeLimitedMbValue]);
+
+  const formatSizeLimitedBytes = useCallback((sizeBytes: number) => (
+    i18n.t('{{size}} MB', { size: formatSizeLimitedMbValue(sizeBytes / bytesPerMb) })
+  ), [formatSizeLimitedMbValue]);
+
+  const formatSizeLimitedCodecLabel = useCallback((codec: 'av1' | 'h264') => (codec === 'av1' ? 'AV1' : 'H.264'), []);
+
+  const formatSizeLimitedFileSizeForName = useCallback((sizeLabel: number | '[final size]') => {
+    if (typeof sizeLabel === 'string') return sizeLabel;
+    return `${new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(sizeLabel / bytesPerMb)}MB`;
+  }, []);
 
   const formatSizeLimitedStageText = useCallback((metadata: SizeLimitedProgressMetadata | undefined) => {
     if (metadata == null) return undefined;
 
     const parts: string[] = [];
-    if (metadata.maxAttempts > 1) {
-      parts.push(i18n.t('Attempt {{attempt}}/{{maxAttempts}}', {
-        attempt: metadata.attemptNumber,
-        maxAttempts: metadata.maxAttempts,
-      }));
+    if (metadata.attemptNumber > 1) {
+      parts.push(i18n.t('Adjusting to fit the size limit'));
     }
     if (metadata.phaseCount > 1) {
       parts.push(i18n.t('Pass {{phase}}/{{phaseCount}}', {
@@ -1095,7 +1121,7 @@ function App() {
         phaseCount: metadata.phaseCount,
       }));
     }
-    return parts.length > 0 ? parts.join(' • ') : undefined;
+    return parts.length > 0 ? parts.join(' - ') : undefined;
   }, []);
 
   const formatSizeLimitedJobStageText = useCallback(({
@@ -1110,7 +1136,7 @@ function App() {
     const stageText = formatSizeLimitedStageText(metadata);
     if (totalJobs <= 1) return stageText;
     if (stageText == null) return i18n.t('File {{current}}/{{total}}', { current: jobIndex + 1, total: totalJobs });
-    return i18n.t('File {{current}}/{{total}} • {{stage}}', { current: jobIndex + 1, total: totalJobs, stage: stageText });
+    return i18n.t('File {{current}}/{{total}} - {{stage}}', { current: jobIndex + 1, total: totalJobs, stage: stageText });
   }, [formatSizeLimitedStageText]);
 
   const sanitizeSizeLimitedNamePart = useCallback((value: string) => {
@@ -1118,6 +1144,64 @@ function App() {
     if (trimmed.length === 0) return '';
     return safeOutputFileName ? filenamify(trimmed) : trimmed;
   }, [safeOutputFileName]);
+
+  const resolveCurrentSizeLimitedStrategy = useCallback(async () => {
+    const capabilities = await getSizeLimitedEncoderCapabilities();
+    return resolveSizeLimitedStrategy({
+      controlMode: sizeLimitControlMode,
+      preset: sizeLimitPreset,
+      advancedEncoder: sizeLimitAdvancedEncoder,
+      advancedTwoPass: sizeLimitAdvancedTwoPass,
+      capabilities,
+    });
+  }, [sizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, sizeLimitControlMode, sizeLimitPreset]);
+
+  const buildSizeLimitedAutoFileNames = useCallback((items: SizeLimitedAutoNameItem[]) => {
+    if (filePath == null) return [];
+
+    const reservedFileNames = new Set<string>();
+    const sourceBaseName = sanitizeSizeLimitedNamePart(parsePath(filePath).name);
+
+    return items.map(({ codec, sizeLabel, preferredSuffix }) => {
+      const stem = `${formatSizeLimitedCodecLabel(codec)} ${formatSizeLimitedFileSizeForName(sizeLabel)} ${sourceBaseName}`.trim();
+      let fileName = `${stem}${preferredSuffix}.mp4`;
+      let disambiguator = 2;
+      while (reservedFileNames.has(fileName)) {
+        fileName = `${stem}${preferredSuffix}-${disambiguator}.mp4`;
+        disambiguator += 1;
+      }
+      reservedFileNames.add(fileName);
+      return fileName;
+    });
+  }, [filePath, formatSizeLimitedCodecLabel, formatSizeLimitedFileSizeForName, sanitizeSizeLimitedNamePart]);
+
+  const generateSizeLimitedAutoCutFileNames = useCallback(async () => {
+    const strategy = await resolveCurrentSizeLimitedStrategy();
+    return {
+      fileNames: buildSizeLimitedAutoFileNames(segmentsToExport.map((segment, index) => {
+        const sanitizedSegmentName = sanitizeSizeLimitedNamePart(segment.name ?? '');
+        const preferredSuffix = sanitizedSegmentName.length > 0 ? `-${sanitizedSegmentName}` : (segmentsToExport.length > 1 ? `-seg${index + 1}` : '');
+        return {
+          codec: strategy.effectiveCodec,
+          sizeLabel: '[final size]' as const,
+          preferredSuffix,
+        };
+      })),
+      problems: { error: undefined },
+    } satisfies GeneratedOutFileNames;
+  }, [buildSizeLimitedAutoFileNames, resolveCurrentSizeLimitedStrategy, sanitizeSizeLimitedNamePart, segmentsToExport]);
+
+  const generateSizeLimitedAutoCutMergedFileNames = useCallback(async () => {
+    const strategy = await resolveCurrentSizeLimitedStrategy();
+    return {
+      fileNames: buildSizeLimitedAutoFileNames([{
+        codec: strategy.effectiveCodec,
+        sizeLabel: '[final size]' as const,
+        preferredSuffix: '-merged',
+      }]),
+      problems: { error: undefined },
+    } satisfies GeneratedOutFileNames;
+  }, [buildSizeLimitedAutoFileNames, resolveCurrentSizeLimitedStrategy]);
 
   const maybeRenameSizeLimitedOutputs = useCallback(async ({
     results,
@@ -1132,15 +1216,12 @@ function App() {
 
     const updatedResults = [...results];
     const renameWarnings = new Set<string>();
-    const sourceBaseName = sanitizeSizeLimitedNamePart(parsePath(filePath).name);
-
-    const formatCodecLabel = (codec: 'av1' | 'h264') => (codec === 'av1' ? 'AV1' : 'H.264');
-    const formatFileSizeForName = (size: number) => `${new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(size / (1024 * 1024))}MB`;
 
     interface RenameCandidate {
       resultIndex: number,
       currentPath: string,
-      stem: string,
+      codec: 'av1' | 'h264',
+      sizeLabel: number,
       preferredSuffix: string,
     }
 
@@ -1155,7 +1236,8 @@ function App() {
           candidates.push({
             resultIndex: index,
             currentPath: result.path,
-            stem: `${formatCodecLabel(result.strategy.effectiveCodec)} ${formatFileSizeForName(result.size)} ${sourceBaseName}`,
+            codec: result.strategy.effectiveCodec,
+            sizeLabel: result.size,
             preferredSuffix,
           });
         }
@@ -1169,123 +1251,139 @@ function App() {
         candidates.push({
           resultIndex: mergedResultIndex,
           currentPath: mergedResult.path,
-          stem: `${formatCodecLabel(mergedResult.strategy.effectiveCodec)} ${formatFileSizeForName(mergedResult.size)} ${sourceBaseName}`,
+          codec: mergedResult.strategy.effectiveCodec,
+          sizeLabel: mergedResult.size,
           preferredSuffix: '-merged',
         });
       }
     }
 
-    const stemCounts = new Map<string, number>();
-    candidates.forEach(({ stem }) => stemCounts.set(stem, (stemCounts.get(stem) ?? 0) + 1));
-    const reservedFileNames = new Set<string>();
+    const targetFileNames = buildSizeLimitedAutoFileNames(candidates.map(({ codec, sizeLabel, preferredSuffix }) => ({
+      codec,
+      sizeLabel,
+      preferredSuffix,
+    })));
 
-    for (const candidate of candidates) {
-      const {
-        currentPath,
-        preferredSuffix,
-        resultIndex,
-        stem: candidateStem,
-      } = candidate;
-
-      let stem = candidateStem;
-      if ((stemCounts.get(candidateStem) ?? 0) > 1) {
-        stem = `${stem}${preferredSuffix}`;
-      }
-
-      let fileName = `${stem}.mp4`;
-      let disambiguator = 2;
-      while (reservedFileNames.has(fileName)) {
-        fileName = `${stem}-${disambiguator}.mp4`;
-        disambiguator += 1;
-      }
-      reservedFileNames.add(fileName);
-
-      const targetPath = getOutPath({ customOutDir, filePath, fileName });
-      if (targetPath != null && targetPath !== currentPath) {
-        try {
-          const targetExists = await mainApi.pathExists(targetPath);
-          if (targetExists) {
-            if (!enableOverwriteOutput) {
-              renameWarnings.add(i18n.t('ClipPress kept one exported file\'s original name because the cleaner final name already exists and overwrite is off.'));
+    for (const [candidateIndex, candidate] of candidates.entries()) {
+      const fileName = targetFileNames[candidateIndex];
+      if (fileName != null) {
+        const targetPath = getOutPath({ customOutDir, filePath, fileName });
+        if (targetPath != null && targetPath !== candidate.currentPath) {
+          try {
+            const targetExists = await mainApi.pathExists(targetPath);
+            if (targetExists) {
+              if (!enableOverwriteOutput) {
+                renameWarnings.add(i18n.t('ClipPress kept one exported file\'s original name because the cleaner final name already exists and overwrite is off.'));
+              } else {
+                await unlinkWithRetry(targetPath);
+                await renameWithRetry(candidate.currentPath, targetPath);
+                const result = updatedResults[candidate.resultIndex];
+                if (result != null) updatedResults[candidate.resultIndex] = { ...result, path: targetPath };
+              }
             } else {
-              await unlinkWithRetry(targetPath);
-              await renameWithRetry(currentPath, targetPath);
-              const result = updatedResults[resultIndex];
-              if (result != null) updatedResults[resultIndex] = { ...result, path: targetPath };
+              await renameWithRetry(candidate.currentPath, targetPath);
+              const result = updatedResults[candidate.resultIndex];
+              if (result != null) updatedResults[candidate.resultIndex] = { ...result, path: targetPath };
             }
-          } else {
-            await renameWithRetry(currentPath, targetPath);
-            const result = updatedResults[resultIndex];
-            if (result != null) updatedResults[resultIndex] = { ...result, path: targetPath };
+          } catch (error) {
+            console.warn('Failed to apply cleaner size-limited file name', candidate.currentPath, error);
+            renameWarnings.add(i18n.t('ClipPress kept one exported file\'s original name because the cleaner final name could not be applied.'));
           }
-        } catch (error) {
-          console.warn('Failed to apply cleaner size-limited file name', currentPath, error);
-          renameWarnings.add(i18n.t('ClipPress kept one exported file\'s original name because the cleaner final name could not be applied.'));
         }
       }
     }
 
     return { results: updatedResults, warnings: [...renameWarnings] };
-  }, [customOutDir, enableOverwriteOutput, filePath, sanitizeSizeLimitedNamePart, segmentsToExport, willMerge]);
+  }, [buildSizeLimitedAutoFileNames, customOutDir, enableOverwriteOutput, filePath, sanitizeSizeLimitedNamePart, segmentsToExport, willMerge]);
 
-  const appendSizeLimitedResultNotices = useCallback((results: SizeLimitedExecutionResult[], notices: Set<string>, warnings: Set<string>, requestedTargetSizeMb: number) => {
+  const buildSizeLimitedResultSummary = useCallback((results: SizeLimitedExecutionResult[], requestedTargetSizeMb: number) => {
+    const createdResults = results.filter((result) => result.created);
+    const singleCreatedResult = createdResults.length === 1 ? createdResults.find(() => true) : undefined;
+    const skippedCount = results.length - createdResults.length;
+    const overTargetCount = createdResults.reduce((count, result) => count + Number(!result.metTarget), 0);
+    const largestResult = [...createdResults].sort((a, b) => b.size - a.size)[0];
+
+    return {
+      requestedLimitLabel: formatRequestedSizeLimit(requestedTargetSizeMb),
+      createdCount: createdResults.length,
+      skippedCount,
+      overTargetCount,
+      largestCreatedSizeLabel: largestResult != null ? formatSizeLimitedBytes(largestResult.size) : undefined,
+      singleCreatedSizeLabel: singleCreatedResult != null ? formatSizeLimitedBytes(singleCreatedResult.size) : undefined,
+    } satisfies SizeLimitedResultSummary;
+  }, [formatRequestedSizeLimit, formatSizeLimitedBytes]);
+
+  const appendSizeLimitedResultNotices = useCallback((results: SizeLimitedExecutionResult[], notices: Set<string>, warnings: Set<string>) => {
     if (results.length === 0) return;
 
     const createdResults = results.filter((result) => result.created);
     const skippedCount = results.length - createdResults.length;
 
-    if (createdResults.length > 0) {
-      const largestResult = [...createdResults].sort((a, b) => b.size - a.size)[0];
-      if (largestResult != null) {
-        notices.add(i18n.t('Target: {{targetSize}}. Largest new file: {{actualSize}}.', {
-          targetSize: formatRequestedSizeLimit(requestedTargetSizeMb),
-          actualSize: prettyBytes(largestResult.size),
-        }));
-      }
-    } else if (skippedCount > 0) {
-      notices.add(i18n.t('Target: {{targetSize}}.', {
-        targetSize: formatRequestedSizeLimit(requestedTargetSizeMb),
-      }));
-    }
-
     if (skippedCount > 0) {
       notices.add(i18n.t('Overwrite is off, so {{count}} existing output files were kept.', { count: skippedCount }));
-    }
-
-    const unmetTargetResult = createdResults.find((result) => !result.metTarget);
-    if (unmetTargetResult != null) {
-      warnings.add(i18n.t('One or more exports could not be reduced any further, so the closest result was kept.'));
     }
 
     const uniqueStrategies = new Map(createdResults.map((result) => [`${result.strategy.id}:${result.strategy.fallbackReason ?? 'none'}`, result.strategy]));
     for (const strategy of uniqueStrategies.values()) {
       switch (strategy.id) {
+        case 'max_quality_av1_cpu': {
+          notices.add(i18n.t('Max Quality used CPU AV1 (SVT-AV1) for the strongest low-bitrate result.'));
+          break;
+        }
+        case 'max_quality_av1_nvenc': {
+          warnings.add(i18n.t('SVT-AV1 was unavailable, so Max Quality fell back to NVIDIA AV1.'));
+          break;
+        }
+        case 'max_quality_h264_cpu_two_pass': {
+          warnings.add(i18n.t('AV1 encoders were unavailable, so Max Quality fell back to H.264 CPU 2-pass.'));
+          break;
+        }
+        case 'quality_av1_nvenc': {
+          notices.add(i18n.t('Quality used NVIDIA AV1 for a stronger quality-to-speed balance.'));
+          break;
+        }
+        case 'quality_av1_cpu': {
+          warnings.add(i18n.t('NVIDIA AV1 was unavailable, so Quality fell back to CPU AV1.'));
+          break;
+        }
+        case 'quality_h264_cpu': {
+          warnings.add(i18n.t('AV1 encoders were unavailable, so Quality fell back to H.264 CPU.'));
+          break;
+        }
         case 'fast_h264_nvenc': {
-          notices.add(i18n.t('Fast mode used NVIDIA H.264 encoding for a stronger speed-to-quality balance.'));
+          notices.add(i18n.t('Fast used NVIDIA H.264 for a good everyday shareable result.'));
           break;
         }
         case 'fast_h264_cpu': {
-          notices.add(i18n.t('Fast mode used CPU H.264 because NVIDIA H.264 encoding is unavailable on this system.'));
+          warnings.add(i18n.t('Fast used CPU H.264 because NVIDIA H.264 is unavailable on this system.'));
           break;
         }
-        case 'high_quality_av1_cpu': {
-          notices.add(i18n.t('High Quality used CPU AV1 (SVT-AV1) for the premium low-bitrate quality path.'));
+        case 'ultra_fast_h264_nvenc': {
+          notices.add(i18n.t('Ultra Fast used NVIDIA H.264 for the quickest turnaround.'));
           break;
         }
-        case 'high_quality_av1_nvenc': {
-          if (strategy.fallbackReason === 'svt_av1_unavailable') {
-            warnings.add(i18n.t('SVT-AV1 was unavailable, so High Quality AV1 fell back to NVIDIA AV1.'));
-          } else {
-            notices.add(i18n.t('High Quality used NVIDIA AV1 encoding.'));
-          }
+        case 'ultra_fast_h264_cpu': {
+          warnings.add(i18n.t('Ultra Fast used CPU H.264 because NVIDIA H.264 is unavailable on this system.'));
           break;
         }
-        case 'high_quality_h264_cpu': {
-          if (strategy.fallbackReason === 'av1_unavailable') {
-            warnings.add(i18n.t('AV1 encoders were unavailable, so High Quality fell back to the H.264 compatibility path.'));
-          } else {
-            notices.add(i18n.t('High Quality used the H.264 compatibility path.'));
-          }
+        case 'advanced_av1_cpu': {
+          notices.add(i18n.t('Advanced mode used CPU AV1 (SVT-AV1).'));
+          break;
+        }
+        case 'advanced_av1_nvenc': {
+          notices.add(i18n.t('Advanced mode used NVIDIA AV1.'));
+          break;
+        }
+        case 'advanced_h264_cpu_single_pass': {
+          notices.add(i18n.t('Advanced mode used CPU H.264.'));
+          break;
+        }
+        case 'advanced_h264_cpu_two_pass': {
+          notices.add(i18n.t('Advanced mode used CPU H.264 2-pass.'));
+          break;
+        }
+        case 'advanced_h264_nvenc': {
+          notices.add(i18n.t('Advanced mode used NVIDIA H.264.'));
           break;
         }
         default: {
@@ -1293,7 +1391,7 @@ function App() {
         }
       }
     }
-  }, [formatRequestedSizeLimit]);
+  }, []);
 
   const onExportConfirm = useCallback(async () => {
     invariant(filePath != null && outputDir != null);
@@ -1319,6 +1417,8 @@ function App() {
       if (isSizeLimitedExport) {
         const notices = new Set<string>();
         const warnings = new Set<string>();
+        const useAutoSeparateNaming = cutFileTemplate == null;
+        const useAutoMergedNaming = cutMergedFileTemplate == null;
 
         const { videoStream: sizeLimitedVideoStream, audioStream: sizeLimitedAudioStream } = sizeLimitedStreams;
         if (sizeLimitedVideoStream == null) throw new UserFacingError(i18n.t('Size-limited export currently requires a video track.'));
@@ -1351,10 +1451,12 @@ function App() {
           });
         };
 
+        let separateNameGenerationHadError = false;
         if (shouldProduceSeparateOutputs) {
-          const generated = await generateSizeLimitedCutFileNames(cutFileTemplateOrDefault);
+          const generated = await generateSizeLimitedCutFileNames(useAutoSeparateNaming ? defaultCutFileTemplate : cutFileTemplateOrDefault);
           const cutFileNames = generated.fileNames;
           if (generated.problems.error != null) {
+            separateNameGenerationHadError = true;
             warnings.add(generated.problems.error);
             warnings.add(t('Fell back to default output file name'));
           }
@@ -1375,8 +1477,10 @@ function App() {
               segment,
               sourceDuration: fileDuration,
               targetSizeMb: sizeLimitMb,
-              codec: sizeLimitCodec,
-              quality: sizeLimitQuality,
+              controlMode: sizeLimitControlMode,
+              preset: sizeLimitPreset,
+              advancedEncoder: sizeLimitAdvancedEncoder,
+              advancedTwoPass: sizeLimitAdvancedTwoPass,
               videoStream: sizeLimitedVideoStream,
               audioStream: sizeLimitedAudioStream,
               enableOverwriteOutput,
@@ -1393,6 +1497,7 @@ function App() {
         }
 
         let mergedOutFilePath: string | undefined;
+        let mergedNameGenerationHadError = false;
         if (willMerge) {
           const mergedJobIndex = shouldProduceSeparateOutputs ? segmentsToExport.length : 0;
           updateWorkingState({
@@ -1400,8 +1505,9 @@ function App() {
             detailText: formatSizeLimitedJobStageText({ jobIndex: mergedJobIndex, totalJobs, metadata: undefined }),
           });
 
-          const { fileNames, problems } = await generateSizeLimitedCutMergedFileNames(cutMergedFileTemplateOrDefault);
+          const { fileNames, problems } = await generateSizeLimitedCutMergedFileNames(useAutoMergedNaming ? defaultCutMergedFileTemplate : cutMergedFileTemplateOrDefault);
           if (problems.error != null) {
+            mergedNameGenerationHadError = true;
             warnings.add(problems.error);
             warnings.add(t('Fell back to default output file name'));
           }
@@ -1416,8 +1522,10 @@ function App() {
             outPath: mergedOutFilePath,
             segments: segmentsToExport,
             targetSizeMb: sizeLimitMb,
-            codec: sizeLimitCodec,
-            quality: sizeLimitQuality,
+            controlMode: sizeLimitControlMode,
+            preset: sizeLimitPreset,
+            advancedEncoder: sizeLimitAdvancedEncoder,
+            advancedTwoPass: sizeLimitAdvancedTwoPass,
             videoStream: sizeLimitedVideoStream,
             audioStream: sizeLimitedAudioStream,
             enableOverwriteOutput,
@@ -1432,8 +1540,8 @@ function App() {
           results.push(mergedResult);
         }
 
-        const shouldDecorateSeparateOutputs = shouldProduceSeparateOutputs && (cutFileTemplate == null || cutFileTemplate === defaultCutFileTemplate);
-        const shouldDecorateMergedOutput = willMerge && (cutMergedFileTemplate == null || cutMergedFileTemplate === defaultCutMergedFileTemplate);
+        const shouldDecorateSeparateOutputs = shouldProduceSeparateOutputs && (useAutoSeparateNaming || separateNameGenerationHadError);
+        const shouldDecorateMergedOutput = willMerge && (useAutoMergedNaming || mergedNameGenerationHadError);
         const renamedOutputs = await maybeRenameSizeLimitedOutputs({
           results,
           shouldDecorateSeparateOutputs,
@@ -1442,8 +1550,9 @@ function App() {
         renamedOutputs.warnings.forEach((warning) => warnings.add(warning));
 
         const finalizedResults = renamedOutputs.results;
-        const createdResults = finalizedResults.filter((result) => result.created);
-        appendSizeLimitedResultNotices(finalizedResults, notices, warnings, sizeLimitMb);
+        const firstCreatedResult = finalizedResults.find((result) => result.created);
+        const resultSummary = buildSizeLimitedResultSummary(finalizedResults, sizeLimitMb);
+        appendSizeLimitedResultNotices(finalizedResults, notices, warnings);
 
         if (simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
 
@@ -1452,14 +1561,14 @@ function App() {
           if (newCleanupChoices) await cleanupFiles(newCleanupChoices);
         }
 
-        const revealResult = (willMerge ? finalizedResults.at(-1) : undefined) ?? createdResults[0] ?? finalizedResults[0];
+        const revealResult = (willMerge ? finalizedResults.at(-1) : undefined) ?? firstCreatedResult ?? finalizedResults[0];
         invariant(revealResult != null);
         const exportedPaths = willMerge ? [revealResult.path] : finalizedResults.map((result) => result.path);
         const revealPath = revealResult.path;
 
         if (!hideAllNotifications) {
           showOsNotification(i18n.t('Export finished'));
-          openSizeLimitedFinishedDialog({ filePath: revealPath, warnings: [...warnings], notices: [...notices], createdCount: createdResults.length });
+          openSizeLimitedFinishedDialog({ filePath: revealPath, warnings: [...warnings], notices: [...notices], summary: resultSummary });
         }
 
         setExportCount((c) => c + 1);
@@ -1649,7 +1758,7 @@ function App() {
       setWorking(undefined);
       setProgress(undefined);
     }
-  }, [allFilesMeta, appendFfmpegCommandLog, appendSizeLimitedResultNotices, areWeCutting, askForCleanupChoices, autoDeleteMergedSegments, avoidNegativeTs, cleanupChoices, cleanupFiles, concatCutSegments, copyFileStreams, customOutDir, customTagsByFile, cutFileTemplate, cutFileTemplateOrDefault, cutMergedFileTemplate, cutMergedFileTemplateOrDefault, cutMultiple, detectedFps, effectiveRotation, enableOverwriteOutput, exportConfirmEnabled, exportExtraStreams, extractStreams, ffmpegExperimental, fileDuration, fileFormat, filePath, formatSizeLimitedJobStageText, generateCutFileNames, generateCutMergedFileNames, generateSizeLimitedCutFileNames, generateSizeLimitedCutMergedFileNames, handleExportFailed, haveInvalidSegs, hideAllNotifications, invertCutSegments, isRotationSet, isSizeLimitedExport, keyframeCut, mainFileFormat, mainStreams, maybeRenameSizeLimitedOutputs, movFastStart, nonCopiedExtraStreams, numStreamsToCopy, openCutFinishedDialog, openSizeLimitedFinishedDialog, outputDir, outputPlaybackRate, paramsByStreamId, preserveChapters, preserveMetadata, preserveMetadataOnMerge, preserveMovData, prefersReducedMotion, setWorking, segmentsOrInverse.selected, segmentsToChapters, segmentsToChaptersOnly, segmentsToExport, shortestFlag, showOsNotification, simpleMode, sizeLimitCodec, sizeLimitMb, sizeLimitQuality, sizeLimitedStreams, t, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, tryDeleteFiles, willMerge, workingRef]);
+  }, [allFilesMeta, appendFfmpegCommandLog, appendSizeLimitedResultNotices, areWeCutting, askForCleanupChoices, autoDeleteMergedSegments, avoidNegativeTs, buildSizeLimitedResultSummary, cleanupChoices, cleanupFiles, concatCutSegments, copyFileStreams, customOutDir, customTagsByFile, cutFileTemplate, cutFileTemplateOrDefault, cutMergedFileTemplate, cutMergedFileTemplateOrDefault, cutMultiple, detectedFps, effectiveRotation, enableOverwriteOutput, exportConfirmEnabled, exportExtraStreams, extractStreams, ffmpegExperimental, fileDuration, fileFormat, filePath, formatSizeLimitedJobStageText, generateCutFileNames, generateCutMergedFileNames, generateSizeLimitedCutFileNames, generateSizeLimitedCutMergedFileNames, handleExportFailed, haveInvalidSegs, hideAllNotifications, invertCutSegments, isRotationSet, isSizeLimitedExport, keyframeCut, mainFileFormat, mainStreams, maybeRenameSizeLimitedOutputs, movFastStart, nonCopiedExtraStreams, numStreamsToCopy, openCutFinishedDialog, openSizeLimitedFinishedDialog, outputDir, outputPlaybackRate, paramsByStreamId, preserveChapters, preserveMetadata, preserveMetadataOnMerge, preserveMovData, prefersReducedMotion, setWorking, segmentsOrInverse.selected, segmentsToChapters, segmentsToChaptersOnly, segmentsToExport, shortestFlag, showOsNotification, simpleMode, sizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, sizeLimitControlMode, sizeLimitMb, sizeLimitPreset, sizeLimitedStreams, t, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, tryDeleteFiles, willMerge, workingRef]);
 
   const onExportPress = useCallback(async () => {
     if (!filePath) return;
@@ -3112,7 +3221,7 @@ function App() {
 
               {/* Dialogs */}
 
-              <ExportConfirm areWeCutting={areWeCutting} segmentsOrInverse={segmentsOrInverse} segmentsToExport={segmentsToExport} willMerge={willMerge} visible={exportConfirmOpen} onClosePress={closeExportConfirm} onExportConfirm={onExportConfirm} renderOutFmt={renderOutFmt} outputDir={outputDir} numStreamsTotal={numStreamsTotal} numStreamsToCopy={numStreamsToCopy} onShowStreamsSelectorClick={handleShowStreamsSelectorClick} outFormat={fileFormat} cutFileTemplate={cutFileTemplateOrDefault} cutMergedFileTemplate={cutMergedFileTemplateOrDefault} generateCutFileNames={isSizeLimitedExport ? generateSizeLimitedCutFileNames : generateCutFileNames} generateCutMergedFileNames={isSizeLimitedExport ? generateSizeLimitedCutMergedFileNames : generateCutMergedFileNames} currentSegIndexSafe={currentSegIndexSafe} mainCopiedThumbnailStreams={mainCopiedThumbnailStreams} needSmartCut={needSmartCut} isEncoding={isEncodingUi} encBitrate={encBitrate} setEncBitrate={setEncBitrate} toggleSettings={toggleSettings} outputPlaybackRate={outputPlaybackRate} lossyMode={lossyMode} neighbouringKeyFrames={neighbouringKeyFrames} findNearestKeyFrameTime={findNearestKeyFrameTime} />
+              <ExportConfirm areWeCutting={areWeCutting} segmentsOrInverse={segmentsOrInverse} segmentsToExport={segmentsToExport} willMerge={willMerge} visible={exportConfirmOpen} onClosePress={closeExportConfirm} onExportConfirm={onExportConfirm} renderOutFmt={renderOutFmt} outputDir={outputDir} numStreamsTotal={numStreamsTotal} numStreamsToCopy={numStreamsToCopy} onShowStreamsSelectorClick={handleShowStreamsSelectorClick} outFormat={fileFormat} cutFileTemplate={cutFileTemplate} cutMergedFileTemplate={cutMergedFileTemplate} generateCutFileNames={isSizeLimitedExport ? generateSizeLimitedCutFileNames : generateCutFileNames} generateCutMergedFileNames={isSizeLimitedExport ? generateSizeLimitedCutMergedFileNames : generateCutMergedFileNames} generateAutoCutFileNames={isSizeLimitedExport ? generateSizeLimitedAutoCutFileNames : undefined} generateAutoCutMergedFileNames={isSizeLimitedExport ? generateSizeLimitedAutoCutMergedFileNames : undefined} currentSegIndexSafe={currentSegIndexSafe} mainCopiedThumbnailStreams={mainCopiedThumbnailStreams} needSmartCut={needSmartCut} isEncoding={isEncodingUi} encBitrate={encBitrate} setEncBitrate={setEncBitrate} toggleSettings={toggleSettings} outputPlaybackRate={outputPlaybackRate} lossyMode={lossyMode} neighbouringKeyFrames={neighbouringKeyFrames} findNearestKeyFrameTime={findNearestKeyFrameTime} />
 
               <Dialog.Root open={streamsSelectorShown} onOpenChange={setStreamsSelectorShown}>
                 <Dialog.Portal>

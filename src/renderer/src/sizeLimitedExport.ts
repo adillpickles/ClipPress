@@ -1,5 +1,5 @@
 import type { FFprobeStream } from '../../common/ffprobe.js';
-import type { SizeLimitCodec, SizeLimitQuality } from '../../common/types.js';
+import type { SizeLimitAdvancedEncoder, SizeLimitControlMode, SizeLimitPreset } from '../../common/types.js';
 import { getExperimentalArgs, logStdoutStderr, runFfmpeg, runFfmpegWithProgress } from './ffmpeg';
 import mainApi from './mainApi';
 import { getNextSizeLimitedRetryStep, planSizeLimitedEncode } from './sizeLimitedPlanner';
@@ -13,8 +13,10 @@ const { dirname } = window.require('path');
 
 const retryTempSuffix = 'clippress-size-limit';
 const fastCpuX264Params = 'aq-mode=3:aq-strength=0.8:deblock=-1,-1:rc-lookahead=20:me=hex:subme=6';
+const qualityCpuX264Params = 'aq-mode=3:aq-strength=0.85:deblock=-1,-1:rc-lookahead=28:me=umh:subme=7:ref=3';
 const premiumCpuX264Params = 'aq-mode=3:aq-strength=0.9:deblock=-1,-1:rc-lookahead=40:me=umh:subme=8:ref=4';
-const svtAv1Preset = '6';
+const svtAv1MaxQualityPreset = '6';
+const svtAv1QualityPreset = '8';
 const nvencProbeSource = 'color=c=black:s=640x360:r=30:d=0.2';
 const nvencProbeFrames = '3';
 
@@ -80,6 +82,12 @@ function assertStrategySupported({ strategy, capabilities }: {
   }
   if (strategy.encoder === 'libsvtav1' && !capabilities.libsvtav1) {
     throw new UserFacingError('Size-limited export could not find a usable AV1 encoder.');
+  }
+  if (strategy.encoder === 'h264_nvenc' && !capabilities.h264Nvenc) {
+    throw new UserFacingError('Size-limited export could not find a usable NVIDIA H.264 encoder.');
+  }
+  if (strategy.encoder === 'av1_nvenc' && !capabilities.av1Nvenc) {
+    throw new UserFacingError('Size-limited export could not find a usable NVIDIA AV1 encoder.');
   }
 }
 
@@ -171,7 +179,23 @@ function getStrategyVideoArgs({ strategy, videoBitrate }: {
         ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.1, bufferFactor: 2 }),
       ];
     }
-    case 'high_quality_av1_nvenc': {
+    case 'ultra_fast_h264_nvenc': {
+      return [
+        '-c:v', 'h264_nvenc',
+        '-preset', 'p4',
+        '-tune', 'hq',
+        '-profile:v', 'high',
+        '-rc', 'vbr',
+        '-cq', '24',
+        '-rc-lookahead', '12',
+        '-spatial-aq', '1',
+        '-temporal-aq', '1',
+        '-aq-strength', '6',
+        '-pix_fmt', 'yuv420p',
+        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.12, bufferFactor: 2 }),
+      ];
+    }
+    case 'max_quality_av1_nvenc': {
       return [
         '-c:v', 'av1_nvenc',
         '-preset', 'p7',
@@ -188,10 +212,36 @@ function getStrategyVideoArgs({ strategy, videoBitrate }: {
         ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.08, bufferFactor: 2.2 }),
       ];
     }
-    case 'high_quality_av1_cpu': {
+    case 'quality_av1_nvenc':
+    case 'advanced_av1_nvenc': {
+      return [
+        '-c:v', 'av1_nvenc',
+        '-preset', 'p6',
+        '-tune', 'hq',
+        '-rc', 'vbr',
+        '-multipass', 'qres',
+        '-cq', '28',
+        '-rc-lookahead', '24',
+        '-spatial-aq', '1',
+        '-temporal-aq', '1',
+        '-aq-strength', '8',
+        '-pix_fmt', 'yuv420p',
+        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.1, bufferFactor: 2 }),
+      ];
+    }
+    case 'max_quality_av1_cpu':
+    case 'advanced_av1_cpu': {
       return [
         '-c:v', 'libsvtav1',
-        '-preset', svtAv1Preset,
+        '-preset', svtAv1MaxQualityPreset,
+        '-pix_fmt', 'yuv420p',
+        '-b:v', toKbitrateArg(videoBitrate),
+      ];
+    }
+    case 'quality_av1_cpu': {
+      return [
+        '-c:v', 'libsvtav1',
+        '-preset', svtAv1QualityPreset,
         '-pix_fmt', 'yuv420p',
         '-b:v', toKbitrateArg(videoBitrate),
       ];
@@ -205,13 +255,51 @@ function getStrategyVideoArgs({ strategy, videoBitrate }: {
         ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.08, bufferFactor: 2 }),
       ];
     }
-    case 'high_quality_h264_cpu': {
+    case 'ultra_fast_h264_cpu': {
+      return [
+        '-c:v', 'libx264',
+        '-preset', 'faster',
+        '-pix_fmt', 'yuv420p',
+        '-x264-params', fastCpuX264Params,
+        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.12, bufferFactor: 2 }),
+      ];
+    }
+    case 'quality_h264_cpu':
+    case 'advanced_h264_cpu_single_pass': {
+      return [
+        '-c:v', 'libx264',
+        '-preset', 'slow',
+        '-pix_fmt', 'yuv420p',
+        '-x264-params', qualityCpuX264Params,
+        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.08, bufferFactor: 2.2 }),
+      ];
+    }
+    case 'max_quality_h264_cpu_two_pass':
+    case 'advanced_h264_cpu_two_pass': {
       return [
         '-c:v', 'libx264',
         '-preset', 'slower',
         '-pix_fmt', 'yuv420p',
         '-x264-params', premiumCpuX264Params,
         ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.05, bufferFactor: 2.2 }),
+      ];
+    }
+    case 'advanced_h264_nvenc': {
+      return [
+        '-c:v', 'h264_nvenc',
+        '-preset', 'p6',
+        '-tune', 'hq',
+        '-profile:v', 'high',
+        '-rc', 'vbr',
+        '-multipass', 'qres',
+        '-cq', '23',
+        '-rc-lookahead', '20',
+        '-spatial-aq', '1',
+        '-temporal-aq', '1',
+        '-aq-strength', '8',
+        '-b_ref_mode', 'middle',
+        '-pix_fmt', 'yuv420p',
+        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: 1.1, bufferFactor: 2 }),
       ];
     }
     default: {
@@ -548,20 +636,24 @@ function makePasslogPath(outPath: string, attemptNumber: number) {
 }
 
 async function resolveSizeLimitedPlan({
-  codec,
-  quality,
+  controlMode,
+  preset,
+  advancedEncoder,
+  advancedTwoPass,
   targetSizeMb,
   duration,
   hasAudio,
 }: {
-  codec: SizeLimitCodec,
-  quality: SizeLimitQuality,
+  controlMode: SizeLimitControlMode,
+  preset: SizeLimitPreset,
+  advancedEncoder: SizeLimitAdvancedEncoder,
+  advancedTwoPass: boolean,
   targetSizeMb: number,
   duration: number,
   hasAudio: boolean,
 }) {
   const capabilities = await getSizeLimitedEncoderCapabilities();
-  const strategy = resolveSizeLimitedStrategy({ requestedCodec: codec, quality, capabilities });
+  const strategy = resolveSizeLimitedStrategy({ controlMode, preset, advancedEncoder, advancedTwoPass, capabilities });
   assertStrategySupported({ strategy, capabilities });
   const plan = planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strategy });
   return { capabilities, strategy, plan };
@@ -579,8 +671,10 @@ export async function exportSizeLimitedSegment({
   segment,
   sourceDuration,
   targetSizeMb,
-  codec,
-  quality,
+  controlMode,
+  preset,
+  advancedEncoder,
+  advancedTwoPass,
   videoStream,
   audioStream,
   enableOverwriteOutput,
@@ -598,8 +692,10 @@ export async function exportSizeLimitedSegment({
   segment: SegmentToExport,
   sourceDuration: number | undefined,
   targetSizeMb: number,
-  codec: SizeLimitCodec,
-  quality: SizeLimitQuality,
+  controlMode: SizeLimitControlMode,
+  preset: SizeLimitPreset,
+  advancedEncoder: SizeLimitAdvancedEncoder,
+  advancedTwoPass: boolean,
   videoStream: Pick<FFprobeStream, 'index'>,
   audioStream: Pick<FFprobeStream, 'index'> | undefined,
   enableOverwriteOutput: boolean,
@@ -617,8 +713,10 @@ export async function exportSizeLimitedSegment({
 
   const plannedDuration = (segment.end - segment.start) / outputPlaybackRate;
   const { strategy, plan } = await resolveSizeLimitedPlan({
-    codec,
-    quality,
+    controlMode,
+    preset,
+    advancedEncoder,
+    advancedTwoPass,
     targetSizeMb,
     duration: plannedDuration,
     hasAudio: audioStream != null,
@@ -728,8 +826,10 @@ export async function exportSizeLimitedMerge({
   outPath,
   segments,
   targetSizeMb,
-  codec,
-  quality,
+  controlMode,
+  preset,
+  advancedEncoder,
+  advancedTwoPass,
   videoStream,
   audioStream,
   enableOverwriteOutput,
@@ -746,8 +846,10 @@ export async function exportSizeLimitedMerge({
   outPath: string,
   segments: SegmentToExport[],
   targetSizeMb: number,
-  codec: SizeLimitCodec,
-  quality: SizeLimitQuality,
+  controlMode: SizeLimitControlMode,
+  preset: SizeLimitPreset,
+  advancedEncoder: SizeLimitAdvancedEncoder,
+  advancedTwoPass: boolean,
   videoStream: Pick<FFprobeStream, 'index'>,
   audioStream: Pick<FFprobeStream, 'index'> | undefined,
   enableOverwriteOutput: boolean,
@@ -766,8 +868,10 @@ export async function exportSizeLimitedMerge({
   const totalSourceDuration = segments.reduce((sum, segment) => sum + (segment.end - segment.start), 0);
   const plannedDuration = totalSourceDuration / outputPlaybackRate;
   const { strategy, plan } = await resolveSizeLimitedPlan({
-    codec,
-    quality,
+    controlMode,
+    preset,
+    advancedEncoder,
+    advancedTwoPass,
     targetSizeMb,
     duration: plannedDuration,
     hasAudio: audioStream != null,

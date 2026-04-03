@@ -13,7 +13,13 @@ describe('targetSizeMbToBytes', () => {
 
 describe('planSizeLimitedEncode', () => {
   it('creates an initial bounded retry plan', () => {
-    const strategy = resolveSizeLimitedStrategy({ requestedCodec: 'h264', quality: 'fast', capabilities: allCapabilities });
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'fast',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      capabilities: allCapabilities,
+    });
     const plan = planSizeLimitedEncode({
       targetSizeMb: 10,
       duration: 30,
@@ -27,7 +33,13 @@ describe('planSizeLimitedEncode', () => {
   });
 
   it('gives premium AV1 high quality a smaller audio budget at tiny caps', () => {
-    const strategy = resolveSizeLimitedStrategy({ requestedCodec: 'av1', quality: 'high_quality', capabilities: allCapabilities });
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'max_quality',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      capabilities: allCapabilities,
+    });
     const plan = planSizeLimitedEncode({
       targetSizeMb: 1.5,
       duration: 20,
@@ -37,11 +49,17 @@ describe('planSizeLimitedEncode', () => {
 
     expect(plan.initialAttempt.audioBitrate).toBeLessThan(plan.initialAttempt.videoBitrate);
     expect(plan.initialAttempt.audioBitrate).toBeLessThanOrEqual(64_000);
-    expect(strategy.id).toBe('high_quality_av1_cpu');
+    expect(strategy.id).toBe('max_quality_av1_cpu');
   });
 
   it('omits audio bitrate for silent clips', () => {
-    const strategy = resolveSizeLimitedStrategy({ requestedCodec: 'h264', quality: 'fast', capabilities: allCapabilities });
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'fast',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      capabilities: allCapabilities,
+    });
     const plan = planSizeLimitedEncode({
       targetSizeMb: 5,
       duration: 12,
@@ -53,7 +71,13 @@ describe('planSizeLimitedEncode', () => {
   });
 
   it('clamps tiny targets instead of failing', () => {
-    const strategy = resolveSizeLimitedStrategy({ requestedCodec: 'h264', quality: 'fast', capabilities: allCapabilities });
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'fast',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      capabilities: allCapabilities,
+    });
     const plan = planSizeLimitedEncode({
       targetSizeMb: 0.25,
       duration: 90,
@@ -69,7 +93,13 @@ describe('planSizeLimitedEncode', () => {
 
 describe('getNextSizeLimitedRetryStep', () => {
   it('decreases bitrate after an overshoot and stays bounded', () => {
-    const strategy = resolveSizeLimitedStrategy({ requestedCodec: 'h264', quality: 'high_quality', capabilities: allCapabilities });
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'max_quality',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      capabilities: allCapabilities,
+    });
     const plan = planSizeLimitedEncode({
       targetSizeMb: 25,
       duration: 60,
@@ -100,7 +130,13 @@ describe('getNextSizeLimitedRetryStep', () => {
   });
 
   it('stops retrying once the output is under the target', () => {
-    const strategy = resolveSizeLimitedStrategy({ requestedCodec: 'h264', quality: 'fast', capabilities: allCapabilities });
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'fast',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      capabilities: allCapabilities,
+    });
     const plan = planSizeLimitedEncode({
       targetSizeMb: 10,
       duration: 30,

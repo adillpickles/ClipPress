@@ -12,6 +12,7 @@ import FileNameTemplateEditor from './FileNameTemplateEditor';
 import HighlightedText from './HighlightedText';
 import Select from './Select';
 import Switch from './Switch';
+import Button from './Button';
 
 import { primaryTextColor, warningColor } from '../colors';
 import { withBlur } from '../util';
@@ -19,11 +20,11 @@ import getSwal from '../swal';
 import { isMov as ffmpegIsMov } from '../util/streams';
 import useUserSettings from '../hooks/useUserSettings';
 import styles from './ExportConfirm.module.css';
-import type { SegmentToExport } from '../types';
-import type { GenerateOutFileNames } from '../util/outputNameTemplate';
+import type { SegmentToExport, SizeLimitedEncoderCapabilities } from '../types';
+import type { GenerateOutFileNames, GeneratedOutFileNames } from '../util/outputNameTemplate';
 import { defaultCutFileTemplate, defaultCutMergedFileTemplate } from '../util/outputNameTemplate';
 import type { FFprobeStream } from '../../../common/ffprobe';
-import type { AvoidNegativeTs, ExportEncodeMode, PreserveMetadata, SizeLimitCodec, SizeLimitQuality } from '../../../common/types';
+import type { AvoidNegativeTs, ExportEncodeMode, PreserveMetadata, SizeLimitAdvancedEncoder, SizeLimitControlMode, SizeLimitPreset } from '../../../common/types';
 import TextInput from './TextInput';
 import type { UseSegments } from '../hooks/useSegments';
 import ExportSheet from './ExportSheet';
@@ -34,6 +35,7 @@ import type { Frame } from '../ffmpeg';
 import type { FindNearestKeyframeTime } from '../hooks/useKeyframes';
 import { troubleshootingUrl } from '../../../common/constants';
 import OutDirSelector from './OutDirSelector';
+import { getSizeLimitedEncoderCapabilities } from '../sizeLimitedExport';
 
 const remote = window.require('@electron/remote');
 const { shell } = remote;
@@ -92,6 +94,54 @@ function renderNotice(notice: Notice | GenericNotice | undefined, { style }: { s
   );
 }
 
+function AutoNamePreview({
+  title,
+  generateFileNames,
+  onCustomize,
+  currentSegIndexSafe,
+}: {
+  title: string,
+  generateFileNames: () => Promise<GeneratedOutFileNames>,
+  onCustomize: () => void,
+  currentSegIndexSafe?: number | undefined,
+}) {
+  const { t } = useTranslation();
+  const [generated, setGenerated] = useState<GeneratedOutFileNames>();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const nextGenerated = await generateFileNames();
+        if (!cancelled) setGenerated(nextGenerated);
+      } catch (error) {
+        console.error('Failed to generate auto file names preview', error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [generateFileNames]);
+
+  const previewName = useMemo(() => {
+    if (generated == null) return undefined;
+    if (currentSegIndexSafe != null) return generated.fileNames[currentSegIndexSafe] ?? generated.fileNames[0];
+    return generated.fileNames[0];
+  }, [currentSegIndexSafe, generated]);
+
+  return (
+    <div>
+      <div>{title}</div>
+      <div style={{ marginBottom: '.3em' }}>
+        <HighlightedText style={{ wordBreak: 'break-word' }}>{previewName ?? t('Generating preview...')}</HighlightedText>
+      </div>
+      <Button onClick={onCustomize} style={{ padding: '.25em .7em' }}>{t('Customize')}</Button>
+    </div>
+  );
+}
+
 function ExportConfirm({
   areWeCutting,
   segmentsToExport,
@@ -109,6 +159,8 @@ function ExportConfirm({
   cutMergedFileTemplate,
   generateCutFileNames,
   generateCutMergedFileNames,
+  generateAutoCutFileNames,
+  generateAutoCutMergedFileNames,
   currentSegIndexSafe,
   segmentsOrInverse,
   mainCopiedThumbnailStreams,
@@ -134,10 +186,12 @@ function ExportConfirm({
   numStreamsTotal: number,
   numStreamsToCopy: number,
   onShowStreamsSelectorClick: () => void,
-  cutFileTemplate: string,
-  cutMergedFileTemplate: string,
+  cutFileTemplate: string | undefined,
+  cutMergedFileTemplate: string | undefined,
   generateCutFileNames: GenerateOutFileNames,
   generateCutMergedFileNames: GenerateOutFileNames,
+  generateAutoCutFileNames?: (() => Promise<GeneratedOutFileNames>) | undefined,
+  generateAutoCutMergedFileNames?: (() => Promise<GeneratedOutFileNames>) | undefined,
   currentSegIndexSafe: number,
   segmentsOrInverse: UseSegments['segmentsOrInverse'],
   mainCopiedThumbnailStreams: FFprobeStream[],
@@ -153,7 +207,7 @@ function ExportConfirm({
 }) {
   const { t } = useTranslation();
 
-  const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, setSegmentsToChaptersOnly, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled, exportEncodeMode, setExportEncodeMode, sizeLimitMb, setSizeLimitMb, sizeLimitCodec, setSizeLimitCodec, sizeLimitQuality, setSizeLimitQuality } = useUserSettings();
+  const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, setSegmentsToChaptersOnly, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled, exportEncodeMode, setExportEncodeMode, sizeLimitMb, setSizeLimitMb, sizeLimitControlMode, setSizeLimitControlMode, sizeLimitPreset, setSizeLimitPreset, sizeLimitAdvancedEncoder, setSizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, setSizeLimitAdvancedTwoPass } = useUserSettings();
 
   const [showAdvanced, setShowAdvanced] = useState(!simpleMode);
   const togglePreserveChapters = useCallback(() => setPreserveChapters((val) => !val), [setPreserveChapters]);
@@ -166,6 +220,32 @@ function ExportConfirm({
   const effectiveOutFormat = isSizeLimited ? 'mp4' : outFormat;
   const isMov = ffmpegIsMov(effectiveOutFormat);
   const isIpod = effectiveOutFormat === 'ipod';
+  const [encoderCapabilities, setEncoderCapabilities] = useState<SizeLimitedEncoderCapabilities>();
+
+  useEffect(() => {
+    if (!isSizeLimited) return undefined;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const capabilities = await getSizeLimitedEncoderCapabilities();
+        if (!cancelled) setEncoderCapabilities(capabilities);
+      } catch (error) {
+        console.warn('Failed to load size-limited encoder capabilities', error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isSizeLimited]);
+
+  useEffect(() => {
+    if (sizeLimitAdvancedEncoder !== 'h264_cpu' && sizeLimitAdvancedTwoPass) {
+      setSizeLimitAdvancedTwoPass(false);
+    }
+  }, [setSizeLimitAdvancedTwoPass, sizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass]);
 
   useEffect(() => {
     if (!isSizeLimited) return;
@@ -277,12 +357,20 @@ function ExportConfirm({
     showHelpText({ text: t('ClipPress will try to keep every produced file slightly under this size, so it is ready to share.') });
   }, [showHelpText, t]);
 
-  const onSizeLimitedCodecHelpPress = useCallback(() => {
-    showHelpText({ text: t('Fast mode stays on H.264. High Quality prefers AV1, using CPU SVT-AV1 when available, then NVIDIA AV1, and only falling back to H.264 when no AV1 path is available.') });
+  const onSizeLimitedControlModeHelpPress = useCallback(() => {
+    showHelpText({ text: t('Simple mode chooses a goal-focused preset for you. Advanced mode exposes the exact encoder path and 2-pass option directly.') });
   }, [showHelpText, t]);
 
-  const onSizeLimitedQualityHelpPress = useCallback(() => {
-    showHelpText({ text: t('Fast aims for a good everyday shareable result and prefers speed. High Quality prioritizes the best-looking result under the cap and now prefers AV1-first quality instead of premium H.264.') });
+  const onSizeLimitedPresetHelpPress = useCallback(() => {
+    showHelpText({ text: t('Max Quality chases the best-looking result under the cap. Quality aims for strong quality with faster export. Fast is the everyday shareable option. Ultra Fast prioritizes turnaround time.') });
+  }, [showHelpText, t]);
+
+  const onSizeLimitedAdvancedEncoderHelpPress = useCallback(() => {
+    showHelpText({ text: t('Choose the exact encoder path directly in Advanced mode. AV1 CPU prioritizes premium quality, AV1 NVIDIA prioritizes faster AV1, H.264 CPU is the compatibility CPU path, and H.264 NVIDIA is the fastest GPU-backed H.264 path.') });
+  }, [showHelpText, t]);
+
+  const onSizeLimitedAdvancedTwoPassHelpPress = useCallback(() => {
+    showHelpText({ text: t('2-pass is currently available for H.264 CPU. It shows Pass 1/2 and Pass 2/2 during export and prioritizes tighter bitrate targeting.') });
   }, [showHelpText, t]);
 
   const handleExportEncodeModeChange = useCallback((value: ExportEncodeMode) => {
@@ -297,6 +385,24 @@ function ExportConfirm({
     if (Number.isNaN(nextValue) || nextValue <= 0) return;
     setSizeLimitMb(nextValue);
   }, [setSizeLimitMb]);
+
+  const presetDescription = useMemo(() => ({
+    max_quality: t('Best-looking result under the limit. Slower is acceptable.'),
+    quality: t('Strong visual quality with faster export than Max Quality.'),
+    fast: t('Good everyday shareable quality with quicker export.'),
+    ultra_fast: t('Fastest turnaround when speed matters most.'),
+  })[sizeLimitPreset], [sizeLimitPreset, t]);
+
+  const isAdvancedTwoPassAvailable = sizeLimitAdvancedEncoder === 'h264_cpu';
+  const advancedEncoderUnavailableMessage = useMemo(() => {
+    if (encoderCapabilities == null) return undefined;
+
+    if (sizeLimitAdvancedEncoder === 'av1_cpu' && !encoderCapabilities.libsvtav1) return t('AV1 CPU (SVT-AV1) is unavailable in this bundled ffmpeg build.');
+    if (sizeLimitAdvancedEncoder === 'av1_nvenc' && !encoderCapabilities.av1Nvenc) return t('AV1 NVIDIA (NVENC) is unavailable on this system.');
+    if (sizeLimitAdvancedEncoder === 'h264_cpu' && !encoderCapabilities.libx264) return t('H.264 CPU (x264) is unavailable in this bundled ffmpeg build.');
+    if (sizeLimitAdvancedEncoder === 'h264_nvenc' && !encoderCapabilities.h264Nvenc) return t('H.264 NVIDIA (NVENC) is unavailable on this system.');
+    return undefined;
+  }, [encoderCapabilities, sizeLimitAdvancedEncoder, t]);
 
   const onKeyframeCutHelpPress = useCallback(() => {
     showHelpText({ text: i18n.t('With "keyframe cut", we will cut at the nearest keyframe before the desired start cutpoint. This is recommended for most files. With "Normal cut" you may have to manually set the cutpoint a few frames before the next keyframe to achieve a precise cut') });
@@ -435,37 +541,67 @@ function ExportConfirm({
 
               <tr>
                 <td>
-                  {t('Codec')}
+                  {t('Controls')}
                 </td>
                 <td>
-                  {sizeLimitQuality === 'fast' ? (
-                    <HighlightedText>H.264</HighlightedText>
-                  ) : (
-                    <Select value={sizeLimitCodec} onChange={withBlur((e) => setSizeLimitCodec(e.target.value as SizeLimitCodec))} style={{ height: '1.8em' }}>
-                      <option value={'h264' satisfies SizeLimitCodec}>H.264</option>
-                      <option value={'av1' satisfies SizeLimitCodec}>AV1</option>
-                    </Select>
-                  )}
+                  <Select value={sizeLimitControlMode} onChange={withBlur((e) => setSizeLimitControlMode(e.target.value as SizeLimitControlMode))} style={{ height: '1.8em' }}>
+                    <option value={'simple' satisfies SizeLimitControlMode}>{t('Simple')}</option>
+                    <option value={'advanced' satisfies SizeLimitControlMode}>{t('Advanced')}</option>
+                  </Select>
                 </td>
                 <td>
-                  <HelpIcon onClick={onSizeLimitedCodecHelpPress} />
+                  <HelpIcon onClick={onSizeLimitedControlModeHelpPress} />
                 </td>
               </tr>
 
               <tr>
                 <td>
-                  {t('Quality mode')}
+                  {sizeLimitControlMode === 'simple' ? t('Preset') : t('Encoder')}
                 </td>
                 <td>
-                  <Select value={sizeLimitQuality} onChange={withBlur((e) => setSizeLimitQuality(e.target.value as SizeLimitQuality))} style={{ height: '1.8em' }}>
-                    <option value={'fast' satisfies SizeLimitQuality}>{t('Fast')}</option>
-                    <option value={'high_quality' satisfies SizeLimitQuality}>{t('High Quality')}</option>
-                  </Select>
+                  {sizeLimitControlMode === 'simple' ? (
+                    <>
+                      <Select value={sizeLimitPreset} onChange={withBlur((e) => setSizeLimitPreset(e.target.value as SizeLimitPreset))} style={{ height: '1.8em' }}>
+                        <option value={'max_quality' satisfies SizeLimitPreset}>{t('Max Quality')}</option>
+                        <option value={'quality' satisfies SizeLimitPreset}>{t('Quality')}</option>
+                        <option value={'fast' satisfies SizeLimitPreset}>{t('Fast')}</option>
+                        <option value={'ultra_fast' satisfies SizeLimitPreset}>{t('Ultra Fast')}</option>
+                      </Select>
+                      <div style={{ marginTop: '.35em', fontSize: '.88em', color: 'var(--gray-11)' }}>{presetDescription}</div>
+                    </>
+                  ) : (
+                    <>
+                      <Select value={sizeLimitAdvancedEncoder} onChange={withBlur((e) => setSizeLimitAdvancedEncoder(e.target.value as SizeLimitAdvancedEncoder))} style={{ height: '1.8em' }}>
+                        <option value={'av1_cpu' satisfies SizeLimitAdvancedEncoder} disabled={encoderCapabilities != null && !encoderCapabilities.libsvtav1}>{t('AV1 CPU (SVT-AV1)')}</option>
+                        <option value={'av1_nvenc' satisfies SizeLimitAdvancedEncoder} disabled={encoderCapabilities != null && !encoderCapabilities.av1Nvenc}>{t('AV1 NVIDIA (NVENC)')}</option>
+                        <option value={'h264_cpu' satisfies SizeLimitAdvancedEncoder} disabled={encoderCapabilities != null && !encoderCapabilities.libx264}>{t('H.264 CPU (x264)')}</option>
+                        <option value={'h264_nvenc' satisfies SizeLimitAdvancedEncoder} disabled={encoderCapabilities != null && !encoderCapabilities.h264Nvenc}>{t('H.264 NVIDIA (NVENC)')}</option>
+                      </Select>
+                      {advancedEncoderUnavailableMessage != null && <div style={{ marginTop: '.35em', fontSize: '.88em', color: warningColor }}>{advancedEncoderUnavailableMessage}</div>}
+                    </>
+                  )}
                 </td>
                 <td>
-                  <HelpIcon onClick={onSizeLimitedQualityHelpPress} />
+                  <HelpIcon onClick={sizeLimitControlMode === 'simple' ? onSizeLimitedPresetHelpPress : onSizeLimitedAdvancedEncoderHelpPress} />
                 </td>
               </tr>
+
+              {sizeLimitControlMode === 'advanced' && (
+                <tr>
+                  <td>
+                    {t('2-pass')}
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '.6em' }}>
+                      {!isAdvancedTwoPassAvailable && <span style={{ fontSize: '.88em', color: 'var(--gray-11)' }}>{t('Only available for H.264 CPU')}</span>}
+                      <Switch checked={sizeLimitAdvancedTwoPass} disabled={!isAdvancedTwoPassAvailable} onCheckedChange={setSizeLimitAdvancedTwoPass} />
+                    </div>
+                  </td>
+                  <td>
+                    <HelpIcon onClick={onSizeLimitedAdvancedTwoPassHelpPress} />
+                  </td>
+                </tr>
+              )}
             </>
           )}
 
@@ -526,7 +662,20 @@ function ExportConfirm({
           {canEditSegTemplate && (
             <tr>
               <td colSpan={2}>
-                <FileNameTemplateEditor mode="separate" template={cutFileTemplate} setTemplate={setCutFileTemplate} defaultTemplate={defaultCutFileTemplate} generateFileNames={generateCutFileNames} currentSegIndexSafe={currentSegIndexSafe} />
+                {isSizeLimited && cutFileTemplate == null && generateAutoCutFileNames != null ? (
+                  <AutoNamePreview title={t('Output name(s):', { count: segmentsToExport.length })} generateFileNames={generateAutoCutFileNames} onCustomize={() => setCutFileTemplate(defaultCutFileTemplate)} currentSegIndexSafe={currentSegIndexSafe} />
+                ) : (
+                  <FileNameTemplateEditor
+                    mode="separate"
+                    template={cutFileTemplate ?? defaultCutFileTemplate}
+                    setTemplate={setCutFileTemplate}
+                    defaultTemplate={defaultCutFileTemplate}
+                    generateFileNames={generateCutFileNames}
+                    currentSegIndexSafe={currentSegIndexSafe}
+                    onReset={isSizeLimited ? (() => setCutFileTemplate(undefined)) : undefined}
+                    resetLabel={isSizeLimited ? t('Use auto naming') : undefined}
+                  />
+                )}
               </td>
               <td>
                 <HelpIcon onClick={onCutFileTemplateHelpPress} />
@@ -537,7 +686,19 @@ function ExportConfirm({
           {willMerge && (
             <tr>
               <td colSpan={2}>
-                <FileNameTemplateEditor mode="merge-segments" template={cutMergedFileTemplate} setTemplate={setCutMergedFileTemplate} defaultTemplate={defaultCutMergedFileTemplate} generateFileNames={generateCutMergedFileNames} />
+                {isSizeLimited && cutMergedFileTemplate == null && generateAutoCutMergedFileNames != null ? (
+                  <AutoNamePreview title={t('Merged output file name:')} generateFileNames={generateAutoCutMergedFileNames} onCustomize={() => setCutMergedFileTemplate(defaultCutMergedFileTemplate)} />
+                ) : (
+                  <FileNameTemplateEditor
+                    mode="merge-segments"
+                    template={cutMergedFileTemplate ?? defaultCutMergedFileTemplate}
+                    setTemplate={setCutMergedFileTemplate}
+                    defaultTemplate={defaultCutMergedFileTemplate}
+                    generateFileNames={generateCutMergedFileNames}
+                    onReset={isSizeLimited ? (() => setCutMergedFileTemplate(undefined)) : undefined}
+                    resetLabel={isSizeLimited ? t('Use auto naming') : undefined}
+                  />
+                )}
               </td>
               <td>
                 <HelpIcon onClick={onCutMergedFileTemplateHelpPress} />

@@ -1,7 +1,7 @@
 import type { MenuItem, MenuItemConstructorOptions } from 'electron';
 import { z } from 'zod';
 import type { FFprobeChapter, FFprobeFormat, FFprobeStream } from '../../common/ffprobe';
-import type { ExportEncodeMode, SizeLimitCodec, SizeLimitQuality } from '../../common/types.js';
+import type { ExportEncodeMode, SizeLimitAdvancedEncoder, SizeLimitCodec, SizeLimitControlMode, SizeLimitPreset } from '../../common/types.js';
 import type { FileStream } from './ffmpeg';
 
 
@@ -120,8 +120,10 @@ export type FfmpegCommandLog = { command: string, time: Date }[];
 export interface SizeLimitedExportOptions {
   mode: ExportEncodeMode,
   targetSizeMb: number,
-  codec: SizeLimitCodec,
-  quality: SizeLimitQuality,
+  controlMode: SizeLimitControlMode,
+  preset: SizeLimitPreset,
+  advancedEncoder: SizeLimitAdvancedEncoder,
+  advancedTwoPass: boolean,
 }
 
 export interface SizeLimitedEncoderCapabilities {
@@ -131,7 +133,22 @@ export interface SizeLimitedEncoderCapabilities {
   libsvtav1: boolean,
 }
 
-export type SizeLimitedStrategyId = 'fast_h264_nvenc' | 'fast_h264_cpu' | 'high_quality_av1_cpu' | 'high_quality_av1_nvenc' | 'high_quality_h264_cpu';
+export type SizeLimitedStrategyId =
+  | 'max_quality_av1_cpu'
+  | 'max_quality_av1_nvenc'
+  | 'max_quality_h264_cpu_two_pass'
+  | 'quality_av1_nvenc'
+  | 'quality_av1_cpu'
+  | 'quality_h264_cpu'
+  | 'fast_h264_nvenc'
+  | 'fast_h264_cpu'
+  | 'ultra_fast_h264_nvenc'
+  | 'ultra_fast_h264_cpu'
+  | 'advanced_av1_cpu'
+  | 'advanced_av1_nvenc'
+  | 'advanced_h264_cpu_single_pass'
+  | 'advanced_h264_cpu_two_pass'
+  | 'advanced_h264_nvenc';
 
 export type SizeLimitedEncoderName = 'h264_nvenc' | 'av1_nvenc' | 'libx264' | 'libsvtav1';
 
@@ -140,15 +157,17 @@ export type SizeLimitedHardwareTarget = 'nvidia' | 'cpu';
 export type SizeLimitedExecutionMode = 'single_pass' | 'ffmpeg_two_pass';
 
 export interface SizeLimitedResolvedStrategy {
-  requestedCodec: SizeLimitCodec,
+  controlMode: SizeLimitControlMode,
+  preset?: SizeLimitPreset | undefined,
+  requestedAdvancedEncoder?: SizeLimitAdvancedEncoder | undefined,
+  requestedAdvancedTwoPass?: boolean | undefined,
   effectiveCodec: SizeLimitCodec,
-  quality: SizeLimitQuality,
   id: SizeLimitedStrategyId,
   encoder: SizeLimitedEncoderName,
   hardware: SizeLimitedHardwareTarget,
   usesGpu: boolean,
   executionMode: SizeLimitedExecutionMode,
-  fallbackReason?: 'av1_unavailable' | 'h264_nvenc_unavailable' | 'svt_av1_unavailable' | undefined,
+  fallbackReason?: 'av1_unavailable' | 'av1_nvenc_unavailable' | 'h264_nvenc_unavailable' | 'svt_av1_unavailable' | undefined,
 }
 
 export interface SizeLimitedRetryStep {

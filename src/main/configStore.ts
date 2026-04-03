@@ -176,6 +176,10 @@ const defaults: Config = {
   sizeLimitMb: 10,
   sizeLimitCodec: 'h264',
   sizeLimitQuality: 'fast',
+  sizeLimitControlMode: 'simple',
+  sizeLimitPreset: 'fast',
+  sizeLimitAdvancedEncoder: 'h264_nvenc',
+  sizeLimitAdvancedTwoPass: false,
 };
 
 const configFileName = 'config.json'; // note: this is also hard-coded inside electron-store
@@ -273,6 +277,35 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     store.delete('customOutDir');
     set('recentCustomOutDirs', [customOutDir]);
     set('enableCustomOutDir', customOutDir != null);
+  }
+
+  const hasSizeLimitControlMode = store.has('sizeLimitControlMode');
+  const hasSizeLimitPreset = store.has('sizeLimitPreset');
+  const hasSizeLimitAdvancedEncoder = store.has('sizeLimitAdvancedEncoder');
+  const hasSizeLimitAdvancedTwoPass = store.has('sizeLimitAdvancedTwoPass');
+
+  if (!hasSizeLimitControlMode || !hasSizeLimitPreset || !hasSizeLimitAdvancedEncoder || !hasSizeLimitAdvancedTwoPass) {
+    logger.info('Migrating size-limited export mode settings');
+
+    const sizeLimitCodec = store.get('sizeLimitCodec');
+    const sizeLimitQuality = store.get('sizeLimitQuality');
+
+    if (sizeLimitQuality === 'fast') {
+      if (!hasSizeLimitControlMode) set('sizeLimitControlMode', 'simple');
+      if (!hasSizeLimitPreset) set('sizeLimitPreset', 'fast');
+      if (!hasSizeLimitAdvancedEncoder) set('sizeLimitAdvancedEncoder', 'h264_nvenc');
+      if (!hasSizeLimitAdvancedTwoPass) set('sizeLimitAdvancedTwoPass', false);
+    } else if (sizeLimitCodec === 'av1') {
+      if (!hasSizeLimitControlMode) set('sizeLimitControlMode', 'simple');
+      if (!hasSizeLimitPreset) set('sizeLimitPreset', 'max_quality');
+      if (!hasSizeLimitAdvancedEncoder) set('sizeLimitAdvancedEncoder', 'av1_cpu');
+      if (!hasSizeLimitAdvancedTwoPass) set('sizeLimitAdvancedTwoPass', false);
+    } else {
+      if (!hasSizeLimitControlMode) set('sizeLimitControlMode', 'advanced');
+      if (!hasSizeLimitPreset) set('sizeLimitPreset', 'max_quality');
+      if (!hasSizeLimitAdvancedEncoder) set('sizeLimitAdvancedEncoder', 'h264_cpu');
+      if (!hasSizeLimitAdvancedTwoPass) set('sizeLimitAdvancedTwoPass', true);
+    }
   }
 
   // const configVersion: number = store.get('version');

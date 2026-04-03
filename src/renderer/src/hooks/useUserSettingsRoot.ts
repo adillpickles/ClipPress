@@ -204,6 +204,14 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ sizeLimitCodec }), [sizeLimitCodec]);
   const [sizeLimitQuality, setSizeLimitQuality] = useState(safeGetConfigInitial('sizeLimitQuality'));
   useEffect(() => safeSetConfig({ sizeLimitQuality }), [sizeLimitQuality]);
+  const [sizeLimitControlMode, setSizeLimitControlMode] = useState(safeGetConfigInitial('sizeLimitControlMode'));
+  useEffect(() => safeSetConfig({ sizeLimitControlMode }), [sizeLimitControlMode]);
+  const [sizeLimitPreset, setSizeLimitPreset] = useState(safeGetConfigInitial('sizeLimitPreset'));
+  useEffect(() => safeSetConfig({ sizeLimitPreset }), [sizeLimitPreset]);
+  const [sizeLimitAdvancedEncoder, setSizeLimitAdvancedEncoder] = useState(safeGetConfigInitial('sizeLimitAdvancedEncoder'));
+  useEffect(() => safeSetConfig({ sizeLimitAdvancedEncoder }), [sizeLimitAdvancedEncoder]);
+  const [sizeLimitAdvancedTwoPass, setSizeLimitAdvancedTwoPass] = useState(safeGetConfigInitial('sizeLimitAdvancedTwoPass'));
+  useEffect(() => safeSetConfig({ sizeLimitAdvancedTwoPass }), [sizeLimitAdvancedTwoPass]);
 
 
   const resetKeyBindings = useCallback(() => {
@@ -327,6 +335,10 @@ export default function useUserSettingsRoot() {
     sizeLimitMb,
     sizeLimitCodec,
     sizeLimitQuality,
+    sizeLimitControlMode,
+    sizeLimitPreset,
+    sizeLimitAdvancedEncoder,
+    sizeLimitAdvancedTwoPass,
   };
 
   return {
@@ -414,6 +426,10 @@ export default function useUserSettingsRoot() {
     setSizeLimitMb,
     setSizeLimitCodec,
     setSizeLimitQuality,
+    setSizeLimitControlMode,
+    setSizeLimitPreset,
+    setSizeLimitAdvancedEncoder,
+    setSizeLimitAdvancedTwoPass,
   };
 }
 

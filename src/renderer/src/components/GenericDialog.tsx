@@ -20,6 +20,15 @@ export interface GenericDialogParams {
   onClose?: () => void;
 }
 
+export interface SizeLimitedFinishedSummary {
+  requestedLimitLabel: string,
+  createdCount: number,
+  skippedCount: number,
+  overTargetCount: number,
+  largestCreatedSizeLabel?: string | undefined,
+  singleCreatedSizeLabel?: string | undefined,
+}
+
 export type ShowGenericDialog = (dialog: GenericDialogParams) => void;
 
 interface GenericDialogContextValue {
@@ -134,10 +143,11 @@ export function useDialog() {
     });
   }), [showGenericDialog, t]);
 
-  const openExportFinishedDialog = useCallback(async ({ filePath, children, width }: {
+  const openExportFinishedDialog = useCallback(async ({ filePath, children, width, title }: {
     filePath: string,
     children: ReactNode,
     width?: string,
+    title?: ReactNode,
   }) => {
     const response = await new Promise<boolean>((resolve) => {
       function ExportFinishedDialog() {
@@ -151,7 +161,7 @@ export function useDialog() {
 
         return (
           <Dialog.Content aria-describedby={undefined} style={{ width }}>
-            <Dialog.Title>{t('Success!')}</Dialog.Title>
+            <Dialog.Title>{title ?? t('Success!')}</Dialog.Title>
 
             {children}
 
@@ -196,25 +206,54 @@ export function useDialog() {
     });
   }, [openExportFinishedDialog, t]);
 
-  const openSizeLimitedFinishedDialog = useCallback(async ({ filePath, warnings, notices, createdCount }: {
+  const openSizeLimitedFinishedDialog = useCallback(async ({ filePath, warnings, notices, summary }: {
     filePath: string,
     warnings: string[],
     notices: string[],
-    createdCount: number,
+    summary: SizeLimitedFinishedSummary,
   }) => {
-    const hasWarnings = warnings.length > 0;
-    const wroteNewFiles = createdCount > 0;
+    const hasWarnings = warnings.length > 0 || summary.overTargetCount > 0;
+    const wroteNewFiles = summary.createdCount > 0;
+
+    const summaryText = (() => {
+      if (!wroteNewFiles) return undefined;
+
+      if (summary.createdCount === 1 && summary.singleCreatedSizeLabel != null && summary.overTargetCount === 0) {
+        return t('Requested limit: {{target}}. Result: {{actual}}, under target.', {
+          target: summary.requestedLimitLabel,
+          actual: summary.singleCreatedSizeLabel,
+        });
+      }
+
+      if (summary.overTargetCount > 0) {
+        return t('Requested limit: {{target}} per file. {{count}} file is still over the limit; the closest result was kept.', {
+          target: summary.requestedLimitLabel,
+          count: summary.overTargetCount,
+        });
+      }
+
+      if (summary.largestCreatedSizeLabel != null) {
+        return t('Requested limit: {{target}} per file. Largest new file: {{actual}}.', {
+          target: summary.requestedLimitLabel,
+          actual: summary.largestCreatedSizeLabel,
+        });
+      }
+
+      return t('Requested limit: {{target}}.', { target: summary.requestedLimitLabel });
+    })();
 
     await openExportFinishedDialog({
       filePath,
+      title: wroteNewFiles ? (hasWarnings ? t('Export warning') : t('Success!')) : t('Export result'),
       width: '52em',
       children: (
         <UnorderedList>
           <ListItem icon={<FaCheckCircle />} iconColor={hasWarnings ? warningColor : saveColor} style={{ fontWeight: 'bold' }}>
             {wroteNewFiles
-              ? (hasWarnings ? t('Size-limited export finished with warning(s)', { count: warnings.length }) : t('Size-limited export is done!'))
+              ? (hasWarnings ? t('Size-limited export finished with warning(s)', { count: Math.max(warnings.length, summary.overTargetCount) }) : t('Size-limited export is done!'))
               : t('No new files were written')}
           </ListItem>
+          {summaryText != null && <ListItem icon={<FaInfoCircle />}>{summaryText}</ListItem>}
           <Warnings warnings={warnings} />
           <Notices notices={notices} />
         </UnorderedList>

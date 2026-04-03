@@ -29,6 +29,12 @@ export type SizeLimitCodec = 'h264' | 'av1';
 
 export type SizeLimitQuality = 'fast' | 'high_quality';
 
+export type SizeLimitControlMode = 'simple' | 'advanced';
+
+export type SizeLimitPreset = 'max_quality' | 'quality' | 'fast' | 'ultra_fast';
+
+export type SizeLimitAdvancedEncoder = 'av1_cpu' | 'av1_nvenc' | 'h264_cpu' | 'h264_nvenc';
+
 export interface Config {
   version: number,
   lastAppVersion: string,
@@ -113,6 +119,10 @@ export interface Config {
   sizeLimitMb: number,
   sizeLimitCodec: SizeLimitCodec,
   sizeLimitQuality: SizeLimitQuality,
+  sizeLimitControlMode: SizeLimitControlMode,
+  sizeLimitPreset: SizeLimitPreset,
+  sizeLimitAdvancedEncoder: SizeLimitAdvancedEncoder,
+  sizeLimitAdvancedTwoPass: boolean,
 }
 
 export interface Waveform {
