@@ -4,6 +4,12 @@ import { getNextSizeLimitedRetryStep, bytesPerMb, planSizeLimitedEncode, targetS
 import { resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 
 const allCapabilities = { h264Nvenc: true, av1Nvenc: true, libx264: true, libsvtav1: true } as const;
+const defaultStrategyArgs = {
+  advancedAv1CpuPreset: 6,
+  advancedAv1NvencPreset: 'p6',
+  advancedH264CpuPreset: 'slow',
+  advancedH264NvencPreset: 'p4',
+} as const;
 
 describe('targetSizeMbToBytes', () => {
   it('converts megabytes to bytes', () => {
@@ -18,6 +24,7 @@ describe('planSizeLimitedEncode', () => {
       preset: 'fast',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
+      ...defaultStrategyArgs,
       capabilities: allCapabilities,
     });
     const plan = planSizeLimitedEncode({
@@ -38,6 +45,7 @@ describe('planSizeLimitedEncode', () => {
       preset: 'max_quality',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
+      ...defaultStrategyArgs,
       capabilities: allCapabilities,
     });
     const plan = planSizeLimitedEncode({
@@ -50,7 +58,7 @@ describe('planSizeLimitedEncode', () => {
     expect(plan.initialAttempt.audioBitrate).toBeLessThan(plan.initialAttempt.videoBitrate);
     expect(plan.initialAttempt.audioBitrate).toBeLessThanOrEqual(64_000);
     expect(strategy.id).toBe('max_quality_av1_cpu_two_pass');
-    expect(plan.planningTargetBytes).toBeLessThan(plan.targetBytes);
+    expect(plan.initialFinalTargetBytes).toBeLessThan(plan.targetBytes);
   });
 
   it('omits audio bitrate for silent clips', () => {
@@ -59,6 +67,7 @@ describe('planSizeLimitedEncode', () => {
       preset: 'fast',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
+      ...defaultStrategyArgs,
       capabilities: allCapabilities,
     });
     const plan = planSizeLimitedEncode({
@@ -77,6 +86,7 @@ describe('planSizeLimitedEncode', () => {
       preset: 'fast',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
+      ...defaultStrategyArgs,
       capabilities: allCapabilities,
     });
     const plan = planSizeLimitedEncode({
@@ -99,6 +109,7 @@ describe('getNextSizeLimitedRetryStep', () => {
       preset: 'max_quality',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
+      ...defaultStrategyArgs,
       capabilities: allCapabilities,
     });
     const plan = planSizeLimitedEncode({
@@ -136,6 +147,7 @@ describe('getNextSizeLimitedRetryStep', () => {
       preset: 'fast',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
+      ...defaultStrategyArgs,
       capabilities: allCapabilities,
     });
     const plan = planSizeLimitedEncode({
@@ -160,6 +172,7 @@ describe('getNextSizeLimitedRetryStep', () => {
       preset: 'max_quality',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
+      ...defaultStrategyArgs,
       capabilities: allCapabilities,
     });
     const fastStrategy = resolveSizeLimitedStrategy({
@@ -167,6 +180,7 @@ describe('getNextSizeLimitedRetryStep', () => {
       preset: 'fast',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
+      ...defaultStrategyArgs,
       capabilities: allCapabilities,
     });
 
@@ -184,7 +198,7 @@ describe('getNextSizeLimitedRetryStep', () => {
     });
 
     expect(maxQualityPlan.maxAttempts).toBe(2);
-    expect(fastPlan.maxAttempts).toBe(3);
-    expect(maxQualityPlan.planningTargetBytes).toBeGreaterThan(fastPlan.planningTargetBytes);
+    expect(fastPlan.maxAttempts).toBe(2);
+    expect(maxQualityPlan.initialFinalTargetBytes).toBeGreaterThan(fastPlan.initialFinalTargetBytes);
   });
 });

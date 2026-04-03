@@ -31,9 +31,15 @@ export type SizeLimitQuality = 'fast' | 'high_quality';
 
 export type SizeLimitControlMode = 'simple' | 'advanced';
 
-export type SizeLimitPreset = 'max_quality' | 'quality' | 'fast' | 'ultra_fast';
+export type SizeLimitPreset = 'max_quality' | 'quality' | 'fast';
 
 export type SizeLimitAdvancedEncoder = 'av1_cpu' | 'av1_nvenc' | 'h264_cpu' | 'h264_nvenc';
+
+export type SizeLimitAdvancedAv1CpuPreset = number;
+
+export type SizeLimitAdvancedNvencPreset = 'p1' | 'p2' | 'p3' | 'p4' | 'p5' | 'p6' | 'p7';
+
+export type SizeLimitAdvancedH264CpuPreset = 'ultrafast' | 'superfast' | 'veryfast' | 'faster' | 'fast' | 'medium' | 'slow' | 'slower' | 'veryslow';
 
 export type SizeLimitNamingMode = 'auto' | 'custom_template';
 
@@ -125,6 +131,10 @@ export interface Config {
   sizeLimitPreset: SizeLimitPreset,
   sizeLimitAdvancedEncoder: SizeLimitAdvancedEncoder,
   sizeLimitAdvancedTwoPass: boolean,
+  sizeLimitAdvancedAv1CpuPreset: SizeLimitAdvancedAv1CpuPreset,
+  sizeLimitAdvancedAv1NvencPreset: SizeLimitAdvancedNvencPreset,
+  sizeLimitAdvancedH264CpuPreset: SizeLimitAdvancedH264CpuPreset,
+  sizeLimitAdvancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
   sizeLimitSeparateNamingMode: SizeLimitNamingMode,
   sizeLimitMergedNamingMode: SizeLimitNamingMode,
 }

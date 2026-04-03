@@ -191,7 +191,7 @@ function App() {
   const [selectedBatchFiles, setSelectedBatchFiles] = useState<string[]>([]);
 
   const allUserSettings = useUserSettingsRoot();
-  const { captureFormat, keyframeCut, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, autoMerge, timecodeFormat, invertCutSegments, autoExportExtraStreams, askBeforeClose, enableImportChapters, enableAskForFileOpenAction, playbackVolume, autoSaveProjectFile, wheelSensitivity, waveformHeight, invertTimelineScroll, language, ffmpegExperimental, hideNotifications, hideOsNotifications, autoLoadTimecode, autoDeleteMergedSegments, exportConfirmEnabled, segmentsToChapters, simpleMode, cutFileTemplate, cutMergedFileTemplate, mergedFileTemplate, keyboardSeekAccFactor, keyboardNormalSeekSpeed, keyboardSeekSpeed2, keyboardSeekSpeed3, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, outFormatLocked, safeOutputFileName, enableAutoHtml5ify, segmentsToChaptersOnly, keyBindings, enableSmartCut, customFfPath, storeProjectInWorkingDir, enableOverwriteOutput, mouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, captureFrameMethod, captureFrameQuality, captureFrameFileNameFormat, enableNativeHevc, cleanupChoices, darkMode, preferStrongColors, outputFileNameMinZeroPadding, cutFromAdjustmentFrames, cutToAdjustmentFrames, waveformMode: waveformModePreference, thumbnailsEnabled, keyframesEnabled, reducedMotion, ffmpegHwaccel, exportEncodeMode, sizeLimitMb, sizeLimitControlMode, sizeLimitPreset, sizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, sizeLimitSeparateNamingMode, sizeLimitMergedNamingMode } = allUserSettings.settings;
+  const { captureFormat, keyframeCut, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, autoMerge, timecodeFormat, invertCutSegments, autoExportExtraStreams, askBeforeClose, enableImportChapters, enableAskForFileOpenAction, playbackVolume, autoSaveProjectFile, wheelSensitivity, waveformHeight, invertTimelineScroll, language, ffmpegExperimental, hideNotifications, hideOsNotifications, autoLoadTimecode, autoDeleteMergedSegments, exportConfirmEnabled, segmentsToChapters, simpleMode, cutFileTemplate, cutMergedFileTemplate, mergedFileTemplate, keyboardSeekAccFactor, keyboardNormalSeekSpeed, keyboardSeekSpeed2, keyboardSeekSpeed3, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, outFormatLocked, safeOutputFileName, enableAutoHtml5ify, segmentsToChaptersOnly, keyBindings, enableSmartCut, customFfPath, storeProjectInWorkingDir, enableOverwriteOutput, mouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, captureFrameMethod, captureFrameQuality, captureFrameFileNameFormat, enableNativeHevc, cleanupChoices, darkMode, preferStrongColors, outputFileNameMinZeroPadding, cutFromAdjustmentFrames, cutToAdjustmentFrames, waveformMode: waveformModePreference, thumbnailsEnabled, keyframesEnabled, reducedMotion, ffmpegHwaccel, exportEncodeMode, sizeLimitMb, sizeLimitControlMode, sizeLimitPreset, sizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, sizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, sizeLimitSeparateNamingMode, sizeLimitMergedNamingMode } = allUserSettings.settings;
   const { setCaptureFormat, setCustomOutDir, setKeyframeCut, setPlaybackVolume, setExportConfirmEnabled, setSimpleMode, setOutFormatLocked, setSafeOutputFileName, setKeyBindings, resetKeyBindings, setStoreProjectInWorkingDir, setCleanupChoices, toggleDarkMode, setWaveformMode, setThumbnailsEnabled, setKeyframesEnabled, prefersReducedMotion, customOutDir } = allUserSettings;
 
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(!simpleMode);
@@ -1167,9 +1167,13 @@ function App() {
       preset: sizeLimitPreset,
       advancedEncoder: sizeLimitAdvancedEncoder,
       advancedTwoPass: sizeLimitAdvancedTwoPass,
+      advancedAv1CpuPreset: sizeLimitAdvancedAv1CpuPreset,
+      advancedAv1NvencPreset: sizeLimitAdvancedAv1NvencPreset,
+      advancedH264CpuPreset: sizeLimitAdvancedH264CpuPreset,
+      advancedH264NvencPreset: sizeLimitAdvancedH264NvencPreset,
       capabilities,
     });
-  }, [sizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, sizeLimitControlMode, sizeLimitPreset]);
+  }, [sizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedEncoder, sizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, sizeLimitAdvancedTwoPass, sizeLimitControlMode, sizeLimitPreset]);
 
   const buildSizeLimitedAutoFileNames = useCallback((items: SizeLimitedAutoNameItem[]) => {
     if (filePath == null) return [];
@@ -1353,85 +1357,61 @@ function App() {
 
     const uniqueStrategies = new Map(createdResults.map((result) => [`${result.strategy.id}:${result.strategy.fallbackReason ?? 'none'}`, result.strategy]));
     for (const strategy of uniqueStrategies.values()) {
-      switch (strategy.id) {
-        case 'max_quality_av1_cpu_two_pass': {
-          notices.add(i18n.t('Max Quality used CPU AV1 (SVT-AV1) 2-pass for the strongest low-bitrate result.'));
-          break;
-        }
-        case 'max_quality_av1_nvenc_two_pass': {
-          warnings.add(i18n.t('SVT-AV1 was unavailable, so Max Quality fell back to NVIDIA AV1 2-pass.'));
-          break;
-        }
-        case 'max_quality_h264_cpu_two_pass': {
-          warnings.add(i18n.t('AV1 encoders were unavailable, so Max Quality fell back to H.264 CPU 2-pass.'));
-          break;
-        }
-        case 'max_quality_h264_nvenc_two_pass': {
-          warnings.add(i18n.t('AV1 and CPU H.264 encoders were unavailable, so Max Quality fell back to NVIDIA H.264 2-pass.'));
-          break;
-        }
-        case 'quality_av1_nvenc': {
-          notices.add(i18n.t('Quality used NVIDIA AV1 for a stronger quality-to-speed balance.'));
-          break;
-        }
-        case 'quality_av1_cpu': {
-          warnings.add(i18n.t('NVIDIA AV1 was unavailable, so Quality fell back to CPU AV1.'));
-          break;
-        }
-        case 'quality_h264_cpu': {
-          warnings.add(i18n.t('AV1 encoders were unavailable, so Quality fell back to H.264 CPU.'));
-          break;
-        }
-        case 'fast_h264_nvenc': {
-          notices.add(i18n.t('Fast used NVIDIA H.264 for a good everyday shareable result.'));
-          break;
-        }
-        case 'fast_h264_cpu': {
-          warnings.add(i18n.t('Fast used CPU H.264 because NVIDIA H.264 is unavailable on this system.'));
-          break;
-        }
-        case 'ultra_fast_h264_nvenc': {
-          notices.add(i18n.t('Ultra Fast used NVIDIA H.264 for the quickest turnaround.'));
-          break;
-        }
-        case 'ultra_fast_h264_cpu': {
-          warnings.add(i18n.t('Ultra Fast used CPU H.264 because NVIDIA H.264 is unavailable on this system.'));
-          break;
-        }
-        case 'advanced_av1_cpu_single_pass': {
-          notices.add(i18n.t('Advanced mode used CPU AV1 (SVT-AV1).'));
-          break;
-        }
-        case 'advanced_av1_cpu_two_pass': {
-          notices.add(i18n.t('Advanced mode used CPU AV1 (SVT-AV1) 2-pass.'));
-          break;
-        }
-        case 'advanced_av1_nvenc_single_pass': {
-          notices.add(i18n.t('Advanced mode used NVIDIA AV1.'));
-          break;
-        }
-        case 'advanced_av1_nvenc_two_pass': {
-          notices.add(i18n.t('Advanced mode used NVIDIA AV1 2-pass.'));
-          break;
-        }
-        case 'advanced_h264_cpu_single_pass': {
-          notices.add(i18n.t('Advanced mode used CPU H.264.'));
-          break;
-        }
-        case 'advanced_h264_cpu_two_pass': {
-          notices.add(i18n.t('Advanced mode used CPU H.264 2-pass.'));
-          break;
-        }
-        case 'advanced_h264_nvenc_single_pass': {
-          notices.add(i18n.t('Advanced mode used NVIDIA H.264.'));
-          break;
-        }
-        case 'advanced_h264_nvenc_two_pass': {
-          notices.add(i18n.t('Advanced mode used NVIDIA H.264 2-pass.'));
-          break;
-        }
-        default: {
-          break;
+      if (strategy.controlMode === 'advanced') {
+        const encoderLabel = ({
+          libsvtav1: 'CPU AV1 (SVT-AV1)',
+          av1_nvenc: 'NVIDIA AV1',
+          libx264: 'CPU H.264',
+          h264_nvenc: 'NVIDIA H.264',
+        })[strategy.encoder];
+
+        const passLabel = strategy.executionMode === 'ffmpeg_two_pass' ? i18n.t('2-pass') : i18n.t('1-pass');
+        notices.add(i18n.t('Advanced mode used {{encoder}} {{passLabel}} with preset {{preset}}.', {
+          encoder: encoderLabel,
+          passLabel,
+          preset: String(strategy.encoderPreset),
+        }));
+      } else {
+        switch (strategy.id) {
+          case 'max_quality_av1_cpu_two_pass': {
+            notices.add(i18n.t('Max Quality used CPU AV1 (SVT-AV1) 2-pass for the strongest low-bitrate result.'));
+            break;
+          }
+          case 'max_quality_av1_nvenc_two_pass': {
+            warnings.add(i18n.t('SVT-AV1 was unavailable, so Max Quality fell back to NVIDIA AV1 2-pass.'));
+            break;
+          }
+          case 'max_quality_h264_cpu_two_pass': {
+            warnings.add(i18n.t('AV1 encoders were unavailable, so Max Quality fell back to H.264 CPU 2-pass.'));
+            break;
+          }
+          case 'max_quality_h264_nvenc_two_pass': {
+            warnings.add(i18n.t('AV1 and CPU H.264 encoders were unavailable, so Max Quality fell back to NVIDIA H.264 2-pass.'));
+            break;
+          }
+          case 'quality_av1_nvenc': {
+            notices.add(i18n.t('Quality used NVIDIA AV1 for a stronger quality-to-speed balance.'));
+            break;
+          }
+          case 'quality_av1_cpu': {
+            warnings.add(i18n.t('NVIDIA AV1 was unavailable, so Quality fell back to CPU AV1.'));
+            break;
+          }
+          case 'quality_h264_cpu': {
+            warnings.add(i18n.t('AV1 encoders were unavailable, so Quality fell back to H.264 CPU.'));
+            break;
+          }
+          case 'fast_h264_nvenc': {
+            notices.add(i18n.t('Fast used NVIDIA H.264 for a good everyday shareable result.'));
+            break;
+          }
+          case 'fast_h264_cpu': {
+            warnings.add(i18n.t('Fast used CPU H.264 because NVIDIA H.264 is unavailable on this system.'));
+            break;
+          }
+          default: {
+            break;
+          }
         }
       }
     }
@@ -1529,6 +1509,10 @@ function App() {
               preset: sizeLimitPreset,
               advancedEncoder: sizeLimitAdvancedEncoder,
               advancedTwoPass: sizeLimitAdvancedTwoPass,
+              advancedAv1CpuPreset: sizeLimitAdvancedAv1CpuPreset,
+              advancedAv1NvencPreset: sizeLimitAdvancedAv1NvencPreset,
+              advancedH264CpuPreset: sizeLimitAdvancedH264CpuPreset,
+              advancedH264NvencPreset: sizeLimitAdvancedH264NvencPreset,
               videoStream: sizeLimitedVideoStream,
               audioStream: sizeLimitedAudioStream,
               enableOverwriteOutput,
@@ -1575,6 +1559,10 @@ function App() {
             preset: sizeLimitPreset,
             advancedEncoder: sizeLimitAdvancedEncoder,
             advancedTwoPass: sizeLimitAdvancedTwoPass,
+            advancedAv1CpuPreset: sizeLimitAdvancedAv1CpuPreset,
+            advancedAv1NvencPreset: sizeLimitAdvancedAv1NvencPreset,
+            advancedH264CpuPreset: sizeLimitAdvancedH264CpuPreset,
+            advancedH264NvencPreset: sizeLimitAdvancedH264NvencPreset,
             videoStream: sizeLimitedVideoStream,
             audioStream: sizeLimitedAudioStream,
             enableOverwriteOutput,
@@ -1807,7 +1795,7 @@ function App() {
       setWorking(undefined);
       setProgress(undefined);
     }
-  }, [allFilesMeta, appendFfmpegCommandLog, appendSizeLimitedResultNotices, areWeCutting, askForCleanupChoices, autoDeleteMergedSegments, avoidNegativeTs, buildSizeLimitedInternalFileNames, buildSizeLimitedResultSummary, cleanupChoices, cleanupFiles, concatCutSegments, copyFileStreams, customOutDir, customTagsByFile, cutFileTemplateOrDefault, cutMergedFileTemplateOrDefault, cutMultiple, detectedFps, effectiveRotation, enableOverwriteOutput, exportConfirmEnabled, exportExtraStreams, extractStreams, ffmpegExperimental, fileDuration, fileFormat, filePath, formatSizeLimitedJobStageText, generateCutFileNames, generateCutMergedFileNames, generateSizeLimitedCustomCutFileNames, generateSizeLimitedCustomCutMergedFileNames, getSizeLimitedSeparatePreferredSuffix, handleExportFailed, haveInvalidSegs, hideAllNotifications, invertCutSegments, isRotationSet, isSizeLimitedExport, keyframeCut, mainFileFormat, mainStreams, maybeRenameSizeLimitedOutputs, movFastStart, nonCopiedExtraStreams, numStreamsToCopy, openCutFinishedDialog, openSizeLimitedFinishedDialog, outputDir, outputPlaybackRate, paramsByStreamId, preserveChapters, preserveMetadata, preserveMetadataOnMerge, preserveMovData, prefersReducedMotion, setWorking, segmentsOrInverse.selected, segmentsToChapters, segmentsToChaptersOnly, segmentsToExport, shortestFlag, showOsNotification, simpleMode, sizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, sizeLimitControlMode, sizeLimitMb, sizeLimitMergedNamingMode, sizeLimitPreset, sizeLimitSeparateNamingMode, sizeLimitedCutFileTemplateOrDefault, sizeLimitedCutMergedFileTemplateOrDefault, sizeLimitedStreams, t, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, tryDeleteFiles, willMerge, workingRef]);
+  }, [allFilesMeta, appendFfmpegCommandLog, appendSizeLimitedResultNotices, areWeCutting, askForCleanupChoices, autoDeleteMergedSegments, avoidNegativeTs, buildSizeLimitedInternalFileNames, buildSizeLimitedResultSummary, cleanupChoices, cleanupFiles, concatCutSegments, copyFileStreams, customOutDir, customTagsByFile, cutFileTemplateOrDefault, cutMergedFileTemplateOrDefault, cutMultiple, detectedFps, effectiveRotation, enableOverwriteOutput, exportConfirmEnabled, exportExtraStreams, extractStreams, ffmpegExperimental, fileDuration, fileFormat, filePath, formatSizeLimitedJobStageText, generateCutFileNames, generateCutMergedFileNames, generateSizeLimitedCustomCutFileNames, generateSizeLimitedCustomCutMergedFileNames, getSizeLimitedSeparatePreferredSuffix, handleExportFailed, haveInvalidSegs, hideAllNotifications, invertCutSegments, isRotationSet, isSizeLimitedExport, keyframeCut, mainFileFormat, mainStreams, maybeRenameSizeLimitedOutputs, movFastStart, nonCopiedExtraStreams, numStreamsToCopy, openCutFinishedDialog, openSizeLimitedFinishedDialog, outputDir, outputPlaybackRate, paramsByStreamId, preserveChapters, preserveMetadata, preserveMetadataOnMerge, preserveMovData, prefersReducedMotion, setWorking, segmentsOrInverse.selected, segmentsToChapters, segmentsToChaptersOnly, segmentsToExport, shortestFlag, showOsNotification, simpleMode, sizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedEncoder, sizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, sizeLimitAdvancedTwoPass, sizeLimitControlMode, sizeLimitMb, sizeLimitMergedNamingMode, sizeLimitPreset, sizeLimitSeparateNamingMode, sizeLimitedCutFileTemplateOrDefault, sizeLimitedCutMergedFileTemplateOrDefault, sizeLimitedStreams, t, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, tryDeleteFiles, willMerge, workingRef]);
 
   const onExportPress = useCallback(async () => {
     if (!filePath) return;

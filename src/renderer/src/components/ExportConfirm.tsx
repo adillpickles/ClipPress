@@ -24,7 +24,16 @@ import type { SegmentToExport, SizeLimitedEncoderCapabilities } from '../types';
 import type { GenerateOutFileNames, GeneratedOutFileNames } from '../util/outputNameTemplate';
 import { defaultCutFileTemplate, defaultCutMergedFileTemplate, defaultSizeLimitedCutFileTemplate, defaultSizeLimitedCutMergedFileTemplate } from '../util/outputNameTemplate';
 import type { FFprobeStream } from '../../../common/ffprobe';
-import type { AvoidNegativeTs, ExportEncodeMode, PreserveMetadata, SizeLimitAdvancedEncoder, SizeLimitControlMode, SizeLimitPreset } from '../../../common/types';
+import type {
+  AvoidNegativeTs,
+  ExportEncodeMode,
+  PreserveMetadata,
+  SizeLimitAdvancedEncoder,
+  SizeLimitAdvancedH264CpuPreset,
+  SizeLimitAdvancedNvencPreset,
+  SizeLimitControlMode,
+  SizeLimitPreset,
+} from '../../../common/types';
 import TextInput from './TextInput';
 import type { UseSegments } from '../hooks/useSegments';
 import ExportSheet from './ExportSheet';
@@ -49,6 +58,9 @@ const rightIconStyle: CSSProperties = { fontSize: '1.2em', verticalAlign: 'middl
 
 const adjustCutFromValues = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const adjustCutToValues = [-10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const av1CpuPresetOptions = Array.from({ length: 14 }, (_, index) => index);
+const nvencPresetOptions = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'] as const satisfies readonly SizeLimitAdvancedNvencPreset[];
+const h264CpuPresetOptions = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'] as const satisfies readonly SizeLimitAdvancedH264CpuPreset[];
 
 const HelpIcon = ({ onClick, style }: { onClick: () => void, style?: CSSProperties }) => (
   <IoIosHelpCircle role="button" onClick={withBlur(onClick)} style={{ cursor: 'pointer', color: primaryTextColor, verticalAlign: 'middle', fontSize: '1.5em', ...style }} />
@@ -207,7 +219,7 @@ function ExportConfirm({
 }) {
   const { t } = useTranslation();
 
-  const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, setSegmentsToChaptersOnly, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled, exportEncodeMode, setExportEncodeMode, sizeLimitMb, setSizeLimitMb, sizeLimitControlMode, setSizeLimitControlMode, sizeLimitPreset, setSizeLimitPreset, sizeLimitAdvancedEncoder, setSizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, setSizeLimitAdvancedTwoPass, sizeLimitSeparateNamingMode, setSizeLimitSeparateNamingMode, sizeLimitMergedNamingMode, setSizeLimitMergedNamingMode } = useUserSettings();
+  const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, setSegmentsToChaptersOnly, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled, exportEncodeMode, setExportEncodeMode, sizeLimitMb, setSizeLimitMb, sizeLimitControlMode, setSizeLimitControlMode, sizeLimitPreset, setSizeLimitPreset, sizeLimitAdvancedEncoder, setSizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, setSizeLimitAdvancedTwoPass, sizeLimitAdvancedAv1CpuPreset, setSizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, setSizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedH264CpuPreset, setSizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, setSizeLimitAdvancedH264NvencPreset, sizeLimitSeparateNamingMode, setSizeLimitSeparateNamingMode, sizeLimitMergedNamingMode, setSizeLimitMergedNamingMode } = useUserSettings();
 
   const [showAdvanced, setShowAdvanced] = useState(!simpleMode);
   const togglePreserveChapters = useCallback(() => setPreserveChapters((val) => !val), [setPreserveChapters]);
@@ -352,11 +364,11 @@ function ExportConfirm({
   }, [showHelpText, t]);
 
   const onSizeLimitedControlModeHelpPress = useCallback(() => {
-    showHelpText({ text: t('Simple mode chooses a goal-focused preset for you. Advanced mode exposes the exact encoder path and 2-pass option directly.') });
+    showHelpText({ text: t('Simple mode chooses a goal-focused preset for you. Advanced mode exposes the exact encoder path, preset, and 2-pass option directly.') });
   }, [showHelpText, t]);
 
   const onSizeLimitedPresetHelpPress = useCallback(() => {
-    showHelpText({ text: t('Max Quality chases the best-looking result under the cap. Quality aims for strong quality with faster export. Fast is the everyday shareable option. Ultra Fast prioritizes turnaround time.') });
+    showHelpText({ text: t('Max Quality chases the best-looking result under the cap. Quality is the recommended everyday balance. Fast prioritizes speed while keeping the result shareable.') });
   }, [showHelpText, t]);
 
   const onSizeLimitedAdvancedEncoderHelpPress = useCallback(() => {
@@ -365,6 +377,10 @@ function ExportConfirm({
 
   const onSizeLimitedAdvancedTwoPassHelpPress = useCallback(() => {
     showHelpText({ text: t('Turn this on to use true ffmpeg 2-pass encoding for the selected encoder path. ClipPress will show Pass 1/2 and Pass 2/2 during export when this is enabled.') });
+  }, [showHelpText, t]);
+
+  const onSizeLimitedAdvancedPresetHelpPress = useCallback(() => {
+    showHelpText({ text: t('Advanced mode exposes the encoder’s real preset ladder. Lower SVT-AV1 numbers and higher NVENC or x264 preset levels usually trade more time for more compression efficiency.') });
   }, [showHelpText, t]);
 
   const handleExportEncodeModeChange = useCallback((value: ExportEncodeMode) => {
@@ -382,9 +398,8 @@ function ExportConfirm({
 
   const presetDescription = useMemo(() => ({
     max_quality: t('Best-looking result under the limit. Slower is acceptable.'),
-    quality: t('Strong visual quality with faster export than Max Quality.'),
+    quality: t('Recommended everyday balance for most shareable clips.'),
     fast: t('Good everyday shareable quality with quicker export.'),
-    ultra_fast: t('Fastest turnaround when speed matters most.'),
   })[sizeLimitPreset], [sizeLimitPreset, t]);
 
   const advancedEncoderUnavailableMessage = useMemo(() => {
@@ -396,6 +411,68 @@ function ExportConfirm({
     if (sizeLimitAdvancedEncoder === 'h264_nvenc' && !encoderCapabilities.h264Nvenc) return t('H.264 NVIDIA (NVENC) is unavailable on this system.');
     return undefined;
   }, [encoderCapabilities, sizeLimitAdvancedEncoder, t]);
+
+  const advancedPresetValue = useMemo(() => {
+    switch (sizeLimitAdvancedEncoder) {
+      case 'av1_cpu': {
+        return String(sizeLimitAdvancedAv1CpuPreset);
+      }
+      case 'av1_nvenc': {
+        return sizeLimitAdvancedAv1NvencPreset;
+      }
+      case 'h264_cpu': {
+        return sizeLimitAdvancedH264CpuPreset;
+      }
+      case 'h264_nvenc': {
+        return sizeLimitAdvancedH264NvencPreset;
+      }
+      default: {
+        return '';
+      }
+    }
+  }, [sizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedEncoder, sizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset]);
+
+  const handleAdvancedPresetChange = useCallback((value: string) => {
+    switch (sizeLimitAdvancedEncoder) {
+      case 'av1_cpu': {
+        setSizeLimitAdvancedAv1CpuPreset(Number(value));
+        break;
+      }
+      case 'av1_nvenc': {
+        setSizeLimitAdvancedAv1NvencPreset(value as SizeLimitAdvancedNvencPreset);
+        break;
+      }
+      case 'h264_cpu': {
+        setSizeLimitAdvancedH264CpuPreset(value as SizeLimitAdvancedH264CpuPreset);
+        break;
+      }
+      case 'h264_nvenc': {
+        setSizeLimitAdvancedH264NvencPreset(value as SizeLimitAdvancedNvencPreset);
+        break;
+      }
+      default: {
+        break;
+      }
+    }
+  }, [setSizeLimitAdvancedAv1CpuPreset, setSizeLimitAdvancedAv1NvencPreset, setSizeLimitAdvancedH264CpuPreset, setSizeLimitAdvancedH264NvencPreset, sizeLimitAdvancedEncoder]);
+
+  const advancedPresetOptions = useMemo(() => {
+    switch (sizeLimitAdvancedEncoder) {
+      case 'av1_cpu': {
+        return av1CpuPresetOptions.map((value) => ({ value: String(value), label: String(value) }));
+      }
+      case 'av1_nvenc':
+      case 'h264_nvenc': {
+        return nvencPresetOptions.map((value) => ({ value, label: value }));
+      }
+      case 'h264_cpu': {
+        return h264CpuPresetOptions.map((value) => ({ value, label: value }));
+      }
+      default: {
+        return [];
+      }
+    }
+  }, [sizeLimitAdvancedEncoder]);
 
   const onKeyframeCutHelpPress = useCallback(() => {
     showHelpText({ text: i18n.t('With "keyframe cut", we will cut at the nearest keyframe before the desired start cutpoint. This is recommended for most files. With "Normal cut" you may have to manually set the cutpoint a few frames before the next keyframe to achieve a precise cut') });
@@ -568,7 +645,6 @@ function ExportConfirm({
                         <option value={'max_quality' satisfies SizeLimitPreset}>{t('Max Quality')}</option>
                         <option value={'quality' satisfies SizeLimitPreset}>{t('Quality')}</option>
                         <option value={'fast' satisfies SizeLimitPreset}>{t('Fast')}</option>
-                        <option value={'ultra_fast' satisfies SizeLimitPreset}>{t('Ultra Fast')}</option>
                       </Select>
                       <div style={{ marginTop: '.35em', fontSize: '.88em', color: 'var(--gray-11)' }}>{presetDescription}</div>
                     </>
@@ -599,6 +675,22 @@ function ExportConfirm({
                   </td>
                   <td>
                     <HelpIcon onClick={onSizeLimitedAdvancedTwoPassHelpPress} />
+                  </td>
+                </tr>
+              )}
+
+              {sizeLimitControlMode === 'advanced' && (
+                <tr>
+                  <td>
+                    {t('Preset')}
+                  </td>
+                  <td>
+                    <Select value={advancedPresetValue} onChange={withBlur((e) => handleAdvancedPresetChange(e.target.value))} style={{ height: '1.8em' }}>
+                      {advancedPresetOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+                    </Select>
+                  </td>
+                  <td>
+                    <HelpIcon onClick={onSizeLimitedAdvancedPresetHelpPress} />
                   </td>
                 </tr>
               )}

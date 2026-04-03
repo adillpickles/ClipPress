@@ -1,7 +1,16 @@
 import type { MenuItem, MenuItemConstructorOptions } from 'electron';
 import { z } from 'zod';
 import type { FFprobeChapter, FFprobeFormat, FFprobeStream } from '../../common/ffprobe';
-import type { ExportEncodeMode, SizeLimitAdvancedEncoder, SizeLimitCodec, SizeLimitControlMode, SizeLimitPreset } from '../../common/types.js';
+import type {
+  ExportEncodeMode,
+  SizeLimitAdvancedAv1CpuPreset,
+  SizeLimitAdvancedEncoder,
+  SizeLimitAdvancedH264CpuPreset,
+  SizeLimitAdvancedNvencPreset,
+  SizeLimitCodec,
+  SizeLimitControlMode,
+  SizeLimitPreset,
+} from '../../common/types.js';
 import type { FileStream } from './ffmpeg';
 
 
@@ -124,6 +133,10 @@ export interface SizeLimitedExportOptions {
   preset: SizeLimitPreset,
   advancedEncoder: SizeLimitAdvancedEncoder,
   advancedTwoPass: boolean,
+  advancedAv1CpuPreset: SizeLimitAdvancedAv1CpuPreset,
+  advancedAv1NvencPreset: SizeLimitAdvancedNvencPreset,
+  advancedH264CpuPreset: SizeLimitAdvancedH264CpuPreset,
+  advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
 }
 
 export interface SizeLimitedEncoderCapabilities {
@@ -143,8 +156,6 @@ export type SizeLimitedStrategyId =
   | 'quality_h264_cpu'
   | 'fast_h264_nvenc'
   | 'fast_h264_cpu'
-  | 'ultra_fast_h264_nvenc'
-  | 'ultra_fast_h264_cpu'
   | 'advanced_av1_cpu_single_pass'
   | 'advanced_av1_cpu_two_pass'
   | 'advanced_av1_nvenc_single_pass'
@@ -160,6 +171,12 @@ export type SizeLimitedHardwareTarget = 'nvidia' | 'cpu';
 
 export type SizeLimitedExecutionMode = 'single_pass' | 'ffmpeg_two_pass';
 
+export type SizeLimitedTuningProfile = 'max_quality' | 'quality' | 'fast' | 'advanced';
+
+export type SizeLimitedPlannerProfileId = SizeLimitedStrategyId;
+
+export type SizeLimitedEncoderPreset = SizeLimitAdvancedAv1CpuPreset | SizeLimitAdvancedNvencPreset | SizeLimitAdvancedH264CpuPreset;
+
 export interface SizeLimitedResolvedStrategy {
   controlMode: SizeLimitControlMode,
   preset?: SizeLimitPreset | undefined,
@@ -167,10 +184,13 @@ export interface SizeLimitedResolvedStrategy {
   requestedAdvancedTwoPass?: boolean | undefined,
   effectiveCodec: SizeLimitCodec,
   id: SizeLimitedStrategyId,
+  plannerProfileId: SizeLimitedPlannerProfileId,
   encoder: SizeLimitedEncoderName,
+  encoderPreset: SizeLimitedEncoderPreset,
   hardware: SizeLimitedHardwareTarget,
   usesGpu: boolean,
   executionMode: SizeLimitedExecutionMode,
+  tuningProfile: SizeLimitedTuningProfile,
   fallbackReason?: 'av1_unavailable' | 'av1_nvenc_unavailable' | 'h264_nvenc_unavailable' | 'svt_av1_unavailable' | undefined,
 }
 
@@ -189,9 +209,9 @@ export interface SizeLimitedProgressMetadata {
 }
 
 export interface SizeLimitedPlan {
-  strategyId: SizeLimitedStrategyId,
+  strategyId: SizeLimitedPlannerProfileId,
   targetBytes: number,
-  planningTargetBytes: number,
+  initialFinalTargetBytes: number,
   duration: number,
   overheadBytes: number,
   hasAudio: boolean,

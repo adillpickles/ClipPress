@@ -177,9 +177,13 @@ const defaults: Config = {
   sizeLimitCodec: 'h264',
   sizeLimitQuality: 'fast',
   sizeLimitControlMode: 'simple',
-  sizeLimitPreset: 'fast',
+  sizeLimitPreset: 'quality',
   sizeLimitAdvancedEncoder: 'h264_nvenc',
   sizeLimitAdvancedTwoPass: false,
+  sizeLimitAdvancedAv1CpuPreset: 6,
+  sizeLimitAdvancedAv1NvencPreset: 'p6',
+  sizeLimitAdvancedH264CpuPreset: 'slow',
+  sizeLimitAdvancedH264NvencPreset: 'p4',
   sizeLimitSeparateNamingMode: 'auto',
   sizeLimitMergedNamingMode: 'auto',
 };
@@ -309,6 +313,17 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
       if (!hasSizeLimitAdvancedTwoPass) set('sizeLimitAdvancedTwoPass', true);
     }
   }
+
+  const storedSizeLimitPreset = store.get('sizeLimitPreset') as string | undefined;
+  if (storedSizeLimitPreset === 'ultra_fast') {
+    logger.info('Migrating ultra_fast size-limited preset to fast');
+    set('sizeLimitPreset', 'fast');
+  }
+
+  if (!store.has('sizeLimitAdvancedAv1CpuPreset')) set('sizeLimitAdvancedAv1CpuPreset', defaults.sizeLimitAdvancedAv1CpuPreset);
+  if (!store.has('sizeLimitAdvancedAv1NvencPreset')) set('sizeLimitAdvancedAv1NvencPreset', defaults.sizeLimitAdvancedAv1NvencPreset);
+  if (!store.has('sizeLimitAdvancedH264CpuPreset')) set('sizeLimitAdvancedH264CpuPreset', defaults.sizeLimitAdvancedH264CpuPreset);
+  if (!store.has('sizeLimitAdvancedH264NvencPreset')) set('sizeLimitAdvancedH264NvencPreset', defaults.sizeLimitAdvancedH264NvencPreset);
 
   const hasSizeLimitSeparateNamingMode = store.has('sizeLimitSeparateNamingMode');
   const hasSizeLimitMergedNamingMode = store.has('sizeLimitMergedNamingMode');

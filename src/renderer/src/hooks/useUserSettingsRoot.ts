@@ -200,10 +200,6 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ exportEncodeMode }), [exportEncodeMode]);
   const [sizeLimitMb, setSizeLimitMb] = useState(safeGetConfigInitial('sizeLimitMb'));
   useEffect(() => safeSetConfig({ sizeLimitMb }), [sizeLimitMb]);
-  const [sizeLimitCodec, setSizeLimitCodec] = useState(safeGetConfigInitial('sizeLimitCodec'));
-  useEffect(() => safeSetConfig({ sizeLimitCodec }), [sizeLimitCodec]);
-  const [sizeLimitQuality, setSizeLimitQuality] = useState(safeGetConfigInitial('sizeLimitQuality'));
-  useEffect(() => safeSetConfig({ sizeLimitQuality }), [sizeLimitQuality]);
   const [sizeLimitControlMode, setSizeLimitControlMode] = useState(safeGetConfigInitial('sizeLimitControlMode'));
   useEffect(() => safeSetConfig({ sizeLimitControlMode }), [sizeLimitControlMode]);
   const [sizeLimitPreset, setSizeLimitPreset] = useState(safeGetConfigInitial('sizeLimitPreset'));
@@ -212,6 +208,14 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ sizeLimitAdvancedEncoder }), [sizeLimitAdvancedEncoder]);
   const [sizeLimitAdvancedTwoPass, setSizeLimitAdvancedTwoPass] = useState(safeGetConfigInitial('sizeLimitAdvancedTwoPass'));
   useEffect(() => safeSetConfig({ sizeLimitAdvancedTwoPass }), [sizeLimitAdvancedTwoPass]);
+  const [sizeLimitAdvancedAv1CpuPreset, setSizeLimitAdvancedAv1CpuPreset] = useState(safeGetConfigInitial('sizeLimitAdvancedAv1CpuPreset'));
+  useEffect(() => safeSetConfig({ sizeLimitAdvancedAv1CpuPreset }), [sizeLimitAdvancedAv1CpuPreset]);
+  const [sizeLimitAdvancedAv1NvencPreset, setSizeLimitAdvancedAv1NvencPreset] = useState(safeGetConfigInitial('sizeLimitAdvancedAv1NvencPreset'));
+  useEffect(() => safeSetConfig({ sizeLimitAdvancedAv1NvencPreset }), [sizeLimitAdvancedAv1NvencPreset]);
+  const [sizeLimitAdvancedH264CpuPreset, setSizeLimitAdvancedH264CpuPreset] = useState(safeGetConfigInitial('sizeLimitAdvancedH264CpuPreset'));
+  useEffect(() => safeSetConfig({ sizeLimitAdvancedH264CpuPreset }), [sizeLimitAdvancedH264CpuPreset]);
+  const [sizeLimitAdvancedH264NvencPreset, setSizeLimitAdvancedH264NvencPreset] = useState(safeGetConfigInitial('sizeLimitAdvancedH264NvencPreset'));
+  useEffect(() => safeSetConfig({ sizeLimitAdvancedH264NvencPreset }), [sizeLimitAdvancedH264NvencPreset]);
   const [sizeLimitSeparateNamingMode, setSizeLimitSeparateNamingMode] = useState(safeGetConfigInitial('sizeLimitSeparateNamingMode'));
   useEffect(() => safeSetConfig({ sizeLimitSeparateNamingMode }), [sizeLimitSeparateNamingMode]);
   const [sizeLimitMergedNamingMode, setSizeLimitMergedNamingMode] = useState(safeGetConfigInitial('sizeLimitMergedNamingMode'));
@@ -337,12 +341,14 @@ export default function useUserSettingsRoot() {
     ffmpegHwaccel,
     exportEncodeMode,
     sizeLimitMb,
-    sizeLimitCodec,
-    sizeLimitQuality,
     sizeLimitControlMode,
     sizeLimitPreset,
     sizeLimitAdvancedEncoder,
     sizeLimitAdvancedTwoPass,
+    sizeLimitAdvancedAv1CpuPreset,
+    sizeLimitAdvancedAv1NvencPreset,
+    sizeLimitAdvancedH264CpuPreset,
+    sizeLimitAdvancedH264NvencPreset,
     sizeLimitSeparateNamingMode,
     sizeLimitMergedNamingMode,
   };
@@ -430,12 +436,14 @@ export default function useUserSettingsRoot() {
     setFfmpegHwaccel,
     setExportEncodeMode,
     setSizeLimitMb,
-    setSizeLimitCodec,
-    setSizeLimitQuality,
     setSizeLimitControlMode,
     setSizeLimitPreset,
     setSizeLimitAdvancedEncoder,
     setSizeLimitAdvancedTwoPass,
+    setSizeLimitAdvancedAv1CpuPreset,
+    setSizeLimitAdvancedAv1NvencPreset,
+    setSizeLimitAdvancedH264CpuPreset,
+    setSizeLimitAdvancedH264NvencPreset,
     setSizeLimitSeparateNamingMode,
     setSizeLimitMergedNamingMode,
   };

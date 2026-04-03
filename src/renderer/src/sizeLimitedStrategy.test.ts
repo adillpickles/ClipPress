@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 
 const fullCapabilities = { h264Nvenc: true, av1Nvenc: true, libx264: true, libsvtav1: true } as const;
+const defaultStrategyArgs = {
+  advancedAv1CpuPreset: 6,
+  advancedAv1NvencPreset: 'p6',
+  advancedH264CpuPreset: 'slow',
+  advancedH264NvencPreset: 'p4',
+} as const;
 
 describe('parseFfmpegEncoderNames', () => {
   it('extracts encoder names from ffmpeg output', () => {
@@ -27,6 +33,7 @@ describe('resolveSizeLimitedStrategy', () => {
       preset: 'max_quality',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
+      ...defaultStrategyArgs,
       capabilities: fullCapabilities,
     });
 
@@ -41,11 +48,13 @@ describe('resolveSizeLimitedStrategy', () => {
       preset: 'quality',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
+      ...defaultStrategyArgs,
       capabilities: fullCapabilities,
     });
 
     expect(strategy.id).toBe('quality_av1_nvenc');
     expect(strategy.usesGpu).toBe(true);
+    expect(strategy.encoderPreset).toBe('p6');
   });
 
   it('prefers h264 nvenc for fast mode', () => {
@@ -54,11 +63,13 @@ describe('resolveSizeLimitedStrategy', () => {
       preset: 'fast',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
+      ...defaultStrategyArgs,
       capabilities: fullCapabilities,
     });
 
     expect(strategy.id).toBe('fast_h264_nvenc');
     expect(strategy.usesGpu).toBe(true);
+    expect(strategy.encoderPreset).toBe('p4');
   });
 
   it('falls back to cpu h264 when fast nvenc is unavailable', () => {
@@ -67,6 +78,7 @@ describe('resolveSizeLimitedStrategy', () => {
       preset: 'fast',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
+      ...defaultStrategyArgs,
       capabilities: { h264Nvenc: false, av1Nvenc: false, libx264: true, libsvtav1: false },
     });
 
@@ -80,6 +92,7 @@ describe('resolveSizeLimitedStrategy', () => {
       preset: 'max_quality',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
+      ...defaultStrategyArgs,
       capabilities: { h264Nvenc: true, av1Nvenc: false, libx264: true, libsvtav1: false },
     });
 
@@ -94,6 +107,7 @@ describe('resolveSizeLimitedStrategy', () => {
       preset: 'fast',
       advancedEncoder: 'h264_cpu',
       advancedTwoPass: true,
+      ...defaultStrategyArgs,
       capabilities: fullCapabilities,
     });
 
@@ -107,6 +121,7 @@ describe('resolveSizeLimitedStrategy', () => {
       preset: 'fast',
       advancedEncoder: 'av1_nvenc',
       advancedTwoPass: false,
+      ...defaultStrategyArgs,
       capabilities: { h264Nvenc: true, av1Nvenc: false, libx264: true, libsvtav1: true },
     });
 
@@ -121,12 +136,17 @@ describe('resolveSizeLimitedStrategy', () => {
       preset: 'fast',
       advancedEncoder: 'av1_nvenc',
       advancedTwoPass: true,
+      advancedAv1CpuPreset: 6,
+      advancedAv1NvencPreset: 'p5',
+      advancedH264CpuPreset: 'slow',
+      advancedH264NvencPreset: 'p4',
       capabilities: fullCapabilities,
     });
 
     expect(strategy.id).toBe('advanced_av1_nvenc_two_pass');
     expect(strategy.encoder).toBe('av1_nvenc');
     expect(strategy.executionMode).toBe('ffmpeg_two_pass');
+    expect(strategy.encoderPreset).toBe('p5');
   });
 
   it('resolves advanced av1 cpu two-pass exactly', () => {
@@ -135,12 +155,17 @@ describe('resolveSizeLimitedStrategy', () => {
       preset: 'fast',
       advancedEncoder: 'av1_cpu',
       advancedTwoPass: true,
+      advancedAv1CpuPreset: 4,
+      advancedAv1NvencPreset: 'p6',
+      advancedH264CpuPreset: 'slow',
+      advancedH264NvencPreset: 'p4',
       capabilities: fullCapabilities,
     });
 
     expect(strategy.id).toBe('advanced_av1_cpu_two_pass');
     expect(strategy.encoder).toBe('libsvtav1');
     expect(strategy.executionMode).toBe('ffmpeg_two_pass');
+    expect(strategy.encoderPreset).toBe(4);
   });
 
   it('resolves advanced h264 nvenc two-pass exactly', () => {
@@ -149,11 +174,16 @@ describe('resolveSizeLimitedStrategy', () => {
       preset: 'fast',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: true,
+      advancedAv1CpuPreset: 6,
+      advancedAv1NvencPreset: 'p6',
+      advancedH264CpuPreset: 'slow',
+      advancedH264NvencPreset: 'p7',
       capabilities: fullCapabilities,
     });
 
     expect(strategy.id).toBe('advanced_h264_nvenc_two_pass');
     expect(strategy.encoder).toBe('h264_nvenc');
     expect(strategy.executionMode).toBe('ffmpeg_two_pass');
+    expect(strategy.encoderPreset).toBe('p7');
   });
 });
