@@ -19,8 +19,8 @@ export async function checkNewVersion() {
     // Draft releases and prereleases are not returned by this endpoint.
 
     const { data } = await octokit.request('GET /repos/{owner}/{repo}/releases/latest', {
-      owner: 'mifi',
-      repo: 'lossless-cut',
+      owner: 'adillpickles',
+      repo: 'ClipPress',
       headers: {
         'X-GitHub-Api-Version': '2022-11-28',
       },

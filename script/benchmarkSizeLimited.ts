@@ -35,7 +35,7 @@ interface BenchmarkProfile {
   description: string,
   encoder: CapabilityName,
   mode: 'single_pass' | 'two_pass',
-  initialFinalTargetFactor: number,
+  firstAttemptTargetFactor: number,
   overheadRatio: number,
   preferredAudioBitrate: number,
   minAudioBitrate: number,
@@ -47,8 +47,10 @@ interface BenchmarkProfile {
 }
 
 interface BenchmarkPlan {
-  targetBytes: number,
-  initialFinalTargetBytes: number,
+  hardTargetBytes: number,
+  targetZoneMinBytes: number,
+  targetZoneMaxBytes: number,
+  firstAttemptTargetBytes: number,
   totalBitrate: number,
   videoBitrate: number,
   audioBitrate: number,
@@ -76,7 +78,7 @@ const profiles: BenchmarkProfile[] = [
     description: 'Simple Max Quality: SVT-AV1 preset 6, 2-pass',
     encoder: 'libsvtav1',
     mode: 'two_pass',
-    initialFinalTargetFactor: 0.985,
+    firstAttemptTargetFactor: 0.972,
     overheadRatio: 0.017,
     preferredAudioBitrate: 64_000,
     minAudioBitrate: 24_000,
@@ -96,7 +98,7 @@ const profiles: BenchmarkProfile[] = [
     description: 'Simple Quality: AV1 NVENC p6 single-pass',
     encoder: 'av1_nvenc',
     mode: 'single_pass',
-    initialFinalTargetFactor: 0.98,
+    firstAttemptTargetFactor: 0.965,
     overheadRatio: 0.018,
     preferredAudioBitrate: 64_000,
     minAudioBitrate: 24_000,
@@ -118,38 +120,38 @@ const profiles: BenchmarkProfile[] = [
       '-b_ref_mode', 'middle',
       '-pix_fmt', 'yuv420p',
       '-b:v', toKbitrateArg(videoBitrate),
-      '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 1.1))),
-      '-bufsize', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 2))),
+      '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 1.05))),
+      '-bufsize', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 1.5))),
     ],
   },
   {
     id: 'simple_fast',
-    description: 'Simple Fast: H.264 NVENC p4 single-pass',
-    encoder: 'h264_nvenc',
+    description: 'Simple Fast: AV1 NVENC p4 single-pass',
+    encoder: 'av1_nvenc',
     mode: 'single_pass',
-    initialFinalTargetFactor: 0.975,
-    overheadRatio: 0.022,
-    preferredAudioBitrate: 72_000,
+    firstAttemptTargetFactor: 0.95,
+    overheadRatio: 0.018,
+    preferredAudioBitrate: 64_000,
     minAudioBitrate: 24_000,
-    maxAudioShare: 0.18,
-    tinyTargetAudioShare: 0.1,
-    tinyTargetThreshold: 900_000,
-    minVideoBitrate: 140_000,
+    maxAudioShare: 0.16,
+    tinyTargetAudioShare: 0.08,
+    tinyTargetThreshold: 700_000,
+    minVideoBitrate: 90_000,
     buildVideoArgs: (videoBitrate) => [
-      '-c:v', 'h264_nvenc',
+      '-c:v', 'av1_nvenc',
       '-preset', 'p4',
       '-tune', 'hq',
-      '-profile:v', 'high',
       '-rc', 'vbr',
-      '-cq', '24',
+      '-cq', '30',
       '-rc-lookahead', '12',
       '-spatial-aq', '1',
       '-temporal-aq', '1',
       '-aq-strength', '6',
+      '-b_ref_mode', 'middle',
       '-pix_fmt', 'yuv420p',
       '-b:v', toKbitrateArg(videoBitrate),
-      '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 1.12))),
-      '-bufsize', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 2))),
+      '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 1.05))),
+      '-bufsize', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 1.5))),
     ],
   },
   {
@@ -157,7 +159,7 @@ const profiles: BenchmarkProfile[] = [
     description: 'Advanced AV1 NVENC 2-pass',
     encoder: 'av1_nvenc',
     mode: 'two_pass',
-    initialFinalTargetFactor: 0.985,
+    firstAttemptTargetFactor: 0.972,
     overheadRatio: 0.018,
     preferredAudioBitrate: 64_000,
     minAudioBitrate: 24_000,
@@ -187,7 +189,7 @@ const profiles: BenchmarkProfile[] = [
     description: 'Advanced H.264 CPU 2-pass',
     encoder: 'libx264',
     mode: 'two_pass',
-    initialFinalTargetFactor: 0.985,
+    firstAttemptTargetFactor: 0.968,
     overheadRatio: 0.022,
     preferredAudioBitrate: 64_000,
     minAudioBitrate: 24_000,
@@ -210,7 +212,7 @@ const profiles: BenchmarkProfile[] = [
     description: 'Advanced H.264 NVENC 2-pass',
     encoder: 'h264_nvenc',
     mode: 'two_pass',
-    initialFinalTargetFactor: 0.985,
+    firstAttemptTargetFactor: 0.968,
     overheadRatio: 0.022,
     preferredAudioBitrate: 72_000,
     minAudioBitrate: 24_000,
@@ -369,17 +371,21 @@ function planProfile({ targetMb, duration, hasAudio, profile }: {
   hasAudio: boolean,
   profile: BenchmarkProfile,
 }): BenchmarkPlan {
-  const targetBytes = Math.max(1, Math.floor(targetMb * bytesPerMb));
-  const overheadBytes = Math.max(24 * 1024, Math.floor(targetBytes * profile.overheadRatio));
+  const hardTargetBytes = Math.max(1, Math.floor(targetMb * bytesPerMb));
+  const overheadBytes = Math.max(24 * 1024, Math.floor(hardTargetBytes * profile.overheadRatio));
   const safeDuration = Math.max(duration, 0.5);
-  const initialFinalTargetBytes = Math.max(Math.floor(targetBytes * profile.initialFinalTargetFactor), 24 * 1024);
-  const availableBytes = Math.max(initialFinalTargetBytes - overheadBytes, 24 * 1024);
+  const targetZoneMinBytes = Math.floor(hardTargetBytes * 0.95);
+  const targetZoneMaxBytes = Math.floor(hardTargetBytes * 0.98);
+  const firstAttemptTargetBytes = Math.max(Math.floor(hardTargetBytes * profile.firstAttemptTargetFactor), 24 * 1024);
+  const availableBytes = Math.max(firstAttemptTargetBytes - overheadBytes, 24 * 1024);
   const totalBitrate = Math.max(Math.floor((availableBytes * 8) / safeDuration), profile.minVideoBitrate + (hasAudio ? profile.minAudioBitrate : 0));
 
   if (!hasAudio) {
     return {
-      targetBytes,
-      initialFinalTargetBytes,
+      hardTargetBytes,
+      targetZoneMinBytes,
+      targetZoneMaxBytes,
+      firstAttemptTargetBytes,
       totalBitrate,
       videoBitrate: totalBitrate,
       audioBitrate: 0,
@@ -394,8 +400,10 @@ function planProfile({ targetMb, duration, hasAudio, profile }: {
   }
 
   return {
-    targetBytes,
-    initialFinalTargetBytes,
+    hardTargetBytes,
+    targetZoneMinBytes,
+    targetZoneMaxBytes,
+    firstAttemptTargetBytes,
     totalBitrate,
     videoBitrate: Math.max(totalBitrate - audioBitrate, profile.minVideoBitrate),
     audioBitrate,
@@ -562,8 +570,8 @@ async function runProfile({
     output,
     elapsedMs,
     outputBytes,
-    plannedFinalBytes: plan.initialFinalTargetBytes,
-    metTarget: outputBytes <= plan.targetBytes,
+    plannedFinalBytes: plan.firstAttemptTargetBytes,
+    metTarget: outputBytes <= plan.hardTargetBytes,
     duration: probe.duration,
     videoBitrate: plan.videoBitrate,
     audioBitrate: plan.audioBitrate,

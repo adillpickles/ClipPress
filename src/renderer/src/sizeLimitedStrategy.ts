@@ -154,18 +154,34 @@ function resolveSimplePresetStrategy({
       });
     }
     case 'fast': {
-      if (capabilities.h264Nvenc) {
+      if (capabilities.av1Nvenc) {
         return buildStrategy({
           controlMode: 'simple',
           preset: 'fast',
-          effectiveCodec: 'h264',
-          id: 'fast_h264_nvenc',
-          encoder: 'h264_nvenc',
+          effectiveCodec: 'av1',
+          id: 'fast_av1_nvenc',
+          encoder: 'av1_nvenc',
           encoderPreset: 'p4',
           hardware: 'nvidia',
           usesGpu: true,
           executionMode: 'single_pass',
           tuningProfile: 'fast',
+        });
+      }
+
+      if (capabilities.libsvtav1) {
+        return buildStrategy({
+          controlMode: 'simple',
+          preset: 'fast',
+          effectiveCodec: 'av1',
+          id: 'fast_av1_cpu',
+          encoder: 'libsvtav1',
+          encoderPreset: 10,
+          hardware: 'cpu',
+          usesGpu: false,
+          executionMode: 'single_pass',
+          tuningProfile: 'fast',
+          fallbackReason: 'av1_nvenc_unavailable',
         });
       }
 
@@ -180,7 +196,7 @@ function resolveSimplePresetStrategy({
         usesGpu: false,
         executionMode: 'single_pass',
         tuningProfile: 'fast',
-        fallbackReason: 'h264_nvenc_unavailable',
+        fallbackReason: 'av1_unavailable',
       });
     }
     default: {

@@ -58,7 +58,7 @@ describe('planSizeLimitedEncode', () => {
     expect(plan.initialAttempt.audioBitrate).toBeLessThan(plan.initialAttempt.videoBitrate);
     expect(plan.initialAttempt.audioBitrate).toBeLessThanOrEqual(64_000);
     expect(strategy.id).toBe('max_quality_av1_cpu_two_pass');
-    expect(plan.initialFinalTargetBytes).toBeLessThan(plan.targetBytes);
+    expect(plan.firstAttemptTargetBytes).toBeLessThan(plan.hardTargetBytes);
   });
 
   it('omits audio bitrate for silent clips', () => {
@@ -96,7 +96,7 @@ describe('planSizeLimitedEncode', () => {
       strategy,
     });
 
-    expect(plan.targetBytes).toBeGreaterThan(0);
+    expect(plan.hardTargetBytes).toBeGreaterThan(0);
     expect(plan.initialAttempt.videoBitrate).toBeGreaterThan(0);
     expect(plan.initialAttempt.audioBitrate).toBeGreaterThan(0);
   });
@@ -122,7 +122,7 @@ describe('getNextSizeLimitedRetryStep', () => {
     const nextAttempt = getNextSizeLimitedRetryStep({
       plan,
       previousAttempt: plan.initialAttempt,
-      previousOutputSize: Math.floor(plan.targetBytes * 1.2),
+      previousOutputSize: Math.floor(plan.hardTargetBytes * 1.2),
     });
 
     expect(nextAttempt).toBeDefined();
@@ -134,7 +134,7 @@ describe('getNextSizeLimitedRetryStep', () => {
       attempt = getNextSizeLimitedRetryStep({
         plan,
         previousAttempt: attempt,
-        previousOutputSize: Math.floor(plan.targetBytes * 1.1),
+        previousOutputSize: Math.floor(plan.hardTargetBytes * 1.1),
       });
     }
 
@@ -160,13 +160,13 @@ describe('getNextSizeLimitedRetryStep', () => {
     const nextAttempt = getNextSizeLimitedRetryStep({
       plan,
       previousAttempt: plan.initialAttempt,
-      previousOutputSize: plan.targetBytes,
+      previousOutputSize: plan.hardTargetBytes,
     });
 
     expect(nextAttempt).toBeUndefined();
   });
 
-  it('plans two-pass paths closer to the cap with fewer retry attempts', () => {
+  it('plans two-pass paths into a safer target zone while still aiming closer than fast mode', () => {
     const maxQualityStrategy = resolveSizeLimitedStrategy({
       controlMode: 'simple',
       preset: 'max_quality',
@@ -199,6 +199,43 @@ describe('getNextSizeLimitedRetryStep', () => {
 
     expect(maxQualityPlan.maxAttempts).toBe(2);
     expect(fastPlan.maxAttempts).toBe(2);
-    expect(maxQualityPlan.initialFinalTargetBytes).toBeGreaterThan(fastPlan.initialFinalTargetBytes);
+    expect(maxQualityPlan.firstAttemptTargetBytes).toBeGreaterThan(fastPlan.firstAttemptTargetBytes);
+    expect(maxQualityPlan.targetZoneMinBytes).toBe(Math.floor(maxQualityPlan.hardTargetBytes * 0.95));
+    expect(maxQualityPlan.targetZoneMaxBytes).toBe(Math.floor(maxQualityPlan.hardTargetBytes * 0.98));
+  });
+
+  it('plans fast mode more conservatively than quality mode', () => {
+    const qualityStrategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'quality',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: allCapabilities,
+    });
+    const fastStrategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'fast',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: allCapabilities,
+    });
+
+    const qualityPlan = planSizeLimitedEncode({
+      targetSizeMb: 10,
+      duration: 30,
+      hasAudio: true,
+      strategy: qualityStrategy,
+    });
+    const fastPlan = planSizeLimitedEncode({
+      targetSizeMb: 10,
+      duration: 30,
+      hasAudio: true,
+      strategy: fastStrategy,
+    });
+
+    expect(qualityPlan.firstAttemptTargetBytes).toBeGreaterThan(fastPlan.firstAttemptTargetBytes);
+    expect(qualityPlan.retryTargetBytes).toBeGreaterThan(fastPlan.retryTargetBytes);
   });
 });

@@ -178,20 +178,25 @@ function getResolvedVideoArgs({ strategy, videoBitrate, twoPass }: {
 
     case 'av1_nvenc': {
       const isMaxQuality = strategy.tuningProfile === 'max_quality';
+      const isFast = strategy.tuningProfile === 'fast';
       return [
         '-c:v', 'av1_nvenc',
         '-preset', String(strategy.encoderPreset),
         '-tune', isMaxQuality ? 'uhq' : 'hq',
         '-rc', 'vbr',
-        ...(twoPass ? [] : ['-multipass', 'qres']),
-        '-cq', isMaxQuality ? '26' : '28',
-        '-rc-lookahead', isMaxQuality ? '32' : '24',
+        ...(!twoPass && !isFast ? ['-multipass', 'qres'] : []),
+        '-cq', isMaxQuality ? '26' : (isFast ? '30' : '28'),
+        '-rc-lookahead', isMaxQuality ? '32' : (isFast ? '12' : '24'),
         '-spatial-aq', '1',
         '-temporal-aq', '1',
-        '-aq-strength', isMaxQuality ? '10' : '8',
+        '-aq-strength', isMaxQuality ? '10' : (isFast ? '6' : '8'),
         '-b_ref_mode', 'middle',
         '-pix_fmt', 'yuv420p',
-        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: isMaxQuality ? 1.08 : 1.1, bufferFactor: isMaxQuality ? 2.2 : 2 }),
+        ...getBitrateWindowArgs({
+          videoBitrate,
+          maxRateFactor: isMaxQuality ? 1.08 : 1.05,
+          bufferFactor: isMaxQuality ? 2.2 : 1.5,
+        }),
       ];
     }
 
@@ -473,11 +478,11 @@ async function executeWithRetries({
       }
 
       const size = await readFileSize(attemptFiles.outPath);
-      const metTarget = size <= plan.targetBytes;
+      const metTarget = size <= plan.hardTargetBytes;
       const candidate = {
         path: attemptFiles.outPath,
         size,
-        targetBytes: plan.targetBytes,
+        targetBytes: plan.hardTargetBytes,
         attemptCount: currentAttempt.attemptNumber,
         metTarget,
         created: true,
@@ -649,9 +654,9 @@ export async function exportSizeLimitedSegment({
     return {
       path: outPath,
       size: existingSize,
-      targetBytes: plan.targetBytes,
+      targetBytes: plan.hardTargetBytes,
       attemptCount: 0,
-      metTarget: existingSize <= plan.targetBytes,
+      metTarget: existingSize <= plan.hardTargetBytes,
       created: false,
       strategy,
     } satisfies SizeLimitedExecutionResult;
@@ -822,9 +827,9 @@ export async function exportSizeLimitedMerge({
     return {
       path: outPath,
       size: existingSize,
-      targetBytes: plan.targetBytes,
+      targetBytes: plan.hardTargetBytes,
       attemptCount: 0,
-      metTarget: existingSize <= plan.targetBytes,
+      metTarget: existingSize <= plan.hardTargetBytes,
       created: false,
       strategy,
     } satisfies SizeLimitedExecutionResult;

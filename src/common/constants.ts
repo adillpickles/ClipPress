@@ -1,7 +1,7 @@
 export const homepageUrl = 'https://mifi.no/losslesscut/';
-export const githubUrl = 'https://github.com/mifi/lossless-cut/';
-export const getReleaseUrl = (version: string) => `https://github.com/mifi/lossless-cut/releases/tag/v${version}`;
-export const compareReleasesUrl = (fromVersion: string, toVersion: string) => `https://github.com/mifi/lossless-cut/compare/v${fromVersion}...v${toVersion}`;
+export const githubUrl = 'https://github.com/adillpickles/ClipPress/';
+export const getReleaseUrl = (version: string) => `https://github.com/adillpickles/ClipPress/releases/tag/v${version}`;
+export const compareReleasesUrl = (fromVersion: string, toVersion: string) => `https://github.com/adillpickles/ClipPress/compare/v${fromVersion}...v${toVersion}`;
 export const licensesUrl = 'https://losslesscut.mifi.no/licenses.txt';
 export const thanksUrl = 'https://mifi.no/thanks';
 export const discussionsUrl = 'https://mifi.no/losslesscut/discussions';

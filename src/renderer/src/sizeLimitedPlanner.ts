@@ -8,7 +8,8 @@ interface StrategyProfile {
   overheadRatio: number,
   minOverheadBytes: number,
   maxOverheadBytes: number,
-  initialFinalTargetFactor: number,
+  firstAttemptTargetFactor: number,
+  retryTargetFactor: number,
   preferredAudioBitrate: number,
   minAudioBitrate: number,
   minVideoBitrate: number,
@@ -16,38 +17,49 @@ interface StrategyProfile {
   tinyTargetAudioShare: number,
   tinyTargetTotalBitrate: number,
   maxAttempts: number,
-  retrySafetyFactor: number,
   retryMinFactor: number,
   retryMaxFactor: number,
-  minAttemptDropPercent: number,
 }
 
-const twoPassRetryProfile = {
-  initialFinalTargetFactor: 0.985,
+const av1TwoPassRetryProfile = {
+  firstAttemptTargetFactor: 0.972,
+  retryTargetFactor: 0.958,
   maxAttempts: 2,
-  retrySafetyFactor: 0.985,
-  retryMinFactor: 0.82,
-  retryMaxFactor: 0.96,
-  minAttemptDropPercent: 0.04,
-} satisfies Pick<StrategyProfile, 'initialFinalTargetFactor' | 'maxAttempts' | 'retrySafetyFactor' | 'retryMinFactor' | 'retryMaxFactor' | 'minAttemptDropPercent'>;
+  retryMinFactor: 0.9,
+  retryMaxFactor: 0.97,
+} satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 
 const av1SinglePassRetryProfile = {
-  initialFinalTargetFactor: 0.98,
+  firstAttemptTargetFactor: 0.965,
+  retryTargetFactor: 0.952,
   maxAttempts: 2,
-  retrySafetyFactor: 0.985,
-  retryMinFactor: 0.82,
-  retryMaxFactor: 0.96,
-  minAttemptDropPercent: 0.05,
-} satisfies Pick<StrategyProfile, 'initialFinalTargetFactor' | 'maxAttempts' | 'retrySafetyFactor' | 'retryMinFactor' | 'retryMaxFactor' | 'minAttemptDropPercent'>;
+  retryMinFactor: 0.88,
+  retryMaxFactor: 0.97,
+} satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
+
+const fastSinglePassRetryProfile = {
+  firstAttemptTargetFactor: 0.95,
+  retryTargetFactor: 0.94,
+  maxAttempts: 2,
+  retryMinFactor: 0.85,
+  retryMaxFactor: 0.97,
+} satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
+
+const h264TwoPassRetryProfile = {
+  firstAttemptTargetFactor: 0.968,
+  retryTargetFactor: 0.955,
+  maxAttempts: 2,
+  retryMinFactor: 0.88,
+  retryMaxFactor: 0.97,
+} satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 
 const h264SinglePassRetryProfile = {
-  initialFinalTargetFactor: 0.975,
+  firstAttemptTargetFactor: 0.95,
+  retryTargetFactor: 0.94,
   maxAttempts: 2,
-  retrySafetyFactor: 0.985,
-  retryMinFactor: 0.82,
-  retryMaxFactor: 0.96,
-  minAttemptDropPercent: 0.05,
-} satisfies Pick<StrategyProfile, 'initialFinalTargetFactor' | 'maxAttempts' | 'retrySafetyFactor' | 'retryMinFactor' | 'retryMaxFactor' | 'minAttemptDropPercent'>;
+  retryMinFactor: 0.85,
+  retryMaxFactor: 0.97,
+} satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 
 function createProfile(profile: StrategyProfile) {
   return profile;
@@ -64,7 +76,7 @@ const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
     maxAudioShare: 0.15,
     tinyTargetAudioShare: 0.08,
     tinyTargetTotalBitrate: 650_000,
-    ...twoPassRetryProfile,
+    ...av1TwoPassRetryProfile,
   }),
   max_quality_av1_nvenc_two_pass: createProfile({
     overheadRatio: 0.018,
@@ -76,7 +88,7 @@ const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
     maxAudioShare: 0.16,
     tinyTargetAudioShare: 0.08,
     tinyTargetTotalBitrate: 700_000,
-    ...twoPassRetryProfile,
+    ...av1TwoPassRetryProfile,
   }),
   max_quality_h264_cpu_two_pass: createProfile({
     overheadRatio: 0.022,
@@ -88,7 +100,7 @@ const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
     maxAudioShare: 0.16,
     tinyTargetAudioShare: 0.09,
     tinyTargetTotalBitrate: 780_000,
-    ...twoPassRetryProfile,
+    ...h264TwoPassRetryProfile,
   }),
   max_quality_h264_nvenc_two_pass: createProfile({
     overheadRatio: 0.022,
@@ -100,7 +112,7 @@ const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
     maxAudioShare: 0.16,
     tinyTargetAudioShare: 0.09,
     tinyTargetTotalBitrate: 820_000,
-    ...twoPassRetryProfile,
+    ...h264TwoPassRetryProfile,
   }),
   quality_av1_nvenc: createProfile({
     overheadRatio: 0.018,
@@ -138,17 +150,29 @@ const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
     tinyTargetTotalBitrate: 780_000,
     ...h264SinglePassRetryProfile,
   }),
-  fast_h264_nvenc: createProfile({
-    overheadRatio: 0.022,
-    minOverheadBytes: 24 * 1024,
-    maxOverheadBytes: 192 * 1024,
-    preferredAudioBitrate: 72_000,
+  fast_av1_nvenc: createProfile({
+    overheadRatio: 0.018,
+    minOverheadBytes: 20 * 1024,
+    maxOverheadBytes: 160 * 1024,
+    preferredAudioBitrate: 64_000,
     minAudioBitrate: 24_000,
-    minVideoBitrate: 140_000,
-    maxAudioShare: 0.18,
-    tinyTargetAudioShare: 0.1,
-    tinyTargetTotalBitrate: 900_000,
-    ...h264SinglePassRetryProfile,
+    minVideoBitrate: 90_000,
+    maxAudioShare: 0.16,
+    tinyTargetAudioShare: 0.08,
+    tinyTargetTotalBitrate: 700_000,
+    ...fastSinglePassRetryProfile,
+  }),
+  fast_av1_cpu: createProfile({
+    overheadRatio: 0.017,
+    minOverheadBytes: 20 * 1024,
+    maxOverheadBytes: 160 * 1024,
+    preferredAudioBitrate: 64_000,
+    minAudioBitrate: 24_000,
+    minVideoBitrate: 80_000,
+    maxAudioShare: 0.15,
+    tinyTargetAudioShare: 0.08,
+    tinyTargetTotalBitrate: 650_000,
+    ...fastSinglePassRetryProfile,
   }),
   fast_h264_cpu: createProfile({
     overheadRatio: 0.024,
@@ -160,7 +184,7 @@ const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
     maxAudioShare: 0.18,
     tinyTargetAudioShare: 0.1,
     tinyTargetTotalBitrate: 850_000,
-    ...h264SinglePassRetryProfile,
+    ...fastSinglePassRetryProfile,
   }),
   advanced_av1_cpu_single_pass: createProfile({
     overheadRatio: 0.017,
@@ -184,7 +208,7 @@ const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
     maxAudioShare: 0.15,
     tinyTargetAudioShare: 0.08,
     tinyTargetTotalBitrate: 650_000,
-    ...twoPassRetryProfile,
+    ...av1TwoPassRetryProfile,
   }),
   advanced_av1_nvenc_single_pass: createProfile({
     overheadRatio: 0.018,
@@ -208,7 +232,7 @@ const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
     maxAudioShare: 0.16,
     tinyTargetAudioShare: 0.08,
     tinyTargetTotalBitrate: 700_000,
-    ...twoPassRetryProfile,
+    ...av1TwoPassRetryProfile,
   }),
   advanced_h264_cpu_single_pass: createProfile({
     overheadRatio: 0.022,
@@ -232,7 +256,7 @@ const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
     maxAudioShare: 0.16,
     tinyTargetAudioShare: 0.09,
     tinyTargetTotalBitrate: 780_000,
-    ...twoPassRetryProfile,
+    ...h264TwoPassRetryProfile,
   }),
   advanced_h264_nvenc_single_pass: createProfile({
     overheadRatio: 0.022,
@@ -256,7 +280,7 @@ const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
     maxAudioShare: 0.18,
     tinyTargetAudioShare: 0.1,
     tinyTargetTotalBitrate: 900_000,
-    ...twoPassRetryProfile,
+    ...h264TwoPassRetryProfile,
   }),
 };
 
@@ -321,27 +345,31 @@ export function planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strate
   hasAudio: boolean,
   strategy: SizeLimitedResolvedStrategy,
 }) {
-  const targetBytes = targetSizeMbToBytes(targetSizeMb);
+  const hardTargetBytes = targetSizeMbToBytes(targetSizeMb);
   const safeDuration = Math.max(duration, minDurationSeconds);
   const profile = getStrategyProfile(strategy.plannerProfileId);
-  const overheadBytes = getOverheadBytes(targetBytes, profile);
-  const initialFinalTargetBytes = Math.max(Math.floor(targetBytes * profile.initialFinalTargetFactor), profile.minOverheadBytes);
-  const availableBytes = Math.max(initialFinalTargetBytes - overheadBytes, profile.minOverheadBytes);
+  const overheadBytes = getOverheadBytes(hardTargetBytes, profile);
+  const targetZoneMinBytes = Math.max(Math.floor(hardTargetBytes * 0.95), profile.minOverheadBytes);
+  const targetZoneMaxBytes = Math.max(Math.floor(hardTargetBytes * 0.98), targetZoneMinBytes);
+  const firstAttemptTargetBytes = Math.max(Math.floor(hardTargetBytes * profile.firstAttemptTargetFactor), profile.minOverheadBytes);
+  const retryTargetBytes = Math.max(Math.floor(hardTargetBytes * profile.retryTargetFactor), profile.minOverheadBytes);
+  const availableBytes = Math.max(firstAttemptTargetBytes - overheadBytes, profile.minOverheadBytes);
   const minTotalBitrate = getMinTotalBitrate({ hasAudio, profile });
   const baseTotalBitrate = Math.max(Math.floor((availableBytes * 8) / safeDuration), minTotalBitrate);
 
   return {
     strategyId: strategy.plannerProfileId,
-    targetBytes,
-    initialFinalTargetBytes,
+    hardTargetBytes,
+    targetZoneMinBytes,
+    targetZoneMaxBytes,
+    firstAttemptTargetBytes,
+    retryTargetBytes,
     duration: safeDuration,
     overheadBytes,
     hasAudio,
     maxAttempts: profile.maxAttempts,
-    retrySafetyFactor: profile.retrySafetyFactor,
     retryMinFactor: profile.retryMinFactor,
     retryMaxFactor: profile.retryMaxFactor,
-    minAttemptDropPercent: profile.minAttemptDropPercent,
     minTotalBitrate,
     initialAttempt: buildRetryStep({
       attemptNumber: 1,
@@ -357,17 +385,12 @@ export function getNextSizeLimitedRetryStep({ plan, previousAttempt, previousOut
   previousAttempt: SizeLimitedRetryStep,
   previousOutputSize: number,
 }) {
-  if (previousOutputSize <= plan.targetBytes) return undefined;
+  if (previousOutputSize <= plan.hardTargetBytes) return undefined;
   if (previousAttempt.attemptNumber >= plan.maxAttempts) return undefined;
   if (previousAttempt.totalBitrate <= plan.minTotalBitrate) return undefined;
 
-  const overshootRatio = previousOutputSize / plan.targetBytes;
-  const retryFactor = clamp(plan.retrySafetyFactor / overshootRatio, plan.retryMinFactor, plan.retryMaxFactor);
-  const forcedDropFactor = 1 - plan.minAttemptDropPercent;
-
-  const retryDrivenBitrate = Math.floor(previousAttempt.totalBitrate * retryFactor);
-  const forcedDropBitrate = Math.floor(previousAttempt.totalBitrate * forcedDropFactor);
-  const nextTotalBitrate = Math.max(Math.min(retryDrivenBitrate, forcedDropBitrate), plan.minTotalBitrate);
+  const retryFactor = clamp(plan.retryTargetBytes / previousOutputSize, plan.retryMinFactor, plan.retryMaxFactor);
+  const nextTotalBitrate = Math.max(Math.floor(previousAttempt.totalBitrate * retryFactor), plan.minTotalBitrate);
 
   if (nextTotalBitrate >= previousAttempt.totalBitrate) return undefined;
 
