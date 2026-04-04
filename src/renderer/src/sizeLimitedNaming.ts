@@ -29,10 +29,18 @@ function getModeLabel({
   if (controlMode === 'advanced') return 'Advanced';
 
   switch (preset) {
-    case 'max_quality': return 'Max Quality';
-    case 'quality': return 'Quality';
-    case 'fast': return 'Fast';
-    default: return 'Quality';
+    case 'max_quality': {
+      return 'Max Quality';
+    }
+    case 'quality': {
+      return 'Quality';
+    }
+    case 'fast': {
+      return 'Fast';
+    }
+    default: {
+      return 'Quality';
+    }
   }
 }
 
@@ -92,9 +100,11 @@ export function findAvailableSizeLimitedAutoFileName({
   isReserved: (fileName: string) => boolean,
 }) {
   let disambiguator: number | undefined;
+  let isAvailable = false;
+  let fileName = '';
 
-  while (true) {
-    const fileName = buildAutoName({
+  while (!isAvailable) {
+    fileName = buildAutoName({
       sourceBaseName,
       controlMode,
       preset,
@@ -103,9 +113,12 @@ export function findAvailableSizeLimitedAutoFileName({
       disambiguator,
     });
 
-    if (!isReserved(fileName)) return fileName;
+    isAvailable = !isReserved(fileName);
+    if (isAvailable) return fileName;
     disambiguator = disambiguator == null ? 2 : disambiguator + 1;
   }
+
+  return fileName;
 }
 
 export function buildSizeLimitedAutoFileNames({

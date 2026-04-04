@@ -285,14 +285,18 @@ function getStrategyProfile(strategyId: SizeLimitedStrategyId) {
 function getTargetingProfile(strategy: SizeLimitedResolvedStrategy, budgetProfile: StrategyProfile): StrategyTargetingProfile {
   if (strategy.controlMode === 'simple') {
     switch (strategy.preset) {
-      case 'max_quality':
+      case 'max_quality': {
         return av1TwoPassRetryProfile;
-      case 'quality':
+      }
+      case 'quality': {
         return av1SinglePassRetryProfile;
-      case 'fast':
+      }
+      case 'fast': {
         return fastSinglePassRetryProfile;
-      default:
+      }
+      default: {
         return av1SinglePassRetryProfile;
+      }
     }
   }
 

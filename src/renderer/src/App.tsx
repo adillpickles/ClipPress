@@ -1334,19 +1334,19 @@ function App() {
       }
 
       reservedFileNames.add(targetFileName);
-      if (targetPath == null || targetPath === candidate.currentPath) continue;
-
-      try {
-        const targetExists = await mainApi.pathExists(targetPath);
-        if (targetExists && enableOverwriteOutput) {
-          await unlinkWithRetry(targetPath);
+      if (targetPath != null && targetPath !== candidate.currentPath) {
+        try {
+          const targetExists = await mainApi.pathExists(targetPath);
+          if (targetExists && enableOverwriteOutput) {
+            await unlinkWithRetry(targetPath);
+          }
+          await renameWithRetry(candidate.currentPath, targetPath);
+          const result = updatedResults[candidate.resultIndex];
+          if (result != null) updatedResults[candidate.resultIndex] = { ...result, path: targetPath };
+        } catch (error) {
+          console.warn('Failed to apply cleaner size-limited file name', candidate.currentPath, error);
+          renameWarnings.add(i18n.t('ClipPress kept one exported file\'s original name because the cleaner final name could not be applied.'));
         }
-        await renameWithRetry(candidate.currentPath, targetPath);
-        const result = updatedResults[candidate.resultIndex];
-        if (result != null) updatedResults[candidate.resultIndex] = { ...result, path: targetPath };
-      } catch (error) {
-        console.warn('Failed to apply cleaner size-limited file name', candidate.currentPath, error);
-        renameWarnings.add(i18n.t('ClipPress kept one exported file\'s original name because the cleaner final name could not be applied.'));
       }
     }
 

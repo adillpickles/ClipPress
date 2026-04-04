@@ -695,22 +695,20 @@ function ExportConfirm({
                     {t('Resolution')}
                   </td>
                   <td>
-                    <>
-                      <Select value={sizeLimitSimpleResolution} onChange={withBlur((e) => setSizeLimitSimpleResolution(e.target.value as SizeLimitSimpleResolution))} style={{ height: '1.8em' }}>
-                        {sizeLimitedResolutionOptions.map((value) => (
-                          <option key={value} value={value}>
-                            {{
-                              auto: t('Auto (recommended)'),
-                              source: t('Keep source'),
-                              '720p': '720p',
-                              '1080p': '1080p',
-                              '1440p': '1440p',
-                            }[value]}
-                          </option>
-                        ))}
-                      </Select>
-                      <div style={{ marginTop: '.35em', fontSize: '.88em', color: 'var(--gray-11)' }}>{sizeLimitedResolutionDescription}</div>
-                    </>
+                    <Select value={sizeLimitSimpleResolution} onChange={withBlur((e) => setSizeLimitSimpleResolution(e.target.value as SizeLimitSimpleResolution))} style={{ height: '1.8em' }}>
+                      {sizeLimitedResolutionOptions.map((value) => (
+                        <option key={value} value={value}>
+                          {{
+                            auto: t('Auto (recommended)'),
+                            source: t('Keep source'),
+                            '720p': '720p',
+                            '1080p': '1080p',
+                            '1440p': '1440p',
+                          }[value]}
+                        </option>
+                      ))}
+                    </Select>
+                    <div style={{ marginTop: '.35em', fontSize: '.88em', color: 'var(--gray-11)' }}>{sizeLimitedResolutionDescription}</div>
                   </td>
                   <td>
                     <HelpIcon onClick={onSizeLimitedResolutionHelpPress} />

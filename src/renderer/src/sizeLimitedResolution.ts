@@ -31,10 +31,18 @@ function roundDownToEven(value: number) {
 
 function parseSimpleResolutionHeight(value: SizeLimitSimpleResolution) {
   switch (value) {
-    case '720p': return 720;
-    case '1080p': return 1080;
-    case '1440p': return 1440;
-    default: return undefined;
+    case '720p': {
+      return 720;
+    }
+    case '1080p': {
+      return 1080;
+    }
+    case '1440p': {
+      return 1440;
+    }
+    default: {
+      return undefined;
+    }
   }
 }
 
