@@ -178,6 +178,7 @@ const defaults: Config = {
   sizeLimitQuality: 'fast',
   sizeLimitControlMode: 'simple',
   sizeLimitPreset: 'quality',
+  sizeLimitSimpleResolution: 'auto',
   sizeLimitAdvancedEncoder: 'av1_nvenc',
   sizeLimitAdvancedTwoPass: false,
   sizeLimitAdvancedAv1CpuPreset: 6,
@@ -320,6 +321,7 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     set('sizeLimitPreset', 'fast');
   }
 
+  if (!store.has('sizeLimitSimpleResolution')) set('sizeLimitSimpleResolution', defaults.sizeLimitSimpleResolution);
   if (!store.has('sizeLimitAdvancedAv1CpuPreset')) set('sizeLimitAdvancedAv1CpuPreset', defaults.sizeLimitAdvancedAv1CpuPreset);
   if (!store.has('sizeLimitAdvancedAv1NvencPreset')) set('sizeLimitAdvancedAv1NvencPreset', defaults.sizeLimitAdvancedAv1NvencPreset);
   if (!store.has('sizeLimitAdvancedH264CpuPreset')) set('sizeLimitAdvancedH264CpuPreset', defaults.sizeLimitAdvancedH264CpuPreset);

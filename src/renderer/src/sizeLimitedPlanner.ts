@@ -21,6 +21,8 @@ interface StrategyProfile {
   retryMaxFactor: number,
 }
 
+type StrategyTargetingProfile = Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
+
 const av1TwoPassRetryProfile = {
   firstAttemptTargetFactor: 0.95,
   retryTargetFactor: 0.92,
@@ -280,6 +282,29 @@ function getStrategyProfile(strategyId: SizeLimitedStrategyId) {
   return strategyProfiles[strategyId];
 }
 
+function getTargetingProfile(strategy: SizeLimitedResolvedStrategy, budgetProfile: StrategyProfile): StrategyTargetingProfile {
+  if (strategy.controlMode === 'simple') {
+    switch (strategy.preset) {
+      case 'max_quality':
+        return av1TwoPassRetryProfile;
+      case 'quality':
+        return av1SinglePassRetryProfile;
+      case 'fast':
+        return fastSinglePassRetryProfile;
+      default:
+        return av1SinglePassRetryProfile;
+    }
+  }
+
+  return {
+    firstAttemptTargetFactor: budgetProfile.firstAttemptTargetFactor,
+    retryTargetFactor: budgetProfile.retryTargetFactor,
+    maxAttempts: budgetProfile.maxAttempts,
+    retryMinFactor: budgetProfile.retryMinFactor,
+    retryMaxFactor: budgetProfile.retryMaxFactor,
+  };
+}
+
 export function targetSizeMbToBytes(targetSizeMb: number) {
   return Math.max(1, Math.floor(targetSizeMb * bytesPerMb));
 }
@@ -335,14 +360,15 @@ export function planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strate
 }) {
   const hardTargetBytes = targetSizeMbToBytes(targetSizeMb);
   const safeDuration = Math.max(duration, minDurationSeconds);
-  const profile = getStrategyProfile(strategy.plannerProfileId);
-  const overheadBytes = getOverheadBytes(hardTargetBytes, profile);
-  const targetZoneMinBytes = Math.max(Math.floor(hardTargetBytes * 0.95), profile.minOverheadBytes);
+  const budgetProfile = getStrategyProfile(strategy.plannerProfileId);
+  const targetingProfile = getTargetingProfile(strategy, budgetProfile);
+  const overheadBytes = getOverheadBytes(hardTargetBytes, budgetProfile);
+  const firstAttemptTargetBytes = Math.max(Math.floor(hardTargetBytes * targetingProfile.firstAttemptTargetFactor), budgetProfile.minOverheadBytes);
+  const retryTargetBytes = Math.max(Math.floor(hardTargetBytes * targetingProfile.retryTargetFactor), budgetProfile.minOverheadBytes);
+  const targetZoneMinBytes = Math.max(firstAttemptTargetBytes, budgetProfile.minOverheadBytes);
   const targetZoneMaxBytes = Math.max(Math.floor(hardTargetBytes * 0.98), targetZoneMinBytes);
-  const firstAttemptTargetBytes = Math.max(Math.floor(hardTargetBytes * profile.firstAttemptTargetFactor), profile.minOverheadBytes);
-  const retryTargetBytes = Math.max(Math.floor(hardTargetBytes * profile.retryTargetFactor), profile.minOverheadBytes);
-  const availableBytes = Math.max(firstAttemptTargetBytes - overheadBytes, profile.minOverheadBytes);
-  const minTotalBitrate = getMinTotalBitrate({ hasAudio, profile });
+  const availableBytes = Math.max(firstAttemptTargetBytes - overheadBytes, budgetProfile.minOverheadBytes);
+  const minTotalBitrate = getMinTotalBitrate({ hasAudio, profile: budgetProfile });
   const baseTotalBitrate = Math.max(Math.floor((availableBytes * 8) / safeDuration), minTotalBitrate);
 
   return {
@@ -355,9 +381,9 @@ export function planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strate
     duration: safeDuration,
     overheadBytes,
     hasAudio,
-    maxAttempts: profile.maxAttempts,
-    retryMinFactor: profile.retryMinFactor,
-    retryMaxFactor: profile.retryMaxFactor,
+    maxAttempts: targetingProfile.maxAttempts,
+    retryMinFactor: targetingProfile.retryMinFactor,
+    retryMaxFactor: targetingProfile.retryMaxFactor,
     minTotalBitrate,
     initialAttempt: buildRetryStep({
       attemptNumber: 1,

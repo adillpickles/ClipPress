@@ -6,9 +6,11 @@ import type {
   SizeLimitAdvancedNvencPreset,
   SizeLimitControlMode,
   SizeLimitPreset,
+  SizeLimitSimpleResolution,
 } from '../../common/types.js';
 import { getExperimentalArgs, logStdoutStderr, runFfmpeg, runFfmpegWithProgress } from './ffmpeg';
 import mainApi from './mainApi';
+import { resolveSizeLimitedOutputDimensions } from './sizeLimitedResolution';
 import { getNextSizeLimitedRetryStep, planSizeLimitedEncode } from './sizeLimitedPlanner';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import type { SegmentToExport, SizeLimitedEncoderCapabilities, SizeLimitedExecutionResult, SizeLimitedProgressMetadata, SizeLimitedResolvedStrategy, SizeLimitedRetryStep } from './types';
@@ -153,6 +155,11 @@ function getBitrateWindowArgs({ videoBitrate, maxRateFactor, bufferFactor }: {
   ];
 }
 
+function getScaleFilter(outputWidth: number | undefined, outputHeight: number | undefined) {
+  if (outputWidth == null || outputHeight == null) return undefined;
+  return `scale=${outputWidth}:${outputHeight}:flags=lanczos`;
+}
+
 function getAudioArgs({ audioInputLabel, audioBitrate }: {
   audioInputLabel: string | undefined,
   audioBitrate: number,
@@ -247,6 +254,8 @@ function getCommonEncodeArgs({
   audioBitrate,
   videoInputLabel,
   audioInputLabel,
+  outputWidth,
+  outputHeight,
   ffmpegExperimental,
   rotation,
   outPath,
@@ -256,10 +265,13 @@ function getCommonEncodeArgs({
   audioBitrate: number,
   videoInputLabel: string,
   audioInputLabel: string | undefined,
+  outputWidth: number | undefined,
+  outputHeight: number | undefined,
   ffmpegExperimental: boolean,
   rotation: number | undefined,
   outPath: string,
 }) {
+  const scaleFilter = getScaleFilter(outputWidth, outputHeight);
   return [
     '-map_metadata', '-1',
     '-map_chapters', '-1',
@@ -268,6 +280,7 @@ function getCommonEncodeArgs({
     '-ignore_unknown',
     '-map', videoInputLabel,
     ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: false }),
+    ...(scaleFilter != null ? ['-vf', scaleFilter] : []),
     ...getRotationArgs(rotation),
     ...getAudioArgs({ audioInputLabel, audioBitrate }),
     '-movflags', '+faststart',
@@ -283,6 +296,8 @@ function getTwoPassEncodeArgs({
   audioBitrate,
   videoInputLabel,
   audioInputLabel,
+  outputWidth,
+  outputHeight,
   ffmpegExperimental,
   rotation,
   passlogFile,
@@ -294,12 +309,15 @@ function getTwoPassEncodeArgs({
   audioBitrate: number,
   videoInputLabel: string,
   audioInputLabel: string | undefined,
+  outputWidth: number | undefined,
+  outputHeight: number | undefined,
   ffmpegExperimental: boolean,
   rotation: number | undefined,
   passlogFile: string,
   outPath: string,
   passNumber: 1 | 2,
 }) {
+  const scaleFilter = getScaleFilter(outputWidth, outputHeight);
   return [
     '-map_metadata', '-1',
     '-map_chapters', '-1',
@@ -308,6 +326,7 @@ function getTwoPassEncodeArgs({
     '-ignore_unknown',
     '-map', videoInputLabel,
     ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: true }),
+    ...(scaleFilter != null ? ['-vf', scaleFilter] : []),
     '-pass', String(passNumber),
     '-passlogfile', passlogFile,
     ...getRotationArgs(rotation),
@@ -348,18 +367,24 @@ function getMergeInputArgs({ filePath, segments, outputPlaybackRate }: {
   ]);
 }
 
-function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex }: {
+function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, outputWidth, outputHeight }: {
   segments: SegmentToExport[],
   videoStreamIndex: number,
   audioStreamIndex: number | undefined,
+  outputWidth?: number | undefined,
+  outputHeight?: number | undefined,
 }) {
+  const scaleFilter = getScaleFilter(outputWidth, outputHeight);
+
   if (audioStreamIndex == null) {
     const labels = segments.map((_, index) => `[${index}:${videoStreamIndex}]`).join('');
-    return `${labels}concat=n=${segments.length}:v=1:a=0[v]`;
+    if (scaleFilter == null) return `${labels}concat=n=${segments.length}:v=1:a=0[v]`;
+    return `${labels}concat=n=${segments.length}:v=1:a=0[vconcat];[vconcat]${scaleFilter}[v]`;
   }
 
   const labels = segments.map((_, index) => `[${index}:${videoStreamIndex}][${index}:${audioStreamIndex}]`).join('');
-  return `${labels}concat=n=${segments.length}:v=1:a=1[v][a]`;
+  if (scaleFilter == null) return `${labels}concat=n=${segments.length}:v=1:a=1[v][a]`;
+  return `${labels}concat=n=${segments.length}:v=1:a=1[vconcat][a];[vconcat]${scaleFilter}[v]`;
 }
 
 function makeProgressMetadata({
@@ -587,6 +612,7 @@ export async function exportSizeLimitedSegment({
   targetSizeMb,
   controlMode,
   preset,
+  simpleResolution,
   advancedEncoder,
   advancedTwoPass,
   advancedAv1CpuPreset,
@@ -600,6 +626,7 @@ export async function exportSizeLimitedSegment({
   treatInputFileModifiedTimeAsStart,
   treatOutputFileModifiedTimeAsStart,
   outputPlaybackRate,
+  sourceRotation,
   rotation,
   appendFfmpegCommandLog,
   onProgress,
@@ -612,19 +639,21 @@ export async function exportSizeLimitedSegment({
   targetSizeMb: number,
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
+  simpleResolution: SizeLimitSimpleResolution,
   advancedEncoder: SizeLimitAdvancedEncoder,
   advancedTwoPass: boolean,
   advancedAv1CpuPreset: SizeLimitAdvancedAv1CpuPreset,
   advancedAv1NvencPreset: SizeLimitAdvancedNvencPreset,
   advancedH264CpuPreset: SizeLimitAdvancedH264CpuPreset,
   advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
-  videoStream: Pick<FFprobeStream, 'index'>,
+  videoStream: Pick<FFprobeStream, 'index' | 'width' | 'height'>,
   audioStream: Pick<FFprobeStream, 'index'> | undefined,
   enableOverwriteOutput: boolean,
   ffmpegExperimental: boolean,
   treatInputFileModifiedTimeAsStart: boolean,
   treatOutputFileModifiedTimeAsStart: boolean | null | undefined,
   outputPlaybackRate: number,
+  sourceRotation: number | undefined,
   rotation: number | undefined,
   appendFfmpegCommandLog: (args: string[]) => void,
   onProgress: (progress: number, metadata?: SizeLimitedProgressMetadata) => void,
@@ -646,6 +675,14 @@ export async function exportSizeLimitedSegment({
     targetSizeMb,
     duration: plannedDuration,
     hasAudio: audioStream != null,
+  });
+  const outputDimensions = resolveSizeLimitedOutputDimensions({
+    controlMode,
+    simpleResolution,
+    sourceWidth: videoStream.width,
+    sourceHeight: videoStream.height,
+    rotation: sourceRotation ?? rotation,
+    plannedVideoBitrate: plan.initialAttempt.videoBitrate,
   });
 
   const shouldSkip = await ensureWritableOutput(outPath, enableOverwriteOutput);
@@ -681,6 +718,8 @@ export async function exportSizeLimitedSegment({
             audioBitrate: attempt.audioBitrate,
             videoInputLabel: `0:${videoStream.index}`,
             audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
+            outputWidth: outputDimensions?.width,
+            outputHeight: outputDimensions?.height,
             ffmpegExperimental,
             rotation,
             passlogFile,
@@ -698,6 +737,8 @@ export async function exportSizeLimitedSegment({
             audioBitrate: attempt.audioBitrate,
             videoInputLabel: `0:${videoStream.index}`,
             audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
+            outputWidth: outputDimensions?.width,
+            outputHeight: outputDimensions?.height,
             ffmpegExperimental,
             rotation,
             passlogFile,
@@ -720,6 +761,8 @@ export async function exportSizeLimitedSegment({
           audioBitrate: attempt.audioBitrate,
           videoInputLabel: `0:${videoStream.index}`,
           audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
+          outputWidth: outputDimensions?.width,
+          outputHeight: outputDimensions?.height,
           ffmpegExperimental,
           rotation,
           outPath: attemptOutPath,
@@ -760,6 +803,7 @@ export async function exportSizeLimitedMerge({
   targetSizeMb,
   controlMode,
   preset,
+  simpleResolution,
   advancedEncoder,
   advancedTwoPass,
   advancedAv1CpuPreset,
@@ -773,6 +817,7 @@ export async function exportSizeLimitedMerge({
   treatInputFileModifiedTimeAsStart,
   treatOutputFileModifiedTimeAsStart,
   outputPlaybackRate,
+  sourceRotation,
   rotation,
   appendFfmpegCommandLog,
   onProgress,
@@ -784,19 +829,21 @@ export async function exportSizeLimitedMerge({
   targetSizeMb: number,
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
+  simpleResolution: SizeLimitSimpleResolution,
   advancedEncoder: SizeLimitAdvancedEncoder,
   advancedTwoPass: boolean,
   advancedAv1CpuPreset: SizeLimitAdvancedAv1CpuPreset,
   advancedAv1NvencPreset: SizeLimitAdvancedNvencPreset,
   advancedH264CpuPreset: SizeLimitAdvancedH264CpuPreset,
   advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
-  videoStream: Pick<FFprobeStream, 'index'>,
+  videoStream: Pick<FFprobeStream, 'index' | 'width' | 'height'>,
   audioStream: Pick<FFprobeStream, 'index'> | undefined,
   enableOverwriteOutput: boolean,
   ffmpegExperimental: boolean,
   treatInputFileModifiedTimeAsStart: boolean,
   treatOutputFileModifiedTimeAsStart: boolean | null | undefined,
   outputPlaybackRate: number,
+  sourceRotation: number | undefined,
   rotation: number | undefined,
   appendFfmpegCommandLog: (args: string[]) => void,
   onProgress: (progress: number, metadata?: SizeLimitedProgressMetadata) => void,
@@ -819,6 +866,14 @@ export async function exportSizeLimitedMerge({
     targetSizeMb,
     duration: plannedDuration,
     hasAudio: audioStream != null,
+  });
+  const outputDimensions = resolveSizeLimitedOutputDimensions({
+    controlMode,
+    simpleResolution,
+    sourceWidth: videoStream.width,
+    sourceHeight: videoStream.height,
+    rotation: sourceRotation ?? rotation,
+    plannedVideoBitrate: plan.initialAttempt.videoBitrate,
   });
 
   const shouldSkip = await ensureWritableOutput(outPath, enableOverwriteOutput);
@@ -845,6 +900,8 @@ export async function exportSizeLimitedMerge({
         segments,
         videoStreamIndex: videoStream.index,
         audioStreamIndex: audioStream?.index,
+        outputWidth: outputDimensions?.width,
+        outputHeight: outputDimensions?.height,
       });
 
       const commonArgs = [
@@ -864,6 +921,8 @@ export async function exportSizeLimitedMerge({
             audioBitrate: attempt.audioBitrate,
             videoInputLabel: '[v]',
             audioInputLabel: audioStream != null ? '[a]' : undefined,
+            outputWidth: undefined,
+            outputHeight: undefined,
             ffmpegExperimental,
             rotation,
             passlogFile,
@@ -881,6 +940,8 @@ export async function exportSizeLimitedMerge({
             audioBitrate: attempt.audioBitrate,
             videoInputLabel: '[v]',
             audioInputLabel: audioStream != null ? '[a]' : undefined,
+            outputWidth: undefined,
+            outputHeight: undefined,
             ffmpegExperimental,
             rotation,
             passlogFile,
@@ -903,6 +964,8 @@ export async function exportSizeLimitedMerge({
           audioBitrate: attempt.audioBitrate,
           videoInputLabel: '[v]',
           audioInputLabel: audioStream != null ? '[a]' : undefined,
+          outputWidth: undefined,
+          outputHeight: undefined,
           ffmpegExperimental,
           rotation,
           outPath: attemptOutPath,

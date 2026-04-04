@@ -33,6 +33,8 @@ export type SizeLimitControlMode = 'simple' | 'advanced';
 
 export type SizeLimitPreset = 'max_quality' | 'quality' | 'fast';
 
+export type SizeLimitSimpleResolution = 'auto' | 'source' | '720p' | '1080p' | '1440p';
+
 export type SizeLimitAdvancedEncoder = 'av1_cpu' | 'av1_nvenc' | 'h264_cpu' | 'h264_nvenc';
 
 export type SizeLimitAdvancedAv1CpuPreset = number;
@@ -129,6 +131,7 @@ export interface Config {
   sizeLimitQuality: SizeLimitQuality,
   sizeLimitControlMode: SizeLimitControlMode,
   sizeLimitPreset: SizeLimitPreset,
+  sizeLimitSimpleResolution: SizeLimitSimpleResolution,
   sizeLimitAdvancedEncoder: SizeLimitAdvancedEncoder,
   sizeLimitAdvancedTwoPass: boolean,
   sizeLimitAdvancedAv1CpuPreset: SizeLimitAdvancedAv1CpuPreset,

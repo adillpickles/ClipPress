@@ -33,6 +33,7 @@ import type {
   SizeLimitAdvancedNvencPreset,
   SizeLimitControlMode,
   SizeLimitPreset,
+  SizeLimitSimpleResolution,
 } from '../../../common/types';
 import TextInput from './TextInput';
 import type { UseSegments } from '../hooks/useSegments';
@@ -45,6 +46,7 @@ import type { FindNearestKeyframeTime } from '../hooks/useKeyframes';
 import { troubleshootingUrl } from '../../../common/constants';
 import OutDirSelector from './OutDirSelector';
 import { getSizeLimitedEncoderCapabilities } from '../sizeLimitedExport';
+import { getSizeLimitedSimpleResolutionOptions } from '../sizeLimitedResolution';
 
 const remote = window.require('@electron/remote');
 const { shell } = remote;
@@ -185,6 +187,8 @@ function ExportConfirm({
   lossyMode,
   neighbouringKeyFrames,
   findNearestKeyFrameTime,
+  sizeLimitedSourceVideoStream,
+  sizeLimitedSourceRotation,
 } : {
   areWeCutting: boolean,
   segmentsToExport: SegmentToExport[],
@@ -216,10 +220,12 @@ function ExportConfirm({
   lossyMode: LossyMode | undefined,
   neighbouringKeyFrames: Frame[],
   findNearestKeyFrameTime: FindNearestKeyframeTime,
+  sizeLimitedSourceVideoStream: Pick<FFprobeStream, 'width' | 'height'> | undefined,
+  sizeLimitedSourceRotation: number | undefined,
 }) {
   const { t } = useTranslation();
 
-  const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, setSegmentsToChaptersOnly, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled, exportEncodeMode, setExportEncodeMode, sizeLimitMb, setSizeLimitMb, sizeLimitControlMode, setSizeLimitControlMode, sizeLimitPreset, setSizeLimitPreset, sizeLimitAdvancedEncoder, setSizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, setSizeLimitAdvancedTwoPass, sizeLimitAdvancedAv1CpuPreset, setSizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, setSizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedH264CpuPreset, setSizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, setSizeLimitAdvancedH264NvencPreset, sizeLimitSeparateNamingMode, setSizeLimitSeparateNamingMode, sizeLimitMergedNamingMode, setSizeLimitMergedNamingMode } = useUserSettings();
+  const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, setSegmentsToChaptersOnly, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled, exportEncodeMode, setExportEncodeMode, sizeLimitMb, setSizeLimitMb, sizeLimitControlMode, setSizeLimitControlMode, sizeLimitPreset, setSizeLimitPreset, sizeLimitSimpleResolution, setSizeLimitSimpleResolution, sizeLimitAdvancedEncoder, setSizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, setSizeLimitAdvancedTwoPass, sizeLimitAdvancedAv1CpuPreset, setSizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, setSizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedH264CpuPreset, setSizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, setSizeLimitAdvancedH264NvencPreset, sizeLimitSeparateNamingMode, setSizeLimitSeparateNamingMode, sizeLimitMergedNamingMode, setSizeLimitMergedNamingMode } = useUserSettings();
 
   const [showAdvanced, setShowAdvanced] = useState(!simpleMode);
   const togglePreserveChapters = useCallback(() => setPreserveChapters((val) => !val), [setPreserveChapters]);
@@ -371,6 +377,10 @@ function ExportConfirm({
     showHelpText({ text: t('Max Quality chases the best-looking result under the cap. Quality is the recommended everyday balance. Fast prioritizes speed while keeping the result shareable.') });
   }, [showHelpText, t]);
 
+  const onSizeLimitedResolutionHelpPress = useCallback(() => {
+    showHelpText({ text: t('Simple mode keeps source FPS. Auto keeps source at 720p and below, drops 1080p to 720p below 4 Mbps planned video bitrate, and for higher resolutions uses 720p below 4 Mbps, 1080p from 4 to under 6 Mbps, and otherwise keeps up to 1440p.') });
+  }, [showHelpText, t]);
+
   const onSizeLimitedAdvancedEncoderHelpPress = useCallback(() => {
     showHelpText({ text: t('Choose the exact encoder path directly in Advanced mode. AV1 CPU prioritizes premium quality, AV1 NVIDIA prioritizes faster AV1, H.264 CPU is the compatibility CPU path, and H.264 NVIDIA is the fastest GPU-backed H.264 path.') });
   }, [showHelpText, t]);
@@ -401,6 +411,20 @@ function ExportConfirm({
     quality: t('Recommended everyday balance for most shareable clips.'),
     fast: t('Good everyday shareable quality with quicker export.'),
   })[sizeLimitPreset], [sizeLimitPreset, t]);
+
+  const sizeLimitedResolutionOptions = useMemo(() => (
+    getSizeLimitedSimpleResolutionOptions({
+      sourceWidth: sizeLimitedSourceVideoStream?.width,
+      sourceHeight: sizeLimitedSourceVideoStream?.height,
+      rotation: sizeLimitedSourceRotation,
+    })
+  ), [sizeLimitedSourceRotation, sizeLimitedSourceVideoStream?.height, sizeLimitedSourceVideoStream?.width]);
+
+  const sizeLimitedResolutionDescription = useMemo(() => {
+    if (sizeLimitSimpleResolution === 'auto') return t('Recommended. Keeps source at 720p and below, and only downscales when the planned bitrate gets tight.');
+    if (sizeLimitSimpleResolution === 'source') return t('Keep the source resolution. ClipPress will never upscale.');
+    return t('Downscale to {{resolution}} while preserving aspect ratio. ClipPress will never upscale.', { resolution: sizeLimitSimpleResolution });
+  }, [sizeLimitSimpleResolution, t]);
 
   const advancedEncoderUnavailableMessage = useMemo(() => {
     if (encoderCapabilities == null) return undefined;
@@ -664,6 +688,35 @@ function ExportConfirm({
                   <HelpIcon onClick={sizeLimitControlMode === 'simple' ? onSizeLimitedPresetHelpPress : onSizeLimitedAdvancedEncoderHelpPress} />
                 </td>
               </tr>
+
+              {sizeLimitControlMode === 'simple' && (
+                <tr>
+                  <td>
+                    {t('Resolution')}
+                  </td>
+                  <td>
+                    <>
+                      <Select value={sizeLimitSimpleResolution} onChange={withBlur((e) => setSizeLimitSimpleResolution(e.target.value as SizeLimitSimpleResolution))} style={{ height: '1.8em' }}>
+                        {sizeLimitedResolutionOptions.map((value) => (
+                          <option key={value} value={value}>
+                            {{
+                              auto: t('Auto (recommended)'),
+                              source: t('Keep source'),
+                              '720p': '720p',
+                              '1080p': '1080p',
+                              '1440p': '1440p',
+                            }[value]}
+                          </option>
+                        ))}
+                      </Select>
+                      <div style={{ marginTop: '.35em', fontSize: '.88em', color: 'var(--gray-11)' }}>{sizeLimitedResolutionDescription}</div>
+                    </>
+                  </td>
+                  <td>
+                    <HelpIcon onClick={onSizeLimitedResolutionHelpPress} />
+                  </td>
+                </tr>
+              )}
 
               {sizeLimitControlMode === 'advanced' && (
                 <tr>

@@ -133,6 +133,15 @@ function getTemplateProblems({ fileNames, filePath, outputDir, safeOutputFileNam
   };
 }
 
+export function getOutputFileNameProblems(params: {
+  fileNames: string[],
+  filePath: string,
+  outputDir: string,
+  safeOutputFileName: boolean,
+}) {
+  return getTemplateProblems(params);
+}
+
 // This is used as a fallback and so it has to always generate unique file names
 // eslint-disable-next-line no-template-curly-in-string
 export const defaultCutFileTemplate = '${FILENAME}-${CUT_FROM}-${CUT_TO}${SEG_SUFFIX}${EXT}';

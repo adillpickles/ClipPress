@@ -209,6 +209,50 @@ describe('getNextSizeLimitedRetryStep', () => {
     expect(qualityPlan.retryTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.9));
   });
 
+  it('keeps max quality targeting locked when av1 falls back to h264', () => {
+    const fallbackStrategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'max_quality',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: { h264Nvenc: true, av1Nvenc: false, libx264: true, libsvtav1: false },
+    });
+
+    const fallbackPlan = planSizeLimitedEncode({
+      targetSizeMb: 10,
+      duration: 30,
+      hasAudio: true,
+      strategy: fallbackStrategy,
+    });
+
+    expect(fallbackStrategy.id).toBe('max_quality_h264_cpu_two_pass');
+    expect(fallbackPlan.firstAttemptTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.95));
+    expect(fallbackPlan.retryTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.92));
+  });
+
+  it('keeps quality targeting locked when av1 falls back to h264', () => {
+    const fallbackStrategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'quality',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: { h264Nvenc: true, av1Nvenc: false, libx264: true, libsvtav1: false },
+    });
+
+    const fallbackPlan = planSizeLimitedEncode({
+      targetSizeMb: 10,
+      duration: 30,
+      hasAudio: true,
+      strategy: fallbackStrategy,
+    });
+
+    expect(fallbackStrategy.id).toBe('quality_h264_cpu');
+    expect(fallbackPlan.firstAttemptTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.93));
+    expect(fallbackPlan.retryTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.9));
+  });
+
   it('plans fast mode at the locked 90% first-attempt target', () => {
     const fastStrategy = resolveSizeLimitedStrategy({
       controlMode: 'simple',
@@ -228,5 +272,30 @@ describe('getNextSizeLimitedRetryStep', () => {
 
     expect(fastPlan.firstAttemptTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.9));
     expect(fastPlan.retryTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.87));
+  });
+
+  it('treats under-cap first attempts as final even when far below the preset target', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'quality',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: allCapabilities,
+    });
+    const plan = planSizeLimitedEncode({
+      targetSizeMb: 10,
+      duration: 30,
+      hasAudio: true,
+      strategy,
+    });
+
+    const nextAttempt = getNextSizeLimitedRetryStep({
+      plan,
+      previousAttempt: plan.initialAttempt,
+      previousOutputSize: Math.floor(plan.hardTargetBytes * 0.8),
+    });
+
+    expect(nextAttempt).toBeUndefined();
   });
 });
