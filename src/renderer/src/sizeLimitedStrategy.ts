@@ -169,22 +169,6 @@ function resolveSimplePresetStrategy({
         });
       }
 
-      if (capabilities.libsvtav1) {
-        return buildStrategy({
-          controlMode: 'simple',
-          preset: 'fast',
-          effectiveCodec: 'av1',
-          id: 'fast_av1_cpu',
-          encoder: 'libsvtav1',
-          encoderPreset: 10,
-          hardware: 'cpu',
-          usesGpu: false,
-          executionMode: 'single_pass',
-          tuningProfile: 'fast',
-          fallbackReason: 'av1_nvenc_unavailable',
-        });
-      }
-
       return buildStrategy({
         controlMode: 'simple',
         preset: 'fast',
@@ -196,7 +180,7 @@ function resolveSimplePresetStrategy({
         usesGpu: false,
         executionMode: 'single_pass',
         tuningProfile: 'fast',
-        fallbackReason: 'av1_unavailable',
+        fallbackReason: 'av1_nvenc_unavailable',
       });
     }
     default: {

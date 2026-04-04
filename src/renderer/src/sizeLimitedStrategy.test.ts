@@ -73,7 +73,7 @@ describe('resolveSizeLimitedStrategy', () => {
     expect(strategy.effectiveCodec).toBe('av1');
   });
 
-  it('falls back to cpu av1 when fast nvenc is unavailable', () => {
+  it('falls back directly to cpu h264 when fast nvenc is unavailable to stay speed-first', () => {
     const strategy = resolveSizeLimitedStrategy({
       controlMode: 'simple',
       preset: 'fast',
@@ -83,7 +83,7 @@ describe('resolveSizeLimitedStrategy', () => {
       capabilities: { h264Nvenc: false, av1Nvenc: false, libx264: true, libsvtav1: true },
     });
 
-    expect(strategy.id).toBe('fast_av1_cpu');
+    expect(strategy.id).toBe('fast_h264_cpu');
     expect(strategy.fallbackReason).toBe('av1_nvenc_unavailable');
   });
 
@@ -98,7 +98,7 @@ describe('resolveSizeLimitedStrategy', () => {
     });
 
     expect(strategy.id).toBe('fast_h264_cpu');
-    expect(strategy.fallbackReason).toBe('av1_unavailable');
+    expect(strategy.fallbackReason).toBe('av1_nvenc_unavailable');
   });
 
   it('falls back from max quality av1 to h264 two-pass when no av1 path is available', () => {

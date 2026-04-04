@@ -1430,12 +1430,8 @@ function App() {
             notices.add(i18n.t('Fast used NVIDIA AV1 with a speed-tuned profile for quick shareable exports.'));
             break;
           }
-          case 'fast_av1_cpu': {
-            warnings.add(i18n.t('NVIDIA AV1 was unavailable, so Fast fell back to CPU AV1.'));
-            break;
-          }
           case 'fast_h264_cpu': {
-            warnings.add(i18n.t('AV1 encoders were unavailable, so Fast fell back to CPU H.264.'));
+            warnings.add(i18n.t('NVIDIA AV1 was unavailable, so Fast fell back to CPU H.264 to stay speed-first.'));
             break;
           }
           default: {

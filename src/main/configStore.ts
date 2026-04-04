@@ -178,7 +178,7 @@ const defaults: Config = {
   sizeLimitQuality: 'fast',
   sizeLimitControlMode: 'simple',
   sizeLimitPreset: 'quality',
-  sizeLimitAdvancedEncoder: 'h264_nvenc',
+  sizeLimitAdvancedEncoder: 'av1_nvenc',
   sizeLimitAdvancedTwoPass: false,
   sizeLimitAdvancedAv1CpuPreset: 6,
   sizeLimitAdvancedAv1NvencPreset: 'p6',

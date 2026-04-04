@@ -22,40 +22,40 @@ interface StrategyProfile {
 }
 
 const av1TwoPassRetryProfile = {
-  firstAttemptTargetFactor: 0.972,
-  retryTargetFactor: 0.958,
+  firstAttemptTargetFactor: 0.95,
+  retryTargetFactor: 0.92,
   maxAttempts: 2,
   retryMinFactor: 0.9,
   retryMaxFactor: 0.97,
 } satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 
 const av1SinglePassRetryProfile = {
-  firstAttemptTargetFactor: 0.965,
-  retryTargetFactor: 0.952,
+  firstAttemptTargetFactor: 0.93,
+  retryTargetFactor: 0.9,
   maxAttempts: 2,
   retryMinFactor: 0.88,
   retryMaxFactor: 0.97,
 } satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 
 const fastSinglePassRetryProfile = {
-  firstAttemptTargetFactor: 0.95,
-  retryTargetFactor: 0.94,
+  firstAttemptTargetFactor: 0.9,
+  retryTargetFactor: 0.87,
   maxAttempts: 2,
   retryMinFactor: 0.85,
   retryMaxFactor: 0.97,
 } satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 
 const h264TwoPassRetryProfile = {
-  firstAttemptTargetFactor: 0.968,
-  retryTargetFactor: 0.955,
+  firstAttemptTargetFactor: 0.93,
+  retryTargetFactor: 0.9,
   maxAttempts: 2,
   retryMinFactor: 0.88,
   retryMaxFactor: 0.97,
 } satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 
 const h264SinglePassRetryProfile = {
-  firstAttemptTargetFactor: 0.95,
-  retryTargetFactor: 0.94,
+  firstAttemptTargetFactor: 0.9,
+  retryTargetFactor: 0.87,
   maxAttempts: 2,
   retryMinFactor: 0.85,
   retryMaxFactor: 0.97,
@@ -160,18 +160,6 @@ const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
     maxAudioShare: 0.16,
     tinyTargetAudioShare: 0.08,
     tinyTargetTotalBitrate: 700_000,
-    ...fastSinglePassRetryProfile,
-  }),
-  fast_av1_cpu: createProfile({
-    overheadRatio: 0.017,
-    minOverheadBytes: 20 * 1024,
-    maxOverheadBytes: 160 * 1024,
-    preferredAudioBitrate: 64_000,
-    minAudioBitrate: 24_000,
-    minVideoBitrate: 80_000,
-    maxAudioShare: 0.15,
-    tinyTargetAudioShare: 0.08,
-    tinyTargetTotalBitrate: 650_000,
     ...fastSinglePassRetryProfile,
   }),
   fast_h264_cpu: createProfile({

@@ -186,7 +186,7 @@ function getResolvedVideoArgs({ strategy, videoBitrate, twoPass }: {
         '-rc', 'vbr',
         ...(!twoPass && !isFast ? ['-multipass', 'qres'] : []),
         '-cq', isMaxQuality ? '26' : (isFast ? '30' : '28'),
-        '-rc-lookahead', isMaxQuality ? '32' : (isFast ? '12' : '24'),
+        '-rc-lookahead', isMaxQuality ? '32' : (isFast ? '12' : '20'),
         '-spatial-aq', '1',
         '-temporal-aq', '1',
         '-aq-strength', isMaxQuality ? '10' : (isFast ? '6' : '8'),
