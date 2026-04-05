@@ -6,14 +6,16 @@ import type {
   SizeLimitAdvancedNvencPreset,
   SizeLimitControlMode,
   SizeLimitPreset,
+  SizeLimitSimpleFps,
   SizeLimitSimpleResolution,
 } from '../../common/types.js';
 import { getExperimentalArgs, logStdoutStderr, runFfmpeg, runFfmpegWithProgress } from './ffmpeg';
 import mainApi from './mainApi';
-import { resolveSizeLimitedOutputDimensions } from './sizeLimitedResolution';
+import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile, sizeLimitedSwsFlags } from './sizeLimitedResolution';
 import { getNextSizeLimitedRetryStep, planSizeLimitedEncode } from './sizeLimitedPlanner';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import type { SegmentToExport, SizeLimitedEncoderCapabilities, SizeLimitedExecutionResult, SizeLimitedProgressMetadata, SizeLimitedResolvedStrategy, SizeLimitedRetryStep } from './types';
+import type { SizeLimitedVideoTransformProfile } from './sizeLimitedResolution';
 import { assertFileExists, readFileSize, renameWithRetry, transferTimestamps, unlinkWithRetry } from './util';
 import { UserFacingError } from '../errors';
 
@@ -155,9 +157,8 @@ function getBitrateWindowArgs({ videoBitrate, maxRateFactor, bufferFactor }: {
   ];
 }
 
-function getScaleFilter(outputWidth: number | undefined, outputHeight: number | undefined) {
-  if (outputWidth == null || outputHeight == null) return undefined;
-  return `scale=${outputWidth}:${outputHeight}:flags=lanczos`;
+function getSwsFlagsArgs() {
+  return ['-sws_flags', sizeLimitedSwsFlags];
 }
 
 function getAudioArgs({ audioInputLabel, audioBitrate }: {
@@ -254,8 +255,7 @@ function getCommonEncodeArgs({
   audioBitrate,
   videoInputLabel,
   audioInputLabel,
-  outputWidth,
-  outputHeight,
+  videoProfile,
   ffmpegExperimental,
   rotation,
   outPath,
@@ -265,13 +265,12 @@ function getCommonEncodeArgs({
   audioBitrate: number,
   videoInputLabel: string,
   audioInputLabel: string | undefined,
-  outputWidth: number | undefined,
-  outputHeight: number | undefined,
+  videoProfile: SizeLimitedVideoTransformProfile,
   ffmpegExperimental: boolean,
   rotation: number | undefined,
   outPath: string,
 }) {
-  const scaleFilter = getScaleFilter(outputWidth, outputHeight);
+  const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
   return [
     '-map_metadata', '-1',
     '-map_chapters', '-1',
@@ -280,7 +279,7 @@ function getCommonEncodeArgs({
     '-ignore_unknown',
     '-map', videoInputLabel,
     ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: false }),
-    ...(scaleFilter != null ? ['-vf', scaleFilter] : []),
+    ...(videoFilter != null ? ['-vf', videoFilter] : []),
     ...getRotationArgs(rotation),
     ...getAudioArgs({ audioInputLabel, audioBitrate }),
     '-movflags', '+faststart',
@@ -296,8 +295,7 @@ function getTwoPassEncodeArgs({
   audioBitrate,
   videoInputLabel,
   audioInputLabel,
-  outputWidth,
-  outputHeight,
+  videoProfile,
   ffmpegExperimental,
   rotation,
   passlogFile,
@@ -309,15 +307,14 @@ function getTwoPassEncodeArgs({
   audioBitrate: number,
   videoInputLabel: string,
   audioInputLabel: string | undefined,
-  outputWidth: number | undefined,
-  outputHeight: number | undefined,
+  videoProfile: SizeLimitedVideoTransformProfile,
   ffmpegExperimental: boolean,
   rotation: number | undefined,
   passlogFile: string,
   outPath: string,
   passNumber: 1 | 2,
 }) {
-  const scaleFilter = getScaleFilter(outputWidth, outputHeight);
+  const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
   return [
     '-map_metadata', '-1',
     '-map_chapters', '-1',
@@ -326,7 +323,7 @@ function getTwoPassEncodeArgs({
     '-ignore_unknown',
     '-map', videoInputLabel,
     ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: true }),
-    ...(scaleFilter != null ? ['-vf', scaleFilter] : []),
+    ...(videoFilter != null ? ['-vf', videoFilter] : []),
     '-pass', String(passNumber),
     '-passlogfile', passlogFile,
     ...getRotationArgs(rotation),
@@ -367,24 +364,23 @@ function getMergeInputArgs({ filePath, segments, outputPlaybackRate }: {
   ]);
 }
 
-function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, outputWidth, outputHeight }: {
+function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoProfile }: {
   segments: SegmentToExport[],
   videoStreamIndex: number,
   audioStreamIndex: number | undefined,
-  outputWidth?: number | undefined,
-  outputHeight?: number | undefined,
+  videoProfile: SizeLimitedVideoTransformProfile,
 }) {
-  const scaleFilter = getScaleFilter(outputWidth, outputHeight);
+  const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
 
   if (audioStreamIndex == null) {
     const labels = segments.map((_, index) => `[${index}:${videoStreamIndex}]`).join('');
-    if (scaleFilter == null) return `${labels}concat=n=${segments.length}:v=1:a=0[v]`;
-    return `${labels}concat=n=${segments.length}:v=1:a=0[vconcat];[vconcat]${scaleFilter}[v]`;
+    if (videoFilter == null) return `${labels}concat=n=${segments.length}:v=1:a=0[v]`;
+    return `${labels}concat=n=${segments.length}:v=1:a=0[vconcat];[vconcat]${videoFilter}[v]`;
   }
 
   const labels = segments.map((_, index) => `[${index}:${videoStreamIndex}][${index}:${audioStreamIndex}]`).join('');
-  if (scaleFilter == null) return `${labels}concat=n=${segments.length}:v=1:a=1[v][a]`;
-  return `${labels}concat=n=${segments.length}:v=1:a=1[vconcat][a];[vconcat]${scaleFilter}[v]`;
+  if (videoFilter == null) return `${labels}concat=n=${segments.length}:v=1:a=1[v][a]`;
+  return `${labels}concat=n=${segments.length}:v=1:a=1[vconcat][a];[vconcat]${videoFilter}[v]`;
 }
 
 function makeProgressMetadata({
@@ -613,6 +609,7 @@ export async function exportSizeLimitedSegment({
   controlMode,
   preset,
   simpleResolution,
+  simpleFps,
   advancedEncoder,
   advancedTwoPass,
   advancedAv1CpuPreset,
@@ -626,6 +623,7 @@ export async function exportSizeLimitedSegment({
   treatInputFileModifiedTimeAsStart,
   treatOutputFileModifiedTimeAsStart,
   outputPlaybackRate,
+  sourceFps,
   sourceRotation,
   rotation,
   appendFfmpegCommandLog,
@@ -640,6 +638,7 @@ export async function exportSizeLimitedSegment({
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
   simpleResolution: SizeLimitSimpleResolution,
+  simpleFps: SizeLimitSimpleFps,
   advancedEncoder: SizeLimitAdvancedEncoder,
   advancedTwoPass: boolean,
   advancedAv1CpuPreset: SizeLimitAdvancedAv1CpuPreset,
@@ -653,6 +652,7 @@ export async function exportSizeLimitedSegment({
   treatInputFileModifiedTimeAsStart: boolean,
   treatOutputFileModifiedTimeAsStart: boolean | null | undefined,
   outputPlaybackRate: number,
+  sourceFps: number | undefined,
   sourceRotation: number | undefined,
   rotation: number | undefined,
   appendFfmpegCommandLog: (args: string[]) => void,
@@ -676,14 +676,6 @@ export async function exportSizeLimitedSegment({
     duration: plannedDuration,
     hasAudio: audioStream != null,
   });
-  const outputDimensions = resolveSizeLimitedOutputDimensions({
-    controlMode,
-    simpleResolution,
-    sourceWidth: videoStream.width,
-    sourceHeight: videoStream.height,
-    rotation: sourceRotation ?? rotation,
-    plannedVideoBitrate: plan.initialAttempt.videoBitrate,
-  });
 
   const shouldSkip = await ensureWritableOutput(outPath, enableOverwriteOutput);
   if (shouldSkip) {
@@ -705,12 +697,23 @@ export async function exportSizeLimitedSegment({
     buildAttempt: async (attempt) => {
       const attemptOutPath = makeAttemptPath(outPath, attempt.attemptNumber);
       const inputArgs = getSegmentInputArgs({ filePath, segment, outputPlaybackRate });
+      const videoProfile = resolveSizeLimitedVideoProfile({
+        controlMode,
+        simpleResolution,
+        simpleFps,
+        sourceWidth: videoStream.width,
+        sourceHeight: videoStream.height,
+        rotation: sourceRotation ?? rotation,
+        sourceFps,
+        plannedVideoBitrate: attempt.videoBitrate,
+      });
 
       if (strategy.executionMode === 'ffmpeg_two_pass') {
         const passlogFile = makePasslogPath(outPath, attempt.attemptNumber);
         const pass1OutPath = makePass1Path(outPath, attempt.attemptNumber);
         const pass1Args = [
           '-hide_banner',
+          ...getSwsFlagsArgs(),
           ...inputArgs,
           ...getTwoPassEncodeArgs({
             strategy,
@@ -718,8 +721,7 @@ export async function exportSizeLimitedSegment({
             audioBitrate: attempt.audioBitrate,
             videoInputLabel: `0:${videoStream.index}`,
             audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
-            outputWidth: outputDimensions?.width,
-            outputHeight: outputDimensions?.height,
+            videoProfile,
             ffmpegExperimental,
             rotation,
             passlogFile,
@@ -730,6 +732,7 @@ export async function exportSizeLimitedSegment({
 
         const pass2Args = [
           '-hide_banner',
+          ...getSwsFlagsArgs(),
           ...inputArgs,
           ...getTwoPassEncodeArgs({
             strategy,
@@ -737,8 +740,7 @@ export async function exportSizeLimitedSegment({
             audioBitrate: attempt.audioBitrate,
             videoInputLabel: `0:${videoStream.index}`,
             audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
-            outputWidth: outputDimensions?.width,
-            outputHeight: outputDimensions?.height,
+            videoProfile,
             ffmpegExperimental,
             rotation,
             passlogFile,
@@ -754,6 +756,7 @@ export async function exportSizeLimitedSegment({
 
       const ffmpegArgs = [
         '-hide_banner',
+        ...getSwsFlagsArgs(),
         ...inputArgs,
         ...getCommonEncodeArgs({
           strategy,
@@ -761,8 +764,7 @@ export async function exportSizeLimitedSegment({
           audioBitrate: attempt.audioBitrate,
           videoInputLabel: `0:${videoStream.index}`,
           audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
-          outputWidth: outputDimensions?.width,
-          outputHeight: outputDimensions?.height,
+          videoProfile,
           ffmpegExperimental,
           rotation,
           outPath: attemptOutPath,
@@ -804,6 +806,7 @@ export async function exportSizeLimitedMerge({
   controlMode,
   preset,
   simpleResolution,
+  simpleFps,
   advancedEncoder,
   advancedTwoPass,
   advancedAv1CpuPreset,
@@ -817,6 +820,7 @@ export async function exportSizeLimitedMerge({
   treatInputFileModifiedTimeAsStart,
   treatOutputFileModifiedTimeAsStart,
   outputPlaybackRate,
+  sourceFps,
   sourceRotation,
   rotation,
   appendFfmpegCommandLog,
@@ -830,6 +834,7 @@ export async function exportSizeLimitedMerge({
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
   simpleResolution: SizeLimitSimpleResolution,
+  simpleFps: SizeLimitSimpleFps,
   advancedEncoder: SizeLimitAdvancedEncoder,
   advancedTwoPass: boolean,
   advancedAv1CpuPreset: SizeLimitAdvancedAv1CpuPreset,
@@ -843,6 +848,7 @@ export async function exportSizeLimitedMerge({
   treatInputFileModifiedTimeAsStart: boolean,
   treatOutputFileModifiedTimeAsStart: boolean | null | undefined,
   outputPlaybackRate: number,
+  sourceFps: number | undefined,
   sourceRotation: number | undefined,
   rotation: number | undefined,
   appendFfmpegCommandLog: (args: string[]) => void,
@@ -867,14 +873,6 @@ export async function exportSizeLimitedMerge({
     duration: plannedDuration,
     hasAudio: audioStream != null,
   });
-  const outputDimensions = resolveSizeLimitedOutputDimensions({
-    controlMode,
-    simpleResolution,
-    sourceWidth: videoStream.width,
-    sourceHeight: videoStream.height,
-    rotation: sourceRotation ?? rotation,
-    plannedVideoBitrate: plan.initialAttempt.videoBitrate,
-  });
 
   const shouldSkip = await ensureWritableOutput(outPath, enableOverwriteOutput);
   if (shouldSkip) {
@@ -896,12 +894,21 @@ export async function exportSizeLimitedMerge({
     buildAttempt: async (attempt) => {
       const attemptOutPath = makeAttemptPath(outPath, attempt.attemptNumber);
       const inputArgs = getMergeInputArgs({ filePath, segments, outputPlaybackRate });
+      const videoProfile = resolveSizeLimitedVideoProfile({
+        controlMode,
+        simpleResolution,
+        simpleFps,
+        sourceWidth: videoStream.width,
+        sourceHeight: videoStream.height,
+        rotation: sourceRotation ?? rotation,
+        sourceFps,
+        plannedVideoBitrate: attempt.videoBitrate,
+      });
       const filterComplex = getConcatFilter({
         segments,
         videoStreamIndex: videoStream.index,
         audioStreamIndex: audioStream?.index,
-        outputWidth: outputDimensions?.width,
-        outputHeight: outputDimensions?.height,
+        videoProfile,
       });
 
       const commonArgs = [
@@ -914,6 +921,7 @@ export async function exportSizeLimitedMerge({
         const pass1OutPath = makePass1Path(outPath, attempt.attemptNumber);
         const pass1Args = [
           '-hide_banner',
+          ...getSwsFlagsArgs(),
           ...commonArgs,
           ...getTwoPassEncodeArgs({
             strategy,
@@ -921,8 +929,7 @@ export async function exportSizeLimitedMerge({
             audioBitrate: attempt.audioBitrate,
             videoInputLabel: '[v]',
             audioInputLabel: audioStream != null ? '[a]' : undefined,
-            outputWidth: undefined,
-            outputHeight: undefined,
+            videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
             ffmpegExperimental,
             rotation,
             passlogFile,
@@ -933,6 +940,7 @@ export async function exportSizeLimitedMerge({
 
         const pass2Args = [
           '-hide_banner',
+          ...getSwsFlagsArgs(),
           ...commonArgs,
           ...getTwoPassEncodeArgs({
             strategy,
@@ -940,8 +948,7 @@ export async function exportSizeLimitedMerge({
             audioBitrate: attempt.audioBitrate,
             videoInputLabel: '[v]',
             audioInputLabel: audioStream != null ? '[a]' : undefined,
-            outputWidth: undefined,
-            outputHeight: undefined,
+            videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
             ffmpegExperimental,
             rotation,
             passlogFile,
@@ -957,6 +964,7 @@ export async function exportSizeLimitedMerge({
 
       const ffmpegArgs = [
         '-hide_banner',
+        ...getSwsFlagsArgs(),
         ...commonArgs,
         ...getCommonEncodeArgs({
           strategy,
@@ -964,8 +972,7 @@ export async function exportSizeLimitedMerge({
           audioBitrate: attempt.audioBitrate,
           videoInputLabel: '[v]',
           audioInputLabel: audioStream != null ? '[a]' : undefined,
-          outputWidth: undefined,
-          outputHeight: undefined,
+          videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
           ffmpegExperimental,
           rotation,
           outPath: attemptOutPath,

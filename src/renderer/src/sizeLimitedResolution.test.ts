@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { getSizeLimitedDisplayDimensions, getSizeLimitedSimpleResolutionOptions, resolveSizeLimitedOutputDimensions } from './sizeLimitedResolution';
+import {
+  buildSizeLimitedVideoFilter,
+  buildSizeLimitedVideoTransformFilters,
+  getSizeLimitedDisplayDimensions,
+  getSizeLimitedSimpleFpsOptions,
+  getSizeLimitedSimpleResolutionOptions,
+  resolveSizeLimitedOutputDimensions,
+  resolveSizeLimitedVideoProfile,
+} from './sizeLimitedResolution';
 
 describe('getSizeLimitedSimpleResolutionOptions', () => {
   it('keeps 720p sources source-sized in simple mode', () => {
@@ -33,6 +41,21 @@ describe('getSizeLimitedSimpleResolutionOptions', () => {
       sourceHeight: 2160,
       rotation: undefined,
     })).toEqual(['auto', 'source', '1440p', '1080p', '720p']);
+  });
+});
+
+describe('getSizeLimitedSimpleFpsOptions', () => {
+  it('hides the 30 fps option for 30 fps and lower sources', () => {
+    expect(getSizeLimitedSimpleFpsOptions({ sourceFps: 30 })).toEqual(['auto', 'source']);
+    expect(getSizeLimitedSimpleFpsOptions({ sourceFps: 29.97 })).toEqual(['auto', 'source']);
+  });
+
+  it('hides the 30 fps option when source fps is unknown', () => {
+    expect(getSizeLimitedSimpleFpsOptions({ sourceFps: undefined })).toEqual(['auto', 'source']);
+  });
+
+  it('offers the 30 fps option for higher-fps sources', () => {
+    expect(getSizeLimitedSimpleFpsOptions({ sourceFps: 60 })).toEqual(['auto', 'source', '30fps']);
   });
 });
 
@@ -118,5 +141,171 @@ describe('resolveSizeLimitedOutputDimensions', () => {
       rotation: 90,
       plannedVideoBitrate: 5_000_000,
     })).toEqual({ width: 1080, height: 606, targetDisplayHeight: 1080 });
+  });
+});
+
+describe('resolveSizeLimitedVideoProfile', () => {
+  it('keeps source fps in advanced mode', () => {
+    expect(resolveSizeLimitedVideoProfile({
+      controlMode: 'advanced',
+      simpleResolution: 'auto',
+      simpleFps: '30fps',
+      sourceWidth: 2560,
+      sourceHeight: 1440,
+      rotation: undefined,
+      sourceFps: 60,
+      plannedVideoBitrate: 3_000_000,
+    })).toEqual({
+      outputWidth: undefined,
+      outputHeight: undefined,
+      outputFps: undefined,
+      targetDisplayHeight: undefined,
+      resolutionDecision: 'keep_source',
+      fpsDecision: 'keep_source',
+    });
+  });
+
+  it('recomputes auto resolution using the current attempt bitrate', () => {
+    expect(resolveSizeLimitedVideoProfile({
+      controlMode: 'simple',
+      simpleResolution: 'auto',
+      simpleFps: 'source',
+      sourceWidth: 2560,
+      sourceHeight: 1440,
+      rotation: undefined,
+      sourceFps: 60,
+      plannedVideoBitrate: 5_000_000,
+    })).toMatchObject({
+      outputWidth: 1920,
+      outputHeight: 1080,
+      resolutionDecision: 'scale_to_1080p',
+      fpsDecision: 'keep_source',
+    });
+
+    expect(resolveSizeLimitedVideoProfile({
+      controlMode: 'simple',
+      simpleResolution: 'auto',
+      simpleFps: 'source',
+      sourceWidth: 2560,
+      sourceHeight: 1440,
+      rotation: undefined,
+      sourceFps: 60,
+      plannedVideoBitrate: 3_000_000,
+    })).toMatchObject({
+      outputWidth: 1280,
+      outputHeight: 720,
+      resolutionDecision: 'scale_to_720p',
+      fpsDecision: 'keep_source',
+    });
+  });
+
+  it('drops auto fps only after the resolution decision', () => {
+    expect(resolveSizeLimitedVideoProfile({
+      controlMode: 'simple',
+      simpleResolution: 'auto',
+      simpleFps: 'auto',
+      sourceWidth: 2560,
+      sourceHeight: 1440,
+      rotation: undefined,
+      sourceFps: 60,
+      plannedVideoBitrate: 4_300_000,
+    })).toMatchObject({
+      outputWidth: 1920,
+      outputHeight: 1080,
+      outputFps: 30,
+      resolutionDecision: 'scale_to_1080p',
+      fpsDecision: 'drop_to_30',
+    });
+  });
+
+  it('evaluates auto fps against a forced resolution choice', () => {
+    expect(resolveSizeLimitedVideoProfile({
+      controlMode: 'simple',
+      simpleResolution: 'source',
+      simpleFps: 'auto',
+      sourceWidth: 2560,
+      sourceHeight: 1440,
+      rotation: undefined,
+      sourceFps: 60,
+      plannedVideoBitrate: 4_300_000,
+    })).toMatchObject({
+      outputWidth: undefined,
+      outputHeight: undefined,
+      outputFps: 30,
+      resolutionDecision: 'keep_source',
+      fpsDecision: 'drop_to_30',
+    });
+  });
+
+  it('keeps source fps when explicitly requested', () => {
+    expect(resolveSizeLimitedVideoProfile({
+      controlMode: 'simple',
+      simpleResolution: '720p',
+      simpleFps: 'source',
+      sourceWidth: 2560,
+      sourceHeight: 1440,
+      rotation: undefined,
+      sourceFps: 60,
+      plannedVideoBitrate: 1_800_000,
+    })).toMatchObject({
+      outputWidth: 1280,
+      outputHeight: 720,
+      outputFps: undefined,
+      fpsDecision: 'keep_source',
+    });
+  });
+
+  it('forces 30 fps when explicitly requested on a high-fps source', () => {
+    expect(resolveSizeLimitedVideoProfile({
+      controlMode: 'simple',
+      simpleResolution: 'source',
+      simpleFps: '30fps',
+      sourceWidth: 1920,
+      sourceHeight: 1080,
+      rotation: undefined,
+      sourceFps: 60,
+      plannedVideoBitrate: 8_000_000,
+    })).toMatchObject({
+      outputFps: 30,
+      fpsDecision: 'drop_to_30',
+    });
+  });
+
+  it('never increases fps when the source is 30 fps or lower', () => {
+    expect(resolveSizeLimitedVideoProfile({
+      controlMode: 'simple',
+      simpleResolution: 'source',
+      simpleFps: '30fps',
+      sourceWidth: 1920,
+      sourceHeight: 1080,
+      rotation: undefined,
+      sourceFps: 30,
+      plannedVideoBitrate: 8_000_000,
+    })).toMatchObject({
+      outputFps: undefined,
+      fpsDecision: 'keep_source',
+    });
+  });
+});
+
+describe('size-limited transform filters', () => {
+  it('uses lanczos+accurate_rnd in the shared transform filter', () => {
+    expect(buildSizeLimitedVideoTransformFilters({
+      videoProfile: {
+        outputWidth: 1280,
+        outputHeight: 720,
+        outputFps: undefined,
+      },
+    })).toEqual(['scale=1280:720:flags=lanczos+accurate_rnd']);
+  });
+
+  it('builds a shared transform chain used by both segment and merge flows', () => {
+    const videoProfile = {
+      outputWidth: 1920,
+      outputHeight: 1080,
+      outputFps: 30,
+    };
+
+    expect(buildSizeLimitedVideoFilter({ videoProfile })).toBe('fps=30,scale=1920:1080:flags=lanczos+accurate_rnd');
   });
 });

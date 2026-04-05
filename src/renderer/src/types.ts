@@ -10,6 +10,7 @@ import type {
   SizeLimitCodec,
   SizeLimitControlMode,
   SizeLimitPreset,
+  SizeLimitSimpleFps,
   SizeLimitSimpleResolution,
 } from '../../common/types.js';
 import type { FileStream } from './ffmpeg';
@@ -133,6 +134,7 @@ export interface SizeLimitedExportOptions {
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
   simpleResolution: SizeLimitSimpleResolution,
+  simpleFps: SizeLimitSimpleFps,
   advancedEncoder: SizeLimitAdvancedEncoder,
   advancedTwoPass: boolean,
   advancedAv1CpuPreset: SizeLimitAdvancedAv1CpuPreset,
