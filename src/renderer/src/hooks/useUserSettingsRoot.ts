@@ -212,6 +212,10 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ sizeLimitSimpleFps }), [sizeLimitSimpleFps]);
   const [sizeLimitSimpleFpsTouched, setSizeLimitSimpleFpsTouched] = useState(safeGetConfigInitial('sizeLimitSimpleFpsTouched'));
   useEffect(() => safeSetConfig({ sizeLimitSimpleFpsTouched }), [sizeLimitSimpleFpsTouched]);
+  const [sizeLimitAdvancedResolution, setSizeLimitAdvancedResolution] = useState(safeGetConfigInitial('sizeLimitAdvancedResolution'));
+  useEffect(() => safeSetConfig({ sizeLimitAdvancedResolution }), [sizeLimitAdvancedResolution]);
+  const [sizeLimitAdvancedFps, setSizeLimitAdvancedFps] = useState(safeGetConfigInitial('sizeLimitAdvancedFps'));
+  useEffect(() => safeSetConfig({ sizeLimitAdvancedFps }), [sizeLimitAdvancedFps]);
   const [sizeLimitAdvancedEncoder, setSizeLimitAdvancedEncoder] = useState(safeGetConfigInitial('sizeLimitAdvancedEncoder'));
   useEffect(() => safeSetConfig({ sizeLimitAdvancedEncoder }), [sizeLimitAdvancedEncoder]);
   const [sizeLimitAdvancedTwoPass, setSizeLimitAdvancedTwoPass] = useState(safeGetConfigInitial('sizeLimitAdvancedTwoPass'));
@@ -355,6 +359,8 @@ export default function useUserSettingsRoot() {
     sizeLimitSimpleResolutionTouched,
     sizeLimitSimpleFps,
     sizeLimitSimpleFpsTouched,
+    sizeLimitAdvancedResolution,
+    sizeLimitAdvancedFps,
     sizeLimitAdvancedEncoder,
     sizeLimitAdvancedTwoPass,
     sizeLimitAdvancedAv1CpuPreset,
@@ -454,6 +460,8 @@ export default function useUserSettingsRoot() {
     setSizeLimitSimpleResolutionTouched,
     setSizeLimitSimpleFps,
     setSizeLimitSimpleFpsTouched,
+    setSizeLimitAdvancedResolution,
+    setSizeLimitAdvancedFps,
     setSizeLimitAdvancedEncoder,
     setSizeLimitAdvancedTwoPass,
     setSizeLimitAdvancedAv1CpuPreset,

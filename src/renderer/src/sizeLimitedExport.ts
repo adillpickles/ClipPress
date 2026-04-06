@@ -11,6 +11,7 @@ import type {
 } from '../../common/types.js';
 import { getExperimentalArgs, logStdoutStderr, runFfmpeg, runFfmpegWithProgress } from './ffmpeg';
 import mainApi from './mainApi';
+import { getResolvedVideoArgs, toKbitrateArg } from './sizeLimitedEncoderArgs';
 import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile, sizeLimitedSwsFlags } from './sizeLimitedResolution';
 import { getNextSizeLimitedRetryStep, planSizeLimitedEncode } from './sizeLimitedPlanner';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
@@ -23,20 +24,10 @@ const { access, constants: { W_OK }, mkdir } = window.require('fs/promises');
 const { dirname } = window.require('path');
 
 const retryTempSuffix = 'clippress-size-limit';
-const fastCpuX264Params = 'aq-mode=3:aq-strength=0.8:deblock=-1,-1:rc-lookahead=20:me=hex:subme=6';
-const qualityCpuX264Params = 'aq-mode=3:aq-strength=0.85:deblock=-1,-1:rc-lookahead=28:me=umh:subme=7:ref=3';
-const premiumCpuX264Params = 'aq-mode=3:aq-strength=0.9:deblock=-1,-1:rc-lookahead=40:me=umh:subme=8:ref=4';
 const nvencProbeSource = 'color=c=black:s=640x360:r=30:d=0.2';
 const nvencProbeFrames = '3';
-const maxQualitySvtTune = '0';
-const maxQualityGopSeconds = 10;
-const fallbackMaxQualityKeyintFrames = 300;
 
 let encoderCapabilitiesPromise: Promise<SizeLimitedEncoderCapabilities> | undefined;
-
-function toKbitrateArg(bitrate: number) {
-  return `${Math.max(1, Math.floor(bitrate / 1000))}k`;
-}
 
 function decodeProcessOutput({ stdout, stderr }: { stdout: Uint8Array, stderr: Uint8Array }) {
   return `${new TextDecoder().decode(stdout)}\n${new TextDecoder().decode(stderr)}`;
@@ -148,32 +139,6 @@ function getRotationArgs(rotation: number | undefined) {
   return rotation !== undefined ? ['-display_rotation:v:0', String(360 - rotation)] : [];
 }
 
-function getBitrateWindowArgs({ videoBitrate, maxRateFactor, bufferFactor }: {
-  videoBitrate: number,
-  maxRateFactor: number,
-  bufferFactor: number,
-}) {
-  return [
-    '-b:v', toKbitrateArg(videoBitrate),
-    '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * maxRateFactor))),
-    '-bufsize', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * bufferFactor))),
-  ];
-}
-
-function getMaxQualityKeyintFrames({
-  outputFps,
-  sourceFps,
-  outputPlaybackRate,
-}: {
-  outputFps: number | undefined,
-  sourceFps: number | undefined,
-  outputPlaybackRate: number,
-}) {
-  const resolvedFps = outputFps ?? (sourceFps != null && Number.isFinite(sourceFps) && sourceFps > 0 ? sourceFps * outputPlaybackRate : undefined);
-  if (resolvedFps == null || !Number.isFinite(resolvedFps) || resolvedFps <= 0) return fallbackMaxQualityKeyintFrames;
-  return Math.max(1, Math.round(resolvedFps * maxQualityGopSeconds));
-}
-
 function getSwsFlagsArgs() {
   return ['-sws_flags', sizeLimitedSwsFlags];
 }
@@ -184,97 +149,6 @@ function getAudioArgs({ audioInputLabel, audioBitrate }: {
 }) {
   if (audioInputLabel == null) return ['-an'];
   return ['-map', audioInputLabel, '-c:a', 'aac', '-b:a', toKbitrateArg(audioBitrate), '-ac', '2'];
-}
-
-function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoProfile, sourceFps, outputPlaybackRate }: {
-  strategy: SizeLimitedResolvedStrategy,
-  videoBitrate: number,
-  twoPass: boolean,
-  videoProfile: SizeLimitedVideoTransformProfile,
-  sourceFps: number | undefined,
-  outputPlaybackRate: number,
-}) {
-  switch (strategy.encoder) {
-    case 'libsvtav1': {
-      const svtav1Params = strategy.tuningProfile === 'max_quality'
-        ? `tune=${maxQualitySvtTune}:keyint=${getMaxQualityKeyintFrames({
-          outputFps: videoProfile.outputFps,
-          sourceFps,
-          outputPlaybackRate,
-        })}`
-        : undefined;
-      return [
-        '-c:v', 'libsvtav1',
-        '-preset', String(strategy.encoderPreset),
-        '-pix_fmt', 'yuv420p',
-        '-b:v', toKbitrateArg(videoBitrate),
-        ...(svtav1Params != null ? ['-svtav1-params', svtav1Params] : []),
-      ];
-    }
-
-    case 'av1_nvenc': {
-      const isMaxQuality = strategy.tuningProfile === 'max_quality';
-      const isFast = strategy.tuningProfile === 'fast';
-      return [
-        '-c:v', 'av1_nvenc',
-        '-preset', String(strategy.encoderPreset),
-        '-tune', isMaxQuality ? 'uhq' : 'hq',
-        '-rc', 'vbr',
-        ...(!twoPass && !isFast ? ['-multipass', 'qres'] : []),
-        '-cq', isMaxQuality ? '26' : (isFast ? '31' : '28'),
-        '-rc-lookahead', isMaxQuality ? '32' : (isFast ? '8' : '20'),
-        '-spatial-aq', '1',
-        '-temporal-aq', '1',
-        '-aq-strength', isMaxQuality ? '10' : (isFast ? '5' : '8'),
-        '-b_ref_mode', 'middle',
-        '-pix_fmt', 'yuv420p',
-        ...getBitrateWindowArgs({
-          videoBitrate,
-          maxRateFactor: isMaxQuality ? 1.08 : 1.05,
-          bufferFactor: isMaxQuality ? 2.2 : 1.5,
-        }),
-      ];
-    }
-
-    case 'libx264': {
-      const isFast = strategy.tuningProfile === 'fast';
-      const qualityParams = twoPass || strategy.tuningProfile === 'max_quality' ? premiumCpuX264Params : (isFast ? fastCpuX264Params : qualityCpuX264Params);
-      const maxRateFactor = twoPass || strategy.tuningProfile === 'max_quality' ? 1.05 : 1.08;
-      const bufferFactor = twoPass || strategy.tuningProfile !== 'fast' ? 2.2 : 2;
-      return [
-        '-c:v', 'libx264',
-        '-preset', String(strategy.encoderPreset),
-        '-pix_fmt', 'yuv420p',
-        '-x264-params', qualityParams,
-        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor, bufferFactor }),
-      ];
-    }
-
-    case 'h264_nvenc': {
-      const isFast = strategy.tuningProfile === 'fast';
-      const isMaxQuality = strategy.tuningProfile === 'max_quality';
-      return [
-        '-c:v', 'h264_nvenc',
-        '-preset', String(strategy.encoderPreset),
-        '-tune', 'hq',
-        '-profile:v', 'high',
-        '-rc', 'vbr',
-        ...(twoPass || isFast ? [] : ['-multipass', 'qres']),
-        '-cq', isFast ? '24' : '23',
-        '-rc-lookahead', isFast ? '12' : '20',
-        '-spatial-aq', '1',
-        '-temporal-aq', '1',
-        '-aq-strength', isFast ? '6' : '8',
-        ...(!isFast ? ['-b_ref_mode', 'middle'] : []),
-        '-pix_fmt', 'yuv420p',
-        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: isFast ? 1.12 : (isMaxQuality ? 1.08 : 1.1), bufferFactor: isFast ? 2 : (isMaxQuality ? 2.2 : 2) }),
-      ];
-    }
-
-    default: {
-      return [];
-    }
-  }
 }
 
 function getCommonEncodeArgs({
@@ -644,8 +518,8 @@ export async function exportSizeLimitedSegment({
   targetSizeMb,
   controlMode,
   preset,
-  simpleResolution,
-  simpleFps,
+  resolution,
+  fps,
   advancedEncoder,
   advancedTwoPass,
   advancedAv1CpuPreset,
@@ -673,8 +547,8 @@ export async function exportSizeLimitedSegment({
   targetSizeMb: number,
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
-  simpleResolution: SizeLimitSimpleResolution,
-  simpleFps: SizeLimitSimpleFps,
+  resolution: SizeLimitSimpleResolution,
+  fps: SizeLimitSimpleFps,
   advancedEncoder: SizeLimitAdvancedEncoder,
   advancedTwoPass: boolean,
   advancedAv1CpuPreset: SizeLimitAdvancedAv1CpuPreset,
@@ -734,9 +608,8 @@ export async function exportSizeLimitedSegment({
       const attemptOutPath = makeAttemptPath(outPath, attempt.attemptNumber);
       const inputArgs = getSegmentInputArgs({ filePath, segment, outputPlaybackRate });
       const videoProfile = resolveSizeLimitedVideoProfile({
-        controlMode,
-        simpleResolution,
-        simpleFps,
+        resolution,
+        fps,
         sourceWidth: videoStream.width,
         sourceHeight: videoStream.height,
         rotation: sourceRotation ?? rotation,
@@ -847,8 +720,8 @@ export async function exportSizeLimitedMerge({
   targetSizeMb,
   controlMode,
   preset,
-  simpleResolution,
-  simpleFps,
+  resolution,
+  fps,
   advancedEncoder,
   advancedTwoPass,
   advancedAv1CpuPreset,
@@ -875,8 +748,8 @@ export async function exportSizeLimitedMerge({
   targetSizeMb: number,
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
-  simpleResolution: SizeLimitSimpleResolution,
-  simpleFps: SizeLimitSimpleFps,
+  resolution: SizeLimitSimpleResolution,
+  fps: SizeLimitSimpleFps,
   advancedEncoder: SizeLimitAdvancedEncoder,
   advancedTwoPass: boolean,
   advancedAv1CpuPreset: SizeLimitAdvancedAv1CpuPreset,
@@ -937,9 +810,8 @@ export async function exportSizeLimitedMerge({
       const attemptOutPath = makeAttemptPath(outPath, attempt.attemptNumber);
       const inputArgs = getMergeInputArgs({ filePath, segments, outputPlaybackRate });
       const videoProfile = resolveSizeLimitedVideoProfile({
-        controlMode,
-        simpleResolution,
-        simpleFps,
+        resolution,
+        fps,
         sourceWidth: videoStream.width,
         sourceHeight: videoStream.height,
         rotation: sourceRotation ?? rotation,

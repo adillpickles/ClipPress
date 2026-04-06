@@ -47,7 +47,7 @@ import type { FindNearestKeyframeTime } from '../hooks/useKeyframes';
 import { troubleshootingUrl } from '../../../common/constants';
 import OutDirSelector from './OutDirSelector';
 import { getSizeLimitedEncoderCapabilities } from '../sizeLimitedExport';
-import { getSizeLimitedSimpleFpsOptions, getSizeLimitedSimpleResolutionOptions, resolveEffectiveSizeLimitedSimpleSettings } from '../sizeLimitedResolution';
+import { getSizeLimitedSimpleFpsOptions, getSizeLimitedSimpleResolutionOptions, resolveEffectiveSizeLimitedTransformSettings } from '../sizeLimitedResolution';
 
 const remote = window.require('@electron/remote');
 const { shell } = remote;
@@ -228,7 +228,7 @@ function ExportConfirm({
 }) {
   const { t } = useTranslation();
 
-  const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, setSegmentsToChaptersOnly, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled, exportEncodeMode, setExportEncodeMode, sizeLimitMb, setSizeLimitMb, sizeLimitControlMode, setSizeLimitControlMode, sizeLimitPreset, setSizeLimitPreset, sizeLimitSimpleResolution, setSizeLimitSimpleResolution, sizeLimitSimpleResolutionTouched, setSizeLimitSimpleResolutionTouched, sizeLimitSimpleFps, setSizeLimitSimpleFps, sizeLimitSimpleFpsTouched, setSizeLimitSimpleFpsTouched, sizeLimitAdvancedEncoder, setSizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, setSizeLimitAdvancedTwoPass, sizeLimitAdvancedAv1CpuPreset, setSizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, setSizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedH264CpuPreset, setSizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, setSizeLimitAdvancedH264NvencPreset, sizeLimitSeparateNamingMode, setSizeLimitSeparateNamingMode, sizeLimitMergedNamingMode, setSizeLimitMergedNamingMode } = useUserSettings();
+  const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, setSegmentsToChaptersOnly, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled, exportEncodeMode, setExportEncodeMode, sizeLimitMb, setSizeLimitMb, sizeLimitControlMode, setSizeLimitControlMode, sizeLimitPreset, setSizeLimitPreset, sizeLimitSimpleResolution, setSizeLimitSimpleResolution, sizeLimitSimpleResolutionTouched, setSizeLimitSimpleResolutionTouched, sizeLimitSimpleFps, setSizeLimitSimpleFps, sizeLimitSimpleFpsTouched, setSizeLimitSimpleFpsTouched, sizeLimitAdvancedResolution, setSizeLimitAdvancedResolution, sizeLimitAdvancedFps, setSizeLimitAdvancedFps, sizeLimitAdvancedEncoder, setSizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, setSizeLimitAdvancedTwoPass, sizeLimitAdvancedAv1CpuPreset, setSizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, setSizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedH264CpuPreset, setSizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, setSizeLimitAdvancedH264NvencPreset, sizeLimitSeparateNamingMode, setSizeLimitSeparateNamingMode, sizeLimitMergedNamingMode, setSizeLimitMergedNamingMode } = useUserSettings();
 
   const [showAdvanced, setShowAdvanced] = useState(!simpleMode);
   const togglePreserveChapters = useCallback(() => setPreserveChapters((val) => !val), [setPreserveChapters]);
@@ -373,7 +373,7 @@ function ExportConfirm({
   }, [showHelpText, t]);
 
   const onSizeLimitedControlModeHelpPress = useCallback(() => {
-    showHelpText({ text: t('Simple mode chooses a goal-focused preset for you. Advanced mode exposes the exact encoder path, preset, and 2-pass option directly.') });
+    showHelpText({ text: t('Simple mode chooses a goal-focused preset for you. Advanced mode exposes the exact encoder path, resolution, FPS, preset, and 2-pass option directly.') });
   }, [showHelpText, t]);
 
   const onSizeLimitedPresetHelpPress = useCallback(() => {
@@ -381,11 +381,11 @@ function ExportConfirm({
   }, [showHelpText, t]);
 
   const onSizeLimitedResolutionHelpPress = useCallback(() => {
-    showHelpText({ text: t('Simple mode never upscales. Auto keeps source at 720p and below, drops 1080-class sources to 720p below 4 Mbps planned video bitrate, and for 1440p-class and above uses 720p below 4 Mbps, 1080p from 4 to under 6 Mbps, and otherwise keeps up to 1440p.') });
+    showHelpText({ text: t('ClipPress never upscales. Auto follows a gaming-first ladder: it lowers resolution before it lowers FPS, and it never uses 1440p30 in Auto.') });
   }, [showHelpText, t]);
 
   const onSizeLimitedFpsHelpPress = useCallback(() => {
-    showHelpText({ text: t('Simple mode chooses resolution first, then FPS. Auto keeps source FPS when bitrate is healthy, but for clips above 30 fps it can drop to 30 fps after the resolution decision if bitrate is still extremely constrained. ClipPress will never increase FPS.') });
+    showHelpText({ text: t('Auto keeps the source FPS when it can. For clips above 30 fps, ClipPress only falls to 30 fps after it has already tried lower-resolution options. ClipPress will never increase FPS.') });
   }, [showHelpText, t]);
 
   const onSizeLimitedAdvancedEncoderHelpPress = useCallback(() => {
@@ -414,14 +414,24 @@ function ExportConfirm({
   }, [setSizeLimitMb]);
 
   const handleSizeLimitedResolutionChange = useCallback((value: SizeLimitSimpleResolution) => {
+    if (sizeLimitControlMode === 'advanced') {
+      setSizeLimitAdvancedResolution(value);
+      return;
+    }
+
     setSizeLimitSimpleResolution(value);
     setSizeLimitSimpleResolutionTouched(true);
-  }, [setSizeLimitSimpleResolution, setSizeLimitSimpleResolutionTouched]);
+  }, [setSizeLimitAdvancedResolution, setSizeLimitSimpleResolution, setSizeLimitSimpleResolutionTouched, sizeLimitControlMode]);
 
   const handleSizeLimitedFpsChange = useCallback((value: SizeLimitSimpleFps) => {
+    if (sizeLimitControlMode === 'advanced') {
+      setSizeLimitAdvancedFps(value);
+      return;
+    }
+
     setSizeLimitSimpleFps(value);
     setSizeLimitSimpleFpsTouched(true);
-  }, [setSizeLimitSimpleFps, setSizeLimitSimpleFpsTouched]);
+  }, [setSizeLimitAdvancedFps, setSizeLimitSimpleFps, setSizeLimitSimpleFpsTouched, sizeLimitControlMode]);
 
   const presetDescription = useMemo(() => ({
     max_quality: t('Best-looking result under the limit. Slower is acceptable.'),
@@ -429,14 +439,16 @@ function ExportConfirm({
     fast: t('Good everyday shareable quality with quicker export.'),
   })[sizeLimitPreset], [sizeLimitPreset, t]);
 
-  const effectiveSizeLimitedSimpleSettings = useMemo(() => resolveEffectiveSizeLimitedSimpleSettings({
+  const effectiveSizeLimitedTransformSettings = useMemo(() => resolveEffectiveSizeLimitedTransformSettings({
     controlMode: sizeLimitControlMode,
     preset: sizeLimitPreset,
     simpleResolution: sizeLimitSimpleResolution,
     simpleResolutionTouched: sizeLimitSimpleResolutionTouched,
     simpleFps: sizeLimitSimpleFps,
     simpleFpsTouched: sizeLimitSimpleFpsTouched,
-  }), [sizeLimitControlMode, sizeLimitPreset, sizeLimitSimpleFps, sizeLimitSimpleFpsTouched, sizeLimitSimpleResolution, sizeLimitSimpleResolutionTouched]);
+    advancedResolution: sizeLimitAdvancedResolution,
+    advancedFps: sizeLimitAdvancedFps,
+  }), [sizeLimitAdvancedFps, sizeLimitAdvancedResolution, sizeLimitControlMode, sizeLimitPreset, sizeLimitSimpleFps, sizeLimitSimpleFpsTouched, sizeLimitSimpleResolution, sizeLimitSimpleResolutionTouched]);
 
   const sizeLimitedResolutionOptions = useMemo(() => (
     getSizeLimitedSimpleResolutionOptions({
@@ -447,12 +459,12 @@ function ExportConfirm({
   ), [sizeLimitedSourceRotation, sizeLimitedSourceVideoStream?.height, sizeLimitedSourceVideoStream?.width]);
 
   const selectedSizeLimitedResolution = useMemo(
-    () => (sizeLimitedResolutionOptions.includes(effectiveSizeLimitedSimpleSettings.simpleResolution) ? effectiveSizeLimitedSimpleSettings.simpleResolution : 'auto'),
-    [effectiveSizeLimitedSimpleSettings.simpleResolution, sizeLimitedResolutionOptions],
+    () => (sizeLimitedResolutionOptions.includes(effectiveSizeLimitedTransformSettings.resolution) ? effectiveSizeLimitedTransformSettings.resolution : 'auto'),
+    [effectiveSizeLimitedTransformSettings.resolution, sizeLimitedResolutionOptions],
   );
 
   const sizeLimitedResolutionDescription = useMemo(() => {
-    if (selectedSizeLimitedResolution === 'auto') return t('Recommended. Keeps source at 720p and below, and only downscales when the planned bitrate gets tight.');
+    if (selectedSizeLimitedResolution === 'auto') return t('Recommended. Auto lowers resolution before it lowers FPS for gaming clips.');
     if (selectedSizeLimitedResolution === 'source') return t('Keep the source resolution. ClipPress will never upscale.');
     return t('Downscale to {{resolution}} while preserving aspect ratio. ClipPress will never upscale.', { resolution: selectedSizeLimitedResolution });
   }, [selectedSizeLimitedResolution, t]);
@@ -464,19 +476,19 @@ function ExportConfirm({
   ), [sizeLimitedSourceFps]);
 
   const selectedSizeLimitedFps = useMemo(
-    () => (sizeLimitedFpsOptions.includes(effectiveSizeLimitedSimpleSettings.simpleFps) ? effectiveSizeLimitedSimpleSettings.simpleFps : 'auto'),
-    [effectiveSizeLimitedSimpleSettings.simpleFps, sizeLimitedFpsOptions],
+    () => (sizeLimitedFpsOptions.includes(effectiveSizeLimitedTransformSettings.fps) ? effectiveSizeLimitedTransformSettings.fps : 'auto'),
+    [effectiveSizeLimitedTransformSettings.fps, sizeLimitedFpsOptions],
   );
 
   const sizeLimitedFpsDescription = useMemo(() => {
     if (selectedSizeLimitedFps === 'auto') {
       if (sizeLimitedSourceFps != null && sizeLimitedSourceFps > 30) {
-        return t('Recommended. After resolution is chosen, Auto can drop higher-FPS clips to 30 fps only when bitrate is still extremely tight.');
+        return t('Recommended. Auto keeps the source FPS when it can and only drops to 30 fps as a last resort.');
       }
       return t('Recommended. This source is already 30 fps or lower, so Auto keeps the source FPS.');
     }
     if (selectedSizeLimitedFps === 'source') return t('Keep the source FPS. ClipPress will never increase FPS.');
-    return t('Force 30 fps after the resolution decision. Useful when bitrate is too constrained even after lowering resolution.');
+    return t('Force 30 fps. Useful when bitrate is too constrained even after lowering resolution.');
   }, [selectedSizeLimitedFps, sizeLimitedSourceFps, t]);
 
   const advancedEncoderUnavailableMessage = useMemo(() => {
@@ -742,57 +754,53 @@ function ExportConfirm({
                 </td>
               </tr>
 
-              {sizeLimitControlMode === 'simple' && (
-                <tr>
-                  <td>
-                    {t('Resolution')}
-                  </td>
-                  <td>
-                    <Select value={selectedSizeLimitedResolution} onChange={withBlur((e) => handleSizeLimitedResolutionChange(e.target.value as SizeLimitSimpleResolution))} style={{ height: '1.8em' }}>
-                      {sizeLimitedResolutionOptions.map((value) => (
-                        <option key={value} value={value}>
-                          {{
-                            auto: t('Auto (recommended)'),
-                            source: t('Keep source'),
-                            '720p': '720p',
-                            '1080p': '1080p',
-                            '1440p': '1440p',
-                          }[value]}
-                        </option>
-                      ))}
-                    </Select>
-                    <div style={{ marginTop: '.35em', fontSize: '.88em', color: 'var(--gray-11)' }}>{sizeLimitedResolutionDescription}</div>
-                  </td>
-                  <td>
-                    <HelpIcon onClick={onSizeLimitedResolutionHelpPress} />
-                  </td>
-                </tr>
-              )}
+              <tr>
+                <td>
+                  {t('Resolution')}
+                </td>
+                <td>
+                  <Select value={selectedSizeLimitedResolution} onChange={withBlur((e) => handleSizeLimitedResolutionChange(e.target.value as SizeLimitSimpleResolution))} style={{ height: '1.8em' }}>
+                    {sizeLimitedResolutionOptions.map((value) => (
+                      <option key={value} value={value}>
+                        {{
+                          auto: t('Auto (recommended)'),
+                          source: t('Keep source'),
+                          '720p': '720p',
+                          '1080p': '1080p',
+                          '1440p': '1440p',
+                        }[value]}
+                      </option>
+                    ))}
+                  </Select>
+                  <div style={{ marginTop: '.35em', fontSize: '.88em', color: 'var(--gray-11)' }}>{sizeLimitedResolutionDescription}</div>
+                </td>
+                <td>
+                  <HelpIcon onClick={onSizeLimitedResolutionHelpPress} />
+                </td>
+              </tr>
 
-              {sizeLimitControlMode === 'simple' && (
-                <tr>
-                  <td>
-                    {t('FPS')}
-                  </td>
-                  <td>
-                    <Select value={selectedSizeLimitedFps} onChange={withBlur((e) => handleSizeLimitedFpsChange(e.target.value as SizeLimitSimpleFps))} style={{ height: '1.8em' }}>
-                      {sizeLimitedFpsOptions.map((value) => (
-                        <option key={value} value={value}>
-                          {{
-                            auto: t('Auto'),
-                            source: t('Keep source'),
-                            '30fps': t('30 fps'),
-                          }[value]}
-                        </option>
-                      ))}
-                    </Select>
-                    <div style={{ marginTop: '.35em', fontSize: '.88em', color: 'var(--gray-11)' }}>{sizeLimitedFpsDescription}</div>
-                  </td>
-                  <td>
-                    <HelpIcon onClick={onSizeLimitedFpsHelpPress} />
-                  </td>
-                </tr>
-              )}
+              <tr>
+                <td>
+                  {t('FPS')}
+                </td>
+                <td>
+                  <Select value={selectedSizeLimitedFps} onChange={withBlur((e) => handleSizeLimitedFpsChange(e.target.value as SizeLimitSimpleFps))} style={{ height: '1.8em' }}>
+                    {sizeLimitedFpsOptions.map((value) => (
+                      <option key={value} value={value}>
+                        {{
+                          auto: t('Auto'),
+                          source: t('Keep source'),
+                          '30fps': t('30 fps'),
+                        }[value]}
+                      </option>
+                    ))}
+                  </Select>
+                  <div style={{ marginTop: '.35em', fontSize: '.88em', color: 'var(--gray-11)' }}>{sizeLimitedFpsDescription}</div>
+                </td>
+                <td>
+                  <HelpIcon onClick={onSizeLimitedFpsHelpPress} />
+                </td>
+              </tr>
 
               {sizeLimitControlMode === 'advanced' && (
                 <tr>

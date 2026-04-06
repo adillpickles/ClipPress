@@ -6,7 +6,7 @@ import {
   getSizeLimitedDisplayDimensions,
   getSizeLimitedSimpleFpsOptions,
   getSizeLimitedSimpleResolutionOptions,
-  resolveEffectiveSizeLimitedSimpleSettings,
+  resolveEffectiveSizeLimitedTransformSettings,
   resolveSizeLimitedOutputDimensions,
   resolveSizeLimitedVideoProfile,
 } from './sizeLimitedResolution';
@@ -60,81 +60,106 @@ describe('getSizeLimitedSimpleFpsOptions', () => {
   });
 });
 
-describe('resolveEffectiveSizeLimitedSimpleSettings', () => {
+describe('resolveEffectiveSizeLimitedTransformSettings', () => {
   it('defaults untouched max quality simple controls to keep source', () => {
-    expect(resolveEffectiveSizeLimitedSimpleSettings({
+    expect(resolveEffectiveSizeLimitedTransformSettings({
       controlMode: 'simple',
       preset: 'max_quality',
       simpleResolution: 'auto',
       simpleResolutionTouched: false,
       simpleFps: 'auto',
       simpleFpsTouched: false,
+      advancedResolution: '720p',
+      advancedFps: '30fps',
     })).toEqual({
-      simpleResolution: 'source',
-      simpleFps: 'source',
+      resolution: 'source',
+      fps: 'source',
     });
   });
 
   it('preserves explicit auto once the user has touched the max quality controls', () => {
-    expect(resolveEffectiveSizeLimitedSimpleSettings({
+    expect(resolveEffectiveSizeLimitedTransformSettings({
       controlMode: 'simple',
       preset: 'max_quality',
       simpleResolution: 'auto',
       simpleResolutionTouched: true,
       simpleFps: 'auto',
       simpleFpsTouched: true,
+      advancedResolution: '720p',
+      advancedFps: '30fps',
     })).toEqual({
-      simpleResolution: 'auto',
-      simpleFps: 'auto',
+      resolution: 'auto',
+      fps: 'auto',
     });
   });
 
-  it('keeps existing explicit non-auto choices even before the new touched flags are set', () => {
-    expect(resolveEffectiveSizeLimitedSimpleSettings({
+  it('keeps existing explicit non-auto choices even before the touched flags are set', () => {
+    expect(resolveEffectiveSizeLimitedTransformSettings({
       controlMode: 'simple',
       preset: 'max_quality',
       simpleResolution: '1080p',
       simpleResolutionTouched: false,
       simpleFps: '30fps',
       simpleFpsTouched: false,
+      advancedResolution: 'source',
+      advancedFps: 'source',
     })).toEqual({
-      simpleResolution: '1080p',
-      simpleFps: '30fps',
+      resolution: '1080p',
+      fps: '30fps',
     });
   });
 
   it('leaves quality and fast presets unchanged', () => {
-    expect(resolveEffectiveSizeLimitedSimpleSettings({
+    expect(resolveEffectiveSizeLimitedTransformSettings({
       controlMode: 'simple',
       preset: 'quality',
       simpleResolution: 'auto',
       simpleResolutionTouched: false,
       simpleFps: 'auto',
       simpleFpsTouched: false,
+      advancedResolution: 'source',
+      advancedFps: 'source',
     })).toEqual({
-      simpleResolution: 'auto',
-      simpleFps: 'auto',
+      resolution: 'auto',
+      fps: 'auto',
     });
 
-    expect(resolveEffectiveSizeLimitedSimpleSettings({
+    expect(resolveEffectiveSizeLimitedTransformSettings({
       controlMode: 'simple',
       preset: 'fast',
       simpleResolution: 'auto',
       simpleResolutionTouched: false,
       simpleFps: 'auto',
       simpleFpsTouched: false,
+      advancedResolution: 'source',
+      advancedFps: 'source',
     })).toEqual({
+      resolution: 'auto',
+      fps: 'auto',
+    });
+  });
+
+  it('uses advanced transform controls directly in advanced mode', () => {
+    expect(resolveEffectiveSizeLimitedTransformSettings({
+      controlMode: 'advanced',
+      preset: 'quality',
       simpleResolution: 'auto',
+      simpleResolutionTouched: false,
       simpleFps: 'auto',
+      simpleFpsTouched: false,
+      advancedResolution: '1080p',
+      advancedFps: '30fps',
+    })).toEqual({
+      resolution: '1080p',
+      fps: '30fps',
     });
   });
 });
 
 describe('resolveSizeLimitedOutputDimensions', () => {
-  it('keeps source resolution in advanced mode', () => {
+  it('keeps source resolution when auto has no fps context', () => {
     expect(resolveSizeLimitedOutputDimensions({
-      controlMode: 'advanced',
-      simpleResolution: 'auto',
+      resolution: 'auto',
       sourceWidth: 2560,
       sourceHeight: 1440,
       rotation: undefined,
@@ -142,54 +167,17 @@ describe('resolveSizeLimitedOutputDimensions', () => {
     })).toBeUndefined();
   });
 
-  it('downscales 1080p auto below 4 Mbps', () => {
+  it('resolves fixed downscale choices without upscaling', () => {
     expect(resolveSizeLimitedOutputDimensions({
-      controlMode: 'simple',
-      simpleResolution: 'auto',
+      resolution: '720p',
       sourceWidth: 1920,
       sourceHeight: 1080,
       rotation: undefined,
-      plannedVideoBitrate: 3_999_999,
+      plannedVideoBitrate: 8_000_000,
     })).toEqual({ width: 1280, height: 720, targetDisplayHeight: 720 });
-  });
 
-  it('keeps 1080p auto at or above 4 Mbps', () => {
     expect(resolveSizeLimitedOutputDimensions({
-      controlMode: 'simple',
-      simpleResolution: 'auto',
-      sourceWidth: 1920,
-      sourceHeight: 1080,
-      rotation: undefined,
-      plannedVideoBitrate: 4_000_000,
-    })).toBeUndefined();
-  });
-
-  it('uses 1080p for >1080p auto between 4 and 6 Mbps', () => {
-    expect(resolveSizeLimitedOutputDimensions({
-      controlMode: 'simple',
-      simpleResolution: 'auto',
-      sourceWidth: 2560,
-      sourceHeight: 1440,
-      rotation: undefined,
-      plannedVideoBitrate: 5_000_000,
-    })).toEqual({ width: 1920, height: 1080, targetDisplayHeight: 1080 });
-  });
-
-  it('keeps >1440p auto at a 1440p ceiling above 6 Mbps', () => {
-    expect(resolveSizeLimitedOutputDimensions({
-      controlMode: 'simple',
-      simpleResolution: 'auto',
-      sourceWidth: 3840,
-      sourceHeight: 2160,
-      rotation: undefined,
-      plannedVideoBitrate: 6_000_000,
-    })).toEqual({ width: 2560, height: 1440, targetDisplayHeight: 1440 });
-  });
-
-  it('never upscales fixed choices', () => {
-    expect(resolveSizeLimitedOutputDimensions({
-      controlMode: 'simple',
-      simpleResolution: '1440p',
+      resolution: '1440p',
       sourceWidth: 1920,
       sourceHeight: 1080,
       rotation: undefined,
@@ -205,8 +193,7 @@ describe('resolveSizeLimitedOutputDimensions', () => {
     })).toEqual({ width: 1080, height: 1920 });
 
     expect(resolveSizeLimitedOutputDimensions({
-      controlMode: 'simple',
-      simpleResolution: 'auto',
+      resolution: '1080p',
       sourceWidth: 1920,
       sourceHeight: 1080,
       rotation: 90,
@@ -216,31 +203,10 @@ describe('resolveSizeLimitedOutputDimensions', () => {
 });
 
 describe('resolveSizeLimitedVideoProfile', () => {
-  it('keeps source fps in advanced mode', () => {
-    expect(resolveSizeLimitedVideoProfile({
-      controlMode: 'advanced',
-      simpleResolution: 'auto',
-      simpleFps: '30fps',
-      sourceWidth: 2560,
-      sourceHeight: 1440,
-      rotation: undefined,
-      sourceFps: 60,
-      plannedVideoBitrate: 3_000_000,
-    })).toEqual({
-      outputWidth: undefined,
-      outputHeight: undefined,
-      outputFps: undefined,
-      targetDisplayHeight: undefined,
-      resolutionDecision: 'keep_source',
-      fpsDecision: 'keep_source',
-    });
-  });
-
   it('recomputes auto resolution using the current attempt bitrate', () => {
     expect(resolveSizeLimitedVideoProfile({
-      controlMode: 'simple',
-      simpleResolution: 'auto',
-      simpleFps: 'source',
+      resolution: 'auto',
+      fps: 'source',
       sourceWidth: 2560,
       sourceHeight: 1440,
       rotation: undefined,
@@ -249,14 +215,14 @@ describe('resolveSizeLimitedVideoProfile', () => {
     })).toMatchObject({
       outputWidth: 1920,
       outputHeight: 1080,
+      outputFps: undefined,
       resolutionDecision: 'scale_to_1080p',
       fpsDecision: 'keep_source',
     });
 
     expect(resolveSizeLimitedVideoProfile({
-      controlMode: 'simple',
-      simpleResolution: 'auto',
-      simpleFps: 'source',
+      resolution: 'auto',
+      fps: 'source',
       sourceWidth: 2560,
       sourceHeight: 1440,
       rotation: undefined,
@@ -265,35 +231,70 @@ describe('resolveSizeLimitedVideoProfile', () => {
     })).toMatchObject({
       outputWidth: 1280,
       outputHeight: 720,
+      outputFps: undefined,
       resolutionDecision: 'scale_to_720p',
       fpsDecision: 'keep_source',
     });
   });
 
-  it('drops auto fps only after the resolution decision', () => {
+  it('drops auto resolution before it drops fps for gaming clips', () => {
     expect(resolveSizeLimitedVideoProfile({
-      controlMode: 'simple',
-      simpleResolution: 'auto',
-      simpleFps: 'auto',
+      resolution: 'auto',
+      fps: 'auto',
       sourceWidth: 2560,
       sourceHeight: 1440,
       rotation: undefined,
       sourceFps: 60,
       plannedVideoBitrate: 4_300_000,
     })).toMatchObject({
-      outputWidth: 1920,
-      outputHeight: 1080,
+      outputWidth: 1280,
+      outputHeight: 720,
+      outputFps: undefined,
+      resolutionDecision: 'scale_to_720p',
+      fpsDecision: 'keep_source',
+    });
+  });
+
+  it('treats 30 fps as the last lever after all source-fps rungs are exhausted', () => {
+    expect(resolveSizeLimitedVideoProfile({
+      resolution: 'auto',
+      fps: 'auto',
+      sourceWidth: 2560,
+      sourceHeight: 1440,
+      rotation: undefined,
+      sourceFps: 60,
+      plannedVideoBitrate: 1_800_000,
+    })).toMatchObject({
+      outputWidth: 1280,
+      outputHeight: 720,
       outputFps: 30,
-      resolutionDecision: 'scale_to_1080p',
+      resolutionDecision: 'scale_to_720p',
       fpsDecision: 'drop_to_30',
     });
   });
 
-  it('evaluates auto fps against a forced resolution choice', () => {
+  it('never uses 1440p30 in auto for high-resolution sources', () => {
     expect(resolveSizeLimitedVideoProfile({
-      controlMode: 'simple',
-      simpleResolution: 'source',
-      simpleFps: 'auto',
+      resolution: 'auto',
+      fps: 'auto',
+      sourceWidth: 3840,
+      sourceHeight: 2160,
+      rotation: undefined,
+      sourceFps: 60,
+      plannedVideoBitrate: 4_000_000,
+    })).toMatchObject({
+      outputWidth: 1280,
+      outputHeight: 720,
+      outputFps: undefined,
+      resolutionDecision: 'scale_to_720p',
+      fpsDecision: 'keep_source',
+    });
+  });
+
+  it('evaluates auto fps against an explicit resolution choice', () => {
+    expect(resolveSizeLimitedVideoProfile({
+      resolution: 'source',
+      fps: 'auto',
       sourceWidth: 2560,
       sourceHeight: 1440,
       rotation: undefined,
@@ -310,9 +311,8 @@ describe('resolveSizeLimitedVideoProfile', () => {
 
   it('keeps source fps when explicitly requested', () => {
     expect(resolveSizeLimitedVideoProfile({
-      controlMode: 'simple',
-      simpleResolution: '720p',
-      simpleFps: 'source',
+      resolution: '720p',
+      fps: 'source',
       sourceWidth: 2560,
       sourceHeight: 1440,
       rotation: undefined,
@@ -328,9 +328,8 @@ describe('resolveSizeLimitedVideoProfile', () => {
 
   it('forces 30 fps when explicitly requested on a high-fps source', () => {
     expect(resolveSizeLimitedVideoProfile({
-      controlMode: 'simple',
-      simpleResolution: 'source',
-      simpleFps: '30fps',
+      resolution: 'source',
+      fps: '30fps',
       sourceWidth: 1920,
       sourceHeight: 1080,
       rotation: undefined,
@@ -344,9 +343,8 @@ describe('resolveSizeLimitedVideoProfile', () => {
 
   it('never increases fps when the source is 30 fps or lower', () => {
     expect(resolveSizeLimitedVideoProfile({
-      controlMode: 'simple',
-      simpleResolution: 'source',
-      simpleFps: '30fps',
+      resolution: 'source',
+      fps: '30fps',
       sourceWidth: 1920,
       sourceHeight: 1080,
       rotation: undefined,

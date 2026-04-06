@@ -1,10 +1,8 @@
 import type { SizeLimitControlMode, SizeLimitPreset, SizeLimitSimpleFps, SizeLimitSimpleResolution } from '../../common/types.js';
 
 const simpleResolutionSteps = [1440, 1080, 720] as const;
-const lowBitrateThreshold = 4_000_000;
-const highResThreshold = 6_000_000;
 const maxAutoDisplayHeight = 1440;
-const autoFpsDropThreshold = 0.035;
+const autoBitratePerPixelFrameThreshold = 0.035;
 const targetLowFps = 30;
 export const sizeLimitedSwsFlags = 'lanczos+accurate_rnd';
 
@@ -33,6 +31,11 @@ export interface SizeLimitedVideoTransformProfile {
   outputWidth: number | undefined,
   outputHeight: number | undefined,
   outputFps: number | undefined,
+}
+
+export interface ResolvedSizeLimitedTransformSettings {
+  resolution: SizeLimitSimpleResolution,
+  fps: SizeLimitSimpleFps,
 }
 
 function normalizeRotation(rotation: number | undefined) {
@@ -88,6 +91,36 @@ function getResolutionDecision(targetDisplayHeight: number | undefined): SizeLim
   }
 }
 
+function buildResolvedVideoProfile({
+  outputWidth,
+  outputHeight,
+  outputFps,
+  targetDisplayHeight,
+}: {
+  outputWidth: number | undefined,
+  outputHeight: number | undefined,
+  outputFps: number | undefined,
+  targetDisplayHeight: number | undefined,
+}) {
+  return {
+    outputWidth,
+    outputHeight,
+    outputFps,
+    targetDisplayHeight,
+    resolutionDecision: getResolutionDecision(targetDisplayHeight),
+    fpsDecision: outputFps != null ? 'drop_to_30' : 'keep_source',
+  } satisfies ResolvedSizeLimitedVideoProfile;
+}
+
+function buildKeepSourceProfile() {
+  return buildResolvedVideoProfile({
+    outputWidth: undefined,
+    outputHeight: undefined,
+    outputFps: undefined,
+    targetDisplayHeight: undefined,
+  });
+}
+
 export function getSizeLimitedDisplayDimensions({
   sourceWidth,
   sourceHeight,
@@ -104,28 +137,30 @@ export function getSizeLimitedDisplayDimensions({
   return { width: sourceWidth, height: sourceHeight } satisfies SizeLimitedDisplayDimensions;
 }
 
-function getAutoTargetDisplayHeight(sourceDisplayHeight: number, plannedVideoBitrate: number) {
-  if (sourceDisplayHeight <= 720) return undefined;
-  if (sourceDisplayHeight <= 1080) {
-    return plannedVideoBitrate < lowBitrateThreshold ? 720 : undefined;
-  }
-  if (plannedVideoBitrate < lowBitrateThreshold) return 720;
-  if (plannedVideoBitrate < highResThreshold) return 1080;
-  return sourceDisplayHeight > maxAutoDisplayHeight ? maxAutoDisplayHeight : undefined;
+function getAutoSourceFpsCandidateHeights(sourceDisplayHeight: number) {
+  if (sourceDisplayHeight <= 720) return [undefined];
+  if (sourceDisplayHeight <= 1080) return [undefined, 720];
+  if (sourceDisplayHeight <= 1440) return [undefined, 1080, 720];
+  return [maxAutoDisplayHeight, 1080, 720];
 }
 
-function resolveTargetDisplayHeight({
-  simpleResolution,
+function getAuto30FpsCandidateHeights(sourceDisplayHeight: number) {
+  if (sourceDisplayHeight <= 720) return [undefined];
+  if (sourceDisplayHeight <= 1080) return [undefined, 720];
+  return [1080, 720];
+}
+
+function buildTargetDisplayHeightCandidates({
+  resolution,
   sourceDisplayHeight,
-  plannedVideoBitrate,
+  prefer30Fps,
 }: {
-  simpleResolution: SizeLimitSimpleResolution,
+  resolution: SizeLimitSimpleResolution,
   sourceDisplayHeight: number,
-  plannedVideoBitrate: number,
+  prefer30Fps: boolean,
 }) {
-  return simpleResolution === 'auto'
-    ? getAutoTargetDisplayHeight(sourceDisplayHeight, plannedVideoBitrate)
-    : parseSimpleResolutionHeight(simpleResolution);
+  if (resolution !== 'auto') return [parseSimpleResolutionHeight(resolution)];
+  return prefer30Fps ? getAuto30FpsCandidateHeights(sourceDisplayHeight) : getAutoSourceFpsCandidateHeights(sourceDisplayHeight);
 }
 
 export function getSizeLimitedSimpleResolutionOptions({
@@ -163,13 +198,15 @@ export function getSizeLimitedSimpleFpsOptions({
   return ['auto', 'source', '30fps'] satisfies SizeLimitSimpleFps[];
 }
 
-export function resolveEffectiveSizeLimitedSimpleSettings({
+export function resolveEffectiveSizeLimitedTransformSettings({
   controlMode,
   preset,
   simpleResolution,
   simpleResolutionTouched,
   simpleFps,
   simpleFpsTouched,
+  advancedResolution,
+  advancedFps,
 }: {
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
@@ -177,92 +214,54 @@ export function resolveEffectiveSizeLimitedSimpleSettings({
   simpleResolutionTouched: boolean,
   simpleFps: SizeLimitSimpleFps,
   simpleFpsTouched: boolean,
+  advancedResolution: SizeLimitSimpleResolution,
+  advancedFps: SizeLimitSimpleFps,
 }) {
-  if (controlMode !== 'simple' || preset !== 'max_quality') {
-    return { simpleResolution, simpleFps };
+  if (controlMode === 'advanced') {
+    return {
+      resolution: advancedResolution,
+      fps: advancedFps,
+    } satisfies ResolvedSizeLimitedTransformSettings;
+  }
+
+  if (preset !== 'max_quality') {
+    return {
+      resolution: simpleResolution,
+      fps: simpleFps,
+    } satisfies ResolvedSizeLimitedTransformSettings;
   }
 
   return {
-    simpleResolution: !simpleResolutionTouched && simpleResolution === 'auto' ? 'source' : simpleResolution,
-    simpleFps: !simpleFpsTouched && simpleFps === 'auto' ? 'source' : simpleFps,
-  } satisfies {
-    simpleResolution: SizeLimitSimpleResolution,
-    simpleFps: SizeLimitSimpleFps,
-  };
+    resolution: !simpleResolutionTouched && simpleResolution === 'auto' ? 'source' : simpleResolution,
+    fps: !simpleFpsTouched && simpleFps === 'auto' ? 'source' : simpleFps,
+  } satisfies ResolvedSizeLimitedTransformSettings;
 }
 
-function shouldDropFpsTo30({
-  simpleFps,
+function getReferenceFpsForProfile({
+  outputFps,
   sourceFps,
-  plannedVideoBitrate,
-  resolvedWidth,
-  resolvedHeight,
 }: {
-  simpleFps: SizeLimitSimpleFps,
+  outputFps: number | undefined,
   sourceFps: number | undefined,
-  plannedVideoBitrate: number,
-  resolvedWidth: number | undefined,
-  resolvedHeight: number | undefined,
 }) {
-  if (!canReduceFpsTo30(sourceFps)) return false;
-  if (simpleFps === 'source') return false;
-  if (simpleFps === '30fps') return true;
-  if (resolvedWidth == null || resolvedHeight == null) return false;
-  if (sourceFps == null) return false;
-
-  const referenceFps = Math.min(sourceFps, 60);
-  const bitratePerPixelFrame = plannedVideoBitrate / (resolvedWidth * resolvedHeight * referenceFps);
-  return bitratePerPixelFrame < autoFpsDropThreshold;
+  if (outputFps != null) return outputFps;
+  if (sourceFps == null || !Number.isFinite(sourceFps) || sourceFps <= 0) return undefined;
+  return Math.min(sourceFps, 60);
 }
 
-export function resolveSizeLimitedVideoProfile({
-  controlMode,
-  simpleResolution,
-  simpleFps,
+function buildVideoProfileForTargetDisplayHeight({
+  targetDisplayHeight: requestedDisplayHeight,
+  displayDimensions,
   sourceWidth,
   sourceHeight,
-  rotation,
-  sourceFps,
-  plannedVideoBitrate,
+  outputFps,
 }: {
-  controlMode: SizeLimitControlMode,
-  simpleResolution: SizeLimitSimpleResolution,
-  simpleFps: SizeLimitSimpleFps,
-  sourceWidth: number | undefined,
-  sourceHeight: number | undefined,
-  rotation: number | undefined,
-  sourceFps: number | undefined,
-  plannedVideoBitrate: number,
+  targetDisplayHeight: number | undefined,
+  displayDimensions: SizeLimitedDisplayDimensions,
+  sourceWidth: number,
+  sourceHeight: number,
+  outputFps: number | undefined,
 }) {
-  if (controlMode !== 'simple') {
-    return {
-      outputWidth: undefined,
-      outputHeight: undefined,
-      outputFps: undefined,
-      targetDisplayHeight: undefined,
-      resolutionDecision: 'keep_source',
-      fpsDecision: 'keep_source',
-    } satisfies ResolvedSizeLimitedVideoProfile;
-  }
-
-  const displayDimensions = getSizeLimitedDisplayDimensions({ sourceWidth, sourceHeight, rotation });
-  if (displayDimensions == null || sourceWidth == null || sourceHeight == null) {
-    return {
-      outputWidth: undefined,
-      outputHeight: undefined,
-      outputFps: undefined,
-      targetDisplayHeight: undefined,
-      resolutionDecision: 'keep_source',
-      fpsDecision: 'keep_source',
-    } satisfies ResolvedSizeLimitedVideoProfile;
-  }
-
-  const requestedDisplayHeight = resolveTargetDisplayHeight({
-    simpleResolution,
-    sourceDisplayHeight: displayDimensions.height,
-    plannedVideoBitrate,
-  });
-
   let outputWidth: number | undefined;
   let outputHeight: number | undefined;
   let targetDisplayHeight: number | undefined;
@@ -281,45 +280,204 @@ export function resolveSizeLimitedVideoProfile({
     }
   }
 
-  const resolvedWidth = outputWidth ?? sourceWidth;
-  const resolvedHeight = outputHeight ?? sourceHeight;
-  const outputFps = shouldDropFpsTo30({
-    simpleFps,
-    sourceFps,
-    plannedVideoBitrate,
-    resolvedWidth,
-    resolvedHeight,
-  }) ? targetLowFps : undefined;
-
-  return {
+  return buildResolvedVideoProfile({
     outputWidth,
     outputHeight,
     outputFps,
     targetDisplayHeight,
-    resolutionDecision: getResolutionDecision(targetDisplayHeight),
-    fpsDecision: outputFps != null ? 'drop_to_30' : 'keep_source',
-  } satisfies ResolvedSizeLimitedVideoProfile;
+  });
+}
+
+function isVideoProfileSupported({
+  videoProfile,
+  sourceWidth,
+  sourceHeight,
+  sourceFps,
+  plannedVideoBitrate,
+}: {
+  videoProfile: ResolvedSizeLimitedVideoProfile,
+  sourceWidth: number,
+  sourceHeight: number,
+  sourceFps: number | undefined,
+  plannedVideoBitrate: number,
+}) {
+  const referenceFps = getReferenceFpsForProfile({
+    outputFps: videoProfile.outputFps,
+    sourceFps,
+  });
+  if (referenceFps == null) return true;
+
+  const resolvedWidth = videoProfile.outputWidth ?? sourceWidth;
+  const resolvedHeight = videoProfile.outputHeight ?? sourceHeight;
+  const bitratePerPixelFrame = plannedVideoBitrate / (resolvedWidth * resolvedHeight * referenceFps);
+  return bitratePerPixelFrame >= autoBitratePerPixelFrameThreshold;
+}
+
+function findSupportedVideoProfile({
+  candidateHeights,
+  displayDimensions,
+  sourceWidth,
+  sourceHeight,
+  outputFps,
+  sourceFps,
+  plannedVideoBitrate,
+}: {
+  candidateHeights: (number | undefined)[],
+  displayDimensions: SizeLimitedDisplayDimensions,
+  sourceWidth: number,
+  sourceHeight: number,
+  outputFps: number | undefined,
+  sourceFps: number | undefined,
+  plannedVideoBitrate: number,
+}) {
+  return candidateHeights
+    .map((targetDisplayHeight) => buildVideoProfileForTargetDisplayHeight({
+      targetDisplayHeight,
+      displayDimensions,
+      sourceWidth,
+      sourceHeight,
+      outputFps,
+    }))
+    .find((videoProfile) => isVideoProfileSupported({
+      videoProfile,
+      sourceWidth,
+      sourceHeight,
+      sourceFps,
+      plannedVideoBitrate,
+    }));
+}
+
+function getLastVideoProfile({
+  candidateHeights,
+  displayDimensions,
+  sourceWidth,
+  sourceHeight,
+  outputFps,
+}: {
+  candidateHeights: (number | undefined)[],
+  displayDimensions: SizeLimitedDisplayDimensions,
+  sourceWidth: number,
+  sourceHeight: number,
+  outputFps: number | undefined,
+}) {
+  const lastCandidateHeight = candidateHeights.at(-1);
+  if (lastCandidateHeight === undefined && candidateHeights.length === 0) return undefined;
+
+  return buildVideoProfileForTargetDisplayHeight({
+    targetDisplayHeight: lastCandidateHeight,
+    displayDimensions,
+    sourceWidth,
+    sourceHeight,
+    outputFps,
+  });
+}
+
+export function resolveSizeLimitedVideoProfile({
+  resolution,
+  fps,
+  sourceWidth,
+  sourceHeight,
+  rotation,
+  sourceFps,
+  plannedVideoBitrate,
+}: {
+  resolution: SizeLimitSimpleResolution,
+  fps: SizeLimitSimpleFps,
+  sourceWidth: number | undefined,
+  sourceHeight: number | undefined,
+  rotation: number | undefined,
+  sourceFps: number | undefined,
+  plannedVideoBitrate: number,
+}) {
+  const displayDimensions = getSizeLimitedDisplayDimensions({ sourceWidth, sourceHeight, rotation });
+  if (displayDimensions == null || sourceWidth == null || sourceHeight == null) {
+    return buildKeepSourceProfile();
+  }
+
+  const sourceCandidateHeights = buildTargetDisplayHeightCandidates({
+    resolution,
+    sourceDisplayHeight: displayDimensions.height,
+    prefer30Fps: false,
+  });
+  const sourceProfile = findSupportedVideoProfile({
+    candidateHeights: sourceCandidateHeights,
+    displayDimensions,
+    sourceWidth,
+    sourceHeight,
+    outputFps: undefined,
+    sourceFps,
+    plannedVideoBitrate,
+  });
+
+  if (fps === 'source') {
+    return sourceProfile ?? getLastVideoProfile({
+      candidateHeights: sourceCandidateHeights,
+      displayDimensions,
+      sourceWidth,
+      sourceHeight,
+      outputFps: undefined,
+    }) ?? buildKeepSourceProfile();
+  }
+
+  if (fps === 'auto' && sourceProfile != null) return sourceProfile;
+
+  if (!canReduceFpsTo30(sourceFps)) {
+    return sourceProfile ?? getLastVideoProfile({
+      candidateHeights: sourceCandidateHeights,
+      displayDimensions,
+      sourceWidth,
+      sourceHeight,
+      outputFps: undefined,
+    }) ?? buildKeepSourceProfile();
+  }
+
+  const reducedFpsCandidateHeights = buildTargetDisplayHeightCandidates({
+    resolution,
+    sourceDisplayHeight: displayDimensions.height,
+    prefer30Fps: true,
+  });
+  const reducedFpsProfile = findSupportedVideoProfile({
+    candidateHeights: reducedFpsCandidateHeights,
+    displayDimensions,
+    sourceWidth,
+    sourceHeight,
+    outputFps: targetLowFps,
+    sourceFps,
+    plannedVideoBitrate,
+  });
+  if (reducedFpsProfile != null) return reducedFpsProfile;
+
+  return getLastVideoProfile({
+    candidateHeights: reducedFpsCandidateHeights,
+    displayDimensions,
+    sourceWidth,
+    sourceHeight,
+    outputFps: targetLowFps,
+  }) ?? sourceProfile ?? getLastVideoProfile({
+    candidateHeights: sourceCandidateHeights,
+    displayDimensions,
+    sourceWidth,
+    sourceHeight,
+    outputFps: undefined,
+  }) ?? buildKeepSourceProfile();
 }
 
 export function resolveSizeLimitedOutputDimensions({
-  controlMode,
-  simpleResolution,
+  resolution,
   sourceWidth,
   sourceHeight,
   rotation,
   plannedVideoBitrate,
 }: {
-  controlMode: SizeLimitControlMode,
-  simpleResolution: SizeLimitSimpleResolution,
+  resolution: SizeLimitSimpleResolution,
   sourceWidth: number | undefined,
   sourceHeight: number | undefined,
   rotation: number | undefined,
   plannedVideoBitrate: number,
 }) {
   const videoProfile = resolveSizeLimitedVideoProfile({
-    controlMode,
-    simpleResolution,
-    simpleFps: 'source',
+    resolution,
+    fps: 'source',
     sourceWidth,
     sourceHeight,
     rotation,

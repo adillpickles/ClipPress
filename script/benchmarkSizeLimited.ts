@@ -17,7 +17,7 @@ function toKbitrateArg(bitrate: number) {
 }
 
 function printUsage() {
-  console.log('Usage: node script/benchmarkSizeLimited.ts --input clip.mp4 --target-mb 8 --target-mb 10 [--output-dir benchmark-output]');
+  console.log('Usage: node script/benchmarkSizeLimited.ts --input clip.mp4 --target-mb 8 --target-mb 10 [--output-dir benchmark-output] [--transform-matrix] [--scale-height 720] [--fps 30]');
 }
 
 type BenchmarkProfileId =
@@ -57,10 +57,17 @@ interface BenchmarkPlan {
   duration: number,
 }
 
+interface TransformVariant {
+  id: 'source_source' | 'scale_only' | 'fps_only' | 'scale_and_fps',
+  description: string,
+  filter?: string | undefined,
+}
+
 interface BenchmarkResult {
   input: string,
   targetMb: number,
   profile: BenchmarkProfileId,
+  transform: TransformVariant['id'],
   output: string,
   elapsedMs: number,
   outputBytes: number,
@@ -69,13 +76,14 @@ interface BenchmarkResult {
   duration: number,
   videoBitrate: number,
   audioBitrate: number,
+  filter?: string | undefined,
   ssimAll?: number | undefined,
 }
 
 const profiles: BenchmarkProfile[] = [
   {
     id: 'simple_max_quality',
-    description: 'Simple Max Quality: SVT-AV1 preset 6, 2-pass',
+    description: 'Simple Max Quality: SVT-AV1 preset 5, 2-pass',
     encoder: 'libsvtav1',
     mode: 'two_pass',
     firstAttemptTargetFactor: 0.95,
@@ -88,9 +96,10 @@ const profiles: BenchmarkProfile[] = [
     minVideoBitrate: 80_000,
     buildVideoArgs: (videoBitrate) => [
       '-c:v', 'libsvtav1',
-      '-preset', '6',
+      '-preset', '5',
       '-pix_fmt', 'yuv420p',
       '-b:v', toKbitrateArg(videoBitrate),
+      '-svtav1-params', 'tune=0:keyint=600',
     ],
   },
   {
@@ -126,7 +135,7 @@ const profiles: BenchmarkProfile[] = [
   },
   {
     id: 'simple_fast',
-    description: 'Simple Fast: AV1 NVENC p4 single-pass',
+    description: 'Simple Fast: AV1 NVENC p2 single-pass',
     encoder: 'av1_nvenc',
     mode: 'single_pass',
     firstAttemptTargetFactor: 0.9,
@@ -139,15 +148,14 @@ const profiles: BenchmarkProfile[] = [
     minVideoBitrate: 90_000,
     buildVideoArgs: (videoBitrate) => [
       '-c:v', 'av1_nvenc',
-      '-preset', 'p4',
+      '-preset', 'p2',
       '-tune', 'hq',
       '-rc', 'vbr',
-      '-cq', '30',
-      '-rc-lookahead', '12',
+      '-cq', '33',
+      '-rc-lookahead', '4',
       '-spatial-aq', '1',
-      '-temporal-aq', '1',
-      '-aq-strength', '6',
-      '-b_ref_mode', 'middle',
+      '-temporal-aq', '0',
+      '-aq-strength', '4',
       '-pix_fmt', 'yuv420p',
       '-b:v', toKbitrateArg(videoBitrate),
       '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 1.05))),
@@ -245,6 +253,9 @@ function parseArgs() {
   const inputs: string[] = [];
   const targetMb: number[] = [];
   let outputDir = 'benchmark-output';
+  let transformMatrix = false;
+  let scaleHeight = 720;
+  let fps = 30;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -270,6 +281,24 @@ function parseArgs() {
         index += 1;
         break;
       }
+      case '--transform-matrix': {
+        transformMatrix = true;
+        break;
+      }
+      case '--scale-height': {
+        const value = Number(args[index + 1]);
+        if (Number.isNaN(value) || value <= 0) throw new Error('Invalid value for --scale-height');
+        scaleHeight = Math.floor(value);
+        index += 1;
+        break;
+      }
+      case '--fps': {
+        const value = Number(args[index + 1]);
+        if (Number.isNaN(value) || value <= 0) throw new Error('Invalid value for --fps');
+        fps = Math.floor(value);
+        index += 1;
+        break;
+      }
       case '--help': {
         throw new HelpRequestedError();
       }
@@ -284,7 +313,48 @@ function parseArgs() {
     throw new Error('Please provide at least one --input and one --target-mb value.');
   }
 
-  return { inputs, targetMb, outputDir };
+  return { inputs, targetMb, outputDir, transformMatrix, scaleHeight, fps };
+}
+
+function buildTransformVariants({
+  transformMatrix,
+  scaleHeight,
+  fps,
+}: {
+  transformMatrix: boolean,
+  scaleHeight: number,
+  fps: number,
+}) {
+  if (!transformMatrix) {
+    return [{
+      id: 'source_source',
+      description: 'Source resolution / source fps',
+      filter: undefined,
+    }] satisfies TransformVariant[];
+  }
+
+  return [
+    {
+      id: 'source_source',
+      description: 'Source resolution / source fps',
+      filter: undefined,
+    },
+    {
+      id: 'scale_only',
+      description: `Scale only (${scaleHeight}p)`,
+      filter: `scale=-2:${scaleHeight}:flags=lanczos+accurate_rnd`,
+    },
+    {
+      id: 'fps_only',
+      description: `FPS only (${fps} fps)`,
+      filter: `fps=${fps}`,
+    },
+    {
+      id: 'scale_and_fps',
+      description: `Scale + FPS (${scaleHeight}p / ${fps} fps)`,
+      filter: `fps=${fps},scale=-2:${scaleHeight}:flags=lanczos+accurate_rnd`,
+    },
+  ] satisfies TransformVariant[];
 }
 
 function getBundledFfPath(binary: 'ffmpeg' | 'ffprobe') {
@@ -416,12 +486,13 @@ function getAudioArgs(hasAudio: boolean, audioBitrate: number) {
   return ['-c:a', 'aac', '-b:a', toKbitrateArg(audioBitrate), '-ac', '2'];
 }
 
-function buildSinglePassArgs({ input, output, hasAudio, plan, profile }: {
+function buildSinglePassArgs({ input, output, hasAudio, plan, profile, filter }: {
   input: string,
   output: string,
   hasAudio: boolean,
   plan: BenchmarkPlan,
   profile: BenchmarkProfile,
+  filter?: string | undefined,
 }) {
   return [
     '-hide_banner',
@@ -433,6 +504,7 @@ function buildSinglePassArgs({ input, output, hasAudio, plan, profile }: {
     '-ignore_unknown',
     '-map', '0:v:0',
     ...(hasAudio ? ['-map', '0:a:0'] : []),
+    ...(filter != null ? ['-vf', filter] : []),
     ...profile.buildVideoArgs(plan.videoBitrate),
     ...getAudioArgs(hasAudio, plan.audioBitrate),
     '-movflags', '+faststart',
@@ -441,7 +513,7 @@ function buildSinglePassArgs({ input, output, hasAudio, plan, profile }: {
   ];
 }
 
-function buildTwoPassArgs({ input, output, passlogFile, pass1Output, hasAudio, plan, profile }: {
+function buildTwoPassArgs({ input, output, passlogFile, pass1Output, hasAudio, plan, profile, filter }: {
   input: string,
   output: string,
   passlogFile: string,
@@ -449,6 +521,7 @@ function buildTwoPassArgs({ input, output, passlogFile, pass1Output, hasAudio, p
   hasAudio: boolean,
   plan: BenchmarkPlan,
   profile: BenchmarkProfile,
+  filter?: string | undefined,
 }) {
   const sharedVideoArgs = profile.buildVideoArgs(plan.videoBitrate);
   const pass1Args = [
@@ -460,6 +533,7 @@ function buildTwoPassArgs({ input, output, passlogFile, pass1Output, hasAudio, p
     '-dn',
     '-ignore_unknown',
     '-map', '0:v:0',
+    ...(filter != null ? ['-vf', filter] : []),
     ...sharedVideoArgs,
     '-pass', '1',
     '-passlogfile', passlogFile,
@@ -478,6 +552,7 @@ function buildTwoPassArgs({ input, output, passlogFile, pass1Output, hasAudio, p
     '-ignore_unknown',
     '-map', '0:v:0',
     ...(hasAudio ? ['-map', '0:a:0'] : []),
+    ...(filter != null ? ['-vf', filter] : []),
     ...sharedVideoArgs,
     '-pass', '2',
     '-passlogfile', passlogFile,
@@ -516,6 +591,7 @@ async function runProfile({
   targetMb,
   probe,
   profile,
+  transform,
 }: {
   ffmpegPath: string,
   input: string,
@@ -523,9 +599,10 @@ async function runProfile({
   targetMb: number,
   probe: Awaited<ReturnType<typeof readProbe>>,
   profile: BenchmarkProfile,
+  transform: TransformVariant,
 }) {
   const stem = parse(input).name;
-  const output = join(outputDir, `${stem}.${profile.id}.${targetMb}mb.mp4`);
+  const output = join(outputDir, `${stem}.${profile.id}.${transform.id}.${targetMb}mb.mp4`);
   const plan = planProfile({ targetMb, duration: probe.duration, hasAudio: probe.hasAudio, profile });
   const startedAt = Date.now();
 
@@ -536,6 +613,7 @@ async function runProfile({
       hasAudio: probe.hasAudio,
       plan,
       profile,
+      filter: transform.filter,
     }));
   } else {
     const tempDir = await mkdtemp(join(tmpdir(), 'clippress-bench-'));
@@ -551,6 +629,7 @@ async function runProfile({
         hasAudio: probe.hasAudio,
         plan,
         profile,
+        filter: transform.filter,
       });
       await runProcess(ffmpegPath, pass1Args);
       await runProcess(ffmpegPath, pass2Args);
@@ -567,6 +646,7 @@ async function runProfile({
     input,
     targetMb,
     profile: profile.id,
+    transform: transform.id,
     output,
     elapsedMs,
     outputBytes,
@@ -575,18 +655,24 @@ async function runProfile({
     duration: probe.duration,
     videoBitrate: plan.videoBitrate,
     audioBitrate: plan.audioBitrate,
+    filter: transform.filter,
     ssimAll,
   } satisfies BenchmarkResult;
 }
 
 async function main() {
-  const { inputs, targetMb, outputDir } = parseArgs();
+  const { inputs, targetMb, outputDir, transformMatrix, scaleHeight, fps } = parseArgs();
   const ffmpegPath = getBundledFfPath('ffmpeg');
   const ffprobePath = getBundledFfPath('ffprobe');
   await mkdir(outputDir, { recursive: true });
 
   const capabilities = await getCapabilities(ffmpegPath);
+  const transforms = buildTransformVariants({ transformMatrix, scaleHeight, fps });
+  const profilesToRun = transformMatrix
+    ? profiles.filter((profile) => ['simple_max_quality', 'simple_quality', 'simple_fast', 'advanced_h264_nvenc_two_pass'].includes(profile.id))
+    : profiles;
   console.log('Detected capabilities:', capabilities);
+  if (transformMatrix) console.log('Transform matrix:', transforms.map((transform) => `${transform.id} (${transform.description})`).join(', '));
 
   const results: BenchmarkResult[] = [];
 
@@ -595,20 +681,23 @@ async function main() {
     console.log(`\nInput: ${basename(input)} (${probe.duration.toFixed(2)}s, audio=${probe.hasAudio})`);
 
     for (const target of targetMb) {
-      for (const profile of profiles) {
-        if (!capabilities[profile.encoder]) {
-          console.log(`Skipping ${profile.id} for ${basename(input)} at ${target} MB because ${profile.encoder} is unavailable.`);
-        } else {
-          console.log(`Running ${profile.id} for ${basename(input)} at ${target} MB`);
-          const result = await runProfile({
-            ffmpegPath,
-            input,
-            outputDir,
-            targetMb: target,
-            probe,
-            profile,
-          });
-          results.push(result);
+      for (const transform of transforms) {
+        for (const profile of profilesToRun) {
+          if (!capabilities[profile.encoder]) {
+            console.log(`Skipping ${profile.id} (${transform.id}) for ${basename(input)} at ${target} MB because ${profile.encoder} is unavailable.`);
+          } else {
+            console.log(`Running ${profile.id} (${transform.id}) for ${basename(input)} at ${target} MB`);
+            const result = await runProfile({
+              ffmpegPath,
+              input,
+              outputDir,
+              targetMb: target,
+              probe,
+              profile,
+              transform,
+            });
+            results.push(result);
+          }
         }
       }
     }
@@ -621,6 +710,7 @@ async function main() {
     input: basename(result.input),
     targetMb: result.targetMb,
     profile: result.profile,
+    transform: result.transform,
     plannedMb: Number((result.plannedFinalBytes / bytesPerMb).toFixed(2)),
     sizeMb: Number((result.outputBytes / bytesPerMb).toFixed(2)),
     metTarget: result.metTarget,
@@ -632,9 +722,9 @@ async function main() {
   const lines = [
     '# ClipPress Size-Limited Benchmark',
     '',
-    '| Input | Target MB | Planned MB | Profile | Output MB | Met Target | Elapsed s | SSIM All |',
-    '| --- | ---: | ---: | --- | ---: | :---: | ---: | ---: |',
-    ...results.map((result) => `| ${basename(result.input)} | ${result.targetMb} | ${(result.plannedFinalBytes / bytesPerMb).toFixed(2)} | ${result.profile} | ${(result.outputBytes / bytesPerMb).toFixed(2)} | ${result.metTarget ? 'yes' : 'no'} | ${(result.elapsedMs / 1000).toFixed(2)} | ${result.ssimAll != null ? result.ssimAll.toFixed(4) : 'n/a'} |`),
+    '| Input | Target MB | Planned MB | Profile | Transform | Output MB | Met Target | Elapsed s | SSIM All |',
+    '| --- | ---: | ---: | --- | --- | ---: | :---: | ---: | ---: |',
+    ...results.map((result) => `| ${basename(result.input)} | ${result.targetMb} | ${(result.plannedFinalBytes / bytesPerMb).toFixed(2)} | ${result.profile} | ${result.transform} | ${(result.outputBytes / bytesPerMb).toFixed(2)} | ${result.metTarget ? 'yes' : 'no'} | ${(result.elapsedMs / 1000).toFixed(2)} | ${result.ssimAll != null ? result.ssimAll.toFixed(4) : 'n/a'} |`),
     '',
   ];
   await writeFile(markdownPath, lines.join('\n'));

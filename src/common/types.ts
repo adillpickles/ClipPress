@@ -137,6 +137,8 @@ export interface Config {
   sizeLimitSimpleResolutionTouched: boolean,
   sizeLimitSimpleFps: SizeLimitSimpleFps,
   sizeLimitSimpleFpsTouched: boolean,
+  sizeLimitAdvancedResolution: SizeLimitSimpleResolution,
+  sizeLimitAdvancedFps: SizeLimitSimpleFps,
   sizeLimitAdvancedEncoder: SizeLimitAdvancedEncoder,
   sizeLimitAdvancedTwoPass: boolean,
   sizeLimitAdvancedAv1CpuPreset: SizeLimitAdvancedAv1CpuPreset,
