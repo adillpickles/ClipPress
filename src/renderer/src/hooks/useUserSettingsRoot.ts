@@ -206,8 +206,12 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ sizeLimitPreset }), [sizeLimitPreset]);
   const [sizeLimitSimpleResolution, setSizeLimitSimpleResolution] = useState(safeGetConfigInitial('sizeLimitSimpleResolution'));
   useEffect(() => safeSetConfig({ sizeLimitSimpleResolution }), [sizeLimitSimpleResolution]);
+  const [sizeLimitSimpleResolutionTouched, setSizeLimitSimpleResolutionTouched] = useState(safeGetConfigInitial('sizeLimitSimpleResolutionTouched'));
+  useEffect(() => safeSetConfig({ sizeLimitSimpleResolutionTouched }), [sizeLimitSimpleResolutionTouched]);
   const [sizeLimitSimpleFps, setSizeLimitSimpleFps] = useState(safeGetConfigInitial('sizeLimitSimpleFps'));
   useEffect(() => safeSetConfig({ sizeLimitSimpleFps }), [sizeLimitSimpleFps]);
+  const [sizeLimitSimpleFpsTouched, setSizeLimitSimpleFpsTouched] = useState(safeGetConfigInitial('sizeLimitSimpleFpsTouched'));
+  useEffect(() => safeSetConfig({ sizeLimitSimpleFpsTouched }), [sizeLimitSimpleFpsTouched]);
   const [sizeLimitAdvancedEncoder, setSizeLimitAdvancedEncoder] = useState(safeGetConfigInitial('sizeLimitAdvancedEncoder'));
   useEffect(() => safeSetConfig({ sizeLimitAdvancedEncoder }), [sizeLimitAdvancedEncoder]);
   const [sizeLimitAdvancedTwoPass, setSizeLimitAdvancedTwoPass] = useState(safeGetConfigInitial('sizeLimitAdvancedTwoPass'));
@@ -348,7 +352,9 @@ export default function useUserSettingsRoot() {
     sizeLimitControlMode,
     sizeLimitPreset,
     sizeLimitSimpleResolution,
+    sizeLimitSimpleResolutionTouched,
     sizeLimitSimpleFps,
+    sizeLimitSimpleFpsTouched,
     sizeLimitAdvancedEncoder,
     sizeLimitAdvancedTwoPass,
     sizeLimitAdvancedAv1CpuPreset,
@@ -445,7 +451,9 @@ export default function useUserSettingsRoot() {
     setSizeLimitControlMode,
     setSizeLimitPreset,
     setSizeLimitSimpleResolution,
+    setSizeLimitSimpleResolutionTouched,
     setSizeLimitSimpleFps,
+    setSizeLimitSimpleFpsTouched,
     setSizeLimitAdvancedEncoder,
     setSizeLimitAdvancedTwoPass,
     setSizeLimitAdvancedAv1CpuPreset,

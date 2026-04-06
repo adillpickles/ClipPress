@@ -47,7 +47,7 @@ import type { FindNearestKeyframeTime } from '../hooks/useKeyframes';
 import { troubleshootingUrl } from '../../../common/constants';
 import OutDirSelector from './OutDirSelector';
 import { getSizeLimitedEncoderCapabilities } from '../sizeLimitedExport';
-import { getSizeLimitedSimpleFpsOptions, getSizeLimitedSimpleResolutionOptions } from '../sizeLimitedResolution';
+import { getSizeLimitedSimpleFpsOptions, getSizeLimitedSimpleResolutionOptions, resolveEffectiveSizeLimitedSimpleSettings } from '../sizeLimitedResolution';
 
 const remote = window.require('@electron/remote');
 const { shell } = remote;
@@ -228,7 +228,7 @@ function ExportConfirm({
 }) {
   const { t } = useTranslation();
 
-  const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, setSegmentsToChaptersOnly, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled, exportEncodeMode, setExportEncodeMode, sizeLimitMb, setSizeLimitMb, sizeLimitControlMode, setSizeLimitControlMode, sizeLimitPreset, setSizeLimitPreset, sizeLimitSimpleResolution, setSizeLimitSimpleResolution, sizeLimitSimpleFps, setSizeLimitSimpleFps, sizeLimitAdvancedEncoder, setSizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, setSizeLimitAdvancedTwoPass, sizeLimitAdvancedAv1CpuPreset, setSizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, setSizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedH264CpuPreset, setSizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, setSizeLimitAdvancedH264NvencPreset, sizeLimitSeparateNamingMode, setSizeLimitSeparateNamingMode, sizeLimitMergedNamingMode, setSizeLimitMergedNamingMode } = useUserSettings();
+  const { keyframeCut, toggleKeyframeCut, preserveMovData, setPreserveMovData, preserveMetadata, setPreserveMetadata, preserveChapters, setPreserveChapters, movFastStart, setMovFastStart, avoidNegativeTs, setAvoidNegativeTs, autoDeleteMergedSegments, exportConfirmEnabled, toggleExportConfirmEnabled, segmentsToChapters, setSegmentsToChapters, setSegmentsToChaptersOnly, preserveMetadataOnMerge, setPreserveMetadataOnMerge, enableSmartCut, setEnableSmartCut, effectiveExportMode, enableOverwriteOutput, setEnableOverwriteOutput, ffmpegExperimental, setFfmpegExperimental, cutFromAdjustmentFrames, setCutFromAdjustmentFrames, cutToAdjustmentFrames, setCutToAdjustmentFrames, setCutFileTemplate, setCutMergedFileTemplate, simpleMode, keyframesEnabled, exportEncodeMode, setExportEncodeMode, sizeLimitMb, setSizeLimitMb, sizeLimitControlMode, setSizeLimitControlMode, sizeLimitPreset, setSizeLimitPreset, sizeLimitSimpleResolution, setSizeLimitSimpleResolution, sizeLimitSimpleResolutionTouched, setSizeLimitSimpleResolutionTouched, sizeLimitSimpleFps, setSizeLimitSimpleFps, sizeLimitSimpleFpsTouched, setSizeLimitSimpleFpsTouched, sizeLimitAdvancedEncoder, setSizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, setSizeLimitAdvancedTwoPass, sizeLimitAdvancedAv1CpuPreset, setSizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, setSizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedH264CpuPreset, setSizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, setSizeLimitAdvancedH264NvencPreset, sizeLimitSeparateNamingMode, setSizeLimitSeparateNamingMode, sizeLimitMergedNamingMode, setSizeLimitMergedNamingMode } = useUserSettings();
 
   const [showAdvanced, setShowAdvanced] = useState(!simpleMode);
   const togglePreserveChapters = useCallback(() => setPreserveChapters((val) => !val), [setPreserveChapters]);
@@ -413,11 +413,30 @@ function ExportConfirm({
     setSizeLimitMb(nextValue);
   }, [setSizeLimitMb]);
 
+  const handleSizeLimitedResolutionChange = useCallback((value: SizeLimitSimpleResolution) => {
+    setSizeLimitSimpleResolution(value);
+    setSizeLimitSimpleResolutionTouched(true);
+  }, [setSizeLimitSimpleResolution, setSizeLimitSimpleResolutionTouched]);
+
+  const handleSizeLimitedFpsChange = useCallback((value: SizeLimitSimpleFps) => {
+    setSizeLimitSimpleFps(value);
+    setSizeLimitSimpleFpsTouched(true);
+  }, [setSizeLimitSimpleFps, setSizeLimitSimpleFpsTouched]);
+
   const presetDescription = useMemo(() => ({
     max_quality: t('Best-looking result under the limit. Slower is acceptable.'),
     quality: t('Recommended everyday balance for most shareable clips.'),
     fast: t('Good everyday shareable quality with quicker export.'),
   })[sizeLimitPreset], [sizeLimitPreset, t]);
+
+  const effectiveSizeLimitedSimpleSettings = useMemo(() => resolveEffectiveSizeLimitedSimpleSettings({
+    controlMode: sizeLimitControlMode,
+    preset: sizeLimitPreset,
+    simpleResolution: sizeLimitSimpleResolution,
+    simpleResolutionTouched: sizeLimitSimpleResolutionTouched,
+    simpleFps: sizeLimitSimpleFps,
+    simpleFpsTouched: sizeLimitSimpleFpsTouched,
+  }), [sizeLimitControlMode, sizeLimitPreset, sizeLimitSimpleFps, sizeLimitSimpleFpsTouched, sizeLimitSimpleResolution, sizeLimitSimpleResolutionTouched]);
 
   const sizeLimitedResolutionOptions = useMemo(() => (
     getSizeLimitedSimpleResolutionOptions({
@@ -428,8 +447,8 @@ function ExportConfirm({
   ), [sizeLimitedSourceRotation, sizeLimitedSourceVideoStream?.height, sizeLimitedSourceVideoStream?.width]);
 
   const selectedSizeLimitedResolution = useMemo(
-    () => (sizeLimitedResolutionOptions.includes(sizeLimitSimpleResolution) ? sizeLimitSimpleResolution : 'auto'),
-    [sizeLimitSimpleResolution, sizeLimitedResolutionOptions],
+    () => (sizeLimitedResolutionOptions.includes(effectiveSizeLimitedSimpleSettings.simpleResolution) ? effectiveSizeLimitedSimpleSettings.simpleResolution : 'auto'),
+    [effectiveSizeLimitedSimpleSettings.simpleResolution, sizeLimitedResolutionOptions],
   );
 
   const sizeLimitedResolutionDescription = useMemo(() => {
@@ -445,8 +464,8 @@ function ExportConfirm({
   ), [sizeLimitedSourceFps]);
 
   const selectedSizeLimitedFps = useMemo(
-    () => (sizeLimitedFpsOptions.includes(sizeLimitSimpleFps) ? sizeLimitSimpleFps : 'auto'),
-    [sizeLimitSimpleFps, sizeLimitedFpsOptions],
+    () => (sizeLimitedFpsOptions.includes(effectiveSizeLimitedSimpleSettings.simpleFps) ? effectiveSizeLimitedSimpleSettings.simpleFps : 'auto'),
+    [effectiveSizeLimitedSimpleSettings.simpleFps, sizeLimitedFpsOptions],
   );
 
   const sizeLimitedFpsDescription = useMemo(() => {
@@ -729,7 +748,7 @@ function ExportConfirm({
                     {t('Resolution')}
                   </td>
                   <td>
-                    <Select value={selectedSizeLimitedResolution} onChange={withBlur((e) => setSizeLimitSimpleResolution(e.target.value as SizeLimitSimpleResolution))} style={{ height: '1.8em' }}>
+                    <Select value={selectedSizeLimitedResolution} onChange={withBlur((e) => handleSizeLimitedResolutionChange(e.target.value as SizeLimitSimpleResolution))} style={{ height: '1.8em' }}>
                       {sizeLimitedResolutionOptions.map((value) => (
                         <option key={value} value={value}>
                           {{
@@ -756,7 +775,7 @@ function ExportConfirm({
                     {t('FPS')}
                   </td>
                   <td>
-                    <Select value={selectedSizeLimitedFps} onChange={withBlur((e) => setSizeLimitSimpleFps(e.target.value as SizeLimitSimpleFps))} style={{ height: '1.8em' }}>
+                    <Select value={selectedSizeLimitedFps} onChange={withBlur((e) => handleSizeLimitedFpsChange(e.target.value as SizeLimitSimpleFps))} style={{ height: '1.8em' }}>
                       {sizeLimitedFpsOptions.map((value) => (
                         <option key={value} value={value}>
                           {{

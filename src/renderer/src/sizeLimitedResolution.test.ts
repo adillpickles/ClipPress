@@ -6,6 +6,7 @@ import {
   getSizeLimitedDisplayDimensions,
   getSizeLimitedSimpleFpsOptions,
   getSizeLimitedSimpleResolutionOptions,
+  resolveEffectiveSizeLimitedSimpleSettings,
   resolveSizeLimitedOutputDimensions,
   resolveSizeLimitedVideoProfile,
 } from './sizeLimitedResolution';
@@ -56,6 +57,76 @@ describe('getSizeLimitedSimpleFpsOptions', () => {
 
   it('offers the 30 fps option for higher-fps sources', () => {
     expect(getSizeLimitedSimpleFpsOptions({ sourceFps: 60 })).toEqual(['auto', 'source', '30fps']);
+  });
+});
+
+describe('resolveEffectiveSizeLimitedSimpleSettings', () => {
+  it('defaults untouched max quality simple controls to keep source', () => {
+    expect(resolveEffectiveSizeLimitedSimpleSettings({
+      controlMode: 'simple',
+      preset: 'max_quality',
+      simpleResolution: 'auto',
+      simpleResolutionTouched: false,
+      simpleFps: 'auto',
+      simpleFpsTouched: false,
+    })).toEqual({
+      simpleResolution: 'source',
+      simpleFps: 'source',
+    });
+  });
+
+  it('preserves explicit auto once the user has touched the max quality controls', () => {
+    expect(resolveEffectiveSizeLimitedSimpleSettings({
+      controlMode: 'simple',
+      preset: 'max_quality',
+      simpleResolution: 'auto',
+      simpleResolutionTouched: true,
+      simpleFps: 'auto',
+      simpleFpsTouched: true,
+    })).toEqual({
+      simpleResolution: 'auto',
+      simpleFps: 'auto',
+    });
+  });
+
+  it('keeps existing explicit non-auto choices even before the new touched flags are set', () => {
+    expect(resolveEffectiveSizeLimitedSimpleSettings({
+      controlMode: 'simple',
+      preset: 'max_quality',
+      simpleResolution: '1080p',
+      simpleResolutionTouched: false,
+      simpleFps: '30fps',
+      simpleFpsTouched: false,
+    })).toEqual({
+      simpleResolution: '1080p',
+      simpleFps: '30fps',
+    });
+  });
+
+  it('leaves quality and fast presets unchanged', () => {
+    expect(resolveEffectiveSizeLimitedSimpleSettings({
+      controlMode: 'simple',
+      preset: 'quality',
+      simpleResolution: 'auto',
+      simpleResolutionTouched: false,
+      simpleFps: 'auto',
+      simpleFpsTouched: false,
+    })).toEqual({
+      simpleResolution: 'auto',
+      simpleFps: 'auto',
+    });
+
+    expect(resolveEffectiveSizeLimitedSimpleSettings({
+      controlMode: 'simple',
+      preset: 'fast',
+      simpleResolution: 'auto',
+      simpleResolutionTouched: false,
+      simpleFps: 'auto',
+      simpleFpsTouched: false,
+    })).toEqual({
+      simpleResolution: 'auto',
+      simpleFps: 'auto',
+    });
   });
 });
 

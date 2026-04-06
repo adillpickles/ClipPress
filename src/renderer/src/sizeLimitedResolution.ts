@@ -1,4 +1,4 @@
-import type { SizeLimitControlMode, SizeLimitSimpleFps, SizeLimitSimpleResolution } from '../../common/types.js';
+import type { SizeLimitControlMode, SizeLimitPreset, SizeLimitSimpleFps, SizeLimitSimpleResolution } from '../../common/types.js';
 
 const simpleResolutionSteps = [1440, 1080, 720] as const;
 const lowBitrateThreshold = 4_000_000;
@@ -161,6 +161,34 @@ export function getSizeLimitedSimpleFpsOptions({
   }
 
   return ['auto', 'source', '30fps'] satisfies SizeLimitSimpleFps[];
+}
+
+export function resolveEffectiveSizeLimitedSimpleSettings({
+  controlMode,
+  preset,
+  simpleResolution,
+  simpleResolutionTouched,
+  simpleFps,
+  simpleFpsTouched,
+}: {
+  controlMode: SizeLimitControlMode,
+  preset: SizeLimitPreset,
+  simpleResolution: SizeLimitSimpleResolution,
+  simpleResolutionTouched: boolean,
+  simpleFps: SizeLimitSimpleFps,
+  simpleFpsTouched: boolean,
+}) {
+  if (controlMode !== 'simple' || preset !== 'max_quality') {
+    return { simpleResolution, simpleFps };
+  }
+
+  return {
+    simpleResolution: !simpleResolutionTouched && simpleResolution === 'auto' ? 'source' : simpleResolution,
+    simpleFps: !simpleFpsTouched && simpleFps === 'auto' ? 'source' : simpleFps,
+  } satisfies {
+    simpleResolution: SizeLimitSimpleResolution,
+    simpleFps: SizeLimitSimpleFps,
+  };
 }
 
 function shouldDropFpsTo30({

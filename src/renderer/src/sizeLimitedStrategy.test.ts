@@ -39,6 +39,7 @@ describe('resolveSizeLimitedStrategy', () => {
 
     expect(strategy.id).toBe('max_quality_av1_cpu_two_pass');
     expect(strategy.effectiveCodec).toBe('av1');
+    expect(strategy.encoderPreset).toBe(4);
     expect(strategy.executionMode).toBe('ffmpeg_two_pass');
   });
 
@@ -69,7 +70,7 @@ describe('resolveSizeLimitedStrategy', () => {
 
     expect(strategy.id).toBe('fast_av1_nvenc');
     expect(strategy.usesGpu).toBe(true);
-    expect(strategy.encoderPreset).toBe('p4');
+    expect(strategy.encoderPreset).toBe('p3');
     expect(strategy.effectiveCodec).toBe('av1');
   });
 

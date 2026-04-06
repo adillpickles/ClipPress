@@ -60,6 +60,7 @@ import {
   sizeLimitedFinalSizePlaceholder,
   type SizeLimitedAutoNameItem,
 } from './sizeLimitedNaming';
+import { resolveEffectiveSizeLimitedSimpleSettings } from './sizeLimitedResolution';
 import { getSegColor } from './util/colors';
 import type {
   FileFfprobeMeta } from './ffmpeg';
@@ -198,7 +199,7 @@ function App() {
   const [selectedBatchFiles, setSelectedBatchFiles] = useState<string[]>([]);
 
   const allUserSettings = useUserSettingsRoot();
-  const { captureFormat, keyframeCut, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, autoMerge, timecodeFormat, invertCutSegments, autoExportExtraStreams, askBeforeClose, enableImportChapters, enableAskForFileOpenAction, playbackVolume, autoSaveProjectFile, wheelSensitivity, waveformHeight, invertTimelineScroll, language, ffmpegExperimental, hideNotifications, hideOsNotifications, autoLoadTimecode, autoDeleteMergedSegments, exportConfirmEnabled, segmentsToChapters, simpleMode, cutFileTemplate, cutMergedFileTemplate, mergedFileTemplate, keyboardSeekAccFactor, keyboardNormalSeekSpeed, keyboardSeekSpeed2, keyboardSeekSpeed3, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, outFormatLocked, safeOutputFileName, enableAutoHtml5ify, segmentsToChaptersOnly, keyBindings, enableSmartCut, customFfPath, storeProjectInWorkingDir, enableOverwriteOutput, mouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, captureFrameMethod, captureFrameQuality, captureFrameFileNameFormat, enableNativeHevc, cleanupChoices, darkMode, preferStrongColors, outputFileNameMinZeroPadding, cutFromAdjustmentFrames, cutToAdjustmentFrames, waveformMode: waveformModePreference, thumbnailsEnabled, keyframesEnabled, reducedMotion, ffmpegHwaccel, exportEncodeMode, sizeLimitMb, sizeLimitControlMode, sizeLimitPreset, sizeLimitSimpleResolution, sizeLimitSimpleFps, sizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, sizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, sizeLimitSeparateNamingMode, sizeLimitMergedNamingMode } = allUserSettings.settings;
+  const { captureFormat, keyframeCut, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, autoMerge, timecodeFormat, invertCutSegments, autoExportExtraStreams, askBeforeClose, enableImportChapters, enableAskForFileOpenAction, playbackVolume, autoSaveProjectFile, wheelSensitivity, waveformHeight, invertTimelineScroll, language, ffmpegExperimental, hideNotifications, hideOsNotifications, autoLoadTimecode, autoDeleteMergedSegments, exportConfirmEnabled, segmentsToChapters, simpleMode, cutFileTemplate, cutMergedFileTemplate, mergedFileTemplate, keyboardSeekAccFactor, keyboardNormalSeekSpeed, keyboardSeekSpeed2, keyboardSeekSpeed3, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, outFormatLocked, safeOutputFileName, enableAutoHtml5ify, segmentsToChaptersOnly, keyBindings, enableSmartCut, customFfPath, storeProjectInWorkingDir, enableOverwriteOutput, mouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, captureFrameMethod, captureFrameQuality, captureFrameFileNameFormat, enableNativeHevc, cleanupChoices, darkMode, preferStrongColors, outputFileNameMinZeroPadding, cutFromAdjustmentFrames, cutToAdjustmentFrames, waveformMode: waveformModePreference, thumbnailsEnabled, keyframesEnabled, reducedMotion, ffmpegHwaccel, exportEncodeMode, sizeLimitMb, sizeLimitControlMode, sizeLimitPreset, sizeLimitSimpleResolution, sizeLimitSimpleResolutionTouched, sizeLimitSimpleFps, sizeLimitSimpleFpsTouched, sizeLimitAdvancedEncoder, sizeLimitAdvancedTwoPass, sizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, sizeLimitSeparateNamingMode, sizeLimitMergedNamingMode } = allUserSettings.settings;
   const { setCaptureFormat, setCustomOutDir, setKeyframeCut, setPlaybackVolume, setExportConfirmEnabled, setSimpleMode, setOutFormatLocked, setSafeOutputFileName, setKeyBindings, resetKeyBindings, setStoreProjectInWorkingDir, setCleanupChoices, toggleDarkMode, setWaveformMode, setThumbnailsEnabled, setKeyframesEnabled, prefersReducedMotion, customOutDir } = allUserSettings;
 
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(!simpleMode);
@@ -206,6 +207,15 @@ function App() {
   const { withErrorHandling, handleError, genericError, setGenericError } = useErrorHandling();
 
   const { showGenericDialog, genericDialog, closeGenericDialog, confirmDialog, openExportFinishedDialog, openCutFinishedDialog, openSizeLimitedFinishedDialog, openConcatFinishedDialog, openCleanupFilesDialog } = useDialog();
+
+  const effectiveSizeLimitedSimpleSettings = useMemo(() => resolveEffectiveSizeLimitedSimpleSettings({
+    controlMode: sizeLimitControlMode,
+    preset: sizeLimitPreset,
+    simpleResolution: sizeLimitSimpleResolution,
+    simpleResolutionTouched: sizeLimitSimpleResolutionTouched,
+    simpleFps: sizeLimitSimpleFps,
+    simpleFpsTouched: sizeLimitSimpleFpsTouched,
+  }), [sizeLimitControlMode, sizeLimitPreset, sizeLimitSimpleFps, sizeLimitSimpleFpsTouched, sizeLimitSimpleResolution, sizeLimitSimpleResolutionTouched]);
 
   // Note that each action may be multiple key bindings and this will only be the first binding for each action
   const keyBindingByAction = useMemo(() => Object.fromEntries(keyBindings.map((binding) => [binding.action, binding])), [keyBindings]);
@@ -1533,8 +1543,8 @@ function App() {
               targetSizeMb: sizeLimitMb,
               controlMode: sizeLimitControlMode,
               preset: sizeLimitPreset,
-              simpleResolution: sizeLimitSimpleResolution,
-              simpleFps: sizeLimitSimpleFps,
+              simpleResolution: effectiveSizeLimitedSimpleSettings.simpleResolution,
+              simpleFps: effectiveSizeLimitedSimpleSettings.simpleFps,
               advancedEncoder: sizeLimitAdvancedEncoder,
               advancedTwoPass: sizeLimitAdvancedTwoPass,
               advancedAv1CpuPreset: sizeLimitAdvancedAv1CpuPreset,
@@ -1589,8 +1599,8 @@ function App() {
             targetSizeMb: sizeLimitMb,
             controlMode: sizeLimitControlMode,
             preset: sizeLimitPreset,
-            simpleResolution: sizeLimitSimpleResolution,
-            simpleFps: sizeLimitSimpleFps,
+            simpleResolution: effectiveSizeLimitedSimpleSettings.simpleResolution,
+            simpleFps: effectiveSizeLimitedSimpleSettings.simpleFps,
             advancedEncoder: sizeLimitAdvancedEncoder,
             advancedTwoPass: sizeLimitAdvancedTwoPass,
             advancedAv1CpuPreset: sizeLimitAdvancedAv1CpuPreset,
@@ -1831,7 +1841,7 @@ function App() {
       setWorking(undefined);
       setProgress(undefined);
     }
-  }, [allFilesMeta, appendFfmpegCommandLog, appendSizeLimitedResultNotices, areWeCutting, askForCleanupChoices, autoDeleteMergedSegments, avoidNegativeTs, buildSizeLimitedInternalFileNames, buildSizeLimitedResultSummary, cleanupChoices, cleanupFiles, concatCutSegments, copyFileStreams, customOutDir, customTagsByFile, cutFileTemplateOrDefault, cutMergedFileTemplateOrDefault, cutMultiple, detectedFps, effectiveRotation, enableOverwriteOutput, exportConfirmEnabled, exportExtraStreams, extractStreams, ffmpegExperimental, fileDuration, fileFormat, filePath, formatSizeLimitedJobStageText, generateCutFileNames, generateCutMergedFileNames, generateSizeLimitedCustomCutFileNames, generateSizeLimitedCustomCutMergedFileNames, getSizeLimitedSeparateSuffixLabelForSegment, handleExportFailed, haveInvalidSegs, hideAllNotifications, invertCutSegments, isRotationSet, isSizeLimitedExport, keyframeCut, mainFileFormat, mainStreams, maybeRenameSizeLimitedOutputs, movFastStart, nonCopiedExtraStreams, numStreamsToCopy, openCutFinishedDialog, openSizeLimitedFinishedDialog, outputDir, outputPlaybackRate, paramsByStreamId, preserveChapters, preserveMetadata, preserveMetadataOnMerge, preserveMovData, prefersReducedMotion, setWorking, segmentsOrInverse.selected, segmentsToChapters, segmentsToChaptersOnly, segmentsToExport, shortestFlag, showOsNotification, simpleMode, sizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedEncoder, sizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, sizeLimitAdvancedTwoPass, sizeLimitControlMode, sizeLimitMb, sizeLimitMergedNamingMode, sizeLimitPreset, sizeLimitSeparateNamingMode, sizeLimitSimpleFps, sizeLimitSimpleResolution, sizeLimitedCutFileTemplateOrDefault, sizeLimitedCutMergedFileTemplateOrDefault, sizeLimitedSegmentsForExport, sizeLimitedSourceFps, sizeLimitedStreams, t, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, tryDeleteFiles, willMerge, workingRef]);
+  }, [allFilesMeta, appendFfmpegCommandLog, appendSizeLimitedResultNotices, areWeCutting, askForCleanupChoices, autoDeleteMergedSegments, avoidNegativeTs, buildSizeLimitedInternalFileNames, buildSizeLimitedResultSummary, cleanupChoices, cleanupFiles, concatCutSegments, copyFileStreams, customOutDir, customTagsByFile, cutFileTemplateOrDefault, cutMergedFileTemplateOrDefault, cutMultiple, detectedFps, effectiveRotation, effectiveSizeLimitedSimpleSettings, enableOverwriteOutput, exportConfirmEnabled, exportExtraStreams, extractStreams, ffmpegExperimental, fileDuration, fileFormat, filePath, formatSizeLimitedJobStageText, generateCutFileNames, generateCutMergedFileNames, generateSizeLimitedCustomCutFileNames, generateSizeLimitedCustomCutMergedFileNames, getSizeLimitedSeparateSuffixLabelForSegment, handleExportFailed, haveInvalidSegs, hideAllNotifications, invertCutSegments, isRotationSet, isSizeLimitedExport, keyframeCut, mainFileFormat, mainStreams, maybeRenameSizeLimitedOutputs, movFastStart, nonCopiedExtraStreams, numStreamsToCopy, openCutFinishedDialog, openSizeLimitedFinishedDialog, outputDir, outputPlaybackRate, paramsByStreamId, preserveChapters, preserveMetadata, preserveMetadataOnMerge, preserveMovData, prefersReducedMotion, setWorking, segmentsOrInverse.selected, segmentsToChapters, segmentsToChaptersOnly, segmentsToExport, shortestFlag, showOsNotification, simpleMode, sizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedEncoder, sizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, sizeLimitAdvancedTwoPass, sizeLimitControlMode, sizeLimitMb, sizeLimitMergedNamingMode, sizeLimitPreset, sizeLimitSeparateNamingMode, sizeLimitedCutFileTemplateOrDefault, sizeLimitedCutMergedFileTemplateOrDefault, sizeLimitedSegmentsForExport, sizeLimitedSourceFps, sizeLimitedStreams, t, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, tryDeleteFiles, willMerge, workingRef]);
 
   const onExportPress = useCallback(async () => {
     if (!filePath) return;

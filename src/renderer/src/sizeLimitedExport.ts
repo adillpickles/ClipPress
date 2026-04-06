@@ -28,6 +28,9 @@ const qualityCpuX264Params = 'aq-mode=3:aq-strength=0.85:deblock=-1,-1:rc-lookah
 const premiumCpuX264Params = 'aq-mode=3:aq-strength=0.9:deblock=-1,-1:rc-lookahead=40:me=umh:subme=8:ref=4';
 const nvencProbeSource = 'color=c=black:s=640x360:r=30:d=0.2';
 const nvencProbeFrames = '3';
+const maxQualitySvtTune = '0';
+const maxQualityGopSeconds = 10;
+const fallbackMaxQualityKeyintFrames = 300;
 
 let encoderCapabilitiesPromise: Promise<SizeLimitedEncoderCapabilities> | undefined;
 
@@ -157,6 +160,20 @@ function getBitrateWindowArgs({ videoBitrate, maxRateFactor, bufferFactor }: {
   ];
 }
 
+function getMaxQualityKeyintFrames({
+  outputFps,
+  sourceFps,
+  outputPlaybackRate,
+}: {
+  outputFps: number | undefined,
+  sourceFps: number | undefined,
+  outputPlaybackRate: number,
+}) {
+  const resolvedFps = outputFps ?? (sourceFps != null && Number.isFinite(sourceFps) && sourceFps > 0 ? sourceFps * outputPlaybackRate : undefined);
+  if (resolvedFps == null || !Number.isFinite(resolvedFps) || resolvedFps <= 0) return fallbackMaxQualityKeyintFrames;
+  return Math.max(1, Math.round(resolvedFps * maxQualityGopSeconds));
+}
+
 function getSwsFlagsArgs() {
   return ['-sws_flags', sizeLimitedSwsFlags];
 }
@@ -169,18 +186,29 @@ function getAudioArgs({ audioInputLabel, audioBitrate }: {
   return ['-map', audioInputLabel, '-c:a', 'aac', '-b:a', toKbitrateArg(audioBitrate), '-ac', '2'];
 }
 
-function getResolvedVideoArgs({ strategy, videoBitrate, twoPass }: {
+function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoProfile, sourceFps, outputPlaybackRate }: {
   strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
   twoPass: boolean,
+  videoProfile: SizeLimitedVideoTransformProfile,
+  sourceFps: number | undefined,
+  outputPlaybackRate: number,
 }) {
   switch (strategy.encoder) {
     case 'libsvtav1': {
+      const svtav1Params = strategy.tuningProfile === 'max_quality'
+        ? `tune=${maxQualitySvtTune}:keyint=${getMaxQualityKeyintFrames({
+          outputFps: videoProfile.outputFps,
+          sourceFps,
+          outputPlaybackRate,
+        })}`
+        : undefined;
       return [
         '-c:v', 'libsvtav1',
         '-preset', String(strategy.encoderPreset),
         '-pix_fmt', 'yuv420p',
         '-b:v', toKbitrateArg(videoBitrate),
+        ...(svtav1Params != null ? ['-svtav1-params', svtav1Params] : []),
       ];
     }
 
@@ -193,11 +221,11 @@ function getResolvedVideoArgs({ strategy, videoBitrate, twoPass }: {
         '-tune', isMaxQuality ? 'uhq' : 'hq',
         '-rc', 'vbr',
         ...(!twoPass && !isFast ? ['-multipass', 'qres'] : []),
-        '-cq', isMaxQuality ? '26' : (isFast ? '30' : '28'),
-        '-rc-lookahead', isMaxQuality ? '32' : (isFast ? '12' : '20'),
+        '-cq', isMaxQuality ? '26' : (isFast ? '31' : '28'),
+        '-rc-lookahead', isMaxQuality ? '32' : (isFast ? '8' : '20'),
         '-spatial-aq', '1',
         '-temporal-aq', '1',
-        '-aq-strength', isMaxQuality ? '10' : (isFast ? '6' : '8'),
+        '-aq-strength', isMaxQuality ? '10' : (isFast ? '5' : '8'),
         '-b_ref_mode', 'middle',
         '-pix_fmt', 'yuv420p',
         ...getBitrateWindowArgs({
@@ -259,6 +287,8 @@ function getCommonEncodeArgs({
   ffmpegExperimental,
   rotation,
   outPath,
+  sourceFps,
+  outputPlaybackRate,
 }: {
   strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
@@ -269,6 +299,8 @@ function getCommonEncodeArgs({
   ffmpegExperimental: boolean,
   rotation: number | undefined,
   outPath: string,
+  sourceFps: number | undefined,
+  outputPlaybackRate: number,
 }) {
   const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
   return [
@@ -278,7 +310,7 @@ function getCommonEncodeArgs({
     '-dn',
     '-ignore_unknown',
     '-map', videoInputLabel,
-    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: false }),
+    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: false, videoProfile, sourceFps, outputPlaybackRate }),
     ...(videoFilter != null ? ['-vf', videoFilter] : []),
     ...getRotationArgs(rotation),
     ...getAudioArgs({ audioInputLabel, audioBitrate }),
@@ -301,6 +333,8 @@ function getTwoPassEncodeArgs({
   passlogFile,
   outPath,
   passNumber,
+  sourceFps,
+  outputPlaybackRate,
 }: {
   strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
@@ -313,6 +347,8 @@ function getTwoPassEncodeArgs({
   passlogFile: string,
   outPath: string,
   passNumber: 1 | 2,
+  sourceFps: number | undefined,
+  outputPlaybackRate: number,
 }) {
   const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
   return [
@@ -322,7 +358,7 @@ function getTwoPassEncodeArgs({
     '-dn',
     '-ignore_unknown',
     '-map', videoInputLabel,
-    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: true }),
+    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: true, videoProfile, sourceFps, outputPlaybackRate }),
     ...(videoFilter != null ? ['-vf', videoFilter] : []),
     '-pass', String(passNumber),
     '-passlogfile', passlogFile,
@@ -727,6 +763,8 @@ export async function exportSizeLimitedSegment({
             passlogFile,
             outPath: pass1OutPath,
             passNumber: 1,
+            sourceFps,
+            outputPlaybackRate,
           }),
         ];
 
@@ -746,6 +784,8 @@ export async function exportSizeLimitedSegment({
             passlogFile,
             outPath: attemptOutPath,
             passNumber: 2,
+            sourceFps,
+            outputPlaybackRate,
           }),
         ];
 
@@ -768,6 +808,8 @@ export async function exportSizeLimitedSegment({
           ffmpegExperimental,
           rotation,
           outPath: attemptOutPath,
+          sourceFps,
+          outputPlaybackRate,
         }),
       ];
 
@@ -935,6 +977,8 @@ export async function exportSizeLimitedMerge({
             passlogFile,
             outPath: pass1OutPath,
             passNumber: 1,
+            sourceFps,
+            outputPlaybackRate,
           }),
         ];
 
@@ -954,6 +998,8 @@ export async function exportSizeLimitedMerge({
             passlogFile,
             outPath: attemptOutPath,
             passNumber: 2,
+            sourceFps,
+            outputPlaybackRate,
           }),
         ];
 
@@ -976,6 +1022,8 @@ export async function exportSizeLimitedMerge({
           ffmpegExperimental,
           rotation,
           outPath: attemptOutPath,
+          sourceFps,
+          outputPlaybackRate,
         }),
       ];
 
