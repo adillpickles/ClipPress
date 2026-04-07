@@ -4,6 +4,8 @@ import { basename, dirname, join, parse, resolve } from 'node:path';
 import { execa } from 'execa';
 
 const bytesPerMb = 1024 * 1024;
+const constrainedH264MaxRateFactor = 1.05;
+const constrainedH264BufferFactor = 1.5;
 
 class HelpRequestedError extends Error {
   constructor() {
@@ -211,8 +213,8 @@ const profiles: BenchmarkProfile[] = [
       '-pix_fmt', 'yuv420p',
       '-x264-params', 'aq-mode=3:aq-strength=0.9:deblock=-1,-1:rc-lookahead=40:me=umh:subme=8:ref=4',
       '-b:v', toKbitrateArg(videoBitrate),
-      '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 1.05))),
-      '-bufsize', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 2.2))),
+      '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * constrainedH264MaxRateFactor))),
+      '-bufsize', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * constrainedH264BufferFactor))),
     ],
   },
   {
@@ -233,17 +235,17 @@ const profiles: BenchmarkProfile[] = [
       '-preset', 'p4',
       '-tune', 'hq',
       '-profile:v', 'high',
-      '-rc', 'vbr',
-      '-cq', '23',
+      '-rc', 'vbr_hq',
       '-rc-lookahead', '20',
       '-spatial-aq', '1',
       '-temporal-aq', '1',
       '-aq-strength', '8',
+      '-strict_gop', '1',
       '-b_ref_mode', 'middle',
       '-pix_fmt', 'yuv420p',
       '-b:v', toKbitrateArg(videoBitrate),
-      '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 1.1))),
-      '-bufsize', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 2))),
+      '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * constrainedH264MaxRateFactor))),
+      '-bufsize', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * constrainedH264BufferFactor))),
     ],
   },
 ];

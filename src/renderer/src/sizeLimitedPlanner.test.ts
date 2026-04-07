@@ -100,6 +100,48 @@ describe('planSizeLimitedEncode', () => {
     expect(plan.initialAttempt.videoBitrate).toBeGreaterThan(0);
     expect(plan.initialAttempt.audioBitrate).toBeGreaterThan(0);
   });
+
+  it('gives H.264 simple fast the locked fast target with H.264-specific retry depth', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'fast',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: allCapabilities,
+      simpleFastCodec: 'h264',
+    });
+    const plan = planSizeLimitedEncode({
+      targetSizeMb: 10,
+      duration: 30,
+      hasAudio: true,
+      strategy,
+    });
+
+    expect(strategy.id).toBe('fast_h264_nvenc');
+    expect(plan.firstAttemptTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.9));
+    expect(plan.retryTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.87));
+    expect(plan.maxAttempts).toBe(4);
+  });
+
+  it('gives H.264 two-pass strategies extra bounded retries', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'advanced',
+      preset: 'fast',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: true,
+      ...defaultStrategyArgs,
+      capabilities: allCapabilities,
+    });
+    const plan = planSizeLimitedEncode({
+      targetSizeMb: 10,
+      duration: 30,
+      hasAudio: true,
+      strategy,
+    });
+
+    expect(plan.maxAttempts).toBe(3);
+  });
 });
 
 describe('getNextSizeLimitedRetryStep', () => {
@@ -297,5 +339,88 @@ describe('getNextSizeLimitedRetryStep', () => {
     });
 
     expect(nextAttempt).toBeUndefined();
+  });
+
+  it('uses a much stronger H.264 correction on severe overshoots', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'advanced',
+      preset: 'fast',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: allCapabilities,
+    });
+    const plan = planSizeLimitedEncode({
+      targetSizeMb: 4,
+      duration: 30,
+      hasAudio: true,
+      strategy,
+    });
+
+    const nextAttempt = getNextSizeLimitedRetryStep({
+      plan,
+      previousAttempt: plan.initialAttempt,
+      previousOutputSize: Math.floor(plan.hardTargetBytes * 4),
+    });
+
+    expect(nextAttempt).toBeDefined();
+    expect(nextAttempt?.attemptNumber).toBe(2);
+    expect(nextAttempt?.audioBitrate).toBe(plan.initialAttempt.audioBitrate);
+    expect(nextAttempt?.videoBitrate).toBeLessThan(Math.floor(plan.initialAttempt.videoBitrate * 0.3));
+  });
+
+  it('only ratchets H.264 audio once video is already at floor', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'advanced',
+      preset: 'fast',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: allCapabilities,
+    });
+    const plan = planSizeLimitedEncode({
+      targetSizeMb: 4,
+      duration: 90,
+      hasAudio: true,
+      strategy,
+    });
+
+    const nextAttempt = getNextSizeLimitedRetryStep({
+      plan,
+      previousAttempt: {
+        attemptNumber: 2,
+        videoBitrate: 140_000,
+        audioBitrate: 72_000,
+        totalBitrate: 212_000,
+      },
+      previousOutputSize: Math.floor(plan.hardTargetBytes * 1.2),
+    });
+
+    expect(nextAttempt).toBeDefined();
+    expect(nextAttempt?.videoBitrate).toBe(140_000);
+    expect(nextAttempt?.audioBitrate).toBeLessThan(72_000);
+  });
+
+  it('keeps H.264 simple fallback targeting locked while extending retries', () => {
+    const fallbackStrategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'quality',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: { h264Nvenc: true, av1Nvenc: false, libx264: true, libsvtav1: false },
+    });
+
+    const fallbackPlan = planSizeLimitedEncode({
+      targetSizeMb: 10,
+      duration: 30,
+      hasAudio: true,
+      strategy: fallbackStrategy,
+    });
+
+    expect(fallbackStrategy.id).toBe('quality_h264_cpu');
+    expect(fallbackPlan.firstAttemptTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.93));
+    expect(fallbackPlan.retryTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.9));
+    expect(fallbackPlan.maxAttempts).toBe(4);
   });
 });

@@ -7,6 +7,8 @@ const premiumCpuX264Params = 'aq-mode=3:aq-strength=0.9:deblock=-1,-1:rc-lookahe
 const maxQualitySvtTune = '0';
 const maxQualityGopSeconds = 10;
 const fallbackMaxQualityKeyintFrames = 300;
+const constrainedH264MaxRateFactor = 1.05;
+const constrainedH264BufferFactor = 1.5;
 
 export function toKbitrateArg(bitrate: number) {
   return `${Math.max(1, Math.floor(bitrate / 1000))}k`;
@@ -91,35 +93,42 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoPro
     case 'libx264': {
       const isFast = strategy.tuningProfile === 'fast';
       const qualityParams = twoPass || strategy.tuningProfile === 'max_quality' ? premiumCpuX264Params : (isFast ? fastCpuX264Params : qualityCpuX264Params);
-      const maxRateFactor = twoPass || strategy.tuningProfile === 'max_quality' ? 1.05 : 1.08;
-      const bufferFactor = twoPass || strategy.tuningProfile !== 'fast' ? 2.2 : 2;
       return [
         '-c:v', 'libx264',
         '-preset', String(strategy.encoderPreset),
         '-pix_fmt', 'yuv420p',
         '-x264-params', qualityParams,
-        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor, bufferFactor }),
+        // Keep H.264 size-first so the planner's under-cap budget remains trustworthy.
+        ...getBitrateWindowArgs({
+          videoBitrate,
+          maxRateFactor: constrainedH264MaxRateFactor,
+          bufferFactor: constrainedH264BufferFactor,
+        }),
       ];
     }
 
     case 'h264_nvenc': {
       const isFast = strategy.tuningProfile === 'fast';
-      const isMaxQuality = strategy.tuningProfile === 'max_quality';
+      const useFastCbr = strategy.id === 'fast_h264_nvenc';
       return [
         '-c:v', 'h264_nvenc',
         '-preset', String(strategy.encoderPreset),
         '-tune', 'hq',
         '-profile:v', 'high',
-        '-rc', 'vbr',
-        ...(twoPass || isFast ? [] : ['-multipass', 'qres']),
-        '-cq', isFast ? '24' : '23',
+        '-rc', useFastCbr ? 'cbr_hq' : 'vbr_hq',
+        ...(twoPass || useFastCbr ? [] : ['-multipass', 'qres']),
         '-rc-lookahead', isFast ? '12' : '20',
         '-spatial-aq', '1',
         '-temporal-aq', '1',
         '-aq-strength', isFast ? '6' : '8',
+        '-strict_gop', '1',
         ...(!isFast ? ['-b_ref_mode', 'middle'] : []),
         '-pix_fmt', 'yuv420p',
-        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: isFast ? 1.12 : (isMaxQuality ? 1.08 : 1.1), bufferFactor: isFast ? 2 : (isMaxQuality ? 2.2 : 2) }),
+        ...getBitrateWindowArgs({
+          videoBitrate,
+          maxRateFactor: constrainedH264MaxRateFactor,
+          bufferFactor: constrainedH264BufferFactor,
+        }),
       ];
     }
 

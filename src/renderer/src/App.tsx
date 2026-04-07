@@ -1443,6 +1443,10 @@ function App() {
             notices.add(i18n.t('Fast used NVIDIA AV1 with a speed-tuned profile for quick shareable exports.'));
             break;
           }
+          case 'fast_h264_nvenc': {
+            notices.add(i18n.t('Fast used NVIDIA H.264 because the bitrate budget was high enough to stay speed-first.'));
+            break;
+          }
           case 'fast_h264_cpu': {
             warnings.add(i18n.t('NVIDIA AV1 was unavailable, so Fast fell back to CPU H.264 to stay speed-first.'));
             break;

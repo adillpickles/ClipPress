@@ -74,6 +74,24 @@ describe('resolveSizeLimitedStrategy', () => {
     expect(strategy.effectiveCodec).toBe('av1');
   });
 
+  it('can resolve fast h264 nvenc when the export layer explicitly prefers it', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'fast',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: fullCapabilities,
+      simpleFastCodec: 'h264',
+    });
+
+    expect(strategy.id).toBe('fast_h264_nvenc');
+    expect(strategy.encoder).toBe('h264_nvenc');
+    expect(strategy.usesGpu).toBe(true);
+    expect(strategy.encoderPreset).toBe('p2');
+    expect(strategy.effectiveCodec).toBe('h264');
+  });
+
   it('falls back directly to cpu h264 when fast nvenc is unavailable to stay speed-first', () => {
     const strategy = resolveSizeLimitedStrategy({
       controlMode: 'simple',

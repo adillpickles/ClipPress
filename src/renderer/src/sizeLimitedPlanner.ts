@@ -50,17 +50,17 @@ const fastSinglePassRetryProfile = {
 const h264TwoPassRetryProfile = {
   firstAttemptTargetFactor: 0.93,
   retryTargetFactor: 0.9,
-  maxAttempts: 2,
-  retryMinFactor: 0.88,
-  retryMaxFactor: 0.97,
+  maxAttempts: 3,
+  retryMinFactor: 0.6,
+  retryMaxFactor: 0.95,
 } satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 
 const h264SinglePassRetryProfile = {
   firstAttemptTargetFactor: 0.9,
   retryTargetFactor: 0.87,
-  maxAttempts: 2,
-  retryMinFactor: 0.85,
-  retryMaxFactor: 0.97,
+  maxAttempts: 4,
+  retryMinFactor: 0.55,
+  retryMaxFactor: 0.95,
 } satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 
 function createProfile(profile: StrategyProfile) {
@@ -164,6 +164,18 @@ const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
     tinyTargetTotalBitrate: 700_000,
     ...fastSinglePassRetryProfile,
   }),
+  fast_h264_nvenc: createProfile({
+    overheadRatio: 0.022,
+    minOverheadBytes: 24 * 1024,
+    maxOverheadBytes: 192 * 1024,
+    preferredAudioBitrate: 72_000,
+    minAudioBitrate: 24_000,
+    minVideoBitrate: 140_000,
+    maxAudioShare: 0.18,
+    tinyTargetAudioShare: 0.1,
+    tinyTargetTotalBitrate: 900_000,
+    ...h264SinglePassRetryProfile,
+  }),
   fast_h264_cpu: createProfile({
     overheadRatio: 0.024,
     minOverheadBytes: 24 * 1024,
@@ -174,7 +186,7 @@ const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
     maxAudioShare: 0.18,
     tinyTargetAudioShare: 0.1,
     tinyTargetTotalBitrate: 850_000,
-    ...fastSinglePassRetryProfile,
+    ...h264SinglePassRetryProfile,
   }),
   advanced_av1_cpu_single_pass: createProfile({
     overheadRatio: 0.017,
@@ -282,22 +294,41 @@ function getStrategyProfile(strategyId: SizeLimitedStrategyId) {
   return strategyProfiles[strategyId];
 }
 
+function isH264StrategyId(strategyId: SizeLimitedStrategyId) {
+  return strategyId.includes('h264');
+}
+
+function getSimplePresetTargetingProfile(preset: SizeLimitedResolvedStrategy['preset']) {
+  switch (preset) {
+    case 'max_quality': {
+      return av1TwoPassRetryProfile;
+    }
+    case 'quality': {
+      return av1SinglePassRetryProfile;
+    }
+    case 'fast': {
+      return fastSinglePassRetryProfile;
+    }
+    default: {
+      return av1SinglePassRetryProfile;
+    }
+  }
+}
+
 function getTargetingProfile(strategy: SizeLimitedResolvedStrategy, budgetProfile: StrategyProfile): StrategyTargetingProfile {
   if (strategy.controlMode === 'simple') {
-    switch (strategy.preset) {
-      case 'max_quality': {
-        return av1TwoPassRetryProfile;
-      }
-      case 'quality': {
-        return av1SinglePassRetryProfile;
-      }
-      case 'fast': {
-        return fastSinglePassRetryProfile;
-      }
-      default: {
-        return av1SinglePassRetryProfile;
-      }
+    const simplePresetProfile = getSimplePresetTargetingProfile(strategy.preset);
+
+    if (strategy.effectiveCodec === 'h264') {
+      return {
+        ...simplePresetProfile,
+        maxAttempts: budgetProfile.maxAttempts,
+        retryMinFactor: budgetProfile.retryMinFactor,
+        retryMaxFactor: budgetProfile.retryMaxFactor,
+      };
     }
+
+    return simplePresetProfile;
   }
 
   return {
@@ -356,6 +387,79 @@ function buildRetryStep({ attemptNumber, totalBitrate, hasAudio, strategyId }: {
   } satisfies SizeLimitedRetryStep;
 }
 
+function buildRetryStepFromBitrates({
+  attemptNumber,
+  videoBitrate,
+  audioBitrate,
+  hasAudio,
+  strategyId,
+}: {
+  attemptNumber: number,
+  videoBitrate: number,
+  audioBitrate: number,
+  hasAudio: boolean,
+  strategyId: SizeLimitedStrategyId,
+}) {
+  const profile = getStrategyProfile(strategyId);
+  const resolvedAudioBitrate = hasAudio ? Math.max(profile.minAudioBitrate, audioBitrate) : 0;
+  const resolvedVideoBitrate = Math.max(profile.minVideoBitrate, videoBitrate);
+
+  return {
+    attemptNumber,
+    totalBitrate: resolvedVideoBitrate + resolvedAudioBitrate,
+    audioBitrate: resolvedAudioBitrate,
+    videoBitrate: resolvedVideoBitrate,
+  } satisfies SizeLimitedRetryStep;
+}
+
+function getH264RetrySafetyMargin(overshootRatio: number) {
+  if (overshootRatio >= 2) return 0.82;
+  if (overshootRatio >= 1.35) return 0.88;
+  return 0.93;
+}
+
+function getNextH264RetryStep({
+  plan,
+  previousAttempt,
+  previousOutputSize,
+}: {
+  plan: SizeLimitedPlan,
+  previousAttempt: SizeLimitedRetryStep,
+  previousOutputSize: number,
+}) {
+  const profile = getStrategyProfile(plan.strategyId);
+  const overshootRatio = previousOutputSize / plan.hardTargetBytes;
+  const safetyMargin = getH264RetrySafetyMargin(overshootRatio);
+  const nextVideoBitrate = clamp(
+    Math.floor(previousAttempt.videoBitrate * (plan.hardTargetBytes / previousOutputSize) * safetyMargin),
+    profile.minVideoBitrate,
+    Math.max(profile.minVideoBitrate, Math.floor(previousAttempt.videoBitrate * plan.retryMaxFactor)),
+  );
+
+  let candidate = buildRetryStepFromBitrates({
+    attemptNumber: previousAttempt.attemptNumber + 1,
+    videoBitrate: nextVideoBitrate,
+    audioBitrate: previousAttempt.audioBitrate,
+    hasAudio: plan.hasAudio,
+    strategyId: plan.strategyId,
+  });
+
+  const canReduceAudio = plan.hasAudio && previousAttempt.audioBitrate > profile.minAudioBitrate;
+
+  if (candidate.totalBitrate >= previousAttempt.totalBitrate && canReduceAudio) {
+    candidate = buildRetryStepFromBitrates({
+      attemptNumber: previousAttempt.attemptNumber + 1,
+      videoBitrate: nextVideoBitrate,
+      audioBitrate: Math.max(profile.minAudioBitrate, Math.floor(previousAttempt.audioBitrate * 0.85)),
+      hasAudio: plan.hasAudio,
+      strategyId: plan.strategyId,
+    });
+  }
+
+  if (candidate.totalBitrate >= previousAttempt.totalBitrate) return undefined;
+  return candidate;
+}
+
 export function planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strategy }: {
   targetSizeMb: number,
   duration: number,
@@ -406,6 +510,10 @@ export function getNextSizeLimitedRetryStep({ plan, previousAttempt, previousOut
   if (previousOutputSize <= plan.hardTargetBytes) return undefined;
   if (previousAttempt.attemptNumber >= plan.maxAttempts) return undefined;
   if (previousAttempt.totalBitrate <= plan.minTotalBitrate) return undefined;
+
+  if (isH264StrategyId(plan.strategyId)) {
+    return getNextH264RetryStep({ plan, previousAttempt, previousOutputSize });
+  }
 
   const retryFactor = clamp(plan.retryTargetBytes / previousOutputSize, plan.retryMinFactor, plan.retryMaxFactor);
   const nextTotalBitrate = Math.max(Math.floor(previousAttempt.totalBitrate * retryFactor), plan.minTotalBitrate);

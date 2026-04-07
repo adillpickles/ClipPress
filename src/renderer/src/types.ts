@@ -159,6 +159,7 @@ export type SizeLimitedStrategyId =
   | 'quality_av1_cpu'
   | 'quality_h264_cpu'
   | 'fast_av1_nvenc'
+  | 'fast_h264_nvenc'
   | 'fast_h264_cpu'
   | 'advanced_av1_cpu_single_pass'
   | 'advanced_av1_cpu_two_pass'

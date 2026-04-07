@@ -12,6 +12,7 @@ import type {
 import { getExperimentalArgs, logStdoutStderr, runFfmpeg, runFfmpegWithProgress } from './ffmpeg';
 import mainApi from './mainApi';
 import { getResolvedVideoArgs, toKbitrateArg } from './sizeLimitedEncoderArgs';
+import { finalizeSizeLimitedExecutionResult, shouldUseH264NvencForSimpleFast } from './sizeLimitedExecutionPolicy';
 import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile, sizeLimitedSwsFlags } from './sizeLimitedResolution';
 import { getNextSizeLimitedRetryStep, planSizeLimitedEncode } from './sizeLimitedPlanner';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
@@ -446,8 +447,11 @@ async function executeWithRetries({
     }
   }
 
-  if (bestResult != null) return bestResult;
-  throw new UserFacingError('Unable to create a size-limited export');
+  if (bestResult != null && !bestResult.metTarget) {
+    await deleteIfExists(bestResult.path);
+  }
+
+  return finalizeSizeLimitedExecutionResult(bestResult);
 }
 
 function makeAttemptPath(outPath: string, attemptNumber: number) {
@@ -488,6 +492,42 @@ async function resolveSizeLimitedPlan({
   hasAudio: boolean,
 }) {
   const capabilities = await getSizeLimitedEncoderCapabilities();
+  if (controlMode === 'simple' && preset === 'fast' && capabilities.av1Nvenc && capabilities.h264Nvenc) {
+    const h264Strategy = resolveSizeLimitedStrategy({
+      controlMode,
+      preset,
+      advancedEncoder,
+      advancedTwoPass,
+      advancedAv1CpuPreset,
+      advancedAv1NvencPreset,
+      advancedH264CpuPreset,
+      advancedH264NvencPreset,
+      capabilities,
+      simpleFastCodec: 'h264',
+    });
+    const h264Plan = planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strategy: h264Strategy });
+    const strategy = shouldUseH264NvencForSimpleFast(h264Plan.initialAttempt.videoBitrate)
+      ? h264Strategy
+      : resolveSizeLimitedStrategy({
+        controlMode,
+        preset,
+        advancedEncoder,
+        advancedTwoPass,
+        advancedAv1CpuPreset,
+        advancedAv1NvencPreset,
+        advancedH264CpuPreset,
+        advancedH264NvencPreset,
+        capabilities,
+        simpleFastCodec: 'av1',
+      });
+
+    assertStrategySupported({ strategy, capabilities });
+    const plan = strategy.id === h264Strategy.id
+      ? h264Plan
+      : planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strategy });
+    return { capabilities, strategy, plan };
+  }
+
   const strategy = resolveSizeLimitedStrategy({
     controlMode,
     preset,

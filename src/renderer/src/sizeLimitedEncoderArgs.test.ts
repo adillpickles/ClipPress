@@ -69,4 +69,82 @@ describe('getResolvedVideoArgs', () => {
     expect(getArgValue(args, '-aq-strength')).toBe('4');
     expect(args.includes('-b_ref_mode')).toBe(false);
   });
+
+  it('uses size-first h264 nvenc cbr for the fast h264 nvenc path', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'fast',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: fullCapabilities,
+      simpleFastCodec: 'h264',
+    });
+
+    const args = getResolvedVideoArgs({
+      strategy,
+      videoBitrate: 4_000_000,
+      twoPass: true,
+      videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
+      sourceFps: 60,
+      outputPlaybackRate: 1,
+    });
+
+    expect(getArgValue(args, '-c:v')).toBe('h264_nvenc');
+    expect(getArgValue(args, '-rc')).toBe('cbr_hq');
+    expect(getArgValue(args, '-strict_gop')).toBe('1');
+    expect(getArgValue(args, '-cq')).toBeUndefined();
+  });
+
+  it('keeps libx264 on the tighter size-first bitrate window', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'advanced',
+      preset: 'fast',
+      advancedEncoder: 'h264_cpu',
+      advancedTwoPass: true,
+      ...defaultStrategyArgs,
+      capabilities: fullCapabilities,
+    });
+
+    const args = getResolvedVideoArgs({
+      strategy,
+      videoBitrate: 4_000_000,
+      twoPass: false,
+      videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
+      sourceFps: 60,
+      outputPlaybackRate: 1,
+    });
+
+    expect(getArgValue(args, '-c:v')).toBe('libx264');
+    expect(getArgValue(args, '-maxrate')).toBe('4200k');
+    expect(getArgValue(args, '-bufsize')).toBe('6000k');
+  });
+
+  it('keeps non-fast h264 nvenc on size-first vbr_hq without cq', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'advanced',
+      preset: 'fast',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: fullCapabilities,
+    });
+
+    const args = getResolvedVideoArgs({
+      strategy,
+      videoBitrate: 4_000_000,
+      twoPass: false,
+      videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
+      sourceFps: 60,
+      outputPlaybackRate: 1,
+    });
+
+    expect(getArgValue(args, '-c:v')).toBe('h264_nvenc');
+    expect(getArgValue(args, '-rc')).toBe('vbr_hq');
+    expect(getArgValue(args, '-strict_gop')).toBe('1');
+    expect(getArgValue(args, '-cq')).toBeUndefined();
+    expect(getArgValue(args, '-multipass')).toBe('qres');
+    expect(getArgValue(args, '-maxrate')).toBe('4200k');
+    expect(getArgValue(args, '-bufsize')).toBe('6000k');
+  });
 });
