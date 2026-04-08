@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { UserFacingError } from '../errors';
-import { finalizeSizeLimitedExecutionResult, fastH264NvencVideoBitrateThreshold, shouldUseH264NvencForSimpleFast } from './sizeLimitedExecutionPolicy';
-import { planSizeLimitedEncode } from './sizeLimitedPlanner';
+import { finalizeSizeLimitedExecutionResult, shouldWarnAboutTightAdvancedH264Target, tightAdvancedH264WarningVideoBitrateThreshold } from './sizeLimitedExecutionPolicy';
 import { resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 
 const fullCapabilities = { h264Nvenc: true, av1Nvenc: true, libx264: true, libsvtav1: true } as const;
@@ -13,62 +12,41 @@ const defaultStrategyArgs = {
   advancedH264NvencPreset: 'p4',
 } as const;
 
-function getFastH264CandidateVideoBitrate({ targetSizeMb, duration }: {
-  targetSizeMb: number,
-  duration: number,
-}) {
-  const strategy = resolveSizeLimitedStrategy({
-    controlMode: 'simple',
-    preset: 'fast',
-    advancedEncoder: 'h264_nvenc',
-    advancedTwoPass: false,
-    ...defaultStrategyArgs,
-    capabilities: fullCapabilities,
-    simpleFastCodec: 'h264',
+describe('shouldWarnAboutTightAdvancedH264Target', () => {
+  it('warns when advanced h264 is below the viability threshold', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'advanced',
+      preset: 'fast',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: fullCapabilities,
+    });
+
+    expect(shouldWarnAboutTightAdvancedH264Target({
+      strategy,
+      videoBitrate: tightAdvancedH264WarningVideoBitrateThreshold - 1,
+    })).toBe(true);
+    expect(shouldWarnAboutTightAdvancedH264Target({
+      strategy,
+      videoBitrate: tightAdvancedH264WarningVideoBitrateThreshold,
+    })).toBe(false);
   });
 
-  const plan = planSizeLimitedEncode({
-    targetSizeMb,
-    duration,
-    hasAudio: true,
-    strategy,
-  });
+  it('does not warn for non-h264 advanced strategies', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'advanced',
+      preset: 'fast',
+      advancedEncoder: 'av1_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: fullCapabilities,
+    });
 
-  return plan.initialAttempt.videoBitrate;
-}
-
-describe('shouldUseH264NvencForSimpleFast', () => {
-  it('uses the configured threshold', () => {
-    expect(shouldUseH264NvencForSimpleFast(fastH264NvencVideoBitrateThreshold)).toBe(true);
-    expect(shouldUseH264NvencForSimpleFast(fastH264NvencVideoBitrateThreshold - 1)).toBe(false);
-  });
-
-  it('selects h264 for a generous 7 second / 4 MB fast budget', () => {
-    expect(shouldUseH264NvencForSimpleFast(getFastH264CandidateVideoBitrate({
-      targetSizeMb: 4,
-      duration: 7,
-    }))).toBe(true);
-  });
-
-  it('keeps av1 for a tight 30 second / 4 MB fast budget', () => {
-    expect(shouldUseH264NvencForSimpleFast(getFastH264CandidateVideoBitrate({
-      targetSizeMb: 4,
-      duration: 30,
-    }))).toBe(false);
-  });
-
-  it('keeps av1 for a middle 30 second / 8 MB fast budget', () => {
-    expect(shouldUseH264NvencForSimpleFast(getFastH264CandidateVideoBitrate({
-      targetSizeMb: 8,
-      duration: 30,
-    }))).toBe(false);
-  });
-
-  it('selects h264 again for a generous 30 second / 12 MB fast budget', () => {
-    expect(shouldUseH264NvencForSimpleFast(getFastH264CandidateVideoBitrate({
-      targetSizeMb: 12,
-      duration: 30,
-    }))).toBe(true);
+    expect(shouldWarnAboutTightAdvancedH264Target({
+      strategy,
+      videoBitrate: tightAdvancedH264WarningVideoBitrateThreshold - 1,
+    })).toBe(false);
   });
 });
 
@@ -124,5 +102,35 @@ describe('finalizeSizeLimitedExecutionResult', () => {
       created: true,
       strategy,
     })).toThrow('under the requested file-size limit');
+  });
+
+  it('throws a direct h264-specific failure after bounded retries are exhausted', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'advanced',
+      preset: 'fast',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: fullCapabilities,
+    });
+
+    expect(() => finalizeSizeLimitedExecutionResult({
+      path: 'clip.mp4',
+      size: 3_000,
+      targetBytes: 2_000,
+      attemptCount: 4,
+      metTarget: false,
+      created: true,
+      strategy,
+    })).toThrow(UserFacingError);
+    expect(() => finalizeSizeLimitedExecutionResult({
+      path: 'clip.mp4',
+      size: 3_000,
+      targetBytes: 2_000,
+      attemptCount: 4,
+      metTarget: false,
+      created: true,
+      strategy,
+    })).toThrow('H.264 could not reach the requested file-size limit for this clip after 4 attempt(s). Try AV1, lower resolution/FPS, or increase the target size.');
   });
 });

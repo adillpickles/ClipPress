@@ -70,54 +70,25 @@ describe('resolveSizeLimitedStrategy', () => {
 
     expect(strategy.id).toBe('fast_av1_nvenc');
     expect(strategy.usesGpu).toBe(true);
-    expect(strategy.encoderPreset).toBe('p2');
+    expect(strategy.encoderPreset).toBe('p1');
     expect(strategy.effectiveCodec).toBe('av1');
   });
 
-  it('can resolve fast h264 nvenc when the export layer explicitly prefers it', () => {
+  it('keeps fast pinned to av1 nvenc instead of falling back to h264', () => {
     const strategy = resolveSizeLimitedStrategy({
       controlMode: 'simple',
       preset: 'fast',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
       ...defaultStrategyArgs,
-      capabilities: fullCapabilities,
-      simpleFastCodec: 'h264',
+      capabilities: { h264Nvenc: true, av1Nvenc: false, libx264: true, libsvtav1: true },
     });
 
-    expect(strategy.id).toBe('fast_h264_nvenc');
-    expect(strategy.encoder).toBe('h264_nvenc');
+    expect(strategy.id).toBe('fast_av1_nvenc');
+    expect(strategy.encoder).toBe('av1_nvenc');
     expect(strategy.usesGpu).toBe(true);
-    expect(strategy.encoderPreset).toBe('p2');
-    expect(strategy.effectiveCodec).toBe('h264');
-  });
-
-  it('falls back directly to cpu h264 when fast nvenc is unavailable to stay speed-first', () => {
-    const strategy = resolveSizeLimitedStrategy({
-      controlMode: 'simple',
-      preset: 'fast',
-      advancedEncoder: 'h264_nvenc',
-      advancedTwoPass: false,
-      ...defaultStrategyArgs,
-      capabilities: { h264Nvenc: false, av1Nvenc: false, libx264: true, libsvtav1: true },
-    });
-
-    expect(strategy.id).toBe('fast_h264_cpu');
-    expect(strategy.fallbackReason).toBe('av1_nvenc_unavailable');
-  });
-
-  it('falls back to cpu h264 when no av1 path is available for fast mode', () => {
-    const strategy = resolveSizeLimitedStrategy({
-      controlMode: 'simple',
-      preset: 'fast',
-      advancedEncoder: 'h264_nvenc',
-      advancedTwoPass: false,
-      ...defaultStrategyArgs,
-      capabilities: { h264Nvenc: true, av1Nvenc: false, libx264: true, libsvtav1: false },
-    });
-
-    expect(strategy.id).toBe('fast_h264_cpu');
-    expect(strategy.fallbackReason).toBe('av1_nvenc_unavailable');
+    expect(strategy.encoderPreset).toBe('p1');
+    expect(strategy.effectiveCodec).toBe('av1');
   });
 
   it('falls back from max quality av1 to h264 two-pass when no av1 path is available', () => {

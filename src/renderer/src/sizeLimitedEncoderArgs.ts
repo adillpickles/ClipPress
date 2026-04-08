@@ -109,14 +109,13 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoPro
 
     case 'h264_nvenc': {
       const isFast = strategy.tuningProfile === 'fast';
-      const useFastCbr = strategy.id === 'fast_h264_nvenc';
       return [
         '-c:v', 'h264_nvenc',
         '-preset', String(strategy.encoderPreset),
         '-tune', 'hq',
         '-profile:v', 'high',
-        '-rc', useFastCbr ? 'cbr_hq' : 'vbr_hq',
-        ...(twoPass || useFastCbr ? [] : ['-multipass', 'qres']),
+        '-rc', 'vbr_hq',
+        ...(twoPass ? [] : ['-multipass', 'qres']),
         '-rc-lookahead', isFast ? '12' : '20',
         '-spatial-aq', '1',
         '-temporal-aq', '1',

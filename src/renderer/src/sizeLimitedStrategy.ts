@@ -10,7 +10,6 @@ import type { SizeLimitedEncoderCapabilities, SizeLimitedResolvedStrategy } from
 
 const nvencPresetValues = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'] as const satisfies readonly SizeLimitAdvancedNvencPreset[];
 const h264CpuPresetValues = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'] as const satisfies readonly SizeLimitAdvancedH264CpuPreset[];
-type SimpleFastCodecPreference = 'av1' | 'h264';
 
 function clampAv1CpuPreset(preset: SizeLimitAdvancedAv1CpuPreset) {
   return Math.min(13, Math.max(0, Math.round(preset)));
@@ -41,11 +40,9 @@ export function parseFfmpegEncoderNames(output: string) {
 function resolveSimplePresetStrategy({
   preset,
   capabilities,
-  simpleFastCodec,
 }: {
   preset: SizeLimitPreset,
   capabilities: SizeLimitedEncoderCapabilities,
-  simpleFastCodec?: SimpleFastCodecPreference,
 }): SizeLimitedResolvedStrategy {
   switch (preset) {
     case 'max_quality': {
@@ -157,48 +154,17 @@ function resolveSimplePresetStrategy({
       });
     }
     case 'fast': {
-      if (simpleFastCodec === 'h264' && capabilities.av1Nvenc && capabilities.h264Nvenc) {
-        return buildStrategy({
-          controlMode: 'simple',
-          preset: 'fast',
-          effectiveCodec: 'h264',
-          id: 'fast_h264_nvenc',
-          encoder: 'h264_nvenc',
-          encoderPreset: 'p2',
-          hardware: 'nvidia',
-          usesGpu: true,
-          executionMode: 'single_pass',
-          tuningProfile: 'fast',
-        });
-      }
-
-      if (capabilities.av1Nvenc) {
-        return buildStrategy({
-          controlMode: 'simple',
-          preset: 'fast',
-          effectiveCodec: 'av1',
-          id: 'fast_av1_nvenc',
-          encoder: 'av1_nvenc',
-          encoderPreset: 'p2',
-          hardware: 'nvidia',
-          usesGpu: true,
-          executionMode: 'single_pass',
-          tuningProfile: 'fast',
-        });
-      }
-
       return buildStrategy({
         controlMode: 'simple',
         preset: 'fast',
-        effectiveCodec: 'h264',
-        id: 'fast_h264_cpu',
-        encoder: 'libx264',
-        encoderPreset: 'medium',
-        hardware: 'cpu',
-        usesGpu: false,
+        effectiveCodec: 'av1',
+        id: 'fast_av1_nvenc',
+        encoder: 'av1_nvenc',
+        encoderPreset: 'p1',
+        hardware: 'nvidia',
+        usesGpu: true,
         executionMode: 'single_pass',
         tuningProfile: 'fast',
-        fallbackReason: 'av1_nvenc_unavailable',
       });
     }
     default: {
@@ -299,7 +265,6 @@ export function resolveSizeLimitedStrategy({
   advancedH264CpuPreset,
   advancedH264NvencPreset,
   capabilities,
-  simpleFastCodec,
 }: {
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
@@ -310,7 +275,6 @@ export function resolveSizeLimitedStrategy({
   advancedH264CpuPreset: SizeLimitAdvancedH264CpuPreset,
   advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
   capabilities: SizeLimitedEncoderCapabilities,
-  simpleFastCodec?: SimpleFastCodecPreference,
 }): SizeLimitedResolvedStrategy {
   if (controlMode === 'advanced') {
     return resolveAdvancedStrategy({
@@ -326,6 +290,5 @@ export function resolveSizeLimitedStrategy({
   return resolveSimplePresetStrategy({
     preset,
     capabilities,
-    ...(simpleFastCodec != null ? { simpleFastCodec } : {}),
   });
 }

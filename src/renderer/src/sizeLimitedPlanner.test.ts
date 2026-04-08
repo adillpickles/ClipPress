@@ -101,7 +101,7 @@ describe('planSizeLimitedEncode', () => {
     expect(plan.initialAttempt.audioBitrate).toBeGreaterThan(0);
   });
 
-  it('gives H.264 simple fast the locked fast target with H.264-specific retry depth', () => {
+  it('keeps fast mode on the locked AV1 target even when H.264 is available', () => {
     const strategy = resolveSizeLimitedStrategy({
       controlMode: 'simple',
       preset: 'fast',
@@ -109,7 +109,6 @@ describe('planSizeLimitedEncode', () => {
       advancedTwoPass: false,
       ...defaultStrategyArgs,
       capabilities: allCapabilities,
-      simpleFastCodec: 'h264',
     });
     const plan = planSizeLimitedEncode({
       targetSizeMb: 10,
@@ -118,10 +117,10 @@ describe('planSizeLimitedEncode', () => {
       strategy,
     });
 
-    expect(strategy.id).toBe('fast_h264_nvenc');
+    expect(strategy.id).toBe('fast_av1_nvenc');
     expect(plan.firstAttemptTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.9));
     expect(plan.retryTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.87));
-    expect(plan.maxAttempts).toBe(4);
+    expect(plan.maxAttempts).toBe(2);
   });
 
   it('gives H.264 two-pass strategies extra bounded retries', () => {

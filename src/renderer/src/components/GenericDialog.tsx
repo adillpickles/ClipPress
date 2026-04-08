@@ -24,7 +24,6 @@ export interface SizeLimitedFinishedSummary {
   requestedLimitLabel: string,
   createdCount: number,
   skippedCount: number,
-  overTargetCount: number,
   largestCreatedSizeLabel?: string | undefined,
   singleCreatedSizeLabel?: string | undefined,
 }
@@ -212,23 +211,16 @@ export function useDialog() {
     notices: string[],
     summary: SizeLimitedFinishedSummary,
   }) => {
-    const hasWarnings = warnings.length > 0 || summary.overTargetCount > 0;
+    const hasWarnings = warnings.length > 0;
     const wroteNewFiles = summary.createdCount > 0;
 
     const summaryText = (() => {
       if (!wroteNewFiles) return undefined;
 
-      if (summary.createdCount === 1 && summary.singleCreatedSizeLabel != null && summary.overTargetCount === 0) {
+      if (summary.createdCount === 1 && summary.singleCreatedSizeLabel != null) {
         return t('Requested limit: {{target}}. Result: {{actual}}, under target.', {
           target: summary.requestedLimitLabel,
           actual: summary.singleCreatedSizeLabel,
-        });
-      }
-
-      if (summary.overTargetCount > 0) {
-        return t('Requested limit: {{target}} per file. {{count}} file is still over the limit; the closest result was kept.', {
-          target: summary.requestedLimitLabel,
-          count: summary.overTargetCount,
         });
       }
 
@@ -250,7 +242,7 @@ export function useDialog() {
         <UnorderedList>
           <ListItem icon={<FaCheckCircle />} iconColor={hasWarnings ? warningColor : saveColor} style={{ fontWeight: 'bold' }}>
             {wroteNewFiles
-              ? (hasWarnings ? t('Size-limited export finished with warning(s)', { count: Math.max(warnings.length, summary.overTargetCount) }) : t('Size-limited export is done!'))
+              ? (hasWarnings ? t('Size-limited export finished with warning(s)', { count: warnings.length }) : t('Size-limited export is done!'))
               : t('No new files were written')}
           </ListItem>
           {summaryText != null && <ListItem icon={<FaInfoCircle />}>{summaryText}</ListItem>}

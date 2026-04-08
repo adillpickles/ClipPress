@@ -46,7 +46,10 @@ import type { Frame } from '../ffmpeg';
 import type { FindNearestKeyframeTime } from '../hooks/useKeyframes';
 import { troubleshootingUrl } from '../../../common/constants';
 import OutDirSelector from './OutDirSelector';
+import { shouldWarnAboutTightAdvancedH264Target } from '../sizeLimitedExecutionPolicy';
+import { planSizeLimitedEncode } from '../sizeLimitedPlanner';
 import { getSizeLimitedEncoderCapabilities } from '../sizeLimitedExport';
+import { resolveSizeLimitedStrategy } from '../sizeLimitedStrategy';
 import { getSizeLimitedSimpleFpsOptions, getSizeLimitedSimpleResolutionOptions, resolveEffectiveSizeLimitedTransformSettings } from '../sizeLimitedResolution';
 
 const remote = window.require('@electron/remote');
@@ -191,6 +194,7 @@ function ExportConfirm({
   sizeLimitedSourceVideoStream,
   sizeLimitedSourceFps,
   sizeLimitedSourceRotation,
+  sizeLimitedHasAudio,
 } : {
   areWeCutting: boolean,
   segmentsToExport: SegmentToExport[],
@@ -225,6 +229,7 @@ function ExportConfirm({
   sizeLimitedSourceVideoStream: Pick<FFprobeStream, 'width' | 'height'> | undefined,
   sizeLimitedSourceFps: number | undefined,
   sizeLimitedSourceRotation: number | undefined,
+  sizeLimitedHasAudio: boolean,
 }) {
   const { t } = useTranslation();
 
@@ -268,6 +273,16 @@ function ExportConfirm({
       setSegmentsToChaptersOnly(false);
     }
   }, [effectiveExportMode, isSizeLimited, setSegmentsToChaptersOnly]);
+
+  const sizeLimitedPreviewDuration = useMemo(() => {
+    if (!isSizeLimited || outputPlaybackRate <= 0 || segmentsToExport.length === 0) return undefined;
+
+    const plannedDuration = willMerge
+      ? segmentsToExport.reduce((sum, { start, end }) => sum + (end - start), 0)
+      : segmentsToExport.reduce((maxDuration, { start, end }) => Math.max(maxDuration, end - start), 0);
+
+    return plannedDuration > 0 ? plannedDuration / outputPlaybackRate : undefined;
+  }, [isSizeLimited, outputPlaybackRate, segmentsToExport, willMerge]);
 
   // some thumbnail streams (png,jpg etc) cannot always be cut correctly, so we warn if they try to.
   const areWeCuttingProblematicStreams = areWeCutting && mainCopiedThumbnailStreams.length > 0;
@@ -500,6 +515,39 @@ function ExportConfirm({
     if (sizeLimitAdvancedEncoder === 'h264_nvenc' && !encoderCapabilities.h264Nvenc) return t('H.264 NVIDIA (NVENC) is unavailable on this system.');
     return undefined;
   }, [encoderCapabilities, sizeLimitAdvancedEncoder, t]);
+
+  const advancedH264TargetWarningMessage = useMemo(() => {
+    if (!isSizeLimited || sizeLimitControlMode !== 'advanced') return undefined;
+    if (advancedEncoderUnavailableMessage != null) return undefined;
+    if (sizeLimitedPreviewDuration == null) return undefined;
+
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'advanced',
+      preset: sizeLimitPreset,
+      advancedEncoder: sizeLimitAdvancedEncoder,
+      advancedTwoPass: sizeLimitAdvancedTwoPass,
+      advancedAv1CpuPreset: sizeLimitAdvancedAv1CpuPreset,
+      advancedAv1NvencPreset: sizeLimitAdvancedAv1NvencPreset,
+      advancedH264CpuPreset: sizeLimitAdvancedH264CpuPreset,
+      advancedH264NvencPreset: sizeLimitAdvancedH264NvencPreset,
+      capabilities: encoderCapabilities ?? {
+        h264Nvenc: false,
+        av1Nvenc: false,
+        libx264: false,
+        libsvtav1: false,
+      },
+    });
+    const plan = planSizeLimitedEncode({
+      targetSizeMb: sizeLimitMb,
+      duration: sizeLimitedPreviewDuration,
+      hasAudio: sizeLimitedHasAudio,
+      strategy,
+    });
+
+    if (!shouldWarnAboutTightAdvancedH264Target({ strategy, videoBitrate: plan.initialAttempt.videoBitrate })) return undefined;
+
+    return t('This target is likely too tight for H.264. ClipPress will try bounded retries, but H.264 may still fail to reach the requested size limit. For safer under-cap results, use AV1 or lower resolution/FPS.');
+  }, [advancedEncoderUnavailableMessage, encoderCapabilities, isSizeLimited, sizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedEncoder, sizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, sizeLimitAdvancedTwoPass, sizeLimitControlMode, sizeLimitMb, sizeLimitPreset, sizeLimitedHasAudio, sizeLimitedPreviewDuration, t]);
 
   const advancedPresetValue = useMemo(() => {
     switch (sizeLimitAdvancedEncoder) {
@@ -746,6 +794,7 @@ function ExportConfirm({
                         <option value={'h264_nvenc' satisfies SizeLimitAdvancedEncoder} disabled={encoderCapabilities != null && !encoderCapabilities.h264Nvenc}>{t('H.264 NVIDIA (NVENC)')}</option>
                       </Select>
                       {advancedEncoderUnavailableMessage != null && <div style={{ marginTop: '.35em', fontSize: '.88em', color: warningColor }}>{advancedEncoderUnavailableMessage}</div>}
+                      {advancedH264TargetWarningMessage != null && <div style={{ marginTop: advancedEncoderUnavailableMessage != null ? '.2em' : '.35em', fontSize: '.88em', color: warningColor }}>{advancedH264TargetWarningMessage}</div>}
                     </>
                   )}
                 </td>

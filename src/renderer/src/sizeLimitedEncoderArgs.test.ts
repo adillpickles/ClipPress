@@ -62,38 +62,12 @@ describe('getResolvedVideoArgs', () => {
     });
 
     expect(getArgValue(args, '-c:v')).toBe('av1_nvenc');
-    expect(getArgValue(args, '-preset')).toBe('p2');
+    expect(getArgValue(args, '-preset')).toBe('p1');
     expect(getArgValue(args, '-cq')).toBe('33');
     expect(getArgValue(args, '-rc-lookahead')).toBe('4');
     expect(getArgValue(args, '-temporal-aq')).toBe('0');
     expect(getArgValue(args, '-aq-strength')).toBe('4');
     expect(args.includes('-b_ref_mode')).toBe(false);
-  });
-
-  it('uses size-first h264 nvenc cbr for the fast h264 nvenc path', () => {
-    const strategy = resolveSizeLimitedStrategy({
-      controlMode: 'simple',
-      preset: 'fast',
-      advancedEncoder: 'h264_nvenc',
-      advancedTwoPass: false,
-      ...defaultStrategyArgs,
-      capabilities: fullCapabilities,
-      simpleFastCodec: 'h264',
-    });
-
-    const args = getResolvedVideoArgs({
-      strategy,
-      videoBitrate: 4_000_000,
-      twoPass: true,
-      videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
-      sourceFps: 60,
-      outputPlaybackRate: 1,
-    });
-
-    expect(getArgValue(args, '-c:v')).toBe('h264_nvenc');
-    expect(getArgValue(args, '-rc')).toBe('cbr_hq');
-    expect(getArgValue(args, '-strict_gop')).toBe('1');
-    expect(getArgValue(args, '-cq')).toBeUndefined();
   });
 
   it('keeps libx264 on the tighter size-first bitrate window', () => {

@@ -1127,7 +1127,6 @@ function App() {
     requestedLimitLabel: string,
     createdCount: number,
     skippedCount: number,
-    overTargetCount: number,
     largestCreatedSizeLabel?: string | undefined,
     singleCreatedSizeLabel?: string | undefined,
   }
@@ -1370,14 +1369,12 @@ function App() {
     const createdResults = results.filter((result) => result.created);
     const singleCreatedResult = createdResults.length === 1 ? createdResults.find(() => true) : undefined;
     const skippedCount = results.length - createdResults.length;
-    const overTargetCount = createdResults.reduce((count, result) => count + Number(!result.metTarget), 0);
     const largestResult = [...createdResults].sort((a, b) => b.size - a.size)[0];
 
     return {
       requestedLimitLabel: formatRequestedSizeLimit(requestedTargetSizeMb),
       createdCount: createdResults.length,
       skippedCount,
-      overTargetCount,
       largestCreatedSizeLabel: largestResult != null ? formatSizeLimitedBytes(largestResult.size) : undefined,
       singleCreatedSizeLabel: singleCreatedResult != null ? formatSizeLimitedBytes(singleCreatedResult.size) : undefined,
     } satisfies SizeLimitedResultSummary;
@@ -1441,14 +1438,6 @@ function App() {
           }
           case 'fast_av1_nvenc': {
             notices.add(i18n.t('Fast used NVIDIA AV1 with a speed-tuned profile for quick shareable exports.'));
-            break;
-          }
-          case 'fast_h264_nvenc': {
-            notices.add(i18n.t('Fast used NVIDIA H.264 because the bitrate budget was high enough to stay speed-first.'));
-            break;
-          }
-          case 'fast_h264_cpu': {
-            warnings.add(i18n.t('NVIDIA AV1 was unavailable, so Fast fell back to CPU H.264 to stay speed-first.'));
             break;
           }
           default: {
@@ -3310,7 +3299,7 @@ function App() {
 
               {/* Dialogs */}
 
-              <ExportConfirm areWeCutting={areWeCutting} segmentsOrInverse={segmentsOrInverse} segmentsToExport={segmentsToExport} willMerge={willMerge} visible={exportConfirmOpen} onClosePress={closeExportConfirm} onExportConfirm={onExportConfirm} renderOutFmt={renderOutFmt} outputDir={outputDir} numStreamsTotal={numStreamsTotal} numStreamsToCopy={numStreamsToCopy} onShowStreamsSelectorClick={handleShowStreamsSelectorClick} outFormat={fileFormat} cutFileTemplate={cutFileTemplate} cutMergedFileTemplate={cutMergedFileTemplate} generateCutFileNames={isSizeLimitedExport ? generateSizeLimitedCustomCutFileNames : generateCutFileNames} generateCutMergedFileNames={isSizeLimitedExport ? generateSizeLimitedCustomCutMergedFileNames : generateCutMergedFileNames} generateAutoCutFileNames={isSizeLimitedExport ? generateSizeLimitedAutoCutFileNames : undefined} generateAutoCutMergedFileNames={isSizeLimitedExport ? generateSizeLimitedAutoCutMergedFileNames : undefined} currentSegIndexSafe={currentSegIndexSafe} mainCopiedThumbnailStreams={mainCopiedThumbnailStreams} needSmartCut={needSmartCut} isEncoding={isEncodingUi} encBitrate={encBitrate} setEncBitrate={setEncBitrate} toggleSettings={toggleSettings} outputPlaybackRate={outputPlaybackRate} lossyMode={lossyMode} neighbouringKeyFrames={neighbouringKeyFrames} findNearestKeyFrameTime={findNearestKeyFrameTime} sizeLimitedSourceVideoStream={sizeLimitedStreams.videoStream} sizeLimitedSourceFps={sizeLimitedSourceFps} sizeLimitedSourceRotation={effectiveRotation} />
+              <ExportConfirm areWeCutting={areWeCutting} segmentsOrInverse={segmentsOrInverse} segmentsToExport={segmentsToExport} willMerge={willMerge} visible={exportConfirmOpen} onClosePress={closeExportConfirm} onExportConfirm={onExportConfirm} renderOutFmt={renderOutFmt} outputDir={outputDir} numStreamsTotal={numStreamsTotal} numStreamsToCopy={numStreamsToCopy} onShowStreamsSelectorClick={handleShowStreamsSelectorClick} outFormat={fileFormat} cutFileTemplate={cutFileTemplate} cutMergedFileTemplate={cutMergedFileTemplate} generateCutFileNames={isSizeLimitedExport ? generateSizeLimitedCustomCutFileNames : generateCutFileNames} generateCutMergedFileNames={isSizeLimitedExport ? generateSizeLimitedCustomCutMergedFileNames : generateCutMergedFileNames} generateAutoCutFileNames={isSizeLimitedExport ? generateSizeLimitedAutoCutFileNames : undefined} generateAutoCutMergedFileNames={isSizeLimitedExport ? generateSizeLimitedAutoCutMergedFileNames : undefined} currentSegIndexSafe={currentSegIndexSafe} mainCopiedThumbnailStreams={mainCopiedThumbnailStreams} needSmartCut={needSmartCut} isEncoding={isEncodingUi} encBitrate={encBitrate} setEncBitrate={setEncBitrate} toggleSettings={toggleSettings} outputPlaybackRate={outputPlaybackRate} lossyMode={lossyMode} neighbouringKeyFrames={neighbouringKeyFrames} findNearestKeyFrameTime={findNearestKeyFrameTime} sizeLimitedSourceVideoStream={sizeLimitedStreams.videoStream} sizeLimitedSourceFps={sizeLimitedSourceFps} sizeLimitedSourceRotation={effectiveRotation} sizeLimitedHasAudio={sizeLimitedStreams.audioStream != null} />
 
               <Dialog.Root open={streamsSelectorShown} onOpenChange={setStreamsSelectorShown}>
                 <Dialog.Portal>
