@@ -104,14 +104,20 @@ export const isMov = (format: string | undefined) => format != null && ['ismv', 
 
 export const isMatroska = (format: string | undefined) => format != null && ['matroska', 'webm'].includes(format);
 
-type GetVideoArgsFn = (a: { streamIndex: number, outputIndex: number }) => string[] | undefined;
+export const defaultAudioGainDb = 0;
+export const isNeutralAudioGain = (audioGainDb: number | undefined) => audioGainDb == null || Math.abs(audioGainDb) < 0.01;
 
-function getPerStreamFlags({ stream, outputIndex, outFormat, manuallyCopyDisposition = false, getVideoArgs = () => undefined, needFlac }: {
+type GetVideoArgsFn = (a: { path: string, streamIndex: number, outputIndex: number }) => string[] | undefined;
+type GetAudioArgsFn = (a: { path: string, streamIndex: number, outputIndex: number }) => string[] | undefined;
+
+function getPerStreamFlags({ path, stream, outputIndex, outFormat, manuallyCopyDisposition = false, getVideoArgs = () => undefined, getAudioArgs = () => undefined, needFlac }: {
+  path: string,
   stream: LiteFFprobeStream,
   outputIndex: number,
   outFormat: string | undefined,
   manuallyCopyDisposition?: boolean | undefined,
   getVideoArgs?: GetVideoArgsFn | undefined,
+  getAudioArgs?: GetAudioArgsFn | undefined,
   needFlac: boolean | undefined,
 }) {
   let args: string[] = [];
@@ -155,7 +161,10 @@ function getPerStreamFlags({ stream, outputIndex, outFormat, manuallyCopyDisposi
     // https://forum.doom9.org/showthread.php?t=174718
     // https://github.com/mifi/lossless-cut/issues/476
     // ffmpeg cannot encode pcm_bluray
-    if (stream.codec_name === 'pcm_bluray' && outFormat !== 'mpegts') {
+    const audioArgs = getAudioArgs({ path, streamIndex: stream.index, outputIndex });
+    if (audioArgs) {
+      args = [...audioArgs];
+    } else if (stream.codec_name === 'pcm_bluray' && outFormat !== 'mpegts') {
       addCodecArgs('pcm_s24le');
     } else if (stream.codec_name === 'pcm_dvd' && outFormat != null && ['matroska', 'mov'].includes(outFormat)) {
       // https://github.com/mifi/lossless-cut/discussions/2092
@@ -174,7 +183,7 @@ function getPerStreamFlags({ stream, outputIndex, outFormat, manuallyCopyDisposi
       addCodecArgs('copy');
     }
   } else if (stream.codec_type === 'video') {
-    const videoArgs = getVideoArgs({ streamIndex: stream.index, outputIndex });
+    const videoArgs = getVideoArgs({ path, streamIndex: stream.index, outputIndex });
     if (videoArgs) {
       args = [...videoArgs];
     } else {
@@ -197,13 +206,14 @@ function getPerStreamFlags({ stream, outputIndex, outFormat, manuallyCopyDisposi
   return args;
 }
 
-export function getMapStreamsArgs({ startIndex = 0, outFormat, allFilesMeta, copyFileStreams, manuallyCopyDisposition, getVideoArgs, needFlac }: {
+export function getMapStreamsArgs({ startIndex = 0, outFormat, allFilesMeta, copyFileStreams, manuallyCopyDisposition, getVideoArgs, getAudioArgs, needFlac }: {
   startIndex?: number,
   outFormat: string | undefined,
   allFilesMeta: Record<string, Pick<AllFilesMeta[string], 'streams'>>,
   copyFileStreams: CopyfileStreams,
   manuallyCopyDisposition?: boolean,
   getVideoArgs?: GetVideoArgsFn,
+  getAudioArgs?: GetAudioArgsFn,
   needFlac?: boolean,
 }) {
   let args: string[] = [];
@@ -217,7 +227,7 @@ export function getMapStreamsArgs({ startIndex = 0, outFormat, allFilesMeta, cop
       args = [
         ...args,
         '-map', `${fileIndex}:${streamId}`,
-        ...getPerStreamFlags({ stream, outputIndex, outFormat, manuallyCopyDisposition, getVideoArgs, needFlac }),
+        ...getPerStreamFlags({ path, stream, outputIndex, outFormat, manuallyCopyDisposition, getVideoArgs, getAudioArgs, needFlac }),
       ];
       outputIndex += 1;
     });

@@ -38,6 +38,54 @@ export type SegmentTags = z.infer<typeof segmentTagsSchema>
 
 export type EditingSegmentTags = Record<string, SegmentTags>
 
+export const llcProjectSaveableSegmentSchema = z.object({
+  start: z.number(),
+  end: z.number().optional(),
+  name: z.string(),
+  tags: segmentTagsSchema.optional(),
+  selected: z.boolean().optional(),
+});
+
+export const streamParamsSchema = z.object({
+  customTags: z.record(z.string(), z.string()).optional(),
+  disposition: z.string().optional(),
+  bsfH264Mp4toannexb: z.boolean().optional(),
+  bsfHevcMp4toannexb: z.boolean().optional(),
+  bsfHevcAudInsert: z.boolean().optional(),
+  tag: z.string().optional(),
+  audioGainDb: z.number().optional(),
+});
+
+export type StreamParams = z.infer<typeof streamParamsSchema>;
+
+export const llcProjectStreamEditSchema = z.object({
+  streamId: z.number(),
+  params: streamParamsSchema,
+});
+
+export type ProjectStreamEdit = z.infer<typeof llcProjectStreamEditSchema>;
+
+export const overlayBoxSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number(),
+});
+
+export type OverlayBox = z.infer<typeof overlayBoxSchema>;
+
+export const textOverlayClipSchema = z.object({
+  overlayId: z.string(),
+  type: z.literal('text'),
+  start: z.number(),
+  end: z.number(),
+  text: z.string(),
+  box: overlayBoxSchema,
+});
+
+export type TextOverlayClip = z.infer<typeof textOverlayClipSchema>;
+export type OverlayClip = TextOverlayClip;
+
 // todo remove some time in the future
 export const llcProjectV1Schema = z.object({
   version: z.literal(1),
@@ -53,16 +101,21 @@ export const llcProjectV1Schema = z.object({
 export const llcProjectV2Schema = z.object({
   version: z.literal(2),
   mediaFileName: z.string().optional(),
-  cutSegments: z.object({
-    start: z.number(),
-    end: z.number().optional(),
-    name: z.string(),
-    tags: segmentTagsSchema.optional(),
-    selected: z.boolean().optional(),
-  }).array(),
+  cutSegments: llcProjectSaveableSegmentSchema.array(),
 });
 
-export type LlcProject = z.infer<typeof llcProjectV2Schema>
+export const llcProjectV3Schema = z.object({
+  version: z.literal(3),
+  mediaFileName: z.string().optional(),
+  cutSegments: llcProjectSaveableSegmentSchema.array(),
+  streamEdits: z.object({
+    customTags: z.record(z.string(), z.string()).optional(),
+    streamParams: llcProjectStreamEditSchema.array().optional(),
+  }).optional(),
+  overlayClips: textOverlayClipSchema.array().optional(),
+});
+
+export type LlcProject = z.infer<typeof llcProjectV3Schema>
 
 export interface SegmentBase {
   start: number,
@@ -285,14 +338,6 @@ export type AllFilesMeta = Record<string, {
 
 export type CustomTagsByFile = Record<string, Record<string, string>>;
 
-export interface StreamParams {
-  customTags?: Record<string, string>,
-  disposition?: string,
-  bsfH264Mp4toannexb?: boolean,
-  bsfHevcMp4toannexb?: boolean,
-  bsfHevcAudInsert?: boolean,
-  tag?: string | undefined,
-}
 export type ParamsByStreamId = Map<string, Map<number, StreamParams>>;
 
 export interface BatchFile {

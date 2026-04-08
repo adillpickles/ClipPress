@@ -144,12 +144,17 @@ function getSwsFlagsArgs() {
   return ['-sws_flags', sizeLimitedSwsFlags];
 }
 
-function getAudioArgs({ audioInputLabel, audioBitrate }: {
+function getAudioArgs({ audioInputLabel, audioBitrate, audioGainDb }: {
   audioInputLabel: string | undefined,
   audioBitrate: number,
+  audioGainDb?: number | undefined,
 }) {
   if (audioInputLabel == null) return ['-an'];
-  return ['-map', audioInputLabel, '-c:a', 'aac', '-b:a', toKbitrateArg(audioBitrate), '-ac', '2'];
+  return [
+    '-map', audioInputLabel,
+    ...(audioGainDb != null && Math.abs(audioGainDb) >= 0.01 ? ['-filter:a', `volume=${audioGainDb.toFixed(2)}dB`] : []),
+    '-c:a', 'aac', '-b:a', toKbitrateArg(audioBitrate), '-ac', '2',
+  ];
 }
 
 function getCommonEncodeArgs({
@@ -164,6 +169,7 @@ function getCommonEncodeArgs({
   outPath,
   sourceFps,
   outputPlaybackRate,
+  audioGainDb,
 }: {
   strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
@@ -176,6 +182,7 @@ function getCommonEncodeArgs({
   outPath: string,
   sourceFps: number | undefined,
   outputPlaybackRate: number,
+  audioGainDb?: number | undefined,
 }) {
   const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
   return [
@@ -188,7 +195,7 @@ function getCommonEncodeArgs({
     ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: false, videoProfile, sourceFps, outputPlaybackRate }),
     ...(videoFilter != null ? ['-vf', videoFilter] : []),
     ...getRotationArgs(rotation),
-    ...getAudioArgs({ audioInputLabel, audioBitrate }),
+    ...getAudioArgs({ audioInputLabel, audioBitrate, audioGainDb }),
     '-movflags', '+faststart',
     ...getExperimentalArgs(ffmpegExperimental),
     '-f', 'mp4',
@@ -210,6 +217,7 @@ function getTwoPassEncodeArgs({
   passNumber,
   sourceFps,
   outputPlaybackRate,
+  audioGainDb,
 }: {
   strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
@@ -224,6 +232,7 @@ function getTwoPassEncodeArgs({
   passNumber: 1 | 2,
   sourceFps: number | undefined,
   outputPlaybackRate: number,
+  audioGainDb?: number | undefined,
 }) {
   const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
   return [
@@ -238,7 +247,7 @@ function getTwoPassEncodeArgs({
     '-pass', String(passNumber),
     '-passlogfile', passlogFile,
     ...getRotationArgs(rotation),
-    ...(passNumber === 1 ? ['-an'] : getAudioArgs({ audioInputLabel, audioBitrate })),
+    ...(passNumber === 1 ? ['-an'] : getAudioArgs({ audioInputLabel, audioBitrate, audioGainDb })),
     ...(passNumber === 2 ? ['-movflags', '+faststart'] : []),
     ...getExperimentalArgs(ffmpegExperimental),
     '-f', 'mp4',
@@ -543,6 +552,7 @@ export async function exportSizeLimitedSegment({
   appendFfmpegCommandLog,
   onProgress,
   onStageChange,
+  audioGainDb,
 }: {
   filePath: string,
   outPath: string,
@@ -572,6 +582,7 @@ export async function exportSizeLimitedSegment({
   appendFfmpegCommandLog: (args: string[]) => void,
   onProgress: (progress: number, metadata?: SizeLimitedProgressMetadata) => void,
   onStageChange?: ((metadata: SizeLimitedProgressMetadata | undefined) => void) | undefined,
+  audioGainDb?: number | undefined,
 }) {
   await assertFileExists(filePath);
   await ensureOutputDir(outPath);
@@ -642,6 +653,7 @@ export async function exportSizeLimitedSegment({
             passNumber: 1,
             sourceFps,
             outputPlaybackRate,
+            audioGainDb,
           }),
         ];
 
@@ -663,6 +675,7 @@ export async function exportSizeLimitedSegment({
             passNumber: 2,
             sourceFps,
             outputPlaybackRate,
+            audioGainDb,
           }),
         ];
 
@@ -687,6 +700,7 @@ export async function exportSizeLimitedSegment({
           outPath: attemptOutPath,
           sourceFps,
           outputPlaybackRate,
+          audioGainDb,
         }),
       ];
 
@@ -745,6 +759,7 @@ export async function exportSizeLimitedMerge({
   appendFfmpegCommandLog,
   onProgress,
   onStageChange,
+  audioGainDb,
 }: {
   filePath: string,
   outPath: string,
@@ -773,6 +788,7 @@ export async function exportSizeLimitedMerge({
   appendFfmpegCommandLog: (args: string[]) => void,
   onProgress: (progress: number, metadata?: SizeLimitedProgressMetadata) => void,
   onStageChange?: ((metadata: SizeLimitedProgressMetadata | undefined) => void) | undefined,
+  audioGainDb?: number | undefined,
 }) {
   await assertFileExists(filePath);
   await ensureOutputDir(outPath);
@@ -855,6 +871,7 @@ export async function exportSizeLimitedMerge({
             passNumber: 1,
             sourceFps,
             outputPlaybackRate,
+            audioGainDb,
           }),
         ];
 
@@ -876,6 +893,7 @@ export async function exportSizeLimitedMerge({
             passNumber: 2,
             sourceFps,
             outputPlaybackRate,
+            audioGainDb,
           }),
         ];
 
@@ -900,6 +918,7 @@ export async function exportSizeLimitedMerge({
           outPath: attemptOutPath,
           sourceFps,
           outputPlaybackRate,
+          audioGainDb,
         }),
       ];
 

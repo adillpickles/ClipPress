@@ -7,7 +7,7 @@ import i18n from 'i18next';
 
 import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists } from '../util';
 import { isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, getDuration, createChaptersFromSegments, readFileFfprobeMeta, getExperimentalArgs, getVideoTimescaleArgs, logStdoutStderr, runFfmpegConcat, RefuseOverwriteError, runFfmpeg } from '../ffmpeg';
-import { getMapStreamsArgs, getStreamIdsToCopy } from '../util/streams';
+import { getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
 import { needsSmartCut, getCodecParams } from '../smartcut';
 import { getGuaranteedSegments, isDurationValid } from '../segments';
 import type { FFprobeStream } from '../../../common/ffprobe';
@@ -67,6 +67,21 @@ function getMatroskaFlags() {
 }
 
 const getChaptersInputArgs = (ffmetadataPath: string | undefined) => (ffmetadataPath ? ['-f', 'ffmetadata', '-i', ffmetadataPath] : []);
+
+function getAdjustedAudioEncodeArgs({ outFormat, outputIndex }: { outFormat: string | undefined, outputIndex: number }) {
+  if (outFormat === 'webm' || outFormat === 'opus' || outFormat === 'oga' || outFormat === 'ogg') return [`-c:${outputIndex}`, 'libopus', `-b:${outputIndex}`, '160k'];
+  if (outFormat === 'mp3') return [`-c:${outputIndex}`, 'libmp3lame', `-b:${outputIndex}`, '192k'];
+  if (outFormat === 'flac') return [`-c:${outputIndex}`, 'flac'];
+  if (outFormat === 'wav') return [`-c:${outputIndex}`, 'pcm_s16le'];
+  return [`-c:${outputIndex}`, 'aac', `-b:${outputIndex}`, '192k'];
+}
+
+function getAdjustedAudioGainArgs({ audioGainDb, outFormat, outputIndex }: { audioGainDb: number, outFormat: string | undefined, outputIndex: number }) {
+  return [
+    `-filter:a:${outputIndex}`, `volume=${audioGainDb.toFixed(2)}dB`,
+    ...getAdjustedAudioEncodeArgs({ outFormat, outputIndex }),
+  ];
+}
 
 async function tryDeleteFiles(paths: string[]) {
   return pMap(paths, (path) => unlinkWithRetry(path).catch((err) => console.error('Failed to delete', path, err)), { concurrency: 5 });
@@ -327,7 +342,17 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       ...flatMap(Object.entries(customTagsByFile[filePath] || []), ([key, value]) => ['-metadata', `${key}=${value}`]),
     ];
 
-    const mapStreamsArgs = getMapStreamsArgs({ copyFileStreams: copyFileStreamsFiltered, allFilesMeta, outFormat, needFlac: areWeCutting });
+    const mapStreamsArgs = getMapStreamsArgs({
+      copyFileStreams: copyFileStreamsFiltered,
+      allFilesMeta,
+      outFormat,
+      needFlac: areWeCutting,
+      getAudioArgs: ({ path, streamIndex, outputIndex }) => {
+        const audioGainDb = paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb;
+        if (isNeutralAudioGain(audioGainDb)) return undefined;
+        return getAdjustedAudioGainArgs({ audioGainDb, outFormat, outputIndex });
+      },
+    });
 
     const customParamsArgs = (() => {
       const ret: string[] = [];
@@ -429,7 +454,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   }, [appendFfmpegCommandLog, cutFromAdjustmentFrames, cutToAdjustmentFrames, filePath, getOutputPlaybackRateArgs, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   // inspired by https://gist.github.com/fernandoherreradelasheras/5eca67f4200f1a7cc8281747da08496e
-  const cutEncodeSmartPart = useCallback(async ({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate, videoTimebase, allFilesMeta, copyFileStreams, videoStreamIndex, ffmpegExperimental, hasBFrames }: {
+  const cutEncodeSmartPart = useCallback(async ({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate, videoTimebase, allFilesMeta, copyFileStreams, videoStreamIndex, paramsByStreamId, ffmpegExperimental, hasBFrames }: {
     cutFrom: number,
     cutTo: number,
     outPath: string,
@@ -440,12 +465,13 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     allFilesMeta: AllFilesMeta,
     copyFileStreams: CopyfileStreams,
     videoStreamIndex: number,
+    paramsByStreamId: ParamsByStreamId,
     ffmpegExperimental: boolean,
     hasBFrames: number | undefined,
   }) => {
     invariant(filePath != null);
 
-    function getVideoArgs({ streamIndex, outputIndex }: { streamIndex: number, outputIndex: number }) {
+    function getVideoArgs({ streamIndex, outputIndex }: { path: string, streamIndex: number, outputIndex: number }) {
       if (streamIndex !== videoStreamIndex) return undefined;
 
       const args = [
@@ -465,6 +491,11 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       copyFileStreams,
       outFormat,
       getVideoArgs,
+      getAudioArgs: ({ path, streamIndex, outputIndex }) => {
+        const audioGainDb = paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb;
+        if (isNeutralAudioGain(audioGainDb)) return undefined;
+        return getAdjustedAudioGainArgs({ audioGainDb, outFormat, outputIndex });
+      },
     });
 
     const ffmpegArgs = [
@@ -590,7 +621,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         invariant(sourceCodecParams.videoTimebase != null);
         invariant(filePath != null);
         invariant(outFormat != null);
-        await cutEncodeSmartPart({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate: encCustomBitrate != null ? encCustomBitrate * 1000 : sourceCodecParams.videoBitrate, videoStreamIndex: videoStream.index, videoTimebase: sourceCodecParams.videoTimebase, allFilesMeta, copyFileStreams: copyFileStreamsFiltered, ffmpegExperimental, hasBFrames: sourceCodecParams.videoStream.has_b_frames });
+        await cutEncodeSmartPart({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate: encCustomBitrate != null ? encCustomBitrate * 1000 : sourceCodecParams.videoBitrate, videoStreamIndex: videoStream.index, videoTimebase: sourceCodecParams.videoTimebase, allFilesMeta, copyFileStreams: copyFileStreamsFiltered, paramsByStreamId, ffmpegExperimental, hasBFrames: sourceCodecParams.videoStream.has_b_frames });
       }
 
       const cutEncodeWholePart = async () => {

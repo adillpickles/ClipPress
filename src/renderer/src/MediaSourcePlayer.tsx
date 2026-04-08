@@ -13,12 +13,13 @@ import type { FfmpegHwAccel } from '../../common/types';
 const { compatPlayer: { createMediaSourceStream } } = window.require('@electron/remote').require('./index.js');
 
 
-async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, audioStreamIndexes, seekTo, signal, size, fps, rotate, onCanPlay, onResetNeeded, onWaiting, ffmpegHwaccel }: {
+async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, audioStreamIndexes, audioGainByStreamId, seekTo, signal, size, fps, rotate, onCanPlay, onResetNeeded, onWaiting, ffmpegHwaccel }: {
   path: string,
   slaveVideo: ChromiumHTMLVideoElement,
   masterVideo: ChromiumHTMLVideoElement,
   videoStreamIndex?: number | undefined,
   audioStreamIndexes: number[],
+  audioGainByStreamId: Record<number, number>,
   seekTo: number,
   signal: AbortSignal,
   size?: number | undefined,
@@ -90,7 +91,7 @@ async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, 
     throw new Error(`Unsupported MIME type or codec: ${mimeCodec}`);
   }
 
-  mediaSourceProcess = createMediaSourceStream({ path, videoStreamIndex, audioStreamIndexes, seekTo, size, fps, rotate, ffmpegHwaccel });
+  mediaSourceProcess = createMediaSourceStream({ path, videoStreamIndex, audioStreamIndexes, audioGainByStreamId, seekTo, size, fps, rotate, ffmpegHwaccel });
   console.log('Waiting for media source process to emit first data...');
   const readChunk = await mediaSourceProcess.promise;
   if (readChunk == null) {
@@ -153,7 +154,7 @@ async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, 
     }
   };
 
-  sourceBuffer.addEventListener('error', (err) => console.error('sourceBuffer error, check DevTools ▶ More Tools ▶ Media', err));
+  sourceBuffer.addEventListener('error', (err) => console.error('sourceBuffer error, check DevTools â–¶ More Tools â–¶ Media', err));
 
   const handleCanPlay = () => {
     console.log('canplay');
@@ -307,11 +308,12 @@ async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, 
   processChunk();
 }
 
-function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, masterVideoRef, mediaSourceQuality, ffmpegHwaccel }: {
+function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioGainByStreamId, masterVideoRef, mediaSourceQuality, ffmpegHwaccel }: {
   rotate: number | undefined,
   filePath: string,
   videoStream: FFprobeStream | undefined,
   audioStreams: FFprobeStream[],
+  audioGainByStreamId: Record<number, number>,
   masterVideoRef: RefObject<HTMLVideoElement>,
   mediaSourceQuality: number,
   ffmpegHwaccel: FfmpegHwAccel,
@@ -370,6 +372,7 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, master
           masterVideo,
           videoStreamIndex: videoStream?.index,
           audioStreamIndexes,
+          audioGainByStreamId,
           seekTo,
           size,
           fps,
@@ -398,7 +401,7 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, master
 
     return () => abortController.abort();
     // Important that we also have eventId in the deps, so that we can restart the preview when the eventId changes
-  }, [audioStreamIndexes, ffmpegHwaccel, filePath, masterVideoRef, mediaSourceQuality, rotate, videoStream]);
+  }, [audioGainByStreamId, audioStreamIndexes, ffmpegHwaccel, filePath, masterVideoRef, mediaSourceQuality, rotate, videoStream]);
 
   const onFocus = useCallback<FocusEventHandler<HTMLVideoElement>>((e) => {
     // prevent video element from stealing focus in fullscreen mode https://github.com/mifi/lossless-cut/issues/543#issuecomment-1868167775

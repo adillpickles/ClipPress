@@ -6,8 +6,8 @@ import { ZodError } from 'zod';
 import { parseSrtToSegments, formatSrt, parseCuesheet, parseXmeml, parseFcpXml, parseCsv, parseCutlist, parsePbf, parseEdl, formatCsvHuman, formatTsvHuman, formatCsvFrames, formatCsvSeconds, parseCsvTime, getFrameValParser, parseDvAnalyzerSummaryTxt, parseOtio } from './edlFormats';
 import { askForYouTubeInput, showOpenDialog } from './dialogs';
 import { getOutPath } from './util';
-import type { EdlExportType, EdlFileType, EdlImportType, GetFrameCount, LlcProject, SegmentBase, StateSegment } from './types';
-import { llcProjectV1Schema, llcProjectV2Schema } from './types';
+import type { CustomTagsByFile, EdlExportType, EdlFileType, EdlImportType, GetFrameCount, LlcProject, OverlayClip, ParamsByStreamId, SegmentBase, StateSegment } from './types';
+import { llcProjectV1Schema, llcProjectV2Schema, llcProjectV3Schema } from './types';
 import { mapSaveableSegments } from './segments';
 import isDev from './isDev';
 
@@ -82,16 +82,53 @@ export async function saveSrt(path: string, cutSegments: SegmentBase[]) {
   await writeFile(path, formatSrt(cutSegments));
 }
 
-export async function saveLlcProject({ savePath, mediaFilePath, cutSegments }: {
+function serializeProjectStreamEdits({ mediaFilePath, customTagsByFile, paramsByStreamId }: {
+  mediaFilePath: string,
+  customTagsByFile?: CustomTagsByFile | undefined,
+  paramsByStreamId?: ParamsByStreamId | undefined,
+}): LlcProject['streamEdits'] {
+  const customTags = customTagsByFile?.[mediaFilePath];
+  const fileStreamParams = paramsByStreamId?.get(mediaFilePath);
+  const streamParams = fileStreamParams != null
+    ? [...fileStreamParams.entries()]
+      .filter(([, params]) => Object.keys(params).length > 0)
+      .sort(([streamIdA], [streamIdB]) => streamIdA - streamIdB)
+      .map(([streamId, params]) => ({ streamId, params: { ...params } }))
+    : undefined;
+
+  if (customTags == null && (streamParams == null || streamParams.length === 0)) return undefined;
+
+  return {
+    ...(customTags != null ? { customTags } : {}),
+    ...(streamParams != null && streamParams.length > 0 ? { streamParams } : {}),
+  };
+}
+
+export function buildLlcProjectData({ mediaFilePath, cutSegments, customTagsByFile, paramsByStreamId, overlayClips }: {
+  mediaFilePath: string,
+  cutSegments: StateSegment[],
+  customTagsByFile?: CustomTagsByFile | undefined,
+  paramsByStreamId?: ParamsByStreamId | undefined,
+  overlayClips?: OverlayClip[] | undefined,
+}): LlcProject {
+  return {
+    version: 3,
+    mediaFileName: basename(mediaFilePath),
+    cutSegments: mapSaveableSegments(cutSegments),
+    streamEdits: serializeProjectStreamEdits({ mediaFilePath, customTagsByFile, paramsByStreamId }),
+    ...(overlayClips != null && overlayClips.length > 0 ? { overlayClips } : {}),
+  };
+}
+
+export async function saveLlcProject({ savePath, mediaFilePath, cutSegments, customTagsByFile, paramsByStreamId, overlayClips }: {
   savePath: string,
   mediaFilePath: string,
   cutSegments: StateSegment[],
+  customTagsByFile?: CustomTagsByFile | undefined,
+  paramsByStreamId?: ParamsByStreamId | undefined,
+  overlayClips?: OverlayClip[] | undefined,
 }) {
-  const projectData: LlcProject = {
-    version: 2,
-    mediaFileName: basename(mediaFilePath),
-    cutSegments: mapSaveableSegments(cutSegments),
-  };
+  const projectData = buildLlcProjectData({ mediaFilePath, cutSegments, customTagsByFile, paramsByStreamId, overlayClips });
   await writeFile(savePath, JSON5.stringify(projectData, null, 2));
 }
 
@@ -101,20 +138,32 @@ export async function loadLlcProject(path: string) {
   async function doLoad(): Promise<LlcProject> {
     // todo probably remove migration in future
     try {
-      return llcProjectV2Schema.parse(json);
+      return llcProjectV3Schema.parse(json);
     } catch (err) {
       if (err instanceof ZodError) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { cutSegments, version: _ignored, ...restProject } = llcProjectV1Schema.parse(json);
-        console.log('Converting v1 project to v2');
-        return {
-          ...restProject,
-          version: 2,
-          cutSegments: cutSegments.map(({ start, ...restSeg }) => ({
-            ...restSeg,
-            start: start ?? 0, // v1 allowed undefined for "start", which we no longer allow as of v2
-          })),
-        };
+        try {
+          const project = llcProjectV2Schema.parse(json);
+          console.log('Converting v2 project to v3');
+          return {
+            ...project,
+            version: 3,
+          };
+        } catch (v2Err) {
+          if (v2Err instanceof ZodError) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { cutSegments, version: _ignored, ...restProject } = llcProjectV1Schema.parse(json);
+            console.log('Converting v1 project to v3');
+            return {
+              ...restProject,
+              version: 3,
+              cutSegments: cutSegments.map(({ start, ...restSeg }) => ({
+                ...restSeg,
+                start: start ?? 0, // v1 allowed undefined for "start", which we no longer allow as of v2
+              })),
+            };
+          }
+          throw v2Err;
+        }
       }
       throw err;
     }
@@ -181,12 +230,15 @@ export async function askForEdlImport({ type, fps, fileDuration }: { type: EdlIm
   return readEdlFile({ type, path: firstFilePath, fps });
 }
 
-export async function exportEdlFile({ type, cutSegments, customOutDir, filePath, getFrameCount }: {
+export async function exportEdlFile({ type, cutSegments, customOutDir, filePath, getFrameCount, customTagsByFile, paramsByStreamId, overlayClips }: {
   type: EdlExportType,
   cutSegments: StateSegment[],
   customOutDir?: string | undefined,
   filePath?: string | undefined,
   getFrameCount: GetFrameCount,
+  customTagsByFile?: CustomTagsByFile | undefined,
+  paramsByStreamId?: ParamsByStreamId | undefined,
+  overlayClips?: OverlayClip[] | undefined,
 }) {
   invariant(filePath != null);
 
@@ -223,6 +275,6 @@ export async function exportEdlFile({ type, cutSegments, customOutDir, filePath,
   else if (type === 'tsv-human') await saveTsv(savePath, cutSegments);
   else if (type === 'csv-human') await saveCsvHuman(savePath, cutSegments);
   else if (type === 'csv-frames') await saveCsvFrames({ path: savePath, cutSegments, getFrameCount });
-  else if (type === 'llc') await saveLlcProject({ savePath, mediaFilePath: filePath, cutSegments });
+  else if (type === 'llc') await saveLlcProject({ savePath, mediaFilePath: filePath, cutSegments, customTagsByFile, paramsByStreamId, overlayClips });
   else if (type === 'srt') await saveSrt(savePath, cutSegments);
 }

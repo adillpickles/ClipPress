@@ -63,7 +63,7 @@ function getFfPath(cmd: string) {
 
 const getFfprobePath = () => getFfPath('ffprobe');
 /**
- * ⚠️ Do not use directly when running ffmpeg, because we need to add certain options before running, like `LD_LIBRARY_PATH` on linux
+ * Do not use directly when running ffmpeg, because we need to add certain options before running, like `LD_LIBRARY_PATH` on linux.
  */
 export const getFfmpegPath = () => getFfPath('ffmpeg');
 
@@ -572,10 +572,11 @@ export async function getDuration(filePath: string) {
 const enableLog = false;
 const encode = true;
 
-export function createMediaSourceProcess({ path, videoStreamIndex, audioStreamIndexes, seekTo, size, fps, rotate, forceColorspace, ffmpegHwaccel }: {
+export function createMediaSourceProcess({ path, videoStreamIndex, audioStreamIndexes, audioGainByStreamId, seekTo, size, fps, rotate, forceColorspace, ffmpegHwaccel }: {
   path: string,
   videoStreamIndex?: number | undefined,
   audioStreamIndexes: number[],
+  audioGainByStreamId: Record<number, number>,
   seekTo: number,
   size?: number | undefined,
   fps?: number | undefined,
@@ -646,17 +647,27 @@ export function createMediaSourceProcess({ path, videoStreamIndex, audioStreamIn
     }
 
     if (audioStreamIndexes.length > 0) {
+      const getVolumeFilter = (streamIndex: number) => {
+        const audioGainDb = audioGainByStreamId[streamIndex];
+        return audioGainDb != null && Math.abs(audioGainDb) >= 0.01 ? `volume=${audioGainDb.toFixed(2)}dB` : undefined;
+      };
+
       if (audioStreamIndexes.length > 1) {
         const resampledStr = audioStreamIndexes.map((i) => `[resampled${i}]`).join('');
         const weightsStr = audioStreamIndexes.map(() => '1').join(' ');
         graph.push(
           // First resample because else we get the lowest sample rate
-          ...audioStreamIndexes.map((i) => `[0:${i}]aresample=44100[resampled${i}]`),
+          ...audioStreamIndexes.map((i) => {
+            const filters = [getVolumeFilter(i), 'aresample=44100'].filter((value): value is string => value != null);
+            return `[0:${i}]${filters.join(',')}[resampled${i}]`;
+          }),
           // now mix all audio channels together
           `${resampledStr}amix=inputs=${audioStreamIndexes.length}:duration=longest:weights=${weightsStr}:normalize=0:dropout_transition=2[audio]`,
         );
       } else {
-        graph.push(`[0:${audioStreamIndexes[0]}]anull[audio]`);
+        const audioStreamIndex = audioStreamIndexes[0]!;
+        const volumeFilter = getVolumeFilter(audioStreamIndex);
+        graph.push(`[0:${audioStreamIndex}]${volumeFilter ?? 'anull'}[audio]`);
       }
     }
 

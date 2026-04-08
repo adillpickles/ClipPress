@@ -14,7 +14,7 @@ import Select from './components/Select';
 import type { FileStream } from './ffmpeg';
 import { getStreamFps } from './ffmpeg';
 import { deleteDispositionValue } from './util';
-import { getActiveDisposition, attachedPicDisposition, isGpsStream } from './util/streams';
+import { defaultAudioGainDb, getActiveDisposition, attachedPicDisposition, isGpsStream } from './util/streams';
 import TagEditor from './components/TagEditor';
 import type { FFprobeChapter, FFprobeFormat, FFprobeStream } from '../../common/ffprobe';
 import type { CustomTagsByFile, FilesMeta, FormatTimecode, ParamsByStreamId, StreamParams } from './types';
@@ -96,6 +96,7 @@ function StreamParametersEditor({ stream, streamParams, updateStreamParams }: {
   updateStreamParams: (setter: (a: StreamParams) => void) => void,
 }) {
   const { t } = useTranslation();
+  const audioGainDb = streamParams.audioGainDb ?? defaultAudioGainDb;
 
   const ui: ReactNode[] = [];
 
@@ -135,6 +136,41 @@ function StreamParametersEditor({ stream, streamParams, updateStreamParams }: {
         name={t('Codec tag')}
         // eslint-disable-next-line no-param-reassign
         value={<TextInput placeholder={t('Default')} value={streamParams.tag ?? ''} onChange={(e) => updateStreamParams((params) => { params.tag = e.target.value.trim() === '' ? undefined : e.target.value; })} />}
+      />,
+    );
+  }
+
+  if (stream.codec_type === 'audio') {
+    ui.push(
+      <KeyValue
+        key="audioGainDb"
+        name={t('Track gain')}
+        value={(
+          <div style={{ display: 'flex', alignItems: 'center', gap: '.75em', minWidth: '20em' }}>
+            <div style={{ minWidth: '4.5em', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{audioGainDb > 0 ? `+${audioGainDb}` : audioGainDb} dB</div>
+            <input
+              type="range"
+              min={-24}
+              max={24}
+              step={1}
+              style={{ width: '100%' }}
+              value={audioGainDb}
+              onChange={(e) => updateStreamParams((params) => {
+                // eslint-disable-next-line no-param-reassign
+                params.audioGainDb = Number(e.target.value) === defaultAudioGainDb ? undefined : Number(e.target.value);
+              })}
+            />
+            <Button
+              style={{ whiteSpace: 'nowrap' }}
+              onClick={() => updateStreamParams((params) => {
+                // eslint-disable-next-line no-param-reassign
+                params.audioGainDb = undefined;
+              })}
+            >
+              {t('Reset')}
+            </Button>
+          </div>
+        )}
       />,
     );
   }

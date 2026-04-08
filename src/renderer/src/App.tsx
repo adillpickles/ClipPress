@@ -74,7 +74,7 @@ import {
   mapRecommendedDefaultFormat,
   getFfCommandLine,
 } from './ffmpeg';
-import { shouldCopyStreamByDefault, getAudioStreams, getRealVideoStreams, isAudioDefinitelyNotSupported, willPlayerProperlyHandleVideo, doesPlayerSupportHevcPlayback, getSubtitleStreams, enableVideoTrack, enableAudioTrack, canHtml5PlayerPlayStreams, isMatroska } from './util/streams';
+import { shouldCopyStreamByDefault, getAudioStreams, getRealVideoStreams, isAudioDefinitelyNotSupported, willPlayerProperlyHandleVideo, doesPlayerSupportHevcPlayback, getSubtitleStreams, enableVideoTrack, enableAudioTrack, canHtml5PlayerPlayStreams, isMatroska, isNeutralAudioGain } from './util/streams';
 import { exportEdlFile, readEdlFile, loadLlcProject, askForEdlImport } from './edlStore';
 import { formatYouTube, getFrameCountRaw, formatTsvHuman } from './edlFormats';
 import {
@@ -105,7 +105,7 @@ import { generateCutFileNames as generateCutFileNamesRaw, generateCutMergedFileN
 import { rightBarWidth, leftBarWidth, ffmpegExtractWindow, zoomMax } from './util/constants';
 import BigWaveform from './components/BigWaveform';
 
-import type { BatchFile, Chapter, CustomTagsByFile, EdlExportType, EdlFileType, EdlImportType, FfmpegCommandLog, FilesMeta, FileStats, ParamsByStreamId, PlaybackMode, SegmentBase, SegmentColorIndex, SegmentTags, SegmentToExport, SizeLimitedExecutionResult, SizeLimitedProgressMetadata, StateSegment, TunerType } from './types';
+import type { BatchFile, Chapter, CustomTagsByFile, EdlExportType, EdlFileType, EdlImportType, FfmpegCommandLog, FilesMeta, FileStats, OverlayClip, ParamsByStreamId, PlaybackMode, SegmentBase, SegmentColorIndex, SegmentTags, SegmentToExport, SizeLimitedExecutionResult, SizeLimitedProgressMetadata, StateSegment, TunerType } from './types';
 import { goToTimecodeDirectArgsSchema, openFilesActionArgsSchema } from './types';
 import type { CaptureFormat, KeyboardAction, ApiActionRequest } from '../../common/types.js';
 import type { FFprobeChapter, FFprobeStream } from '../../common/ffprobe.js';
@@ -158,6 +158,7 @@ function App() {
   const [externalFilesMeta, setExternalFilesMeta] = useState<FilesMeta>({});
   const [customTagsByFile, setCustomTagsByFile] = useState<CustomTagsByFile>({});
   const [paramsByStreamId, setParamsByStreamId] = useState<ParamsByStreamId>(new Map());
+  const [overlayClips, setOverlayClips] = useState<OverlayClip[]>([]);
   const [detectedFps, setDetectedFps] = useState<number>();
   const [mainFileMeta, setMainFileMeta] = useState<{ ffprobeMeta: FileFfprobeMeta, stats: FileStats }>();
   const [streamsSelectorShown, setStreamsSelectorShown] = useState(false);
@@ -332,6 +333,10 @@ function App() {
   const audioStreams = useMemo(() => getAudioStreams(mainStreams), [mainStreams]);
   const sizeLimitedStreams = useMemo(() => pickSizeLimitedStreams(mainStreams), [mainStreams]);
   const sizeLimitedSourceFps = useMemo(() => (sizeLimitedStreams.videoStream != null ? getStreamFps(sizeLimitedStreams.videoStream) : undefined), [sizeLimitedStreams.videoStream]);
+  const sizeLimitedAudioGainDb = useMemo(() => {
+    if (filePath == null || sizeLimitedStreams.audioStream == null) return undefined;
+    return paramsByStreamId.get(filePath)?.get(sizeLimitedStreams.audioStream.index)?.audioGainDb;
+  }, [filePath, paramsByStreamId, sizeLimitedStreams.audioStream]);
 
   const mainVideoStream = useMemo(() => videoStreams[0], [videoStreams]);
   const mainAudioStream = useMemo(() => audioStreams[0], [audioStreams]);
@@ -344,6 +349,16 @@ function App() {
     if (ret.length === 0 && mainAudioStream != null) ret = [mainAudioStream];
     return ret;
   }, [activeAudioStreamIndexes, audioStreams, mainAudioStream]);
+  const activeAudioGainByStreamId = useMemo<Record<number, number>>(() => Object.fromEntries(activeAudioStreams.flatMap((stream) => {
+    const audioGainDb = (filePath != null ? paramsByStreamId.get(filePath)?.get(stream.index)?.audioGainDb : undefined) ?? 0;
+    return isNeutralAudioGain(audioGainDb) ? [] : [[stream.index, audioGainDb]];
+  })), [activeAudioStreams, filePath, paramsByStreamId]);
+  const hasAdjustedAudioGain = useMemo(() => {
+    if (filePath == null) return false;
+    const fileStreamParams = paramsByStreamId.get(filePath);
+    if (fileStreamParams == null) return false;
+    return [...fileStreamParams.values()].some((streamParams) => !isNeutralAudioGain(streamParams.audioGainDb));
+  }, [filePath, paramsByStreamId]);
 
   // 360 means we don't modify rotation gtrgt
   const isRotationSet = rotation !== 360;
@@ -375,7 +390,7 @@ function App() {
     cutSegments, cutSegmentsHistory, createSegmentsFromKeyframes, shuffleSegments, detectBlackScenes, detectSilentScenes, detectSceneChanges, removeSegment, invertAllSegments, fillSegmentsGaps, combineOverlappingSegments, combineSelectedSegments, shiftAllSegmentTimes, alignSegmentTimesToKeyframes, updateSegOrder, updateSegOrders, reorderSegsByStartTime, addSegment, setCutStart, setCutEnd, labelSegment, splitCurrentSegment, focusSegmentAtCursor, selectSegmentsAtCursor, createNumSegments, createFixedDurationSegments, createFixedByteSizedSegments, createRandomSegments, getSegEstimatedSize, haveInvalidSegs, currentSegIndexSafe, currentCutSeg, inverseCutSegments, clearSegments, clearSegColorCounter, loadCutSegments, setCutTime, setCurrentSegIndex, labelSelectedSegments, deselectAllSegments, selectAllSegments, selectOnlyCurrentSegment, toggleCurrentSegmentSelected, invertSelectedSegments, removeSelectedSegments, selectSegmentsByLabel, selectSegmentsByExpr, selectAllMarkers, mutateSegmentsByExpr, toggleSegmentSelected, selectOnlySegment, selectedSegments, segmentsOrInverse, segmentsToExport, duplicateCurrentSegment, duplicateSegment, updateSegAtIndex, findSegmentsAtCursor, maybeCreateFullLengthSegment, currentCutSegOrWholeTimeline, segColorCounter,
   } = useSegments({ filePath, workingRef, setWorking, setProgress, videoStream: activeVideoStream, fileDuration, getRelevantTime, maxLabelLength, checkFileOpened, invertCutSegments, segmentsToChaptersOnly, timecodePlaceholder, parseTimecode, appendFfmpegCommandLog, fileDurationNonZero, mainFileMeta: mainFileMeta?.ffprobeMeta, seekAbs, activeVideoStreamIndex, activeAudioStreamIndexes, handleError, showGenericDialog, simpleMode, ffmpegHwaccel });
 
-  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath } = useSegmentsAutoSave({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, customOutDir, cutSegments });
+  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath } = useSegmentsAutoSave({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, customOutDir, cutSegments, customTagsByFile, paramsByStreamId, overlayClips });
 
   const { nonCopiedExtraStreams, exportExtraStreams, mainCopiedThumbnailStreams, numStreamsToCopy, toggleStripVideo, toggleStripAudio, toggleStripSubtitle, toggleStripThumbnail, toggleStripAll, copyStreamIdsByFile, setCopyStreamIdsByFile, copyFileStreams, mainCopiedStreams, setCopyStreamIdsForPath, toggleCopyStreamId, isCopyingStreamId, toggleCopyStreamIds, changeEnabledStreamsFilter, applyEnabledStreamsFilter, enabledStreamsFilter, toggleCopyAllStreamsForPath } = useStreamsMeta({ mainStreams, externalFilesMeta, filePath, autoExportExtraStreams, showGenericDialog });
 
@@ -630,6 +645,7 @@ function App() {
     )
     // or if selected multiple audio streams (html5 video element doesn't support that)
     || activeAudioStreamIndexes.size > 1
+    || hasAdjustedAudioGain
   );
   // if user selected a rotation, but they might want to turn off the rotation preview
   // but allow the user to disable
@@ -683,6 +699,7 @@ function App() {
     setExternalFilesMeta({});
     setCustomTagsByFile({});
     setParamsByStreamId(new Map());
+    setOverlayClips([]);
     setDetectedFps(undefined);
     setMainFileMeta(undefined);
     setCopyStreamIdsByFile({});
@@ -1557,6 +1574,7 @@ function App() {
               sourceRotation: effectiveRotation,
               rotation: isRotationSet ? effectiveRotation : undefined,
               appendFfmpegCommandLog,
+              audioGainDb: sizeLimitedAudioGainDb,
               onProgress: (jobProgress, metadata) => updateJobProgress({ jobIndex: index, jobText: i18n.t('Exporting'), jobProgress, metadata }),
             });
             results.push(result);
@@ -1613,6 +1631,7 @@ function App() {
             sourceRotation: effectiveRotation,
             rotation: isRotationSet ? effectiveRotation : undefined,
             appendFfmpegCommandLog,
+            audioGainDb: sizeLimitedAudioGainDb,
             onProgress: (jobProgress, metadata) => updateJobProgress({ jobIndex: mergedJobIndex, jobText: i18n.t('Merging'), jobProgress, metadata }),
           });
           results.push(mergedResult);
@@ -1836,7 +1855,7 @@ function App() {
       setWorking(undefined);
       setProgress(undefined);
     }
-  }, [allFilesMeta, appendFfmpegCommandLog, appendSizeLimitedResultNotices, areWeCutting, askForCleanupChoices, autoDeleteMergedSegments, avoidNegativeTs, buildSizeLimitedInternalFileNames, buildSizeLimitedResultSummary, cleanupChoices, cleanupFiles, concatCutSegments, copyFileStreams, customOutDir, customTagsByFile, cutFileTemplateOrDefault, cutMergedFileTemplateOrDefault, cutMultiple, detectedFps, effectiveRotation, effectiveSizeLimitedTransformSettings, enableOverwriteOutput, exportConfirmEnabled, exportExtraStreams, extractStreams, ffmpegExperimental, fileDuration, fileFormat, filePath, formatSizeLimitedJobStageText, generateCutFileNames, generateCutMergedFileNames, generateSizeLimitedCustomCutFileNames, generateSizeLimitedCustomCutMergedFileNames, getSizeLimitedSeparateSuffixLabelForSegment, handleExportFailed, haveInvalidSegs, hideAllNotifications, invertCutSegments, isRotationSet, isSizeLimitedExport, keyframeCut, mainFileFormat, mainStreams, maybeRenameSizeLimitedOutputs, movFastStart, nonCopiedExtraStreams, numStreamsToCopy, openCutFinishedDialog, openSizeLimitedFinishedDialog, outputDir, outputPlaybackRate, paramsByStreamId, preserveChapters, preserveMetadata, preserveMetadataOnMerge, preserveMovData, prefersReducedMotion, setWorking, segmentsOrInverse.selected, segmentsToChapters, segmentsToChaptersOnly, segmentsToExport, shortestFlag, showOsNotification, simpleMode, sizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedEncoder, sizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, sizeLimitAdvancedTwoPass, sizeLimitControlMode, sizeLimitMb, sizeLimitMergedNamingMode, sizeLimitPreset, sizeLimitSeparateNamingMode, sizeLimitedCutFileTemplateOrDefault, sizeLimitedCutMergedFileTemplateOrDefault, sizeLimitedSegmentsForExport, sizeLimitedSourceFps, sizeLimitedStreams, t, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, tryDeleteFiles, willMerge, workingRef]);
+  }, [allFilesMeta, appendFfmpegCommandLog, appendSizeLimitedResultNotices, areWeCutting, askForCleanupChoices, autoDeleteMergedSegments, avoidNegativeTs, buildSizeLimitedInternalFileNames, buildSizeLimitedResultSummary, cleanupChoices, cleanupFiles, concatCutSegments, copyFileStreams, customOutDir, customTagsByFile, cutFileTemplateOrDefault, cutMergedFileTemplateOrDefault, cutMultiple, detectedFps, effectiveRotation, effectiveSizeLimitedTransformSettings, enableOverwriteOutput, exportConfirmEnabled, exportExtraStreams, extractStreams, ffmpegExperimental, fileDuration, fileFormat, filePath, formatSizeLimitedJobStageText, generateCutFileNames, generateCutMergedFileNames, generateSizeLimitedCustomCutFileNames, generateSizeLimitedCustomCutMergedFileNames, getSizeLimitedSeparateSuffixLabelForSegment, handleExportFailed, haveInvalidSegs, hideAllNotifications, invertCutSegments, isRotationSet, isSizeLimitedExport, keyframeCut, mainFileFormat, mainStreams, maybeRenameSizeLimitedOutputs, movFastStart, nonCopiedExtraStreams, numStreamsToCopy, openCutFinishedDialog, openSizeLimitedFinishedDialog, outputDir, outputPlaybackRate, paramsByStreamId, preserveChapters, preserveMetadata, preserveMetadataOnMerge, preserveMovData, prefersReducedMotion, setWorking, segmentsOrInverse.selected, segmentsToChapters, segmentsToChaptersOnly, segmentsToExport, shortestFlag, showOsNotification, simpleMode, sizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedEncoder, sizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, sizeLimitAdvancedTwoPass, sizeLimitControlMode, sizeLimitMb, sizeLimitMergedNamingMode, sizeLimitPreset, sizeLimitSeparateNamingMode, sizeLimitedAudioGainDb, sizeLimitedCutFileTemplateOrDefault, sizeLimitedCutMergedFileTemplateOrDefault, sizeLimitedSegmentsForExport, sizeLimitedSourceFps, sizeLimitedStreams, t, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, tryDeleteFiles, willMerge, workingRef]);
 
   const onExportPress = useCallback(async () => {
     if (!filePath) return;
@@ -1957,6 +1976,20 @@ function App() {
     loadCutSegments({ segments: await readEdlFile({ type, path, fps: detectedFps }), append });
   }, [detectedFps, loadCutSegments]);
 
+  const applyProjectState = useCallback(({ mediaFilePath, project }: { mediaFilePath: string, project: Awaited<ReturnType<typeof loadLlcProject>> }) => {
+    loadCutSegments({ segments: project.cutSegments, append: false });
+    setCustomTagsByFile(project.streamEdits?.customTags != null ? { [mediaFilePath]: project.streamEdits.customTags } : {});
+    setParamsByStreamId(project.streamEdits?.streamParams != null && project.streamEdits.streamParams.length > 0
+      ? new Map([[mediaFilePath, new Map(project.streamEdits.streamParams.map(({ streamId, params }) => [streamId, { ...params }]))]])
+      : new Map());
+    setOverlayClips(project.overlayClips ?? []);
+  }, [loadCutSegments]);
+
+  const loadProjectIntoState = useCallback(async ({ path, mediaFilePath }: { path: string, mediaFilePath: string }) => {
+    const project = await loadLlcProject(path);
+    applyProjectState({ mediaFilePath, project });
+  }, [applyProjectState]);
+
   const loadSubtitleTrackToSegments = useCallback(async (streamId: number) => {
     invariant(filePath != null);
     setWorking(true);
@@ -1971,7 +2004,7 @@ function App() {
   const loadMedia = useCallback(async ({ filePath: fp, projectPath }: { filePath: string, projectPath?: string | undefined }) => {
     async function tryOpenProjectPath(path: string) {
       if (!(await mainApi.pathExists(path))) return false;
-      await loadEdlFile({ path, type: 'llc' });
+      await loadProjectIntoState({ path, mediaFilePath: fp });
       return true;
     }
 
@@ -1990,7 +2023,7 @@ function App() {
           // Ok, the file exists. now we have to ask the user, because we need to read that file
           await ensureAccessToSourceDir(fp);
           // Ok, we got access from the user (or already have access), now read the project file
-          await loadEdlFile({ path: sameDirEdlFilePath, type: 'llc' });
+          await loadProjectIntoState({ path: sameDirEdlFilePath, mediaFilePath: fp });
         }
 
         // OK, we didn't find a project file, instead maybe try to create project (segments) from chapters
@@ -2076,7 +2109,7 @@ function App() {
 
       // eslint-disable-next-line unicorn/prefer-ternary
       if (projectPath) {
-        await loadEdlFile({ path: projectPath, type: 'llc' });
+        await loadProjectIntoState({ path: projectPath, mediaFilePath: fp });
       } else {
         await tryFindAndLoadProjectFile({ chapters: ffprobeMeta.chapters, cod });
       }
@@ -2123,7 +2156,7 @@ function App() {
       resetState();
       throw err;
     }
-  }, [storeProjectInWorkingDir, setWorking, loadEdlFile, getEdlFilePath, enableImportChapters, ensureAccessToSourceDir, loadCutSegments, autoLoadTimecode, enableNativeHevc, ensureWritableOutDir, customOutDir, resetState, clearSegColorCounter, setCopyStreamIdsForPath, setDetectedFileFormat, outFormatLocked, setUsingDummyVideo, setPreviewFilePath, html5ifyAndLoadWithPreferences, setFileFormat, showNotification, showPreviewFileLoadedMessage, showNotNativelySupportedMessage]);
+  }, [storeProjectInWorkingDir, setWorking, getEdlFilePath, enableImportChapters, ensureAccessToSourceDir, loadCutSegments, autoLoadTimecode, enableNativeHevc, ensureWritableOutDir, customOutDir, resetState, clearSegColorCounter, setCopyStreamIdsForPath, setDetectedFileFormat, outFormatLocked, setUsingDummyVideo, setPreviewFilePath, html5ifyAndLoadWithPreferences, setFileFormat, showNotification, showPreviewFileLoadedMessage, showNotNativelySupportedMessage, loadProjectIntoState]);
 
   const toggleLastCommands = useCallback(() => setLastCommandsVisible((val) => !val), []);
   const toggleSettings = useCallback(() => setSettingsVisible((val) => !val), []);
@@ -2856,9 +2889,9 @@ function App() {
   const tryExportEdlFile = useCallback(async (type: EdlExportType) => {
     if (!checkFileOpened() || selectedSegments.length === 0) return;
     await withErrorHandling(async () => {
-      await exportEdlFile({ type, cutSegments: selectedSegments, customOutDir, filePath, getFrameCount });
+      await exportEdlFile({ type, cutSegments: selectedSegments, customOutDir, filePath, getFrameCount, customTagsByFile, paramsByStreamId, overlayClips });
     }, i18n.t('Failed to export project'));
-  }, [checkFileOpened, customOutDir, filePath, getFrameCount, selectedSegments, withErrorHandling]);
+  }, [checkFileOpened, customOutDir, customTagsByFile, filePath, getFrameCount, overlayClips, paramsByStreamId, selectedSegments, withErrorHandling]);
 
   const importEdlFile = useCallback(async (type: EdlImportType) => {
     if (!checkFileOpened()) return;
@@ -3112,7 +3145,7 @@ function App() {
                       {renderSubtitles()}
                     </video>
 
-                    {filePath != null && compatPlayerEnabled && <MediaSourcePlayer rotate={effectiveRotation} filePath={filePath} videoStream={activeVideoStream} audioStreams={activeAudioStreams} masterVideoRef={videoRef} mediaSourceQuality={mediaSourceQuality} ffmpegHwaccel={ffmpegHwaccel} />}
+                    {filePath != null && compatPlayerEnabled && <MediaSourcePlayer rotate={effectiveRotation} filePath={filePath} videoStream={activeVideoStream} audioStreams={activeAudioStreams} audioGainByStreamId={activeAudioGainByStreamId} masterVideoRef={videoRef} mediaSourceQuality={mediaSourceQuality} ffmpegHwaccel={ffmpegHwaccel} />}
                   </div>
 
                   {bigWaveformEnabled && <BigWaveform waveforms={waveforms} relevantTime={relevantTime} playing={playing} fileDurationNonZero={fileDurationNonZero} zoom={zoomUnrounded} seekRel={seekRel} darkMode={darkMode} />}
