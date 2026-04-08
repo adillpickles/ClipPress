@@ -7,7 +7,7 @@ import i18n from 'i18next';
 
 import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists } from '../util';
 import { isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, getDuration, createChaptersFromSegments, readFileFfprobeMeta, getExperimentalArgs, getVideoTimescaleArgs, logStdoutStderr, runFfmpegConcat, RefuseOverwriteError, runFfmpeg } from '../ffmpeg';
-import { getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
+import { defaultAudioGainDb, getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
 import { needsSmartCut, getCodecParams } from '../smartcut';
 import { getGuaranteedSegments, isDurationValid } from '../segments';
 import type { FFprobeStream } from '../../../common/ffprobe';
@@ -348,7 +348,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       outFormat,
       needFlac: areWeCutting,
       getAudioArgs: ({ path, streamIndex, outputIndex }) => {
-        const audioGainDb = paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb;
+        const audioGainDb = paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb ?? defaultAudioGainDb;
         if (isNeutralAudioGain(audioGainDb)) return undefined;
         return getAdjustedAudioGainArgs({ audioGainDb, outFormat, outputIndex });
       },
@@ -492,7 +492,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       outFormat,
       getVideoArgs,
       getAudioArgs: ({ path, streamIndex, outputIndex }) => {
-        const audioGainDb = paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb;
+        const audioGainDb = paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb ?? defaultAudioGainDb;
         if (isNeutralAudioGain(audioGainDb)) return undefined;
         return getAdjustedAudioGainArgs({ audioGainDb, outFormat, outputIndex });
       },
