@@ -13,6 +13,7 @@ import fromPairs from 'lodash/fromPairs';
 import sum from 'lodash/sum';
 import invariant from 'tiny-invariant';
 import type { SweetAlertOptions } from 'sweetalert2';
+import { nanoid } from 'nanoid';
 
 import useTimelineScroll from './hooks/useTimelineScroll';
 import useUserSettingsRoot from './hooks/useUserSettingsRoot';
@@ -38,6 +39,7 @@ import Settings from './components/Settings';
 import Timeline from './Timeline';
 import BottomBar from './BottomBar';
 import ExportConfirm from './components/ExportConfirm';
+import TextOverlayEditor from './components/TextOverlayEditor';
 import ValueTuners from './components/ValueTuners';
 import VolumeControl from './components/VolumeControl';
 import PlaybackStreamSelector from './components/PlaybackStreamSelector';
@@ -129,6 +131,7 @@ import useHtml5ify from './hooks/useHtml5ify';
 import WhatsNew from './components/WhatsNew';
 import mainApi from './mainApi.js';
 import type { AppEvent } from '../../main/index.js';
+import { createDefaultTextOverlayClip, sanitizeOverlayClip } from './textOverlays';
 
 const electron = window.require('electron');
 const { lstat } = window.require('fs/promises');
@@ -159,6 +162,7 @@ function App() {
   const [customTagsByFile, setCustomTagsByFile] = useState<CustomTagsByFile>({});
   const [paramsByStreamId, setParamsByStreamId] = useState<ParamsByStreamId>(new Map());
   const [overlayClips, setOverlayClips] = useState<OverlayClip[]>([]);
+  const [selectedOverlayId, setSelectedOverlayId] = useState<string>();
   const [detectedFps, setDetectedFps] = useState<number>();
   const [mainFileMeta, setMainFileMeta] = useState<{ ffprobeMeta: FileFfprobeMeta, stats: FileStats }>();
   const [streamsSelectorShown, setStreamsSelectorShown] = useState(false);
@@ -359,6 +363,30 @@ function App() {
     if (fileStreamParams == null) return false;
     return [...fileStreamParams.values()].some((streamParams) => !isNeutralAudioGain(streamParams.audioGainDb));
   }, [filePath, paramsByStreamId]);
+  const hasOverlayClips = overlayClips.length > 0;
+
+  const updateOverlayClip = useCallback((overlayId: string, updater: (clip: OverlayClip) => OverlayClip) => {
+    setOverlayClips((existingClips) => existingClips.map((overlayClip) => (
+      overlayClip.overlayId === overlayId ? sanitizeOverlayClip(updater(overlayClip)) : overlayClip
+    )));
+  }, []);
+
+  const addTextOverlay = useCallback(() => {
+    if (mainVideoStream == null) return;
+    const overlayClip = createDefaultTextOverlayClip({
+      currentTime: getRelevantTime(),
+      fileDuration,
+      overlayId: nanoid(),
+    });
+    setOverlayClips((existingClips) => [...existingClips, overlayClip]);
+    setSelectedOverlayId(overlayClip.overlayId);
+  }, [fileDuration, getRelevantTime, mainVideoStream]);
+
+  useEffect(() => {
+    if (selectedOverlayId == null) return;
+    if (overlayClips.some((overlayClip) => overlayClip.overlayId === selectedOverlayId)) return;
+    setSelectedOverlayId(undefined);
+  }, [overlayClips, selectedOverlayId]);
 
   // 360 means we don't modify rotation gtrgt
   const isRotationSet = rotation !== 360;
@@ -572,6 +600,13 @@ function App() {
 
   // total number of streams for ALL files
   const numStreamsTotal = Object.values(allFilesMeta).flatMap(({ streams }) => streams).length;
+  const hasAdditionalVideoStreamsForTextExport = useMemo(() => {
+    if (filePath == null || activeVideoStream == null) return false;
+    return copyFileStreams.some(({ path, streamIds }) => streamIds.some((streamId) => {
+      const stream = allFilesMeta[path]?.streams.find((stream2) => stream2.index === streamId);
+      return stream?.codec_type === 'video' && !(path === filePath && streamId === activeVideoStream.index);
+    }));
+  }, [activeVideoStream, allFilesMeta, copyFileStreams, filePath]);
 
   const hasAudio = !!mainAudioStream;
   const hasVideo = !!mainVideoStream;
@@ -629,7 +664,7 @@ function App() {
   const isEncodingUi = isEncoding || isSizeLimitedExport;
 
   const {
-    concatFiles, html5ifyDummy, cutMultiple, concatCutSegments, html5ify, fixInvalidDuration, extractStreams, tryDeleteFiles,
+    concatFiles, html5ifyDummy, cutMultiple, cutMultipleWithTextOverlays, concatCutSegments, html5ify, fixInvalidDuration, extractStreams, tryDeleteFiles,
   } = useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, isEncoding, lossyMode, enableOverwriteOutput, outputPlaybackRate, cutFromAdjustmentFrames, cutToAdjustmentFrames, appendLastCommandsLog, encCustomBitrate: encBitrate, appendFfmpegCommandLog, ffmpegHwaccel });
 
   const { previewFilePath, setPreviewFilePath, usingDummyVideo, setUsingDummyVideo, userHtml5ifyCurrentFile, convertFormatBatch, html5ifyAndLoadWithPreferences } = useHtml5ify({
@@ -700,6 +735,7 @@ function App() {
     setCustomTagsByFile({});
     setParamsByStreamId(new Map());
     setOverlayClips([]);
+    setSelectedOverlayId(undefined);
     setDetectedFps(undefined);
     setMainFileMeta(undefined);
     setCopyStreamIdsByFile({});
@@ -1487,6 +1523,10 @@ function App() {
       setWorking({ text: i18n.t('Exporting') });
 
       if (isSizeLimitedExport) {
+        if (hasOverlayClips) {
+          throw new UserFacingError(i18n.t('Size-limited export does not support text overlays yet.'));
+        }
+
         const notices = new Set<string>();
         const warnings = new Set<string>();
         const useAutoSeparateNaming = sizeLimitSeparateNamingMode === 'auto';
@@ -1666,6 +1706,136 @@ function App() {
         if (!hideAllNotifications) {
           showOsNotification(i18n.t('Export finished'));
           openSizeLimitedFinishedDialog({ filePath: revealPath, warnings: [...warnings], notices: [...notices], summary: resultSummary });
+        }
+
+        setExportCount((c) => c + 1);
+        setCurrentFileExportCount((c) => c + 1);
+        emitEvent({ eventName: 'export-complete', paths: exportedPaths });
+        return;
+      }
+
+      if (hasOverlayClips) {
+        if (activeVideoStream == null || activeVideoStream.width == null || activeVideoStream.height == null) {
+          throw new UserFacingError(i18n.t('Text export requires a readable video track.'));
+        }
+        if (!isCopyingStreamId(filePath, activeVideoStream.index)) {
+          throw new UserFacingError(i18n.t('Text export requires the active video track to stay enabled.'));
+        }
+
+        let chaptersToAdd: Chapter[] | undefined;
+        if (segmentsToChaptersOnly) {
+          const sortedSegments = sortSegments(segmentsOrInverse.selected);
+          if (hasAnySegmentOverlap(sortedSegments)) {
+            errorToast(i18n.t('Make sure you have no overlapping segments.'));
+            return;
+          }
+          chaptersToAdd = isMatroska(fileFormat) ? sortedSegments : convertSegmentsToChaptersWithGaps(sortedSegments);
+        }
+
+        const notices = new Set<string>();
+        const warnings = new Set<string>();
+        notices.add(i18n.t('Text layers require video encoding during export.'));
+        if (hasAdditionalVideoStreamsForTextExport) warnings.add(i18n.t('Text export currently keeps only the active video track. Disable any extra video tracks if you need exact control.'));
+
+        let cutFileNames: string[];
+        if (willMerge && autoDeleteMergedSegments) {
+          const generated = await generateCutFileNames(defaultCutFileTemplate);
+          cutFileNames = generated.fileNames;
+        } else {
+          const generated = await generateCutFileNames(cutFileTemplateOrDefault);
+          cutFileNames = generated.fileNames;
+          if (generated.problems.error != null) {
+            warnings.add(generated.problems.error);
+            warnings.add(t('Fell back to default output file name'));
+          }
+        }
+
+        const outFiles = await cutMultipleWithTextOverlays({
+          outputDir,
+          segments: segmentsToExport,
+          cutFileNames,
+          fileDuration,
+          rotation: effectiveRotation,
+          copyFileStreams,
+          allFilesMeta,
+          outFormat: fileFormat,
+          ffmpegExperimental,
+          preserveMetadata,
+          preserveMovData,
+          preserveChapters,
+          movFastStart,
+          customTagsByFile,
+          paramsByStreamId,
+          chapters: chaptersToAdd,
+          overlayClips,
+          videoStreamIndex: activeVideoStream.index,
+          videoWidth: activeVideoStream.width,
+          videoHeight: activeVideoStream.height,
+          onProgress: setProgress,
+        });
+
+        let mergedOutFilePath: string | undefined;
+
+        if (willMerge) {
+          setProgress(0);
+          setWorking({ text: i18n.t('Merging') });
+
+          const chapterNames = segmentsToChapters && !invertCutSegments ? segmentsToExport.map((segment) => segment.name) : undefined;
+          const { fileNames, problems } = await generateCutMergedFileNames(cutMergedFileTemplateOrDefault);
+          if (problems.error != null) {
+            warnings.add(problems.error);
+            warnings.add(t('Fell back to default output file name'));
+          }
+
+          const [fileName] = fileNames;
+          invariant(fileName != null);
+          mergedOutFilePath = getOutPath({ customOutDir, filePath, fileName });
+
+          await concatCutSegments({
+            customOutDir,
+            outFormat: fileFormat,
+            segmentPaths: outFiles.map((file) => file.path),
+            ffmpegExperimental,
+            preserveMovData,
+            movFastStart,
+            onProgress: setProgress,
+            chapterNames,
+            preserveMetadataOnMerge,
+            mergedOutFilePath,
+          });
+
+          const createdOutFiles = outFiles.flatMap((file) => (file.created ? [file.path] : []));
+          if (autoDeleteMergedSegments) await tryDeleteFiles(createdOutFiles);
+        }
+
+        if (!enableOverwriteOutput) warnings.add(i18n.t('Overwrite output setting is disabled and some files might have been skipped.'));
+        if (!exportConfirmEnabled) notices.add(i18n.t('Export options are not shown. You can enable export options by clicking the icon right next to the export button.'));
+
+        if (exportExtraStreams) {
+          try {
+            setProgress(undefined);
+            setWorking({ text: i18n.t('Extracting {{count}} unprocessable tracks', { count: nonCopiedExtraStreams.length }) });
+            await extractStreams({ customOutDir, streams: nonCopiedExtraStreams });
+            notices.add(i18n.t('Unprocessable streams were exported as separate files.'));
+          } catch (err) {
+            console.error('Extra stream export failed', err);
+            warnings.add(i18n.t('Unable to export unprocessable streams.'));
+          }
+        }
+
+        if (simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
+
+        if (cleanupChoices.cleanupAfterExport) {
+          const newCleanupChoices = cleanupChoices.askForCleanup ? await askForCleanupChoices() : cleanupChoices;
+          if (newCleanupChoices) await cleanupFiles(newCleanupChoices);
+        }
+
+        const exportedPaths = willMerge && mergedOutFilePath != null ? [mergedOutFilePath] : outFiles.map((file) => file.path);
+        const [revealPath] = exportedPaths;
+        invariant(revealPath != null);
+        if (!hideAllNotifications) {
+          showOsNotification(i18n.t('Export finished'));
+          openCutFinishedDialog({ filePath: revealPath, warnings: [...warnings], notices: [...notices] });
         }
 
         setExportCount((c) => c + 1);
@@ -1855,7 +2025,7 @@ function App() {
       setWorking(undefined);
       setProgress(undefined);
     }
-  }, [allFilesMeta, appendFfmpegCommandLog, appendSizeLimitedResultNotices, areWeCutting, askForCleanupChoices, autoDeleteMergedSegments, avoidNegativeTs, buildSizeLimitedInternalFileNames, buildSizeLimitedResultSummary, cleanupChoices, cleanupFiles, concatCutSegments, copyFileStreams, customOutDir, customTagsByFile, cutFileTemplateOrDefault, cutMergedFileTemplateOrDefault, cutMultiple, detectedFps, effectiveRotation, effectiveSizeLimitedTransformSettings, enableOverwriteOutput, exportConfirmEnabled, exportExtraStreams, extractStreams, ffmpegExperimental, fileDuration, fileFormat, filePath, formatSizeLimitedJobStageText, generateCutFileNames, generateCutMergedFileNames, generateSizeLimitedCustomCutFileNames, generateSizeLimitedCustomCutMergedFileNames, getSizeLimitedSeparateSuffixLabelForSegment, handleExportFailed, haveInvalidSegs, hideAllNotifications, invertCutSegments, isRotationSet, isSizeLimitedExport, keyframeCut, mainFileFormat, mainStreams, maybeRenameSizeLimitedOutputs, movFastStart, nonCopiedExtraStreams, numStreamsToCopy, openCutFinishedDialog, openSizeLimitedFinishedDialog, outputDir, outputPlaybackRate, paramsByStreamId, preserveChapters, preserveMetadata, preserveMetadataOnMerge, preserveMovData, prefersReducedMotion, setWorking, segmentsOrInverse.selected, segmentsToChapters, segmentsToChaptersOnly, segmentsToExport, shortestFlag, showOsNotification, simpleMode, sizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedEncoder, sizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, sizeLimitAdvancedTwoPass, sizeLimitControlMode, sizeLimitMb, sizeLimitMergedNamingMode, sizeLimitPreset, sizeLimitSeparateNamingMode, sizeLimitedAudioGainDb, sizeLimitedCutFileTemplateOrDefault, sizeLimitedCutMergedFileTemplateOrDefault, sizeLimitedSegmentsForExport, sizeLimitedSourceFps, sizeLimitedStreams, t, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, tryDeleteFiles, willMerge, workingRef]);
+  }, [activeVideoStream, allFilesMeta, appendFfmpegCommandLog, appendSizeLimitedResultNotices, areWeCutting, askForCleanupChoices, autoDeleteMergedSegments, avoidNegativeTs, buildSizeLimitedInternalFileNames, buildSizeLimitedResultSummary, cleanupChoices, cleanupFiles, concatCutSegments, copyFileStreams, customOutDir, customTagsByFile, cutFileTemplateOrDefault, cutMergedFileTemplateOrDefault, cutMultiple, cutMultipleWithTextOverlays, detectedFps, effectiveRotation, effectiveSizeLimitedTransformSettings, enableOverwriteOutput, exportConfirmEnabled, exportExtraStreams, extractStreams, ffmpegExperimental, fileDuration, fileFormat, filePath, formatSizeLimitedJobStageText, generateCutFileNames, generateCutMergedFileNames, generateSizeLimitedCustomCutFileNames, generateSizeLimitedCustomCutMergedFileNames, getSizeLimitedSeparateSuffixLabelForSegment, handleExportFailed, hasAdditionalVideoStreamsForTextExport, hasOverlayClips, haveInvalidSegs, hideAllNotifications, invertCutSegments, isCopyingStreamId, isRotationSet, isSizeLimitedExport, keyframeCut, mainFileFormat, mainStreams, maybeRenameSizeLimitedOutputs, movFastStart, nonCopiedExtraStreams, numStreamsToCopy, openCutFinishedDialog, openSizeLimitedFinishedDialog, outputDir, outputPlaybackRate, overlayClips, paramsByStreamId, preserveChapters, preserveMetadata, preserveMetadataOnMerge, preserveMovData, prefersReducedMotion, setWorking, segmentsOrInverse.selected, segmentsToChapters, segmentsToChaptersOnly, segmentsToExport, shortestFlag, showOsNotification, simpleMode, sizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedEncoder, sizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, sizeLimitAdvancedTwoPass, sizeLimitControlMode, sizeLimitMb, sizeLimitMergedNamingMode, sizeLimitPreset, sizeLimitSeparateNamingMode, sizeLimitedAudioGainDb, sizeLimitedCutFileTemplateOrDefault, sizeLimitedCutMergedFileTemplateOrDefault, sizeLimitedSegmentsForExport, sizeLimitedSourceFps, sizeLimitedStreams, t, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, tryDeleteFiles, willMerge, workingRef]);
 
   const onExportPress = useCallback(async () => {
     if (!filePath) return;
@@ -1983,6 +2153,7 @@ function App() {
       ? new Map([[mediaFilePath, new Map(project.streamEdits.streamParams.map(({ streamId, params }) => [streamId, { ...params }]))]])
       : new Map());
     setOverlayClips(project.overlayClips ?? []);
+    setSelectedOverlayId(undefined);
   }, [loadCutSegments]);
 
   const loadProjectIntoState = useCallback(async ({ path, mediaFilePath }: { path: string, mediaFilePath: string }) => {
@@ -3097,6 +3268,8 @@ function App() {
                 setStreamsSelectorShown={setStreamsSelectorShown}
                 selectedSegments={segmentsOrInverse.selected}
                 toggleDarkMode={toggleDarkMode}
+                onAddText={addTextOverlay}
+                hasVideo={hasVideo}
               />
 
               <div style={{ flexGrow: 1, display: 'flex', overflowY: 'hidden' }}>
@@ -3146,6 +3319,18 @@ function App() {
                     </video>
 
                     {filePath != null && compatPlayerEnabled && <MediaSourcePlayer rotate={effectiveRotation} filePath={filePath} videoStream={activeVideoStream} audioStreams={activeAudioStreams} audioGainByStreamId={activeAudioGainByStreamId} masterVideoRef={videoRef} mediaSourceQuality={mediaSourceQuality} ffmpegHwaccel={ffmpegHwaccel} />}
+                    {activeVideoStream?.width != null && activeVideoStream.height != null && (
+                      <TextOverlayEditor
+                        overlayClips={overlayClips}
+                        selectedOverlayId={selectedOverlayId}
+                        relevantTime={relevantTime}
+                        videoWidth={activeVideoStream.width}
+                        videoHeight={activeVideoStream.height}
+                        rotation={effectiveRotation}
+                        onSelectOverlay={setSelectedOverlayId}
+                        onUpdateOverlay={updateOverlayClip}
+                      />
+                    )}
                   </div>
 
                   {bigWaveformEnabled && <BigWaveform waveforms={waveforms} relevantTime={relevantTime} playing={playing} fileDurationNonZero={fileDurationNonZero} zoom={zoomUnrounded} seekRel={seekRel} darkMode={darkMode} />}
@@ -3274,6 +3459,10 @@ function App() {
                   goToTimecode={goToTimecode}
                   darkMode={darkMode}
                   setCutTime={setCutTime}
+                  overlayClips={overlayClips}
+                  selectedOverlayId={selectedOverlayId}
+                  onSelectOverlay={setSelectedOverlayId}
+                  onUpdateOverlayClip={updateOverlayClip}
                 />
 
                 <BottomBar
@@ -3332,7 +3521,7 @@ function App() {
 
               {/* Dialogs */}
 
-              <ExportConfirm areWeCutting={areWeCutting} segmentsOrInverse={segmentsOrInverse} segmentsToExport={segmentsToExport} willMerge={willMerge} visible={exportConfirmOpen} onClosePress={closeExportConfirm} onExportConfirm={onExportConfirm} renderOutFmt={renderOutFmt} outputDir={outputDir} numStreamsTotal={numStreamsTotal} numStreamsToCopy={numStreamsToCopy} onShowStreamsSelectorClick={handleShowStreamsSelectorClick} outFormat={fileFormat} cutFileTemplate={cutFileTemplate} cutMergedFileTemplate={cutMergedFileTemplate} generateCutFileNames={isSizeLimitedExport ? generateSizeLimitedCustomCutFileNames : generateCutFileNames} generateCutMergedFileNames={isSizeLimitedExport ? generateSizeLimitedCustomCutMergedFileNames : generateCutMergedFileNames} generateAutoCutFileNames={isSizeLimitedExport ? generateSizeLimitedAutoCutFileNames : undefined} generateAutoCutMergedFileNames={isSizeLimitedExport ? generateSizeLimitedAutoCutMergedFileNames : undefined} currentSegIndexSafe={currentSegIndexSafe} mainCopiedThumbnailStreams={mainCopiedThumbnailStreams} needSmartCut={needSmartCut} isEncoding={isEncodingUi} encBitrate={encBitrate} setEncBitrate={setEncBitrate} toggleSettings={toggleSettings} outputPlaybackRate={outputPlaybackRate} lossyMode={lossyMode} neighbouringKeyFrames={neighbouringKeyFrames} findNearestKeyFrameTime={findNearestKeyFrameTime} sizeLimitedSourceVideoStream={sizeLimitedStreams.videoStream} sizeLimitedSourceFps={sizeLimitedSourceFps} sizeLimitedSourceRotation={effectiveRotation} sizeLimitedHasAudio={sizeLimitedStreams.audioStream != null} />
+              <ExportConfirm areWeCutting={areWeCutting} segmentsOrInverse={segmentsOrInverse} segmentsToExport={segmentsToExport} willMerge={willMerge} visible={exportConfirmOpen} onClosePress={closeExportConfirm} onExportConfirm={onExportConfirm} renderOutFmt={renderOutFmt} outputDir={outputDir} numStreamsTotal={numStreamsTotal} numStreamsToCopy={numStreamsToCopy} onShowStreamsSelectorClick={handleShowStreamsSelectorClick} outFormat={fileFormat} cutFileTemplate={cutFileTemplate} cutMergedFileTemplate={cutMergedFileTemplate} generateCutFileNames={isSizeLimitedExport ? generateSizeLimitedCustomCutFileNames : generateCutFileNames} generateCutMergedFileNames={isSizeLimitedExport ? generateSizeLimitedCustomCutMergedFileNames : generateCutMergedFileNames} generateAutoCutFileNames={isSizeLimitedExport ? generateSizeLimitedAutoCutFileNames : undefined} generateAutoCutMergedFileNames={isSizeLimitedExport ? generateSizeLimitedAutoCutMergedFileNames : undefined} currentSegIndexSafe={currentSegIndexSafe} mainCopiedThumbnailStreams={mainCopiedThumbnailStreams} needSmartCut={needSmartCut} isEncoding={isEncodingUi} encBitrate={encBitrate} setEncBitrate={setEncBitrate} toggleSettings={toggleSettings} outputPlaybackRate={outputPlaybackRate} lossyMode={lossyMode} neighbouringKeyFrames={neighbouringKeyFrames} findNearestKeyFrameTime={findNearestKeyFrameTime} sizeLimitedSourceVideoStream={sizeLimitedStreams.videoStream} sizeLimitedSourceFps={sizeLimitedSourceFps} sizeLimitedSourceRotation={effectiveRotation} sizeLimitedHasAudio={sizeLimitedStreams.audioStream != null} hasOverlayClips={hasOverlayClips} />
 
               <Dialog.Root open={streamsSelectorShown} onOpenChange={setStreamsSelectorShown}>
                 <Dialog.Portal>

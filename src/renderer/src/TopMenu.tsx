@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { memo, useCallback, useEffect, useRef } from 'react';
 import { IoIosSettings } from 'react-icons/io';
-import { FaFilter, FaList, FaLock, FaMoon, FaSun, FaUnlock } from 'react-icons/fa';
+import { FaFilter, FaFont, FaList, FaLock, FaMoon, FaSun, FaUnlock } from 'react-icons/fa';
 import { useTranslation } from 'react-i18next';
 import Button from './components/Button';
 
@@ -34,6 +34,8 @@ function TopMenu({
   selectedSegments,
   isCustomFormatSelected,
   toggleDarkMode,
+  onAddText,
+  hasVideo,
 }: {
   filePath: string | undefined,
   fileFormat: string | undefined,
@@ -48,6 +50,8 @@ function TopMenu({
   selectedSegments: unknown[],
   isCustomFormatSelected: boolean,
   toggleDarkMode: () => void,
+  onAddText: () => void,
+  hasVideo: boolean,
 }) {
   const { t } = useTranslation();
   const { customOutDir, setCustomOutDir, simpleMode, outFormatLocked, setOutFormatLocked, darkMode } = useUserSettings();
@@ -112,6 +116,11 @@ function TopMenu({
           >
             {enabledStreamsFilter == null && <FaFilter style={{ fontSize: '.7em', marginRight: '.4em' }} />}
             {t('Filter tracks')}
+          </Button>
+
+          <Button onClick={onAddText} disabled={!hasVideo} title={!hasVideo ? t('Text layers require a video track') : undefined}>
+            <FaFont style={{ fontSize: '.75em', marginRight: '.45em' }} />
+            {t('Add Text')}
           </Button>
         </>
       )}

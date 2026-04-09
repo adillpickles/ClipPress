@@ -10,9 +10,10 @@ import { isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, 
 import { defaultAudioGainDb, getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
 import { needsSmartCut, getCodecParams } from '../smartcut';
 import { getGuaranteedSegments, isDurationValid } from '../segments';
+import { getRotatedVideoDimensions, renderTextOverlayPng } from '../textOverlays';
 import type { FFprobeStream } from '../../../common/ffprobe';
 import type { AvoidNegativeTs, FfmpegHwAccel, Html5ifyMode, PreserveMetadata } from '../../../common/types';
-import type { AllFilesMeta, Chapter, CopyfileStreams, CustomTagsByFile, LiteFFprobeStream, ParamsByStreamId, SegmentToExport } from '../types';
+import type { AllFilesMeta, Chapter, CopyfileStreams, CustomTagsByFile, LiteFFprobeStream, OverlayClip, ParamsByStreamId, SegmentToExport } from '../types';
 import type { LossyMode } from '../../../main';
 import { UserFacingError } from '../../errors';
 import mainApi from '../mainApi';
@@ -92,6 +93,99 @@ export async function maybeMkDeepOutDir({ outputDir, fileOutPath }: { outputDir:
   // https://github.com/mifi/lossless-cut/issues/1532
   const actualOutputDir = dirname(fileOutPath);
   if (actualOutputDir !== outputDir) await mkdir(actualOutputDir, { recursive: true });
+}
+
+interface PreparedTextOverlayAsset {
+  overlayId: string,
+  imagePath: string,
+  x: number,
+  y: number,
+  start: number,
+  end: number,
+}
+
+function getOverlayRotationFilters(rotation: number | undefined) {
+  switch ((((rotation ?? 0) % 360) + 360) % 360) {
+    case 90: {
+      return ['transpose=clock'];
+    }
+    case 180: {
+      return ['hflip', 'vflip'];
+    }
+    case 270: {
+      return ['transpose=cclock'];
+    }
+    default: {
+      return [];
+    }
+  }
+}
+
+async function prepareTextOverlayAssets({
+  overlayClips,
+  outputDir,
+  videoWidth,
+  videoHeight,
+  rotation,
+}: {
+  overlayClips: OverlayClip[],
+  outputDir: string,
+  videoWidth: number,
+  videoHeight: number,
+  rotation: number | undefined,
+}) {
+  const rotatedVideoDimensions = getRotatedVideoDimensions({ width: videoWidth, height: videoHeight, rotation });
+  const assets = await pMap(overlayClips, async (overlayClip, index) => {
+    const width = Math.max(8, Math.round(rotatedVideoDimensions.width * overlayClip.box.width));
+    const height = Math.max(8, Math.round(rotatedVideoDimensions.height * overlayClip.box.height));
+    const imageData = await renderTextOverlayPng({ text: overlayClip.text, width, height });
+    const imagePath = join(outputDir, `clippress-text-overlay-${Date.now()}-${index}.png`);
+    await writeFile(imagePath, imageData);
+    return {
+      overlayId: overlayClip.overlayId,
+      imagePath,
+      x: Math.max(0, Math.round(rotatedVideoDimensions.width * overlayClip.box.x)),
+      y: Math.max(0, Math.round(rotatedVideoDimensions.height * overlayClip.box.y)),
+      start: overlayClip.start,
+      end: overlayClip.end,
+    } satisfies PreparedTextOverlayAsset;
+  }, { concurrency: 1 });
+
+  return { assets, rotatedVideoDimensions };
+}
+
+function buildTextOverlayFilterGraph({
+  videoInputLabel,
+  imageInputStartIndex,
+  overlayAssets,
+  segmentStart,
+  segmentEnd,
+  outputPlaybackRate,
+  rotation,
+}: {
+  videoInputLabel: string,
+  imageInputStartIndex: number,
+  overlayAssets: PreparedTextOverlayAsset[],
+  segmentStart: number,
+  segmentEnd: number,
+  outputPlaybackRate: number,
+  rotation: number | undefined,
+}) {
+  const graph: string[] = [];
+  const baseFilters = getOverlayRotationFilters(rotation);
+  let currentLabel = '[video0]';
+  graph.push(`${videoInputLabel}${baseFilters.length > 0 ? baseFilters.join(',') : 'null'}${currentLabel}`);
+
+  const overlappingAssets = overlayAssets.filter((overlayAsset) => overlayAsset.start < segmentEnd && overlayAsset.end > segmentStart);
+  overlappingAssets.forEach((overlayAsset, index) => {
+    const relativeStart = Math.max(0, (Math.max(overlayAsset.start, segmentStart) - segmentStart) / outputPlaybackRate);
+    const relativeEnd = Math.max(relativeStart, (Math.min(overlayAsset.end, segmentEnd) - segmentStart) / outputPlaybackRate);
+    const nextLabel = `[video${index + 1}]`;
+    graph.push(`${currentLabel}[${imageInputStartIndex + index}:v]overlay=${overlayAsset.x}:${overlayAsset.y}:enable='between(t,${relativeStart.toFixed(5)},${relativeEnd.toFixed(5)})'${nextLabel}`);
+    currentLabel = nextLabel;
+  });
+
+  return { filterGraph: graph.join(';'), videoOutputLabel: currentLabel };
 }
 
 
@@ -452,6 +546,226 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
     await transferTimestamps({ inPath: filePath, outPath, cutFrom, cutTo, treatInputFileModifiedTimeAsStart, duration: isDurationValid(fileDuration) ? fileDuration : undefined, treatOutputFileModifiedTimeAsStart });
   }, [appendFfmpegCommandLog, cutFromAdjustmentFrames, cutToAdjustmentFrames, filePath, getOutputPlaybackRateArgs, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+
+  const cutMultipleWithTextOverlays = useCallback(async ({
+    outputDir,
+    segments: segmentsIn,
+    cutFileNames,
+    fileDuration,
+    rotation,
+    copyFileStreams,
+    allFilesMeta,
+    outFormat,
+    ffmpegExperimental,
+    preserveMetadata,
+    preserveMovData,
+    preserveChapters,
+    movFastStart,
+    customTagsByFile,
+    paramsByStreamId,
+    chapters,
+    overlayClips,
+    videoStreamIndex,
+    videoWidth,
+    videoHeight,
+    onProgress: onTotalProgress,
+  }: {
+    outputDir: string,
+    segments: SegmentToExport[],
+    cutFileNames: string[],
+    fileDuration: number | undefined,
+    rotation: number | undefined,
+    copyFileStreams: CopyfileStreams,
+    allFilesMeta: AllFilesMeta,
+    outFormat: string | undefined,
+    ffmpegExperimental: boolean,
+    preserveMetadata: PreserveMetadata,
+    preserveMovData: boolean,
+    preserveChapters: boolean,
+    movFastStart: boolean,
+    customTagsByFile: CustomTagsByFile,
+    paramsByStreamId: ParamsByStreamId,
+    chapters: Chapter[] | undefined,
+    overlayClips: OverlayClip[],
+    videoStreamIndex: number,
+    videoWidth: number,
+    videoHeight: number,
+    onProgress: (progress: number) => void,
+  }) => {
+    invariant(filePath != null);
+    invariant(outFormat != null);
+
+    const segments = getGuaranteedSegments(segmentsIn, fileDuration);
+    const chaptersPath = await writeChaptersFfmetadata(outputDir, chapters);
+    const singleProgresses: Record<number, number> = {};
+    const onSingleProgress = (segmentIndex: number, singleProgress: number) => {
+      singleProgresses[segmentIndex] = singleProgress;
+      onTotalProgress(sum(Object.values(singleProgresses)) / segments.length);
+    };
+
+    try {
+      const { assets: preparedOverlayAssets } = await prepareTextOverlayAssets({
+        overlayClips,
+        outputDir,
+        videoWidth,
+        videoHeight,
+        rotation,
+      });
+
+      try {
+        const copyFileStreamsFiltered = copyFileStreams.filter(({ streamIds }) => streamIds.length > 0);
+        const mainInputFileIndex = copyFileStreamsFiltered.findIndex(({ path }) => path === filePath);
+        if (mainInputFileIndex === -1) throw new UserFacingError(i18n.t('Text export requires the main video track to stay enabled.'));
+
+        const auxiliaryCopyStreams = copyFileStreamsFiltered
+          .map(({ path, streamIds }) => ({
+            path,
+            streamIds: streamIds.filter((streamId) => {
+              const stream = allFilesMeta[path]?.streams.find((stream2) => stream2.index === streamId);
+              return stream != null && stream.codec_type !== 'video';
+            }),
+          }))
+          .filter(({ streamIds }) => streamIds.length > 0);
+
+        const mapInputStreamIndexToOutputIndex = (inputFilePath: string, inputFileStreamIndex: number) => {
+          let streamCount = 1;
+          const foundFile = auxiliaryCopyStreams.find(({ path, streamIds }) => {
+            if (path === inputFilePath) return true;
+            streamCount += streamIds.length;
+            return false;
+          });
+          if (foundFile == null) return undefined;
+          const copiedStreamIndex = foundFile.streamIds.indexOf(inputFileStreamIndex);
+          if (copiedStreamIndex === -1) return undefined;
+          return streamCount + copiedStreamIndex;
+        };
+
+        const customTagsArgs = [
+          ...flatMap(Object.entries(customTagsByFile[filePath] || []), ([key, value]) => ['-metadata', `${key}=${value}`]),
+        ];
+
+        const customParamsArgs = (() => {
+          const ret: string[] = [];
+          for (const [fileId, fileParams] of paramsByStreamId.entries()) {
+            for (const [streamId, streamParams] of fileParams.entries()) {
+              const outputIndex = mapInputStreamIndexToOutputIndex(fileId, streamId);
+              if (outputIndex != null) {
+                if (streamParams.disposition != null) {
+                  const dispositionArg = streamParams.disposition === deleteDispositionValue ? '0' : streamParams.disposition;
+                  ret.push(`-disposition:${outputIndex}`, String(dispositionArg));
+                }
+
+                if (streamParams.tag != null) {
+                  ret.push(`-tag:${outputIndex}`, streamParams.tag);
+                }
+
+                if (streamParams.customTags != null) {
+                  for (const [tag, value] of Object.entries(streamParams.customTags)) {
+                    ret.push(`-metadata:s:${outputIndex}`, `${tag}=${value}`);
+                  }
+                }
+              }
+            }
+          }
+          return ret;
+        })();
+
+        const getPreserveMetadataArgs = () => {
+          if (preserveMetadata === 'default') return ['-map_metadata', String(mainInputFileIndex)];
+          if (preserveMetadata === 'none') return ['-map_metadata', '-1'];
+          if (preserveMetadata === 'nonglobal') return ['-map_metadata:g', '-1'];
+          return [];
+        };
+
+        return await pMap(segments, async ({ start, end }, index) => {
+          const finalOutPath = join(outputDir, cutFileNames[index]!);
+          if (await shouldSkipExistingFile(finalOutPath)) return { path: finalOutPath, created: false };
+
+          await maybeMkDeepOutDir({ outputDir, fileOutPath: finalOutPath });
+
+          const segmentDuration = end - start;
+          const mediaInputArgs = copyFileStreamsFiltered.length > 1
+            ? flatMap(copyFileStreamsFiltered, ({ path }) => [...getOutputPlaybackRateArgs(), '-ss', start.toFixed(5), '-i', path, '-t', segmentDuration.toFixed(5)])
+            : [...getOutputPlaybackRateArgs(), '-ss', start.toFixed(5), '-i', copyFileStreamsFiltered[0]!.path, '-t', segmentDuration.toFixed(5)];
+
+          const segmentOverlayAssets = preparedOverlayAssets.filter((overlayAsset) => overlayAsset.start < end && overlayAsset.end > start);
+          const overlayInputArgs = flatMap(segmentOverlayAssets, ({ imagePath }) => ['-loop', '1', '-i', imagePath]);
+          const chaptersInputIndex = copyFileStreamsFiltered.length + segmentOverlayAssets.length;
+          const { filterGraph, videoOutputLabel } = buildTextOverlayFilterGraph({
+            videoInputLabel: `[${mainInputFileIndex}:${videoStreamIndex}]`,
+            imageInputStartIndex: copyFileStreamsFiltered.length,
+            overlayAssets: segmentOverlayAssets,
+            segmentStart: start,
+            segmentEnd: end,
+            outputPlaybackRate,
+            rotation,
+          });
+
+          const mapStreamsArgs = getMapStreamsArgs({
+            startIndex: 1,
+            copyFileStreams: auxiliaryCopyStreams,
+            allFilesMeta,
+            outFormat,
+            needFlac: true,
+            getAudioArgs: ({ path, streamIndex, outputIndex }) => {
+              const audioGainDb = paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb ?? defaultAudioGainDb;
+              if (isNeutralAudioGain(audioGainDb)) return undefined;
+              return getAdjustedAudioGainArgs({ audioGainDb, outFormat, outputIndex });
+            },
+          });
+
+          const ffmpegArgs = [
+            '-hide_banner',
+            ...mediaInputArgs,
+            ...overlayInputArgs,
+            ...(chaptersPath != null ? getChaptersInputArgs(chaptersPath) : []),
+            '-filter_complex', filterGraph,
+            '-map', videoOutputLabel,
+            '-c:v', 'libx264',
+            '-preset', 'medium',
+            '-crf', '18',
+            '-pix_fmt', 'yuv420p',
+            ...mapStreamsArgs,
+            ...customTagsArgs,
+            ...customParamsArgs,
+            ...getPreserveMetadataArgs(),
+            ...(chaptersPath != null ? ['-map_chapters', String(chaptersInputIndex)] : (!preserveChapters ? ['-map_chapters', '-1'] : [])),
+            ...getMovFlags({ preserveMovData, movFastStart }),
+            ...getMatroskaFlags(),
+            '-ignore_unknown',
+            ...getExperimentalArgs(ffmpegExperimental),
+            '-shortest',
+            '-f', outFormat,
+            '-y', finalOutPath,
+          ];
+
+          appendFfmpegCommandLog(ffmpegArgs);
+          const result = await runFfmpegWithProgress({
+            ffmpegArgs,
+            duration: segmentDuration / outputPlaybackRate,
+            onProgress: (progress) => onSingleProgress(index, progress),
+          });
+          logStdoutStderr(result);
+
+          await transferTimestamps({
+            inPath: filePath,
+            outPath: finalOutPath,
+            cutFrom: start,
+            cutTo: end,
+            duration: fileDuration,
+            treatInputFileModifiedTimeAsStart,
+            treatOutputFileModifiedTimeAsStart,
+          });
+
+          return { path: finalOutPath, created: true };
+        }, { concurrency: 1 });
+      } finally {
+        await tryDeleteFiles(preparedOverlayAssets.map((overlayAsset) => overlayAsset.imagePath));
+      }
+    } finally {
+      if (chaptersPath != null) await tryDeleteFiles([chaptersPath]);
+    }
+  }, [appendFfmpegCommandLog, filePath, getOutputPlaybackRateArgs, outputPlaybackRate, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   // inspired by https://gist.github.com/fernandoherreradelasheras/5eca67f4200f1a7cc8281747da08496e
   const cutEncodeSmartPart = useCallback(async ({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate, videoTimebase, allFilesMeta, copyFileStreams, videoStreamIndex, paramsByStreamId, ffmpegExperimental, hasBFrames }: {
@@ -1054,7 +1368,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   }, [extractAttachmentStreams, extractNonAttachmentStreams, filePath]);
 
   return {
-    cutMultiple, concatFiles, html5ify, html5ifyDummy, fixInvalidDuration, concatCutSegments, extractStreams, tryDeleteFiles,
+    cutMultiple, cutMultipleWithTextOverlays, concatFiles, html5ify, html5ifyDummy, fixInvalidDuration, concatCutSegments, extractStreams, tryDeleteFiles,
   };
 }
 

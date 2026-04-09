@@ -195,6 +195,7 @@ function ExportConfirm({
   sizeLimitedSourceFps,
   sizeLimitedSourceRotation,
   sizeLimitedHasAudio,
+  hasOverlayClips,
 } : {
   areWeCutting: boolean,
   segmentsToExport: SegmentToExport[],
@@ -230,6 +231,7 @@ function ExportConfirm({
   sizeLimitedSourceFps: number | undefined,
   sizeLimitedSourceRotation: number | undefined,
   sizeLimitedHasAudio: boolean,
+  hasOverlayClips: boolean,
 }) {
   const { t } = useTranslation();
 
@@ -327,6 +329,14 @@ function ExportConfirm({
       generic.push({ text: t('Exporting whole file without cutting, because there are no segments to export.') });
     }
 
+    if (hasOverlayClips) {
+      if (isSizeLimited) {
+        generic.push({ warning: true, text: t('Text layers are not available in size-limited export yet. Switch back to the normal export path for this file.') });
+      } else {
+        generic.push({ text: t('Text layers require a composited video export, so the video track will be encoded.') });
+      }
+    }
+
     if (areWeCutting) {
       // https://github.com/mifi/lossless-cut/issues/1809
       if (isSizeLimited) {
@@ -348,7 +358,7 @@ function ExportConfirm({
       specific,
       totalNum: generic.filter((n) => n.warning).length + Object.values(specific).filter((n) => n != null && n.warning).length,
     };
-  }, [areWeCutting, areWeCuttingProblematicStreams, avoidNegativeTs, effectiveExportMode, effectiveOutFormat, enableOverwriteOutput, haveSegmentWithProblematicKeyframe, isEncoding, isIpod, isMov, isSizeLimited, keyframeCut, keyframesEnabled, mainCopiedThumbnailStreams, movFastStart, needSmartCut, outputPlaybackRate, preserveMovData, t, willMerge]);
+  }, [areWeCutting, areWeCuttingProblematicStreams, avoidNegativeTs, effectiveExportMode, effectiveOutFormat, enableOverwriteOutput, hasOverlayClips, haveSegmentWithProblematicKeyframe, isEncoding, isIpod, isMov, isSizeLimited, keyframeCut, keyframesEnabled, mainCopiedThumbnailStreams, movFastStart, needSmartCut, outputPlaybackRate, preserveMovData, t, willMerge]);
 
   const exportModeDescription = useMemo(() => ({
     segments_to_chapters: t('Don\'t cut the file, but instead export an unmodified original which has chapters generated from segments'),
@@ -412,7 +422,7 @@ function ExportConfirm({
   }, [showHelpText, t]);
 
   const onSizeLimitedAdvancedPresetHelpPress = useCallback(() => {
-    showHelpText({ text: t('Advanced mode exposes the encoder’s real preset ladder. Lower SVT-AV1 numbers and higher NVENC or x264 preset levels usually trade more time for more compression efficiency.') });
+    showHelpText({ text: t('Advanced mode exposes the encoderâ€™s real preset ladder. Lower SVT-AV1 numbers and higher NVENC or x264 preset levels usually trade more time for more compression efficiency.') });
   }, [showHelpText, t]);
 
   const handleExportEncodeModeChange = useCallback((value: ExportEncodeMode) => {
