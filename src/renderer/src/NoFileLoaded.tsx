@@ -39,7 +39,7 @@ const dropzoneStyle: MotionStyle = {
   boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.04)',
 };
 
-function NoFileLoaded({ mifiLink: _mifiLink, currentCutSeg: _currentCutSeg, onClick, darkMode: _darkMode, keyBindingByAction }: {
+function NoFileLoaded({ onClick, keyBindingByAction }: {
   mifiLink: unknown,
   currentCutSeg: StateSegment | undefined,
   onClick: () => void,

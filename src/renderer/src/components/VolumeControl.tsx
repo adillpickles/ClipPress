@@ -10,11 +10,19 @@ import {
   minAudioGainDb,
 } from '../util/streams';
 
-type AudioGainControl = {
+interface AudioGainControl {
   streamIndex: number,
   label: string,
   audioGainDb: number,
-};
+}
+
+interface VolumeControlProps {
+  playbackVolume: number,
+  setPlaybackVolume: (a: number) => void,
+  onToggleMutedClick: () => void,
+  audioGainControls?: AudioGainControl[] | undefined,
+  onAudioGainChange?: ((streamIndex: number, audioGainDb: number) => void) | undefined,
+}
 
 function formatAudioGain(audioGainDb: number, t: (key: string) => string) {
   if (audioGainDb <= minAudioGainDb) return t('Mute');
@@ -27,13 +35,7 @@ function VolumeControl({
   onToggleMutedClick,
   audioGainControls = [],
   onAudioGainChange,
-}: {
-  playbackVolume: number,
-  setPlaybackVolume: (a: number) => void,
-  onToggleMutedClick: () => void,
-  audioGainControls?: AudioGainControl[] | undefined,
-  onAudioGainChange?: ((streamIndex: number, audioGainDb: number) => void) | undefined,
-}) {
+}: VolumeControlProps) {
   const [isOpen, setIsOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();

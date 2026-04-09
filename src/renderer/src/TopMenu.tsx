@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { IoIosSettings } from 'react-icons/io';
 import { FaFolderOpen, FaList } from 'react-icons/fa';
 import { useTranslation } from 'react-i18next';
@@ -39,18 +39,14 @@ function TopMenu({
   const { simpleMode } = useUserSettings();
   const fallbackFileName = filePath ? window.require('path').basename(filePath) : undefined;
   const fileName = currentClipName ?? fallbackFileName;
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [draftName, setDraftName] = useState(fileName ?? '');
-
-  useEffect(() => {
-    setDraftName(fileName ?? '');
-    setIsRenaming(false);
-  }, [fileName]);
+  const [renameDraft, setRenameDraft] = useState<{ sourceName: string, value: string }>();
+  const isRenaming = fileName != null && renameDraft?.sourceName === fileName;
+  const draftName = useMemo(() => (isRenaming ? renameDraft.value : (fileName ?? '')), [fileName, isRenaming, renameDraft]);
 
   const commitRename = useCallback(() => {
     if (fallbackFileName == null) return;
     onCurrentClipNameChange(draftName.trim() === '' ? fallbackFileName : draftName.trim());
-    setIsRenaming(false);
+    setRenameDraft(undefined);
   }, [draftName, fallbackFileName, onCurrentClipNameChange]);
 
   return (
@@ -75,23 +71,24 @@ function TopMenu({
                 <input
                   className={styles['fileNameInput']}
                   value={draftName}
-                  onChange={(e) => setDraftName(e.target.value)}
+                  onChange={(e) => setRenameDraft(fileName != null ? { sourceName: fileName, value: e.target.value } : undefined)}
                   onBlur={commitRename}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') commitRename();
                     if (e.key === 'Escape') {
-                      setDraftName(fileName ?? '');
-                      setIsRenaming(false);
+                      setRenameDraft(undefined);
                     }
                   }}
-                  autoFocus
                 />
               ) : (
                 <button
                   type="button"
                   className={styles['fileNameButton']}
                   title={t('Rename clip title')}
-                  onClick={() => setIsRenaming(true)}
+                  onClick={() => {
+                    if (fileName == null) return;
+                    setRenameDraft({ sourceName: fileName, value: fileName });
+                  }}
                 >
                   <span className={styles['fileName']}>{fileName}</span>
                 </button>
@@ -103,14 +100,12 @@ function TopMenu({
 
       <div className={styles['actions']}>
         {filePath && !simpleMode && (
-          <>
-            <Button onClick={() => setStreamsSelectorShown(true)} className={styles['secondaryAction']}>
-              <span className={styles['secondaryActionLabel']}>
-                <FaList style={{ fontSize: '.82em' }} />
-                {t('Tracks kept')} ({numStreamsToCopy}/{numStreamsTotal})
-              </span>
-            </Button>
-          </>
+          <Button onClick={() => setStreamsSelectorShown(true)} className={styles['secondaryAction']}>
+            <span className={styles['secondaryActionLabel']}>
+              <FaList style={{ fontSize: '.82em' }} />
+              {t('Tracks kept')} ({numStreamsToCopy}/{numStreamsTotal})
+            </span>
+          </Button>
         )}
 
         <SimpleModeButton />

@@ -469,6 +469,8 @@ function ExportConfirm({
   );
   const handleClosePress = useCallback(() => {
     setShowAdvancedOverride(undefined);
+    setShowSeparateNameEditor(false);
+    setShowMergedNameEditor(false);
     onClosePress();
   }, [onClosePress]);
   const toggleAdvanced = useCallback(() => {
@@ -506,12 +508,6 @@ function ExportConfirm({
       setSegmentsToChaptersOnly(false);
     }
   }, [effectiveExportMode, isSizeLimited, setSegmentsToChaptersOnly]);
-
-  useEffect(() => {
-    if (visible) return;
-    setShowSeparateNameEditor(false);
-    setShowMergedNameEditor(false);
-  }, [visible]);
 
   const sizeLimitedPreviewDuration = useMemo(() => {
     if (
@@ -1881,10 +1877,10 @@ function ExportConfirm({
                         ))}
                         style={{ height: '1.8em' }}
                       >
-                        <option value={'lossless' satisfies ExportEncodeMode}>
+                        <option value="lossless">
                           {t('Lossless export')}
                         </option>
-                        <option value={'size_limited' satisfies ExportEncodeMode}>
+                        <option value="size_limited">
                           {t('Limit file size')}
                         </option>
                       </Select>
@@ -1941,14 +1937,10 @@ function ExportConfirm({
                           ))}
                           style={{ height: '1.8em' }}
                         >
-                          <option
-                            value={'simple' satisfies SizeLimitControlMode}
-                          >
+                          <option value="simple">
                             {t('Simple')}
                           </option>
-                          <option
-                            value={'advanced' satisfies SizeLimitControlMode}
-                          >
+                          <option value="advanced">
                             {t('Advanced')}
                           </option>
                         </Select>
@@ -1974,17 +1966,13 @@ function ExportConfirm({
                               ))}
                               style={{ height: '1.8em' }}
                             >
-                              <option
-                                value={'max_quality' satisfies SizeLimitPreset}
-                              >
+                              <option value="max_quality">
                                 {t('Max Quality')}
                               </option>
-                              <option
-                                value={'quality' satisfies SizeLimitPreset}
-                              >
+                              <option value="quality">
                                 {t('Quality')}
                               </option>
-                              <option value={'fast' satisfies SizeLimitPreset}>
+                              <option value="fast">
                                 {t('Fast')}
                               </option>
                             </Select>
@@ -2008,9 +1996,7 @@ function ExportConfirm({
                               style={{ height: '1.8em' }}
                             >
                               <option
-                                value={
-                                  'av1_cpu' satisfies SizeLimitAdvancedEncoder
-                                }
+                                value="av1_cpu"
                                 disabled={
                                   encoderCapabilities != null
                                   && !encoderCapabilities.libsvtav1
@@ -2019,9 +2005,7 @@ function ExportConfirm({
                                 {t('AV1 CPU (SVT-AV1)')}
                               </option>
                               <option
-                                value={
-                                  'av1_nvenc' satisfies SizeLimitAdvancedEncoder
-                                }
+                                value="av1_nvenc"
                                 disabled={
                                   encoderCapabilities != null
                                   && !encoderCapabilities.av1Nvenc
@@ -2030,9 +2014,7 @@ function ExportConfirm({
                                 {t('AV1 NVIDIA (NVENC)')}
                               </option>
                               <option
-                                value={
-                                  'h264_cpu' satisfies SizeLimitAdvancedEncoder
-                                }
+                                value="h264_cpu"
                                 disabled={
                                   encoderCapabilities != null
                                   && !encoderCapabilities.libx264
@@ -2041,9 +2023,7 @@ function ExportConfirm({
                                 {t('H.264 CPU (x264)')}
                               </option>
                               <option
-                                value={
-                                  'h264_nvenc' satisfies SizeLimitAdvancedEncoder
-                                }
+                                value="h264_nvenc"
                                 disabled={
                                   encoderCapabilities != null
                                   && !encoderCapabilities.h264Nvenc
@@ -2540,15 +2520,13 @@ function ExportConfirm({
                           )}
                           style={{ height: 20, marginLeft: 5 }}
                         >
-                          <option value={'default' satisfies PreserveMetadata}>
+                          <option value="default">
                             {t('Default')}
                           </option>
-                          <option value={'none' satisfies PreserveMetadata}>
+                          <option value="none">
                             {t('None')}
                           </option>
-                          <option
-                            value={'nonglobal' satisfies PreserveMetadata}
-                          >
+                          <option value="nonglobal">
                             {t('Non-global')}
                           </option>
                         </Select>
@@ -2710,24 +2688,16 @@ function ExportConfirm({
                             )}
                             style={{ height: 20, marginLeft: 5 }}
                           >
-                            <option value={'auto' satisfies AvoidNegativeTs}>
+                            <option value="auto">
                               auto
                             </option>
-                            <option
-                              value={'make_zero' satisfies AvoidNegativeTs}
-                            >
+                            <option value="make_zero">
                               make_zero
                             </option>
-                            <option
-                              value={
-                                'make_non_negative' satisfies AvoidNegativeTs
-                              }
-                            >
+                            <option value="make_non_negative">
                               make_non_negative
                             </option>
-                            <option
-                              value={'disabled' satisfies AvoidNegativeTs}
-                            >
+                            <option value="disabled">
                               disabled
                             </option>
                           </Select>
