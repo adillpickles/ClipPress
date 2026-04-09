@@ -2,13 +2,25 @@
   all: unset;
   cursor: pointer;
   color: white;
-  border-radius: .3em;
-  padding-bottom: .1em;
-  padding-left: .4em;
-  padding-right: .4em;
+  border-radius: 999px;
+  min-height: 2.65rem;
+  padding: 0 1.1em;
   white-space: nowrap;
+  font-weight: 700;
+  box-shadow:
+    0 10px 30px color-mix(in srgb, var(--blue-9) 28%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  border: 1px solid color-mix(in srgb, var(--blue-11) 28%, transparent);
+  transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+}
+
+.exportButton:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
 }
 
 .exportButton:focus {
-  outline: .1em solid white;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--blue-8) 35%, transparent),
+    0 10px 30px color-mix(in srgb, var(--blue-9) 28%, transparent);
 }

@@ -2,23 +2,37 @@
   appearance: none;
   font: inherit;
   line-height: 1.2;
-  font-size: .8em;
-  background-color: var(--gray-3);
+  font-size: .9em;
+  font-weight: 600;
+  background-color: color-mix(in srgb, var(--gray-3) 82%, transparent);
   color: var(--gray-12);
-  border-radius: .3em;
-  padding: 0 1.4em 0 .3em;
-  outline: .05em solid var(--gray-8);
-  border: .05em solid var(--gray-7);
+  border-radius: .85em;
+  min-height: 2.4rem;
+  padding: 0 2.1em 0 .85em;
+  outline: none;
+  border: 1px solid color-mix(in srgb, var(--gray-8) 62%, transparent);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--gray-12) 8%, transparent);
+  transition:
+    background-color .18s ease,
+    border-color .18s ease,
+    box-shadow .18s ease;
 
   background-image: url("data:image/svg+xml;utf8,<svg fill='rgba(0,0,0,0.6)' height='24' viewBox='0 0 24 24' width='24' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/><path d='M0 0h24v24H0z' fill='none'/></svg>");
   background-repeat: no-repeat;
-  background-position-x: 100%;
-  background-position-y: 0;
-  background-size: auto 100%;
+  background-position-x: calc(100% - .45rem);
+  background-position-y: 50%;
+  background-size: 1.1rem;
 }
 
 .select:hover {
-  filter: brightness(1.2);
+  background-color: color-mix(in srgb, var(--gray-4) 88%, transparent);
+  border-color: color-mix(in srgb, var(--gray-9) 72%, transparent);
+}
+
+.select:focus {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--blue-8) 35%, transparent),
+    0 1px 0 color-mix(in srgb, var(--gray-12) 8%, transparent);
 }
 
 :global(.dark-theme) .select {

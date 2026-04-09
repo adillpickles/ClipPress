@@ -38,15 +38,24 @@ function initSwal(reducedMotion = false) {
   toast = Swal.mixin({
     ...commonSwalOptions,
     toast: true,
-    width: '50vw',
-    position: 'top',
+    width: '24rem',
+    position: 'top-end',
     showConfirmButton: false,
     showCloseButton: true,
-    timer: 5000,
-    timerProgressBar: true,
-    didOpen: (self) => {
-      self.addEventListener('mouseenter', Swal.stopTimer);
-      self.addEventListener('mouseleave', Swal.resumeTimer);
+    timer: 3200,
+    timerProgressBar: false,
+    showClass: {
+      popup: 'swal2-noanimation',
+      backdrop: '',
+      icon: '',
+    },
+    hideClass: {
+      popup: 'swal2-noanimation',
+      backdrop: '',
+      icon: '',
+    },
+    customClass: {
+      popup: 'clippress-toast',
     },
   });
 

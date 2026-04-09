@@ -11,3 +11,193 @@ video.video::cue {
 video.video::-webkit-media-text-track-display {
   overflow: visible !important;
 }
+
+.mainArea {
+  flex-grow: 1;
+  display: flex;
+  gap: 1rem;
+  padding: 0 1rem 1rem;
+  overflow: hidden;
+}
+
+.workspaceColumn {
+  min-width: 0;
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.previewCard {
+  position: relative;
+  flex-grow: 1;
+  min-height: clamp(18rem, 42vh, 34rem);
+  overflow: hidden;
+  border-radius: 1.6rem;
+  border: 1px solid color-mix(in srgb, var(--gray-8) 36%, transparent);
+  background:
+    radial-gradient(circle at top, color-mix(in srgb, var(--blue-9) 11%, transparent), transparent 42%),
+    linear-gradient(180deg, color-mix(in srgb, var(--gray-2) 94%, transparent), color-mix(in srgb, var(--gray-1) 96%, transparent));
+  box-shadow:
+    0 18px 46px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.editorCard {
+  display: flex;
+  flex-direction: column;
+  gap: .9rem;
+  padding: .95rem 1rem 1rem;
+  border-radius: 1.6rem;
+  border: 1px solid color-mix(in srgb, var(--gray-8) 36%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--gray-2) 94%, transparent), color-mix(in srgb, var(--gray-1) 96%, transparent));
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.editorHeader {
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
+}
+
+.editorHeaderMain {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+
+.editorLabel {
+  color: var(--gray-10);
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  margin-bottom: .2rem;
+}
+
+.editorTitle {
+  color: var(--gray-12);
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.editorHint {
+  color: var(--gray-10);
+  font-size: .84rem;
+  line-height: 1.35;
+  margin-top: .2rem;
+}
+
+.trackStrip {
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+}
+
+.audioLaneRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .75rem .9rem;
+  border-radius: 1.1rem;
+  border: 1px solid color-mix(in srgb, var(--gray-8) 30%, transparent);
+  background: color-mix(in srgb, var(--gray-2) 82%, transparent);
+}
+
+.audioLaneMeta {
+  min-width: 0;
+}
+
+.audioLaneLabel {
+  color: var(--gray-10);
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  margin-bottom: .15rem;
+}
+
+.audioLaneDetail {
+  color: var(--gray-12);
+  font-size: .88rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gainControl {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .7rem;
+  flex-wrap: wrap;
+}
+
+.gainValue {
+  min-width: 4.7rem;
+  color: var(--gray-12);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: .84rem;
+  font-weight: 700;
+}
+
+.gainSlider {
+  width: 12rem;
+  accent-color: var(--blue-9);
+}
+
+.previewNotice {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  padding: .45rem .7rem;
+  border-radius: 999px;
+  color: var(--gray-12);
+  background: color-mix(in srgb, var(--gray-1) 65%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gray-12) 12%, transparent);
+  opacity: .8;
+}
+
+.sidebarToggle {
+  margin-right: .75rem;
+  color: var(--gray-12);
+  opacity: .8;
+  cursor: pointer;
+}
+
+.settingsDialogHeader {
+  flex-shrink: 0;
+}
+
+.settingsDialogBody {
+  overflow-y: auto;
+  padding-right: .25rem;
+}
+
+@media (max-width: 1100px) {
+  .mainArea {
+    gap: .8rem;
+    padding: 0 .8rem .8rem;
+  }
+
+  .audioLaneRow {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .gainControl {
+    justify-content: flex-start;
+  }
+}

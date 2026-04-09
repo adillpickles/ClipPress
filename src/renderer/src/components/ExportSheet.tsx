@@ -36,41 +36,23 @@ function ExportSheet({
             transition={{ duration: 0.3, ease: ['easeOut'] }}
           >
             <div className={styles['box']} style={{ width }}>
-              <h1 style={{ fontSize: '1.4em', marginTop: 0, marginBottom: '.5em' }}>{title}</h1>
+              <div className={styles['header']}>
+                <div>
+                  <h1 style={{ fontSize: '1.4em', marginTop: 0, marginBottom: '.15em' }}>{title}</h1>
+                  {renderBottom != null && (
+                    <div className={styles['headerMeta']}>{renderBottom()}</div>
+                  )}
+                </div>
 
-              <CloseButton type="submit" style={{ top: 0, right: 0 }} onClick={onClosePress} />
+                <div className={styles['headerActions']}>
+                  {renderButton()}
+                  <CloseButton type="submit" style={{ position: 'static', margin: 0 }} onClick={onClosePress} />
+                </div>
+              </div>
 
               {children}
             </div>
           </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {visible && (
-          <div key="0" style={{ position: 'fixed', right: 0, bottom: 0, display: 'flex', alignItems: 'center', margin: 5 }}>
-            {renderBottom != null && (
-              <motion.div
-                initial={{ opacity: 0, translateX: 50 }}
-                animate={{ opacity: 1, translateX: 0 }}
-                exit={{ opacity: 0, translateX: 50 }}
-                transition={{ duration: 0.4, ease: ['easeOut'] }}
-                style={{ display: 'flex', alignItems: 'flex-end', background: 'var(--gray-2)', borderRadius: '.5em', padding: '.3em' }}
-              >
-                {renderBottom?.()}
-              </motion.div>
-            )}
-
-            <motion.div
-              style={{ transformOrigin: 'bottom right' }}
-              initial={{ scale: 0.7, opacity: 1 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.7, opacity: 0 }}
-              transition={{ duration: 0.4, ease: ['easeOut'] }}
-            >
-              {renderButton()}
-            </motion.div>
-          </div>
         )}
       </AnimatePresence>
     </>

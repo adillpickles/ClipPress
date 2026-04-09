@@ -1,0 +1,34 @@
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: .2rem;
+  padding: .2rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gray-3) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gray-8) 44%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.option {
+  all: unset;
+  cursor: pointer;
+  min-width: 5.25rem;
+  min-height: 2rem;
+  padding: 0 .85rem;
+  border-radius: 999px;
+  color: var(--gray-11);
+  font-size: .8rem;
+  font-weight: 700;
+  text-align: center;
+  transition: background-color .18s ease, color .18s ease, box-shadow .18s ease;
+}
+
+.option:hover {
+  color: var(--gray-12);
+}
+
+.active {
+  color: white;
+  background: var(--blue-9);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--blue-9) 24%, transparent);
+}

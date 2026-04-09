@@ -1,159 +1,131 @@
-import type { CSSProperties, ReactNode } from 'react';
-import { memo, useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import { IoIosSettings } from 'react-icons/io';
-import { FaFilter, FaFont, FaList, FaLock, FaMoon, FaSun, FaUnlock } from 'react-icons/fa';
+import { FaFolderOpen, FaList } from 'react-icons/fa';
 import { useTranslation } from 'react-i18next';
 import Button from './components/Button';
 
-import ExportModeButton from './components/ExportModeButton';
-
-import { withBlur } from './util';
-import { primaryTextColor, controlsBackground, darkModeTransition } from './colors';
+import ExportButton from './components/ExportButton';
+import SimpleModeButton from './components/SimpleModeButton';
 import useUserSettings from './hooks/useUserSettings';
+import type { SegmentToExport } from './types';
 import styles from './TopMenu.module.css';
-import OutDirSelector from './components/OutDirSelector';
-
-
-const { stat } = window.require('fs/promises');
-const { webUtils } = window.require('electron');
-
-const outFmtStyle = { maxWidth: 100 };
-const exportModeStyle = { flexGrow: 0, flexBasis: 140 };
 
 function TopMenu({
   filePath,
-  fileFormat,
-  changeEnabledStreamsFilter,
-  applyEnabledStreamsFilter,
-  enabledStreamsFilter,
-  renderOutFmt,
+  currentClipName,
+  onCurrentClipNameChange,
   numStreamsToCopy,
   numStreamsTotal,
   setStreamsSelectorShown,
   toggleSettings,
-  selectedSegments,
-  isCustomFormatSelected,
-  toggleDarkMode,
-  onAddText,
-  hasVideo,
+  onOpenFiles,
+  onExportPress,
+  segmentsToExport,
+  areWeCutting,
 }: {
   filePath: string | undefined,
-  fileFormat: string | undefined,
-  changeEnabledStreamsFilter: () => void,
-  applyEnabledStreamsFilter: () => void,
-  enabledStreamsFilter: string | undefined,
-  renderOutFmt: (style: CSSProperties) => ReactNode,
+  currentClipName: string | undefined,
+  onCurrentClipNameChange: (name: string) => void,
   numStreamsToCopy: number,
   numStreamsTotal: number,
   setStreamsSelectorShown: (v: boolean) => void,
   toggleSettings: () => void,
-  selectedSegments: unknown[],
-  isCustomFormatSelected: boolean,
-  toggleDarkMode: () => void,
-  onAddText: () => void,
-  hasVideo: boolean,
+  onOpenFiles: () => void,
+  onExportPress: () => void,
+  segmentsToExport: SegmentToExport[],
+  areWeCutting: boolean,
 }) {
   const { t } = useTranslation();
-  const { customOutDir, setCustomOutDir, simpleMode, outFormatLocked, setOutFormatLocked, darkMode } = useUserSettings();
-  const workingDirButtonRef = useRef<HTMLButtonElement>(null);
+  const { simpleMode } = useUserSettings();
+  const fallbackFileName = filePath ? window.require('path').basename(filePath) : undefined;
+  const fileName = currentClipName ?? fallbackFileName;
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [draftName, setDraftName] = useState(fileName ?? '');
 
-  const DarkMode = darkMode ? FaSun : FaMoon;
-
-  const onOutFormatLockedClick = useCallback(() => setOutFormatLocked((v) => (v ? undefined : fileFormat)), [fileFormat, setOutFormatLocked]);
-
-  const showClearWorkingDirButton = !!customOutDir;
-
-  function renderFormatLock() {
-    const Icon = outFormatLocked ? FaLock : FaUnlock;
-    return (
-      <Button style={{ marginRight: '.7em' }}>
-        <Icon onClick={onOutFormatLockedClick} title={t('Lock/unlock output format')} style={{ fontSize: '.8em', color: outFormatLocked ? primaryTextColor : undefined }} />
-      </Button>
-    );
-  }
-
-  // Convenience for drag and drop: https://github.com/mifi/lossless-cut/issues/2147
   useEffect(() => {
-    async function onDrop(ev: DragEvent) {
-      ev.preventDefault();
-      if (!ev.dataTransfer) return;
-      const paths = [...ev.dataTransfer.files].map((f) => webUtils.getPathForFile(f));
-      const [firstPath] = paths;
-      if (paths.length === 1 && firstPath && (await stat(firstPath)).isDirectory()) {
-        setCustomOutDir(firstPath);
-      }
-    }
-    const element = workingDirButtonRef.current;
-    element?.addEventListener('drop', onDrop);
-    return () => element?.removeEventListener('drop', onDrop);
-  }, [setCustomOutDir]);
+    setDraftName(fileName ?? '');
+    setIsRenaming(false);
+  }, [fileName]);
+
+  const commitRename = useCallback(() => {
+    if (fallbackFileName == null) return;
+    onCurrentClipNameChange(draftName.trim() === '' ? fallbackFileName : draftName.trim());
+    setIsRenaming(false);
+  }, [draftName, fallbackFileName, onCurrentClipNameChange]);
 
   return (
-    <div
-      className={`no-user-select ${styles['wrapper']}`}
-      style={{ background: controlsBackground, transition: darkModeTransition, display: 'flex', alignItems: 'center', padding: '.3em .3em', gap: '.3em', justifyContent: 'space-between', flexWrap: 'wrap' }}
-    >
+    <div className={`no-user-select ${styles['wrapper']}`} style={filePath == null ? { justifyContent: 'flex-end' } : undefined}>
       {filePath && (
-        <>
-          <Button onClick={withBlur(() => setStreamsSelectorShown(true))}>
-            <FaList style={{ fontSize: '.7em', marginRight: '.5em' }} />
-            {t('Tracks')} ({numStreamsToCopy}/{numStreamsTotal})
+        <div className={styles['primary']}>
+          <div className={styles['brandBlock']}>
+            <div className={styles['brandTitle']}>ClipPress</div>
+          </div>
+
+          <Button onClick={onOpenFiles} className={styles['secondaryAction']}>
+            <span className={styles['secondaryActionLabel']}>
+              <FaFolderOpen style={{ fontSize: '.85em' }} />
+              {t('Open another clip')}
+            </span>
           </Button>
 
-          {enabledStreamsFilter != null && (
-            <Button
-              onClick={withBlur(() => applyEnabledStreamsFilter())}
-              title={t('Toggle tracks using current filter')}
-            >
-              <FaFilter
-                style={{ fontSize: '.8em', verticalAlign: 'middle' }}
-              />
-            </Button>
+          {fileName != null && (
+            <div className={styles['fileChip']}>
+              <div className={styles['fileLabel']}>{t('Current clip')}</div>
+              {isRenaming ? (
+                <input
+                  className={styles['fileNameInput']}
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  onBlur={commitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitRename();
+                    if (e.key === 'Escape') {
+                      setDraftName(fileName ?? '');
+                      setIsRenaming(false);
+                    }
+                  }}
+                  autoFocus
+                />
+              ) : (
+                <button
+                  type="button"
+                  className={styles['fileNameButton']}
+                  title={t('Rename clip title')}
+                  onClick={() => setIsRenaming(true)}
+                >
+                  <span className={styles['fileName']}>{fileName}</span>
+                </button>
+              )}
+            </div>
           )}
-
-          <Button
-            onClick={changeEnabledStreamsFilter}
-          >
-            {enabledStreamsFilter == null && <FaFilter style={{ fontSize: '.7em', marginRight: '.4em' }} />}
-            {t('Filter tracks')}
-          </Button>
-
-          <Button onClick={onAddText} disabled={!hasVideo} title={!hasVideo ? t('Text layers require a video track') : undefined}>
-            <FaFont style={{ fontSize: '.75em', marginRight: '.45em' }} />
-            {t('Add Text')}
-          </Button>
-        </>
+        </div>
       )}
 
-      <div style={{ flexGrow: 1 }} />
+      <div className={styles['actions']}>
+        {filePath && !simpleMode && (
+          <>
+            <Button onClick={() => setStreamsSelectorShown(true)} className={styles['secondaryAction']}>
+              <span className={styles['secondaryActionLabel']}>
+                <FaList style={{ fontSize: '.82em' }} />
+                {t('Tracks kept')} ({numStreamsToCopy}/{numStreamsTotal})
+              </span>
+            </Button>
+          </>
+        )}
 
-      <OutDirSelector>
-        <Button
-          ref={workingDirButtonRef}
-          title={customOutDir}
-          style={{ paddingLeft: showClearWorkingDirButton ? '.4em' : undefined }}
-        >
-          {customOutDir ? t('Working dir set') : t('Working dir unset')}
+        <SimpleModeButton />
+
+        <Button onClick={toggleSettings} className={styles['settingsAction']}>
+          <span className={styles['secondaryActionLabel']}>
+            <IoIosSettings style={{ fontSize: '1.1em' }} />
+            {t('Settings')}
+          </span>
         </Button>
-      </OutDirSelector>
 
-      {renderOutFmt(outFmtStyle)}
-
-      {!simpleMode && (isCustomFormatSelected || outFormatLocked) && renderFormatLock()}
-
-      {filePath && (
-        <ExportModeButton selectedSegments={selectedSegments} style={exportModeStyle} />
-      )}
-
-      {!simpleMode && (
-        <Button onClick={toggleDarkMode} title={t('Toggle dark mode')}>
-          <DarkMode style={{ verticalAlign: 'middle', fontSize: '.9em' }} />
-        </Button>
-      )}
-
-      <Button onClick={toggleSettings}>
-        <IoIosSettings style={{ fontSize: '1em', verticalAlign: 'bottom' }} />
-      </Button>
+        {filePath && (
+          <ExportButton segmentsToExport={segmentsToExport} areWeCutting={areWeCutting} onClick={onExportPress} />
+        )}
+      </div>
     </div>
   );
 }

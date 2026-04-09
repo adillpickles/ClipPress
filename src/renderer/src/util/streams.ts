@@ -105,6 +105,8 @@ export const isMov = (format: string | undefined) => format != null && ['ismv', 
 export const isMatroska = (format: string | undefined) => format != null && ['matroska', 'webm'].includes(format);
 
 export const defaultAudioGainDb = 0;
+export const minAudioGainDb = -90;
+export const maxAudioGainDb = 24;
 export const isNeutralAudioGain = (audioGainDb: number | undefined) => audioGainDb == null || Math.abs(audioGainDb) < 0.01;
 
 type GetVideoArgsFn = (a: { path: string, streamIndex: number, outputIndex: number }) => string[] | undefined;

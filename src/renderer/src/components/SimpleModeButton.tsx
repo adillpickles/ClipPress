@@ -1,22 +1,29 @@
 import type { CSSProperties } from 'react';
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FaBaby } from 'react-icons/fa';
 
-import { primaryTextColor } from '../colors';
 import useUserSettings from '../hooks/useUserSettings';
+import classes from './SimpleModeButton.module.css';
 
 
 function SimpleModeButton({ style }: { style?: CSSProperties } = {}) {
   const { t } = useTranslation();
   const { simpleMode, toggleSimpleMode } = useUserSettings();
 
+  const setMode = useCallback((wantSimpleMode: boolean) => {
+    if (simpleMode === wantSimpleMode) return;
+    toggleSimpleMode();
+  }, [simpleMode, toggleSimpleMode]);
+
   return (
-    <FaBaby
-      title={t('Toggle advanced view')}
-      style={{ fontSize: '1.2em', color: simpleMode ? primaryTextColor : 'var(--gray-12)', ...style }}
-      onClick={toggleSimpleMode}
-    />
+    <div className={classes['segmented']} style={style} aria-label={t('Interface mode')}>
+      <button type="button" className={[classes['option'], ...(simpleMode ? [classes['active']] : [])].join(' ')} onClick={() => setMode(true)} title={t('Show the cleaner everyday editing view')}>
+        {t('Simple')}
+      </button>
+      <button type="button" className={[classes['option'], ...(!simpleMode ? [classes['active']] : [])].join(' ')} onClick={() => setMode(false)} title={t('Show more technical controls and utilities')}>
+        {t('Advanced')}
+      </button>
+    </div>
   );
 }
 

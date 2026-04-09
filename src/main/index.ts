@@ -120,6 +120,7 @@ async function onAwaitAppEvent(awaitEventName: string, signal: AbortSignal) {
 function getSavedBounds() {
   const bounds = configStore.get('windowBounds');
   const options: BrowserWindowConstructorOptions = {};
+  const primaryWorkArea = electron.screen.getPrimaryDisplay().workArea;
   if (bounds) {
     const area = electron.screen.getDisplayMatching(bounds).workArea;
     // If the saved position still valid (the window is entirely inside the display area), use it.
@@ -137,6 +138,9 @@ function getSavedBounds() {
       options.width = bounds.width;
       options.height = bounds.height;
     }
+  } else {
+    options.width = Math.min(1480, primaryWorkArea.width);
+    options.height = Math.min(940, primaryWorkArea.height);
   }
   return {
     options,
@@ -162,9 +166,9 @@ function createWindow() {
       webSecurity: !isDev,
       preload: fileURLToPath(new URL('../preload/index.cjs', import.meta.url)),
     },
-    backgroundColor: darkMode ? '#333' : '#fff',
-    minWidth: 300,
-    minHeight: 300,
+    backgroundColor: darkMode ? '#111317' : '#f5f7fb',
+    minWidth: 960,
+    minHeight: 680,
   });
 
   if (savedBounds.isMaximized) mainWindow.maximize();

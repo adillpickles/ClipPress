@@ -1,19 +1,12 @@
-import { Fragment, memo, useMemo, useState } from 'react';
+import { Fragment, memo, useState } from 'react';
 import type { MotionStyle } from 'motion/react';
 import { motion } from 'motion/react';
-import { FaMouse } from 'react-icons/fa';
 import { useTranslation, Trans } from 'react-i18next';
 
-import SetCutpointButton from './components/SetCutpointButton';
-import SimpleModeButton from './components/SimpleModeButton';
-import useUserSettings from './hooks/useUserSettings';
 import type { StateSegment } from './types';
 import type { KeyBinding } from '../../common/types';
 import { splitKeyboardKeys } from './util';
-import { getModifier } from './hooks/useTimelineScroll';
 import Kbd from './components/Kbd';
-
-const electron = window.require('electron');
 
 function Keys({ keys }: { keys: string | undefined }) {
   if (keys == null || keys === '') {
@@ -32,18 +25,21 @@ const dropzoneStyle: MotionStyle = {
   top: 0,
   bottom: 0,
   color: 'var(--gray-12)',
-  margin: '2em',
+  margin: '1.5em',
   display: 'flex',
   flexDirection: 'column',
   justifyContent: 'center',
   alignItems: 'center',
-  whiteSpace: 'nowrap',
-  borderWidth: '.7em',
+  textAlign: 'center',
+  borderWidth: '.35em',
   borderStyle: 'dashed',
-  borderColor: 'var(--gray-3)',
+  borderColor: 'var(--gray-4)',
+  borderRadius: '1.8em',
+  background: 'color-mix(in srgb, var(--gray-2) 72%, transparent)',
+  boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.04)',
 };
 
-function NoFileLoaded({ mifiLink, currentCutSeg, onClick, darkMode, keyBindingByAction }: {
+function NoFileLoaded({ mifiLink: _mifiLink, currentCutSeg: _currentCutSeg, onClick, darkMode: _darkMode, keyBindingByAction }: {
   mifiLink: unknown,
   currentCutSeg: StateSegment | undefined,
   onClick: () => void,
@@ -51,10 +47,7 @@ function NoFileLoaded({ mifiLink, currentCutSeg, onClick, darkMode, keyBindingBy
   keyBindingByAction: Record<string, KeyBinding>,
 }) {
   const { t } = useTranslation();
-  const { simpleMode, segmentMouseModifierKey } = useUserSettings();
   const [dragging, setDragging] = useState(false);
-
-  const currentCutSegOrDefault = useMemo(() => currentCutSeg ?? { segColorIndex: 0 }, [currentCutSeg]);
 
   return (
     <motion.div
@@ -66,31 +59,13 @@ function NoFileLoaded({ mifiLink, currentCutSeg, onClick, darkMode, keyBindingBy
       role="button"
       onClick={onClick}
     >
-      <div style={{ fontSize: '1.7em', textTransform: 'uppercase', color: 'var(--gray-11)', marginBottom: '.1em' }}>{t('DROP FILE(S)')}</div>
+      <div style={{ fontSize: '2em', color: 'var(--gray-12)', fontWeight: 800, marginBottom: '.15em', letterSpacing: '-.03em' }}>{t('Drop a clip to get started')}</div>
 
-      <div style={{ fontSize: '1.3em', color: 'var(--gray-11)', marginBottom: '.1em' }}>
-        <Trans>See <b>Help</b> menu for help</Trans>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '.5em', fontSize: '1.02em', color: 'var(--gray-11)', marginTop: '.65rem', maxWidth: '32rem', whiteSpace: 'normal', lineHeight: 1.45 }}>
+        <div><Trans>Drop in a clip or click anywhere here to browse.</Trans></div>
+        <div><Trans>Press <Keys keys={keyBindingByAction['setCutStart']?.keys} /> for the start and <Keys keys={keyBindingByAction['setCutEnd']?.keys} /> for the end.</Trans></div>
+        <div><Trans>Optionally add text or adjust gain, then export.</Trans></div>
       </div>
-
-      <div style={{ fontSize: '1.3em', color: 'var(--gray-11)' }}>
-        <Trans><SetCutpointButton currentCutSeg={currentCutSegOrDefault} side="start" style={{ verticalAlign: 'middle' }} /> <SetCutpointButton currentCutSeg={currentCutSegOrDefault} side="end" style={{ verticalAlign: 'middle' }} />, <Keys keys={keyBindingByAction['setCutStart']?.keys} /> <Keys keys={keyBindingByAction['setCutEnd']?.keys} /> or <span><kbd style={{ marginRight: '.1em' }}>{getModifier(segmentMouseModifierKey)}</kbd></span>+<FaMouse style={{ marginRight: '.1em', verticalAlign: 'middle' }} /> to set cutpoints</Trans>
-      </div>
-
-      <div style={{ fontSize: '1.3em', color: 'var(--gray-11)' }} role="button" onClick={(e) => e.stopPropagation()}>
-        {simpleMode ? (
-          <Trans><SimpleModeButton style={{ verticalAlign: 'middle' }} /> to show advanced view</Trans>
-        ) : (
-          <Trans><SimpleModeButton style={{ verticalAlign: 'middle' }} /> to show simple view</Trans>
-        )}
-      </div>
-
-      {mifiLink && typeof mifiLink === 'object' && 'loadUrl' in mifiLink && typeof mifiLink.loadUrl === 'string' && mifiLink.loadUrl ? (
-        <div style={{ position: 'relative', margin: '.3em', width: '24em', height: '8em' }}>
-          <iframe src={`${mifiLink.loadUrl}#dark=${darkMode ? 'true' : 'false'}`} title="iframe" style={{ background: 'rgba(0,0,0,0)', border: 'none', pointerEvents: 'none', width: '100%', height: '100%', position: 'absolute', colorScheme: 'initial' }} />
-          {/* eslint-disable-next-line jsx-a11y/interactive-supports-focus */}
-          <div style={{ width: '100%', height: '100%', position: 'absolute', cursor: 'pointer' }} role="button" onClick={(e) => { e.stopPropagation(); if ('targetUrl' in mifiLink && typeof mifiLink.targetUrl === 'string') electron.shell.openExternal(mifiLink.targetUrl); }} />
-        </div>
-      ) : undefined}
     </motion.div>
   );
 }

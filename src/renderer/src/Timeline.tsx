@@ -85,6 +85,17 @@ const CommandedTime = memo(({ commandedTimePercent }: { commandedTimePercent: st
 
 const timelineHeight = 36;
 const textLaneHeight = 24;
+const laneLabelStyle: CSSProperties = {
+  position: 'absolute',
+  left: 8,
+  top: 4,
+  color: 'var(--gray-11)',
+  fontSize: 11,
+  textTransform: 'uppercase',
+  letterSpacing: '.06em',
+  pointerEvents: 'none',
+  fontWeight: 700,
+};
 
 const timeWrapperStyle: CSSProperties = { height: timelineHeight };
 
@@ -495,6 +506,8 @@ function Timeline({
           style={{ height: timelineHeight, width: `${zoom * 100}%`, position: 'relative', backgroundColor: timelineBackground, transition: darkModeTransition }}
           ref={timelineWrapperRef}
         >
+          <div style={laneLabelStyle}>Video</div>
+
           {inverseCutSegments.map((seg) => (
             <BetweenSegments
               key={seg.segId}
@@ -537,7 +550,7 @@ function Timeline({
 
         {overlayClips.length > 0 && (
           <div style={{ height: textLaneHeight, width: `${zoom * 100}%`, position: 'relative', backgroundColor: 'var(--gray-3)', borderTop: '1px solid var(--gray-7)' }}>
-            <div style={{ position: 'absolute', left: 8, top: 4, color: 'var(--gray-11)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em', pointerEvents: 'none' }}>Text</div>
+            <div style={laneLabelStyle}>Text</div>
 
             {overlayClips.map((overlayClip) => {
               const left = calculateTimelinePercent(overlayClip.start);

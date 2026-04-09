@@ -401,13 +401,13 @@ function SegmentList({
           <Trans>You have enabled the &quot;invert segments&quot; mode <FaYinYang style={{ verticalAlign: 'middle' }} /> which will cut away selected segments instead of keeping them. But there is no space between any segments, or at least two segments are overlapping. This would not produce any output. Either make room between segments or click the Yinyang <FaYinYang style={{ verticalAlign: 'middle' }} /> symbol below to disable this mode. Alternatively you may combine overlapping segments from the menu.</Trans>
         );
       }
-      return t('No segments to export.');
+      return t('Set a start and end point to create your first clip.');
     }
 
     if (segmentsOrInverse.every((s) => s.end == null)) {
-      return t('Markers:');
+      return t('{{count}} markers ready', { count: segmentsOrInverse.length });
     }
-    return t('Segments to export:');
+    return t('{{count}} clips ready', { count: segmentsOrInverse.length });
   }
 
   const onReorderSegs = useCallback(async (index: number) => {
@@ -433,61 +433,63 @@ function SegmentList({
   function renderFooter() {
     return (
       <>
-        <div style={{ display: 'flex', padding: '5px 0', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--gray-6)' }}>
-          <FaPlus
-            size={24}
-            style={{ ...buttonBaseStyle, background: nextSegmentColor }}
-            role="button"
-            title={t('Add segment')}
-            onClick={addSegment}
-          />
-
-          <FaMinus
-            size={24}
-            style={{ ...buttonBaseStyle, ...(cutSegments.length > 0 ? { backgroundColor: currentSegColor } : disabledButtonStyle) }}
-            role="button"
-            title={t('Remove cutpoint from segment {{segmentNumber}}', { segmentNumber: currentSegIndex + 1 })}
-            onClick={() => removeSegment(currentSegIndex)}
-          />
-
-          {!invertCutSegments && !simpleMode && (
-            <>
-              <FaSortNumericDown
-                size={16}
-                title={t('Change segment order')}
-                role="button"
-                style={{ ...buttonBaseStyle, padding: 4, ...(cutSegments.length >= 2 ? { backgroundColor: currentSegColor } : disabledButtonStyle) }}
-                onClick={() => onReorderSegs(currentSegIndex)}
-              />
-
-              <FaTag
-                size={16}
-                title={t('Label segment')}
-                role="button"
-                style={{ ...buttonBaseStyle, padding: 4, ...(cutSegments.length > 0 ? { backgroundColor: currentSegColor } : disabledButtonStyle) }}
-                onClick={() => onLabelSegment(currentSegIndex)}
-              />
-            </>
-          )}
-
-          <AiOutlineSplitCells
-            size={22}
-            title={t('Split segment at cursor')}
-            role="button"
-            style={{ ...buttonBaseStyle, padding: 1, ...(firstSegmentAtCursor ? { backgroundColor: segAtCursorColor } : disabledButtonStyle) }}
-            onClick={splitCurrentSegment}
-          />
-
-          {!invertCutSegments && (
-            <FaRegCheckCircle
-              size={22}
-              title={t('Invert segment selection')}
+        {!simpleMode && (
+          <div style={{ display: 'flex', padding: '5px 0', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--gray-6)' }}>
+            <FaPlus
+              size={24}
+              style={{ ...buttonBaseStyle, background: nextSegmentColor }}
               role="button"
-              style={{ ...buttonBaseStyle, padding: 1, ...(cutSegments.length > 0 ? { backgroundColor: neutralButtonColor } : disabledButtonStyle) }}
-              onClick={onInvertSelectedSegments}
+              title={t('Add segment')}
+              onClick={addSegment}
             />
-          )}
-        </div>
+
+            <FaMinus
+              size={24}
+              style={{ ...buttonBaseStyle, ...(cutSegments.length > 0 ? { backgroundColor: currentSegColor } : disabledButtonStyle) }}
+              role="button"
+              title={t('Remove cutpoint from segment {{segmentNumber}}', { segmentNumber: currentSegIndex + 1 })}
+              onClick={() => removeSegment(currentSegIndex)}
+            />
+
+            {!invertCutSegments && (
+              <>
+                <FaSortNumericDown
+                  size={16}
+                  title={t('Change segment order')}
+                  role="button"
+                  style={{ ...buttonBaseStyle, padding: 4, ...(cutSegments.length >= 2 ? { backgroundColor: currentSegColor } : disabledButtonStyle) }}
+                  onClick={() => onReorderSegs(currentSegIndex)}
+                />
+
+                <FaTag
+                  size={16}
+                  title={t('Label segment')}
+                  role="button"
+                  style={{ ...buttonBaseStyle, padding: 4, ...(cutSegments.length > 0 ? { backgroundColor: currentSegColor } : disabledButtonStyle) }}
+                  onClick={() => onLabelSegment(currentSegIndex)}
+                />
+              </>
+            )}
+
+            <AiOutlineSplitCells
+              size={22}
+              title={t('Split segment at cursor')}
+              role="button"
+              style={{ ...buttonBaseStyle, padding: 1, ...(firstSegmentAtCursor ? { backgroundColor: segAtCursorColor } : disabledButtonStyle) }}
+              onClick={splitCurrentSegment}
+            />
+
+            {!invertCutSegments && (
+              <FaRegCheckCircle
+                size={22}
+                title={t('Invert segment selection')}
+                role="button"
+                style={{ ...buttonBaseStyle, padding: 1, ...(cutSegments.length > 0 ? { backgroundColor: neutralButtonColor } : disabledButtonStyle) }}
+                onClick={onInvertSelectedSegments}
+              />
+            )}
+          </div>
+        )}
 
         <div style={{ padding: '5px 10px', boxSizing: 'border-box', borderBottom: '1px solid var(--gray-6)', borderTop: '1px solid var(--gray-6)', display: 'flex', justifyContent: 'space-between', fontSize: '.8em' }}>
           <div>{t('Segments total:')}</div>
@@ -629,18 +631,21 @@ function SegmentList({
       </Dialog.Root>
 
       <motion.div
-        style={{ width, background: controlsBackground, borderLeft: '1px solid var(--gray-7)', color: 'var(--gray-11)', transition: darkModeTransition, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+        style={{ width, background: controlsBackground, borderLeft: '1px solid var(--gray-7)', color: 'var(--gray-11)', transition: darkModeTransition, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '1.6rem', border: '1px solid color-mix(in srgb, var(--gray-8) 36%, transparent)', boxShadow: '0 18px 42px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.05)' }}
         initial={{ x: width }}
         animate={{ x: 0 }}
         exit={{ x: width }}
         transition={springAnimation}
       >
-        <div style={{ padding: '.2em .5em', color: 'var(--gray-12)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '.2em' }} className="no-user-select">
-          <span style={{ fontSize: '.8em' }}>{getHeader()}</span>
+        <div style={{ padding: '.9rem 1rem .7rem', color: 'var(--gray-12)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '.8rem' }} className="no-user-select">
+          <div>
+            <div style={{ color: 'var(--gray-12)', fontSize: '1rem', fontWeight: 800, lineHeight: 1.15 }}>{t('Clips')}</div>
+            <div style={{ color: 'var(--gray-10)', fontSize: '.8rem', lineHeight: 1.35, marginTop: '.18rem' }}>{getHeader()}</div>
+          </div>
 
           <FaTimes
-            title={t('Close sidebar')}
-            style={{ fontSize: '1.1em', verticalAlign: 'middle', color: 'var(--gray-11)', cursor: 'pointer', padding: '.2em .3em' }}
+            title={t('Close clips panel')}
+            style={{ fontSize: '1.1em', verticalAlign: 'middle', color: 'var(--gray-11)', cursor: 'pointer', padding: '.4em', borderRadius: '999px', background: 'color-mix(in srgb, var(--gray-3) 70%, transparent)' }}
             role="button"
             onClick={toggleSegmentsList}
           />
@@ -648,7 +653,7 @@ function SegmentList({
 
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} onDragStart={handleDragStart} modifiers={[restrictToVerticalAxis]}>
           <SortableContext items={sortableList} strategy={verticalListSortingStrategy}>
-            <div ref={scrollerRef} style={{ padding: '0 .2em 0 .5em', overflowX: 'hidden', overflowY: 'scroll', flexGrow: 1 }} className="consistent-scrollbar">
+            <div ref={scrollerRef} style={{ padding: '0 .6rem .4rem .7rem', overflowX: 'hidden', overflowY: 'scroll', flexGrow: 1 }} className="consistent-scrollbar">
               <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative', overflow: 'hidden' }}>
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                   const { id, seg } = sortableList[virtualRow.index]!;

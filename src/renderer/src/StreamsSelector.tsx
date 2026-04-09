@@ -14,7 +14,14 @@ import Select from './components/Select';
 import type { FileStream } from './ffmpeg';
 import { getStreamFps } from './ffmpeg';
 import { deleteDispositionValue } from './util';
-import { defaultAudioGainDb, getActiveDisposition, attachedPicDisposition, isGpsStream } from './util/streams';
+import {
+  defaultAudioGainDb,
+  maxAudioGainDb,
+  minAudioGainDb,
+  getActiveDisposition,
+  attachedPicDisposition,
+  isGpsStream,
+} from './util/streams';
 import TagEditor from './components/TagEditor';
 import type { FFprobeChapter, FFprobeFormat, FFprobeStream } from '../../common/ffprobe';
 import type { CustomTagsByFile, FilesMeta, FormatTimecode, ParamsByStreamId, StreamParams } from './types';
@@ -147,11 +154,13 @@ function StreamParametersEditor({ stream, streamParams, updateStreamParams }: {
         name={t('Track gain')}
         value={(
           <div style={{ display: 'flex', alignItems: 'center', gap: '.75em', minWidth: '20em' }}>
-            <div style={{ minWidth: '4.5em', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{audioGainDb > 0 ? `+${audioGainDb}` : audioGainDb} dB</div>
+            <div style={{ minWidth: '4.5em', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+              {audioGainDb <= minAudioGainDb ? t('Mute') : `${audioGainDb > 0 ? `+${audioGainDb}` : audioGainDb} dB`}
+            </div>
             <input
               type="range"
-              min={-24}
-              max={24}
+              min={minAudioGainDb}
+              max={maxAudioGainDb}
               step={1}
               style={{ width: '100%' }}
               value={audioGainDb}
