@@ -582,7 +582,7 @@ function StreamsSelector({
               onClick={() => toggleCopyStreamId(mainFilePath, stream.index)}
               className={[
                 styles['simpleStreamButton'],
-                ...(copyStream ? [styles['simpleStreamButtonActive']] : []),
+                ...(copyStream ? [styles['simpleStreamButtonActive']] : [styles['simpleStreamButtonInactive']]),
               ].join(' ')}
             >
               <span className={styles['simpleStreamMain']}>
@@ -594,7 +594,7 @@ function StreamsSelector({
               <span
                 className={[
                   styles['simpleStreamState'],
-                  ...(copyStream ? [styles['simpleStreamStateActive']] : []),
+                  ...(copyStream ? [styles['simpleStreamStateActive']] : [styles['simpleStreamStateInactive']]),
                 ].join(' ')}
               >
                 {copyStream ? t('Keep') : t('Skip')}

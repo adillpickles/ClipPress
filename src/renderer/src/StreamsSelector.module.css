@@ -49,6 +49,11 @@
   background: color-mix(in srgb, var(--blue-4) 16%, transparent);
 }
 
+.simpleStreamButtonInactive {
+  border-color: color-mix(in srgb, var(--red-8) 28%, transparent);
+  background: color-mix(in srgb, var(--red-4) 10%, transparent);
+}
+
 .simpleStreamMain {
   display: flex;
   align-items: center;
@@ -71,6 +76,11 @@
 .simpleStreamButtonActive .simpleStreamIcon {
   background: color-mix(in srgb, var(--blue-5) 22%, transparent);
   color: var(--blue-11);
+}
+
+.simpleStreamButtonInactive .simpleStreamIcon {
+  background: color-mix(in srgb, var(--red-5) 18%, transparent);
+  color: var(--red-11);
 }
 
 .simpleStreamLabel {
@@ -99,4 +109,10 @@
   border-color: color-mix(in srgb, var(--blue-8) 42%, transparent);
   background: color-mix(in srgb, var(--blue-4) 18%, transparent);
   color: var(--blue-11);
+}
+
+.simpleStreamStateInactive {
+  border-color: color-mix(in srgb, var(--red-8) 36%, transparent);
+  background: color-mix(in srgb, var(--red-4) 18%, transparent);
+  color: var(--red-11);
 }

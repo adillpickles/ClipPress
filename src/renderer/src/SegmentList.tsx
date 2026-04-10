@@ -259,8 +259,8 @@ const Segment = memo(({
     ];
     return {
       visibility: sortable.isDragging ? 'hidden' : undefined,
-      padding: simpleMode ? '.68rem .75rem' : '3px 5px',
-      margin: simpleMode ? '3px 0' : '1px 0',
+      padding: simpleMode ? '.74rem .8rem' : '3px 5px',
+      margin: simpleMode ? '4px 0' : '1px 0',
       boxSizing: 'border-box',
       originY: 0,
       position: 'relative',
@@ -268,9 +268,9 @@ const Segment = memo(({
       transition: transitions.length > 0 ? transitions.join(', ') : undefined,
       background: simpleMode ? 'color-mix(in srgb, var(--gray-1) 88%, transparent)' : 'var(--gray-1)',
       border: `1px solid ${isActive ? 'var(--gray-10)' : (simpleMode ? 'color-mix(in srgb, var(--gray-8) 24%, transparent)' : 'transparent')}`,
-      borderRadius: simpleMode ? 12 : 5,
+      borderRadius: simpleMode ? 14 : 5,
       opacity: !selected && !invertCutSegments ? (simpleMode ? 0.92 : 0.5) : undefined,
-      boxShadow: simpleMode ? '0 1px 0 rgba(255, 255, 255, 0.03)' : undefined,
+      boxShadow: simpleMode ? '0 8px 22px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.03)' : undefined,
     };
   }, [invertCutSegments, isActive, selected, simpleMode, sortable.isDragging, sortable.transform, sortable.transition]);
 
@@ -302,7 +302,7 @@ const Segment = memo(({
         <span style={{ cursor, fontSize: simpleMode ? '.92rem' : `${Math.min(1, 26 / timeStr.length) * 0.75}em`, whiteSpace: 'nowrap', fontWeight: simpleMode ? 700 : undefined, fontVariantNumeric: 'tabular-nums', letterSpacing: simpleMode ? '-.01em' : undefined }}>{timeStr}</span>
       </div>
 
-      {'name' in seg && seg.name && <span style={{ fontSize: simpleMode ? '.8em' : '.75em', color: primaryTextColor, marginRight: '.3em', display: 'block', marginTop: duration != null ? '.22rem' : 0, lineHeight: 1.35 }}>{seg.name}</span>}
+      {'name' in seg && seg.name && <span style={{ fontSize: simpleMode ? '.82em' : '.75em', color: simpleMode ? 'var(--gray-11)' : primaryTextColor, marginRight: '.3em', display: 'block', marginTop: duration != null ? '.26rem' : 0, lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{seg.name}</span>}
       {!simpleMode && Object.entries(tags).map(([name, value]) => (
         <span style={{ fontSize: '.7em', backgroundColor: 'var(--gray-5)', color: 'var(--gray-12)', borderRadius: '.4em', padding: '0 .2em', marginRight: '.1em' }} key={name}>{name}:<b>{value}</b></span>
       ))}
@@ -313,8 +313,8 @@ const Segment = memo(({
             {simpleMode ? formatSimpleDuration(duration) : `${t('Duration')} ${formatTimecode({ seconds: duration, shorten: true })}`}
             {estimatedSize != null && (
               <span style={{ fontSize: simpleMode ? '1em' : '.9em' }}>
-                {simpleMode ? ' | ~' : ', ~'}
-                {prettyBytes(estimatedSize, { space: false, maximumFractionDigits: 1, minimumFractionDigits: 0 })}
+                {simpleMode ? ' · ~' : ', ~'}
+                {prettyBytes(estimatedSize, { space: simpleMode, maximumFractionDigits: 1, minimumFractionDigits: 0 })}
               </span>
             )}
           </div>

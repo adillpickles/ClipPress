@@ -9,21 +9,11 @@
     color-mix(in srgb, var(--gray-1) 88%, transparent);
   color: var(--gray-12);
   backdrop-filter: blur(22px);
-  overflow-y: scroll;
+  overflow: hidden;
   display: flex;
   justify-content: center;
-  align-items: flex-start;
-  padding: 1.5rem;
-}
-
-.floatingActions {
-  position: fixed;
-  top: 1rem;
-  right: 1rem;
-  z-index: 1;
-  display: flex;
   align-items: center;
-  gap: .65rem;
+  padding: 1.5rem;
 }
 
 :global(.dark-theme) .sheet {
@@ -35,10 +25,14 @@
 .box {
   margin: 0;
   border-radius: 28px;
-  padding: 1.35rem 1.5rem 1.5rem;
-  min-height: 500px;
+  padding: 1.2rem 1.2rem 1.15rem;
   position: relative;
   max-width: 100%;
+  max-height: min(calc(100vh - 3rem), 56rem);
+  min-height: min(500px, calc(100vh - 3rem));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--gray-1) 96%, transparent), color-mix(in srgb, var(--gray-2) 98%, transparent));
   border: 1px solid color-mix(in srgb, var(--gray-8) 45%, transparent);
@@ -52,12 +46,25 @@
     linear-gradient(180deg, color-mix(in srgb, var(--gray-2) 94%, transparent), color-mix(in srgb, var(--gray-1) 94%, rgba(0, 0, 0, 0.6)));
 }
 
+.floatingAction {
+  position: fixed;
+  top: 1.55rem;
+  right: 1.7rem;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.floatingAction > * {
+  pointer-events: auto;
+}
+
 .header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1.1rem;
+  flex-shrink: 0;
 }
 
 .headerActions {
@@ -71,14 +78,21 @@
   margin-top: .5rem;
 }
 
+.scrollArea {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: .35rem;
+  margin-right: -.35rem;
+}
+
 @media (max-width: 900px) {
-  .header {
-    flex-direction: column;
+  .floatingAction {
+    top: 1rem;
+    right: 1rem;
   }
 
-  .floatingActions {
-    top: .75rem;
-    right: .75rem;
+  .header {
+    flex-direction: column;
   }
 
   .headerActions {

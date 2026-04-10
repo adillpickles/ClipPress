@@ -450,10 +450,14 @@ function App() {
   const {
     setCaptureFormat,
     setCustomOutDir,
+    setCutFileTemplate,
+    setCutMergedFileTemplate,
     setKeyframeCut,
     setPlaybackVolume,
     setExportConfirmEnabled,
     setSimpleMode,
+    setSizeLimitSeparateNamingMode,
+    setSizeLimitMergedNamingMode,
     setOutFormatLocked,
     setSafeOutputFileName,
     setKeyBindings,
@@ -724,22 +728,6 @@ function App() {
     () => getAudioStreams(mainStreams),
     [mainStreams],
   );
-  const sizeLimitedStreams = useMemo(
-    () => pickSizeLimitedStreams(mainStreams),
-    [mainStreams],
-  );
-  const sizeLimitedSourceFps = useMemo(
-    () => (sizeLimitedStreams.videoStream != null
-      ? getStreamFps(sizeLimitedStreams.videoStream)
-      : undefined),
-    [sizeLimitedStreams.videoStream],
-  );
-  const sizeLimitedAudioGainDb = useMemo(() => {
-    if (filePath == null || sizeLimitedStreams.audioStream == null) return undefined;
-    return paramsByStreamId
-      .get(filePath)
-      ?.get(sizeLimitedStreams.audioStream.index)?.audioGainDb;
-  }, [filePath, paramsByStreamId, sizeLimitedStreams.audioStream]);
 
   const mainVideoStream = useMemo(() => videoStreams[0], [videoStreams]);
   const mainAudioStream = useMemo(() => audioStreams[0], [audioStreams]);
@@ -747,6 +735,28 @@ function App() {
   useEffect(() => {
     setCurrentClipName(filePath != null ? basename(filePath) : undefined);
   }, [filePath]);
+
+  const exportBaseName = useMemo(() => {
+    if (filePath == null) return undefined;
+
+    const fallbackBaseName = parsePath(filePath).name;
+    const trimmedClipName = currentClipName?.trim();
+    if (trimmedClipName == null || trimmedClipName.length === 0) return fallbackBaseName;
+
+    const sourceExt = parsePath(filePath).ext;
+    if (sourceExt !== '' && trimmedClipName.toLowerCase().endsWith(sourceExt.toLowerCase())) {
+      const baseName = trimmedClipName.slice(0, -sourceExt.length).trim();
+      return baseName.length > 0 ? baseName : fallbackBaseName;
+    }
+
+    return trimmedClipName;
+  }, [currentClipName, filePath]);
+
+  const exportNamingSourcePath = useMemo(() => {
+    if (filePath == null) return undefined;
+    const { dir, ext } = parsePath(filePath);
+    return pathJoin(dir, `${exportBaseName ?? parsePath(filePath).name}${ext}`);
+  }, [exportBaseName, filePath]);
 
   const activeSubtitle = useMemo(
     () => (activeSubtitleStreamIndex != null
@@ -1032,6 +1042,23 @@ function App() {
     autoExportExtraStreams,
     showGenericDialog,
   });
+
+  const sizeLimitedStreams = useMemo(
+    () => pickSizeLimitedStreams(mainCopiedStreams),
+    [mainCopiedStreams],
+  );
+  const sizeLimitedSourceFps = useMemo(
+    () => (sizeLimitedStreams.videoStream != null
+      ? getStreamFps(sizeLimitedStreams.videoStream)
+      : undefined),
+    [sizeLimitedStreams.videoStream],
+  );
+  const sizeLimitedAudioGainDb = useMemo(() => {
+    if (filePath == null || sizeLimitedStreams.audioStream == null) return undefined;
+    return paramsByStreamId
+      .get(filePath)
+      ?.get(sizeLimitedStreams.audioStream.index)?.audioGainDb;
+  }, [filePath, paramsByStreamId, sizeLimitedStreams.audioStream]);
 
   const onDurationChange = useCallback<ReactEventHandler<HTMLVideoElement>>(
     (e) => {
@@ -1969,7 +1996,7 @@ function App() {
       fallbackTemplate?: string,
       segmentsOverride: SegmentToExport[] = segmentsToExport,
     ) => {
-      invariant(fileFormat != null && outputDir != null && filePath != null);
+      invariant(fileFormat != null && outputDir != null && filePath != null && exportNamingSourcePath != null);
       const outputFormat = outputFormatOverride ?? fileFormat;
       const isFormatForced = outputFormatOverride != null;
       return generateCutFileNamesRaw({
@@ -1981,7 +2008,7 @@ function App() {
         formatTimecode,
         isCustomFormatSelected: isFormatForced ? true : isCustomFormatSelected,
         fileFormat: outputFormat,
-        sourceFile: { path: filePath, ...mainFileMeta },
+        sourceFile: { path: exportNamingSourcePath, ...mainFileMeta },
         outputDir,
         safeOutputFileName,
         maxLabelLength,
@@ -1992,6 +2019,7 @@ function App() {
     [
       currentFileExportCount,
       exportCount,
+      exportNamingSourcePath,
       fileDuration,
       fileFormat,
       filePath,
@@ -2027,14 +2055,14 @@ function App() {
       fallbackTemplate?: string,
       segmentLabels: string[] = segmentsToExport.map((seg) => seg.name ?? ''),
     ) => {
-      invariant(fileFormat != null && outputDir != null && filePath != null);
+      invariant(fileFormat != null && outputDir != null && filePath != null && exportNamingSourcePath != null);
       const outputFormat = outputFormatOverride ?? fileFormat;
       const isFormatForced = outputFormatOverride != null;
       return generateCutMergedFileNamesRaw({
         template,
         isCustomFormatSelected: isFormatForced ? true : isCustomFormatSelected,
         fileFormat: outputFormat,
-        sourceFile: { path: filePath },
+        sourceFile: { path: exportNamingSourcePath },
         outputDir,
         safeOutputFileName,
         maxLabelLength,
@@ -2047,6 +2075,7 @@ function App() {
     [
       currentFileExportCount,
       exportCount,
+      exportNamingSourcePath,
       fileFormat,
       filePath,
       isCustomFormatSelected,
@@ -2319,6 +2348,13 @@ function App() {
     ],
   );
 
+  const closeCurrentFileAfterExport = useCallback(() => {
+    if (filePath == null) return;
+    batchListRemoveFile(filePath);
+    resetState();
+    clearSegments();
+  }, [batchListRemoveFile, clearSegments, filePath, resetState]);
+
   const askForCleanupChoices = useCallback(async () => {
     const trashResponse = await openCleanupFilesDialog(cleanupChoices);
     if (trashResponse != null) setCleanupChoices(trashResponse); // Store for next time, if not canceled
@@ -2440,8 +2476,8 @@ function App() {
   );
 
   const sizeLimitedSourceBaseName = useMemo(
-    () => (filePath != null ? parsePath(filePath).name : undefined),
-    [filePath],
+    () => exportBaseName,
+    [exportBaseName],
   );
 
   const getSizeLimitedSeparateSuffixLabelForSegment = useCallback(
@@ -2896,9 +2932,13 @@ function App() {
         }
 
         notices.add(
-          i18n.t(
-            'ClipPress created a shareable MP4 and kept only the main video plus one audio track.',
-          ),
+          sizeLimitedAudioStream != null
+            ? i18n.t(
+              'ClipPress created a shareable MP4 and kept only the main video plus one audio track.',
+            )
+            : i18n.t(
+              'ClipPress created a shareable MP4 and kept only the main video track.',
+            ),
         );
         if (hasOverlayClips) {
           warnings.add(i18n.t('Text overlays may cause size limit inaccuracies'));
@@ -3022,6 +3062,9 @@ function App() {
               rotation: isRotationSet ? effectiveRotation : undefined,
               appendFfmpegCommandLog,
               audioGainDb: sizeLimitedAudioGainDb,
+              overlayClips: hasOverlayClips ? overlayClips : undefined,
+              overlayVideoWidth: sizeLimitedVideoStream.width,
+              overlayVideoHeight: sizeLimitedVideoStream.height,
               onProgress: (jobProgress, metadata) => updateJobProgress({
                 jobIndex: index,
                 jobText: i18n.t('Exporting'),
@@ -3100,6 +3143,9 @@ function App() {
             rotation: isRotationSet ? effectiveRotation : undefined,
             appendFfmpegCommandLog,
             audioGainDb: sizeLimitedAudioGainDb,
+            overlayClips: hasOverlayClips ? overlayClips : undefined,
+            overlayVideoWidth: sizeLimitedVideoStream.width,
+            overlayVideoHeight: sizeLimitedVideoStream.height,
             onProgress: (jobProgress, metadata) => updateJobProgress({
               jobIndex: mergedJobIndex,
               jobText: i18n.t('Merging'),
@@ -3131,13 +3177,6 @@ function App() {
 
         if (simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
 
-        if (cleanupChoices.cleanupAfterExport) {
-          const newCleanupChoices = cleanupChoices.askForCleanup
-            ? await askForCleanupChoices()
-            : cleanupChoices;
-          if (newCleanupChoices) await cleanupFiles(newCleanupChoices);
-        }
-
         const revealResult = (willMerge ? finalizedResults.at(-1) : undefined)
           ?? firstCreatedResult
           ?? finalizedResults[0];
@@ -3146,6 +3185,15 @@ function App() {
           ? [revealResult.path]
           : finalizedResults.map((result) => result.path);
         const revealPath = revealResult.path;
+
+        if (cleanupChoices.cleanupAfterExport) {
+          const newCleanupChoices = cleanupChoices.askForCleanup
+            ? await askForCleanupChoices()
+            : cleanupChoices;
+          if (newCleanupChoices) await cleanupFiles(newCleanupChoices);
+        } else if (simpleMode && cleanupChoices.closeFile) {
+          closeCurrentFileAfterExport();
+        }
 
         if (!hideAllNotifications) {
           showOsNotification(i18n.t('Export finished'));
@@ -3321,18 +3369,21 @@ function App() {
 
         if (simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
 
-        if (cleanupChoices.cleanupAfterExport) {
-          const newCleanupChoices = cleanupChoices.askForCleanup
-            ? await askForCleanupChoices()
-            : cleanupChoices;
-          if (newCleanupChoices) await cleanupFiles(newCleanupChoices);
-        }
-
         const exportedPaths = willMerge && mergedOutFilePath != null
           ? [mergedOutFilePath]
           : outFiles.map((file) => file.path);
         const [revealPath] = exportedPaths;
         invariant(revealPath != null);
+
+        if (cleanupChoices.cleanupAfterExport) {
+          const newCleanupChoices = cleanupChoices.askForCleanup
+            ? await askForCleanupChoices()
+            : cleanupChoices;
+          if (newCleanupChoices) await cleanupFiles(newCleanupChoices);
+        } else if (simpleMode && cleanupChoices.closeFile) {
+          closeCurrentFileAfterExport();
+        }
+
         if (!hideAllNotifications) {
           showOsNotification(i18n.t('Export finished'));
           openCutFinishedDialog({
@@ -3522,20 +3573,23 @@ function App() {
 
       if (simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
 
-      if (cleanupChoices.cleanupAfterExport) {
-        const newCleanupChoices = cleanupChoices.askForCleanup
-          ? await askForCleanupChoices()
-          : cleanupChoices;
-        // only if not canceled
-        if (newCleanupChoices) await cleanupFiles(newCleanupChoices);
-      }
-
       // Note: this should be after cleanup, so we don't accidentally open two dialogs at the same time, leading to error *and* success dialog simultaneously https://github.com/mifi/lossless-cut/issues/2609
       const exportedPaths = willMerge && mergedOutFilePath != null
         ? [mergedOutFilePath]
         : outFiles.map((f) => f.path);
       const [revealPath] = exportedPaths;
       invariant(revealPath != null);
+
+      if (cleanupChoices.cleanupAfterExport) {
+        const newCleanupChoices = cleanupChoices.askForCleanup
+          ? await askForCleanupChoices()
+          : cleanupChoices;
+        // only if not canceled
+        if (newCleanupChoices) await cleanupFiles(newCleanupChoices);
+      } else if (simpleMode && cleanupChoices.closeFile) {
+        closeCurrentFileAfterExport();
+      }
+
       if (!hideAllNotifications) {
         showOsNotification(i18n.t('Export finished'));
         openCutFinishedDialog({
@@ -3598,6 +3652,7 @@ function App() {
     buildSizeLimitedResultSummary,
     cleanupChoices,
     cleanupFiles,
+    closeCurrentFileAfterExport,
     concatCutSegments,
     copyFileStreams,
     customOutDir,
@@ -3689,10 +3744,29 @@ function App() {
     if (!exportConfirmEnabled || exportConfirmOpen) {
       await onExportConfirm();
     } else {
+      if (simpleMode) {
+        setCutFileTemplate(undefined);
+        setCutMergedFileTemplate(undefined);
+        if (isSizeLimitedExport) {
+          setSizeLimitSeparateNamingMode('custom_template');
+          setSizeLimitMergedNamingMode('custom_template');
+        }
+      }
       setExportConfirmOpen(true);
       setStreamsSelectorShown(false);
     }
-  }, [filePath, exportConfirmEnabled, exportConfirmOpen, onExportConfirm]);
+  }, [
+    exportConfirmEnabled,
+    exportConfirmOpen,
+    filePath,
+    isSizeLimitedExport,
+    onExportConfirm,
+    setCutFileTemplate,
+    setCutMergedFileTemplate,
+    setSizeLimitMergedNamingMode,
+    setSizeLimitSeparateNamingMode,
+    simpleMode,
+  ]);
 
   const captureSnapshot = useCallback(async () => {
     if (!filePath || workingRef.current) return;

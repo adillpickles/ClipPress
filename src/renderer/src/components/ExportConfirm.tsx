@@ -1714,18 +1714,14 @@ function ExportConfirm({
           >
             <div className={styles['summaryLabel']}>{t('Tracks kept')}</div>
             <div className={styles['summaryValue']}>
-              {isSizeLimited
-                ? t('Main video + 1 audio track')
-                : t('{{count}} tracks', { count: numStreamsToCopy })}
+              {t('{{count}} tracks', { count: numStreamsToCopy })}
             </div>
             {renderNotice(notices.specific['problematicStreams'], {
               style: { marginBottom: 0 },
             })}
-            {!isSizeLimited && (
-              <Button onClick={onShowStreamsSelectorClick}>
-                {t('Change')}
-              </Button>
-            )}
+            <Button onClick={onShowStreamsSelectorClick}>
+              {t('Change')}
+            </Button>
           </section>
 
           <section
@@ -2281,18 +2277,12 @@ function ExportConfirm({
                         {renderNotice(notices.specific['problematicStreams'], {})}
                       </td>
                       <td>
-                        {isSizeLimited ? (
-                          <HighlightedText>
-                            <Trans>Keeping main video + 1 audio track</Trans>
-                          </HighlightedText>
-                        ) : (
-                          <HighlightedText
-                            style={{ cursor: 'pointer' }}
-                            onClick={onShowStreamsSelectorClick}
-                          >
-                            <Trans>Keeping {{ numStreamsToCopy }} tracks</Trans>
-                          </HighlightedText>
-                        )}
+                        <HighlightedText
+                          style={{ cursor: 'pointer' }}
+                          onClick={onShowStreamsSelectorClick}
+                        >
+                          <Trans>Keeping {{ numStreamsToCopy }} tracks</Trans>
+                        </HighlightedText>
                       </td>
                       <td>
                         {renderNoticeIcon(

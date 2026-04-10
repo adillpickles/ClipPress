@@ -7,6 +7,7 @@ import { clampOverlayBox, getPreviewFontSize, getRotatedVideoDimensions, isOverl
 const minOverlayWidth = 0.08;
 const minOverlayHeight = 0.1;
 const moveHandleHeight = 22;
+const resizeHandleHitSize = 30;
 
 function clampBox(box: OverlayBox) {
   return clampOverlayBox({
@@ -159,6 +160,10 @@ function TextOverlayEditor({
           const width = overlayClip.box.width * surfaceSize.width;
           const height = overlayClip.box.height * surfaceSize.height;
           const fontSize = getPreviewFontSize({ surfaceHeight: surfaceSize.height, boxHeight: overlayClip.box.height });
+          const previewLineClamp = Math.max(
+            1,
+            Math.floor((height - 16 - (selected ? moveHandleHeight : 0)) / Math.max(fontSize * 1.15, 1)),
+          );
 
           return (
             <div
@@ -176,91 +181,109 @@ function TextOverlayEditor({
                 width,
                 height,
                 pointerEvents: 'auto',
-                border: selected ? '1px solid rgba(88, 200, 255, 0.95)' : '1px dashed rgba(255, 255, 255, 0.45)',
-                background: selected ? 'rgba(8, 13, 19, 0.2)' : 'transparent',
                 borderRadius: 8,
-                boxShadow: selected ? '0 0 0 1px rgba(88, 200, 255, 0.25)' : undefined,
-                overflow: 'hidden',
+                overflow: 'visible',
               }}
             >
-              {selected && (
-                <button
-                  onMouseDown={(event) => beginInteraction(event, overlayClip.overlayId, 'move')}
-                  type="button"
-                  style={{
-                    height: moveHandleHeight,
-                    cursor: 'move',
-                    background: 'rgba(10, 16, 24, 0.75)',
-                    color: 'rgba(255, 255, 255, 0.8)',
-                    fontSize: 11,
-                    letterSpacing: '0.04em',
-                    textTransform: 'uppercase',
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: '0 8px',
-                    width: '100%',
-                    border: 'none',
-                  }}
-                >
-                  Text
-                </button>
-              )}
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  border: selected ? '1px solid rgba(88, 200, 255, 0.95)' : '1px dashed rgba(255, 255, 255, 0.45)',
+                  background: selected ? 'rgba(8, 13, 19, 0.2)' : 'transparent',
+                  borderRadius: 8,
+                  boxShadow: selected ? '0 0 0 1px rgba(88, 200, 255, 0.25)' : undefined,
+                  overflow: 'hidden',
+                }}
+              >
+                {selected && (
+                  <button
+                    onMouseDown={(event) => beginInteraction(event, overlayClip.overlayId, 'move')}
+                    type="button"
+                    style={{
+                      height: moveHandleHeight,
+                      cursor: 'move',
+                      background: 'rgba(10, 16, 24, 0.75)',
+                      color: 'rgba(255, 255, 255, 0.8)',
+                      fontSize: 11,
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase',
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '0 8px',
+                      width: '100%',
+                      border: 'none',
+                    }}
+                  >
+                    Text
+                  </button>
+                )}
 
-              {selected ? (
-                <textarea
-                  value={overlayClip.text}
-                  onChange={(event) => onUpdateOverlay(overlayClip.overlayId, (clip) => ({ ...clip, text: event.target.value }))}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  spellCheck={false}
-                  style={{
-                    width: '100%',
-                    height: `calc(100% - ${moveHandleHeight}px)`,
-                    border: 'none',
-                    outline: 'none',
-                    resize: 'none',
-                    background: 'transparent',
-                    color: 'rgba(255, 255, 255, 0.98)',
-                    padding: '8px 10px 10px',
-                    fontFamily: 'Arial, sans-serif',
-                    fontSize,
-                    lineHeight: 1.15,
-                    textShadow: '0 1px 4px rgba(0, 0, 0, 0.9)',
-                  }}
-                />
-              ) : (
-                <div
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    padding: '8px 10px',
-                    whiteSpace: 'pre-wrap',
-                    overflowWrap: 'anywhere',
-                    color: 'rgba(255, 255, 255, 0.98)',
-                    fontFamily: 'Arial, sans-serif',
-                    fontSize,
-                    lineHeight: 1.15,
-                    textShadow: '0 1px 4px rgba(0, 0, 0, 0.9)',
-                    display: 'flex',
-                    alignItems: 'center',
-                  }}
-                >
-                  {overlayClip.text}
-                </div>
-              )}
+                {selected ? (
+                  <textarea
+                    value={overlayClip.text}
+                    onChange={(event) => onUpdateOverlay(overlayClip.overlayId, (clip) => ({ ...clip, text: event.target.value }))}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    spellCheck={false}
+                    style={{
+                      width: '100%',
+                      height: `calc(100% - ${moveHandleHeight}px)`,
+                      border: 'none',
+                      outline: 'none',
+                      resize: 'none',
+                      overflow: 'auto',
+                      background: 'transparent',
+                      color: 'rgba(255, 255, 255, 0.98)',
+                      padding: '8px 10px 10px',
+                      fontFamily: 'Arial, sans-serif',
+                      fontSize,
+                      lineHeight: 1.15,
+                      overflowWrap: 'anywhere',
+                      wordBreak: 'break-word',
+                      textShadow: '0 1px 4px rgba(0, 0, 0, 0.9)',
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      padding: '8px 10px',
+                      whiteSpace: 'pre-wrap',
+                      overflowWrap: 'anywhere',
+                      wordBreak: 'break-word',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      color: 'rgba(255, 255, 255, 0.98)',
+                      fontFamily: 'Arial, sans-serif',
+                      fontSize,
+                      lineHeight: 1.15,
+                      textShadow: '0 1px 4px rgba(0, 0, 0, 0.9)',
+                      display: '-webkit-box',
+                      WebkitBoxOrient: 'vertical',
+                      WebkitLineClamp: previewLineClamp,
+                    }}
+                  >
+                    {overlayClip.text}
+                  </div>
+                )}
+              </div>
 
               {selected && (
                 <button
                   type="button"
                   onMouseDown={(event) => beginInteraction(event, overlayClip.overlayId, 'resize')}
+                  title="Resize text box"
                   style={{
                     position: 'absolute',
-                    right: 0,
-                    bottom: 0,
-                    width: 18,
-                    height: 18,
+                    right: -8,
+                    bottom: -8,
+                    width: resizeHandleHitSize,
+                    height: resizeHandleHitSize,
                     cursor: 'nwse-resize',
-                    background: 'linear-gradient(135deg, transparent 0 48%, rgba(88, 200, 255, 0.95) 48% 52%, transparent 52% 100%)',
+                    background: 'linear-gradient(135deg, transparent 0 60%, rgba(88, 200, 255, 0.95) 60% 67%, transparent 67% 100%)',
                     border: 'none',
+                    borderRadius: 999,
                   }}
                 />
               )}
