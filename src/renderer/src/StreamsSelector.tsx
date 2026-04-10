@@ -501,6 +501,7 @@ const fileStyle: CSSProperties = { marginBottom: '2em', padding: '.5em 0', overf
 
 function StreamsSelector({
   mainFilePath, mainFileFormat, mainFileStreams, mainFileChapters, isCopyingStreamId, toggleCopyStreamId, setCopyStreamIdsForPath, onExtractStreamPress, onExtractAllStreamsPress, allFilesMeta, externalFilesMeta, setExternalFilesMeta, showAddStreamSourceDialog, shortestFlag, setShortestFlag, nonCopiedExtraStreams, customTagsByFile, setCustomTagsByFile, paramsByStreamId, updateStreamParams, formatTimecode, loadSubtitleTrackToSegments, toggleCopyStreamIds, changeEnabledStreamsFilter, toggleCopyAllStreamsForPath, onStreamSourceFileDrop,
+  simpleMode,
 }: {
   mainFilePath: string,
   mainFileFormat: FFprobeFormat | undefined,
@@ -528,6 +529,7 @@ function StreamsSelector({
   changeEnabledStreamsFilter: () => void,
   toggleCopyAllStreamsForPath: (path: string) => void,
   onStreamSourceFileDrop: DragEventHandler<HTMLDivElement>,
+  simpleMode: boolean,
 }) {
   const [editingFile, setEditingFile] = useState<string>();
   const [editingStream, setEditingStream] = useState<EditingStream>();
@@ -551,6 +553,58 @@ function StreamsSelector({
   }
 
   const externalFilesEntries = Object.entries(externalFilesMeta);
+  const simpleModeStreams = useMemo(
+    () => mainFileStreams.filter((stream) => stream.codec_type === 'video' || stream.codec_type === 'audio'),
+    [mainFileStreams],
+  );
+  const simpleModeAudioStreams = useMemo(
+    () => simpleModeStreams.filter((stream) => stream.codec_type === 'audio'),
+    [simpleModeStreams],
+  );
+
+  if (simpleMode) {
+    return (
+      <div className={styles['simpleList']}>
+        {simpleModeStreams.map((stream, index) => {
+          const copyStream = isCopyingStreamId(mainFilePath, stream.index);
+          const isVideoStream = stream.codec_type === 'video';
+          const Icon = isVideoStream ? FaVideo : FaVolumeUp;
+          const label = stream.codec_type === 'video'
+            ? (index === 0 ? t('Video') : t('Video {{index}}', { index: index + 1 }))
+            : (simpleModeAudioStreams.length === 1
+              ? t('Audio')
+              : t('Audio {{index}}', { index: simpleModeAudioStreams.findIndex((item) => item.index === stream.index) + 1 }));
+
+          return (
+            <button
+              key={stream.index}
+              type="button"
+              onClick={() => toggleCopyStreamId(mainFilePath, stream.index)}
+              className={[
+                styles['simpleStreamButton'],
+                ...(copyStream ? [styles['simpleStreamButtonActive']] : []),
+              ].join(' ')}
+            >
+              <span className={styles['simpleStreamMain']}>
+                <span className={styles['simpleStreamIcon']}>
+                  <Icon size={15} />
+                </span>
+                <span className={styles['simpleStreamLabel']}>{label}</span>
+              </span>
+              <span
+                className={[
+                  styles['simpleStreamState'],
+                  ...(copyStream ? [styles['simpleStreamStateActive']] : []),
+                ].join(' ')}
+              >
+                {copyStream ? t('Keep') : t('Skip')}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <>

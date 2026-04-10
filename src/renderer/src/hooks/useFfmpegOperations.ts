@@ -7,7 +7,7 @@ import i18n from 'i18next';
 
 import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists } from '../util';
 import { isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, getDuration, createChaptersFromSegments, readFileFfprobeMeta, getExperimentalArgs, getVideoTimescaleArgs, logStdoutStderr, runFfmpegConcat, RefuseOverwriteError, runFfmpeg } from '../ffmpeg';
-import { defaultAudioGainDb, getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
+import { defaultAudioGainDb, getMapStreamsArgs, getStreamIdsToCopy, isMutedAudioGain, isNeutralAudioGain } from '../util/streams';
 import { needsSmartCut, getCodecParams } from '../smartcut';
 import { getGuaranteedSegments, isDurationValid } from '../segments';
 import { getRotatedVideoDimensions, renderTextOverlayPng } from '../textOverlays';
@@ -79,7 +79,7 @@ function getAdjustedAudioEncodeArgs({ outFormat, outputIndex }: { outFormat: str
 
 function getAdjustedAudioGainArgs({ audioGainDb, outFormat, outputIndex }: { audioGainDb: number, outFormat: string | undefined, outputIndex: number }) {
   return [
-    `-filter:a:${outputIndex}`, `volume=${audioGainDb.toFixed(2)}dB`,
+    `-filter:a:${outputIndex}`, isMutedAudioGain(audioGainDb) ? 'volume=0' : `volume=${audioGainDb.toFixed(2)}dB`,
     ...getAdjustedAudioEncodeArgs({ outFormat, outputIndex }),
   ];
 }

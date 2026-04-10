@@ -1,10 +1,9 @@
 import { memo, useState } from 'react';
 import { motion } from 'motion/react';
-import Lottie from 'react-lottie-player/dist/LottiePlayerLight';
 import { Trans, useTranslation } from 'react-i18next';
 import useInterval from 'react-use/lib/useInterval';
+import { FiActivity } from 'react-icons/fi';
 
-import loadingLottie from '../7077-magic-flow.json';
 import Button from './Button';
 import styles from './Working.module.css';
 
@@ -19,6 +18,7 @@ function Working({ text, detailText, progress, onAbortClick }: {
 
   const [startedAt] = useState(() => new Date());
   const [elapsedMs, setElapsedMs] = useState(0);
+  const progressPercent = progress != null ? `${(progress * 100).toFixed(1)}%` : undefined;
 
   // Reassure the user that the app is not frozen
   // This is because some ffmpeg operations can take a long time without giving any progress updates, which might make the user think that the app is frozen
@@ -31,42 +31,48 @@ function Working({ text, detailText, progress, onAbortClick }: {
   return (
     <div className={styles['wrapper']} style={{ position: 'absolute', bottom: 0, top: 0, left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
       <motion.div
-        className={styles['loader-box']}
-        initial={{ opacity: 0, scale: 0 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0 }}
+        className={styles['card']}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 8 }}
       >
-        <div style={{ width: '10em', height: '5em', marginBottom: '.5em' }}>
-          <Lottie
-            loop
-            animationData={loadingLottie}
-            play
-            style={{ width: '170%', height: '210%', marginLeft: '-40%', marginTop: '-35%', pointerEvents: 'none' }}
-          />
+        <div className={styles['iconBadge']}>
+          <FiActivity />
         </div>
 
-        <div style={{ marginBottom: '.2em', textAlign: 'center' }}>
-          {text}...
+        <div className={styles['eyebrow']}>
+          {t('Working')}
+        </div>
+
+        <div className={styles['title']}>
+          {text}
         </div>
 
         {detailText != null && (
-          <div style={{ marginBottom: '.2em', fontSize: '.95em', color: 'var(--gray-12)', textAlign: 'center' }}>
+          <div className={styles['detail']}>
             {detailText}
           </div>
         )}
 
-        <div style={{ marginBottom: '.5em', fontSize: '.9em', color: 'var(--gray-11)', textAlign: 'center' }}>
-          {t('Elapsed: {{seconds}} seconds', { seconds: (elapsedMs / 1000).toFixed(1) })}
+        <div className={styles['metaRow']}>
+          <div className={styles['elapsed']}>
+            {t('Elapsed: {{seconds}} seconds', { seconds: (elapsedMs / 1000).toFixed(1) })}
+          </div>
+          {progressPercent != null && (
+            <div className={styles['progressValue']}>
+              {progressPercent}
+            </div>
+          )}
         </div>
 
-        {(progress != null) && (
-          <div style={{ marginBottom: '.5em', fontSize: '1.3em' }}>
-            {`${(progress * 100).toFixed(1)} %`}
+        {progress != null && (
+          <div className={styles['progressTrack']}>
+            <div className={styles['progressFill']} style={{ width: `${Math.max(progress * 100, 4)}%` }} />
           </div>
         )}
 
-        <div>
-          <Button onClick={onAbortClick} style={{ fontSize: '1.1em', padding: '.2em 1em' }}><Trans>Abort</Trans></Button>
+        <div className={styles['actions']}>
+          <Button onClick={onAbortClick} style={{ padding: '.35em .95em' }}><Trans>Abort</Trans></Button>
         </div>
       </motion.div>
     </div>

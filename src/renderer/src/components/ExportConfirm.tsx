@@ -248,6 +248,7 @@ function AutoNamePreview({
   currentSegIndexSafe?: number | undefined;
 }) {
   const { t } = useTranslation();
+  const { simpleMode } = useUserSettings();
   const [generated, setGenerated] = useState<GeneratedOutFileNames>();
 
   useEffect(() => {
@@ -275,15 +276,29 @@ function AutoNamePreview({
 
   return (
     <div>
-      <div>{title}</div>
-      <div style={{ marginBottom: '.3em' }}>
-        <HighlightedText style={{ wordBreak: 'break-word' }}>
+      <div className={styles['summaryLabel']} style={{ marginBottom: '.45rem' }}>{title}</div>
+      <div style={{ marginBottom: simpleMode ? 0 : '.4rem' }}>
+        <HighlightedText
+          style={{
+            width: '100%',
+            display: 'block',
+            padding: '.85rem .95rem',
+            borderRadius: '1rem',
+            border: '1px solid color-mix(in srgb, var(--gray-8) 30%, transparent)',
+            background: 'color-mix(in srgb, var(--gray-1) 86%, transparent)',
+            textAlign: 'left',
+            wordBreak: 'break-word',
+          }}
+          onClick={simpleMode ? onCustomize : undefined}
+        >
           {previewName ?? t('Generating preview...')}
         </HighlightedText>
       </div>
-      <Button onClick={onCustomize} style={{ padding: '.25em .7em' }}>
-        {t('Customize name')}
-      </Button>
+      {!simpleMode && (
+        <Button onClick={onCustomize} style={{ padding: '.25em .7em' }}>
+          {t('Edit filename')}
+        </Button>
+      )}
     </div>
   );
 }
@@ -662,9 +677,7 @@ function ExportConfirm({
       if (isSizeLimited) {
         generic.push({
           warning: true,
-          text: t(
-            'Text layers are not available in size-limited export yet. Switch back to the normal export path for this file.',
-          ),
+          text: t('Text overlays may cause size limit inaccuracies'),
         });
       } else {
         generic.push({
@@ -1435,7 +1448,7 @@ function ExportConfirm({
                   {t('Choose how this export should feel')}
                 </div>
               </div>
-              <HelpIcon onClick={onExportEncodeModeHelpPress} />
+              {!simpleMode && <HelpIcon onClick={onExportEncodeModeHelpPress} />}
             </div>
 
             <div className={styles['choiceGrid']}>
@@ -1621,7 +1634,7 @@ function ExportConfirm({
                   {t('Pick how the finished clip files are produced')}
                 </div>
               </div>
-              <HelpIcon onClick={onExportModeHelpPress} />
+              {!simpleMode && <HelpIcon onClick={onExportModeHelpPress} />}
             </div>
 
             <div className={styles['choiceGrid']}>
@@ -1693,7 +1706,12 @@ function ExportConfirm({
         </div>
 
         <div className={styles['summaryGrid']}>
-          <section className={styles['summaryCard']}>
+          <section
+            className={[
+              styles['summaryCard'],
+              ...(!simpleMode ? [styles['summaryCardWide']] : []),
+            ].join(' ')}
+          >
             <div className={styles['summaryLabel']}>{t('Tracks kept')}</div>
             <div className={styles['summaryValue']}>
               {isSizeLimited
@@ -1710,7 +1728,11 @@ function ExportConfirm({
             )}
           </section>
 
-          <section className={styles['summaryCard']}>
+          <section
+            className={[
+              styles['summaryCard'],
+            ].join(' ')}
+          >
             <div className={styles['summaryLabel']}>{t('Save to')}</div>
             <div
               className={styles['summaryValue']}
@@ -1723,31 +1745,45 @@ function ExportConfirm({
             </OutDirSelector>
           </section>
 
-          <section className={styles['summaryCard']}>
-            <div className={styles['summaryLabel']}>{t('Container')}</div>
-            <div className={styles['summaryValue']}>
-              {isSizeLimited
-                ? 'MP4'
-                : (effectiveOutFormat ?? t('Same as source'))}
-            </div>
-            <div className={styles['helperText']}>
-              {isSizeLimited
-                ? t(
-                  'Fixed to MP4 for fast, shareable clips.',
-                )
-                : t(
-                  'Change container details in Advanced settings if you need to.',
-                )}
-            </div>
-          </section>
+          {!simpleMode && (
+            <section
+              className={[
+                styles['summaryCard'],
+                styles['summaryCardWide'],
+              ].join(' ')}
+            >
+              <div className={styles['summaryLabel']}>{t('Container')}</div>
+              <div className={styles['summaryValue']}>
+                {isSizeLimited
+                  ? 'MP4'
+                  : (effectiveOutFormat ?? t('Same as source'))}
+              </div>
+              <div className={styles['helperText']}>
+                {isSizeLimited
+                  ? t(
+                    'Fixed to MP4 for fast, shareable clips.',
+                  )
+                  : t(
+                    'Change container details in Advanced settings if you need to.',
+                  )}
+              </div>
+            </section>
+          )}
 
-          <section className={styles['summaryCard']}>
+          <section
+            className={[
+              styles['summaryCard'],
+              styles['summaryCardWide'],
+              styles['summaryFieldCard'],
+            ].join(' ')}
+          >
             {isSizeLimited
               && sizeLimitSeparateNamingMode === 'auto'
               && generateAutoCutFileNames != null
-              && !showSeparateNameEditor ? (
+              && !showSeparateNameEditor
+              && !simpleMode ? (
                 <AutoNamePreview
-                  title={t('Output name preview')}
+                  title={t('Filename')}
                   generateFileNames={generateAutoCutFileNames}
                   currentSegIndexSafe={currentSegIndexSafe}
                   onCustomize={openSeparateNameEditor}
@@ -1782,13 +1818,20 @@ function ExportConfirm({
           </section>
 
           {willMerge && (
-            <section className={styles['summaryCard']}>
+            <section
+              className={[
+                styles['summaryCard'],
+                styles['summaryCardWide'],
+                styles['summaryFieldCard'],
+              ].join(' ')}
+            >
               {isSizeLimited
                 && sizeLimitMergedNamingMode === 'auto'
                 && generateAutoCutMergedFileNames != null
-                && !showMergedNameEditor ? (
+                && !showMergedNameEditor
+                && !simpleMode ? (
                   <AutoNamePreview
-                    title={t('Merged file name preview')}
+                    title={t('Merged filename')}
                     generateFileNames={generateAutoCutMergedFileNames}
                     onCustomize={openMergedNameEditor}
                   />

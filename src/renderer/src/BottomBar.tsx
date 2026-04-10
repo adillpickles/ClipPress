@@ -6,7 +6,6 @@ import type {
   SetStateAction,
 } from 'react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'motion/react';
 import { MdRotate90DegreesCcw } from 'react-icons/md';
 import { useTranslation } from 'react-i18next';
 import { IoIosCamera, IoMdKey, IoMdSpeedometer } from 'react-icons/io';
@@ -36,6 +35,7 @@ import SegmentCutpointButton from './components/SegmentCutpointButton';
 import SetCutpointButton from './components/SetCutpointButton';
 import CaptureFormatButton from './components/CaptureFormatButton';
 import Select from './components/Select';
+import Button from './components/Button';
 
 import { withBlur, mirrorTransform } from './util';
 import getSwal from './swal';
@@ -90,27 +90,20 @@ const InvertCutModeButton = memo(
     }, [setInvertCutSegments, t]);
 
     return (
-      <div>
-        <motion.div
-          animate={{ rotateX: invertCutSegments ? 0 : 180 }}
-          transition={{ duration: 0.3 }}
-        >
-          <FaYinYang
-            role="button"
-            title={
-              invertCutSegments
-                ? t('Discard selected segments')
-                : t('Keep selected segments')
-            }
-            style={{
-              display: 'block',
-              fontSize: '1.5em',
-              color: invertCutSegments ? dangerColor : undefined,
-            }}
-            onClick={onYinYangClick}
-          />
-        </motion.div>
-      </div>
+      <Button
+        onClick={onYinYangClick}
+        title={
+          invertCutSegments
+            ? t('Discard selected segments')
+            : t('Keep selected segments')
+        }
+        style={{ minHeight: '2rem', padding: '0 .72rem', display: 'inline-flex', alignItems: 'center', gap: '.45rem', color: invertCutSegments ? dangerColor : undefined }}
+      >
+        <FaYinYang style={{ fontSize: '1.05rem' }} />
+        <span style={{ fontSize: '.82rem', fontWeight: 700 }}>
+          {invertCutSegments ? t('Remove') : t('Keep')}
+        </span>
+      </Button>
     );
   },
 );
@@ -448,6 +441,15 @@ function BottomBar({
     }),
     [playing],
   );
+  const utilityButtonStyle = useMemo<CSSProperties>(() => ({
+    minHeight: '2rem',
+    padding: '0 .6rem',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '.42rem',
+    borderRadius: '999px',
+  }), []);
 
   // ok this is a bit over-engineered but what the hell!
   const loopSelectedSegmentsButtonStyle = useMemo<CSSProperties>(() => {
@@ -583,40 +585,34 @@ function BottomBar({
           {!simpleMode && (
             <>
               {hasAudio && (
-                <GiSoundWaves
-                  style={{
-                    fontSize: '1.6em',
-                    padding: '0 .1em',
-                    color: waveformMode != null ? primaryTextColor : undefined,
-                  }}
-                  role="button"
-                  title={t('Show waveform')}
-                  onClick={() => toggleWaveformMode()}
-                />
+                <Button title={t('Show waveform')} onClick={() => toggleWaveformMode()} style={utilityButtonStyle}>
+                  <GiSoundWaves
+                    style={{
+                      fontSize: '1.2em',
+                      color: waveformMode != null ? primaryTextColor : undefined,
+                    }}
+                  />
+                </Button>
               )}
               {hasVideo && (
                 <>
-                  <FaImages
-                    style={{
-                      fontSize: '1.1em',
-                      padding: '0 .2em',
-                      color: showThumbnails ? primaryTextColor : undefined,
-                    }}
-                    role="button"
-                    title={t('Show thumbnails')}
-                    onClick={toggleShowThumbnails}
-                  />
+                  <Button title={t('Show thumbnails')} onClick={toggleShowThumbnails} style={utilityButtonStyle}>
+                    <FaImages
+                      style={{
+                        fontSize: '1em',
+                        color: showThumbnails ? primaryTextColor : undefined,
+                      }}
+                    />
+                  </Button>
 
-                  <FaKey
-                    style={{
-                      fontSize: '1em',
-                      padding: '0 .2em',
-                      color: keyframesEnabled ? primaryTextColor : undefined,
-                    }}
-                    role="button"
-                    title={t('Show keyframes')}
-                    onClick={toggleShowKeyframes}
-                  />
+                  <Button title={t('Show keyframes')} onClick={toggleShowKeyframes} style={utilityButtonStyle}>
+                    <FaKey
+                      style={{
+                        fontSize: '.95em',
+                        color: keyframesEnabled ? primaryTextColor : undefined,
+                      }}
+                    />
+                  </Button>
                 </>
               )}
             </>
@@ -652,7 +648,7 @@ function BottomBar({
           currentCutSeg={currentCutSegOrDefault}
           side="start"
           onClick={setCutStart}
-          title={t('Start current segment at current time')}
+          title={simpleMode ? t('Mark In (I)') : t('Start current segment at current time')}
           style={{ marginRight: 5 }}
         />
 
@@ -746,7 +742,7 @@ function BottomBar({
           currentCutSeg={currentCutSeg}
           side="end"
           onClick={setCutEnd}
-          title={t('End current segment at current time')}
+          title={simpleMode ? t('Mark Out (O)') : t('End current segment at current time')}
           style={{ marginLeft: 5 }}
         />
 
@@ -829,74 +825,59 @@ function BottomBar({
                 {playbackRate.toFixed(1)}
               </div>
 
-              <div>
+              <Button title={t('Change FPS')} onClick={handleChangePlaybackRateClick} style={utilityButtonStyle}>
                 <IoMdSpeedometer
-                  title={t('Change FPS')}
-                  style={{ fontSize: '1.3em', verticalAlign: 'middle' }}
-                  role="button"
-                  onClick={handleChangePlaybackRateClick}
+                  style={{ fontSize: '1.1em', verticalAlign: 'middle' }}
                 />
-
                 {detectedFps != null && (
                   <span
                     title={t('Video FPS')}
-                    role="button"
-                    onClick={handleChangePlaybackRateClick}
                     style={{
                       color: 'var(--gray-11)',
-                      fontSize: '.7em',
-                      marginLeft: '.3em',
+                      fontSize: '.75em',
                     }}
                   >
                     {(detectedFps * outputPlaybackRate).toFixed(3)}
                   </span>
                 )}
-              </div>
+              </Button>
             </>
           )}
 
           {isFileOpened && hasVideo && (
-            <div onClick={increaseRotation} role="button">
+            <Button onClick={increaseRotation} title={`${t('Set output rotation. Current: ')} ${isRotationSet ? rotationStr : t("Don't modify")}`} style={utilityButtonStyle}>
               <MdRotate90DegreesCcw
                 style={{
-                  fontSize: '1.3em',
+                  fontSize: '1.05em',
                   verticalAlign: 'middle',
                   color: isRotationSet ? primaryTextColor : undefined,
                 }}
-                title={`${t('Set output rotation. Current: ')} ${isRotationSet ? rotationStr : t("Don't modify")}`}
               />
               <span
                 style={{
                   textAlign: 'right',
                   display: 'inline-block',
-                  fontSize: '.8em',
-                  marginLeft: '.1em',
+                  fontSize: '.76em',
                 }}
               >
                 {isRotationSet && rotationStr}
               </span>
-            </div>
+            </Button>
           )}
 
           <div style={{ flexGrow: 1 }} />
 
           {isFileOpened && (
-            <FaTrashAlt
-              title={t('Close file and clean up')}
-              style={{ fontSize: '1em', color: dangerColor }}
-              onClick={cleanupFilesDialog}
-              role="button"
-            />
+            <Button title={t('Close file and clean up')} onClick={cleanupFilesDialog} style={{ ...utilityButtonStyle, color: dangerColor }}>
+              <FaTrashAlt style={{ fontSize: '.95em' }} />
+            </Button>
           )}
 
           {hasVideo && (
             <div>
-              <IoIosCamera
-                role="button"
-                style={{ fontSize: '1.9em', verticalAlign: 'middle' }}
-                title={t('Capture frame')}
-                onClick={captureSnapshot}
-              />
+              <Button title={t('Capture frame')} onClick={captureSnapshot} style={{ ...utilityButtonStyle, marginRight: '.25rem' }}>
+                <IoIosCamera style={{ fontSize: '1.3em', verticalAlign: 'middle' }} />
+              </Button>
 
               <CaptureFormatButton
                 style={{

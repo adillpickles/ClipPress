@@ -18,6 +18,7 @@ import { getNextSizeLimitedRetryStep, planSizeLimitedEncode } from './sizeLimite
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import type { SegmentToExport, SizeLimitedEncoderCapabilities, SizeLimitedExecutionResult, SizeLimitedProgressMetadata, SizeLimitedResolvedStrategy, SizeLimitedRetryStep } from './types';
 import type { SizeLimitedVideoTransformProfile } from './sizeLimitedResolution';
+import { isMutedAudioGain } from './util/streams';
 import { assertFileExists, readFileSize, renameWithRetry, transferTimestamps, unlinkWithRetry } from './util';
 import { UserFacingError } from '../errors';
 
@@ -152,7 +153,7 @@ function getAudioArgs({ audioInputLabel, audioBitrate, audioGainDb }: {
   if (audioInputLabel == null) return ['-an'];
   return [
     '-map', audioInputLabel,
-    ...(audioGainDb != null && Math.abs(audioGainDb) >= 0.01 ? ['-filter:a', `volume=${audioGainDb.toFixed(2)}dB`] : []),
+    ...(audioGainDb != null && Math.abs(audioGainDb) >= 0.01 ? ['-filter:a', isMutedAudioGain(audioGainDb) ? 'volume=0' : `volume=${audioGainDb.toFixed(2)}dB`] : []),
     '-c:a', 'aac', '-b:a', toKbitrateArg(audioBitrate), '-ac', '2',
   ];
 }

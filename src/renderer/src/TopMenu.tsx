@@ -49,57 +49,58 @@ function TopMenu({
     setRenameDraft(undefined);
   }, [draftName, fallbackFileName, onCurrentClipNameChange]);
 
+  if (filePath == null) return null;
+
   return (
-    <div className={`no-user-select ${styles['wrapper']}`} style={filePath == null ? { justifyContent: 'flex-end' } : undefined}>
-      {filePath && (
-        <div className={styles['primary']}>
-          <div className={styles['brandBlock']}>
-            <div className={styles['brandTitle']}>ClipPress</div>
-          </div>
-
-          <Button onClick={onOpenFiles} className={styles['secondaryAction']}>
-            <span className={styles['secondaryActionLabel']}>
-              <FaFolderOpen style={{ fontSize: '.85em' }} />
-              {t('Open another clip')}
-            </span>
-          </Button>
-
-          {fileName != null && (
-            <div className={styles['fileChip']}>
-              <div className={styles['fileLabel']}>{t('Current clip')}</div>
-              {isRenaming ? (
-                <input
-                  className={styles['fileNameInput']}
-                  value={draftName}
-                  onChange={(e) => setRenameDraft(fileName != null ? { sourceName: fileName, value: e.target.value } : undefined)}
-                  onBlur={commitRename}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitRename();
-                    if (e.key === 'Escape') {
-                      setRenameDraft(undefined);
-                    }
-                  }}
-                />
-              ) : (
-                <button
-                  type="button"
-                  className={styles['fileNameButton']}
-                  title={t('Rename clip title')}
-                  onClick={() => {
-                    if (fileName == null) return;
-                    setRenameDraft({ sourceName: fileName, value: fileName });
-                  }}
-                >
-                  <span className={styles['fileName']}>{fileName}</span>
-                </button>
-              )}
-            </div>
-          )}
+    <div className={`no-user-select ${styles['wrapper']}`}>
+      <div className={styles['primary']}>
+        <div className={styles['brandBlock']}>
+          <div className={styles['brandTitle']}>ClipPress</div>
         </div>
-      )}
+
+        <Button onClick={onOpenFiles} className={styles['secondaryAction']}>
+          <span className={styles['secondaryActionLabel']}>
+            <FaFolderOpen style={{ fontSize: '.85em' }} />
+            {t('Open another clip')}
+          </span>
+        </Button>
+
+        {fileName != null && (
+          <div className={styles['fileChip']}>
+            <div className={styles['fileLabel']}>{t('Current clip')}</div>
+            {isRenaming ? (
+              <input
+                className={styles['fileNameInput']}
+                value={draftName}
+                title={fileName}
+                onChange={(e) => setRenameDraft(fileName != null ? { sourceName: fileName, value: e.target.value } : undefined)}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') {
+                    setRenameDraft(undefined);
+                  }
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                className={styles['fileNameButton']}
+                title={fileName}
+                onClick={() => {
+                  if (fileName == null) return;
+                  setRenameDraft({ sourceName: fileName, value: fileName });
+                }}
+              >
+                <span className={styles['fileName']}>{fileName}</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className={styles['actions']}>
-        {filePath && !simpleMode && (
+        {!simpleMode && (
           <Button onClick={() => setStreamsSelectorShown(true)} className={styles['secondaryAction']}>
             <span className={styles['secondaryActionLabel']}>
               <FaList style={{ fontSize: '.82em' }} />
@@ -117,9 +118,7 @@ function TopMenu({
           </span>
         </Button>
 
-        {filePath && (
-          <ExportButton segmentsToExport={segmentsToExport} areWeCutting={areWeCutting} onClick={onExportPress} />
-        )}
+        <ExportButton segmentsToExport={segmentsToExport} areWeCutting={areWeCutting} onClick={onExportPress} />
       </div>
     </div>
   );

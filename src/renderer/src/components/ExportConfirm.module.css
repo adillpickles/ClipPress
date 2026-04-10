@@ -173,6 +173,14 @@
   gap: .6rem;
 }
 
+.summaryFieldCard {
+  gap: .75rem;
+}
+
+.summaryCardWide {
+  grid-column: 1 / -1;
+}
+
 .summaryValue {
   color: var(--gray-12);
   font-size: .95rem;

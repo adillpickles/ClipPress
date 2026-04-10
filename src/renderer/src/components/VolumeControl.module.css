@@ -9,7 +9,7 @@
   justify-content: center;
   margin: 0 7px;
   color: var(--gray-12);
-  opacity: 0.78;
+  opacity: 0.68;
   cursor: pointer;
 }
 
@@ -32,6 +32,12 @@
   display: flex;
   flex-direction: column;
   gap: .55rem;
+}
+
+.previewSection {
+  opacity: 0.78;
+  padding-top: .2rem;
+  border-top: 1px solid color-mix(in srgb, var(--gray-8) 18%, transparent);
 }
 
 .sectionLabel {
@@ -68,11 +74,14 @@
 }
 
 .value {
-  margin-left: auto;
   color: var(--gray-11);
   font-size: .83rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.gainHeader .value {
+  margin-left: auto;
 }
 
 .slider {
@@ -82,4 +91,24 @@
 
 .miniButton {
   justify-content: center;
+}
+
+.resetButton {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-left: .25rem;
+  color: var(--gray-10);
+  cursor: pointer;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gray-3) 70%, transparent);
+  transition: background-color .18s ease, color .18s ease;
+}
+
+.resetButton:hover {
+  color: var(--gray-12);
+  background: color-mix(in srgb, var(--gray-4) 78%, transparent);
 }

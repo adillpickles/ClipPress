@@ -16,6 +16,16 @@
   padding: 1.5rem;
 }
 
+.floatingActions {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+}
+
 :global(.dark-theme) .sheet {
   background:
     radial-gradient(circle at top, color-mix(in srgb, var(--blue-8) 18%, transparent), transparent 42%),
@@ -64,6 +74,11 @@
 @media (max-width: 900px) {
   .header {
     flex-direction: column;
+  }
+
+  .floatingActions {
+    top: .75rem;
+    right: .75rem;
   }
 
   .headerActions {

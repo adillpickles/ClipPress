@@ -37,10 +37,17 @@ export default ({ filePath }: { filePath: string | undefined }) => {
   const seekToRef = useRef<number>();
 
   const smoothSeek = useCallback((seekTo: number) => {
+    const video = videoRef.current;
+
+    if (video == null) {
+      seekToRef.current = seekTo;
+      return;
+    }
+
     if (seekingRef.current) {
       seekToRef.current = seekTo;
     } else {
-      videoRef.current!.currentTime = seekTo;
+      video.currentTime = seekTo;
       // safety precaution:
       seekingRef.current = setTimeout(() => {
         seekingRef.current = undefined;
@@ -50,7 +57,10 @@ export default ({ filePath }: { filePath: string | undefined }) => {
 
   const onSeeked = useCallback<ReactEventHandler<HTMLVideoElement>>(() => {
     if (seekToRef.current != null) {
-      videoRef.current!.currentTime = seekToRef.current;
+      const video = videoRef.current;
+      if (video == null) return;
+
+      video.currentTime = seekToRef.current;
       seekToRef.current = undefined;
     } else {
       clearTimeout(seekingRef.current);
@@ -80,7 +90,7 @@ export default ({ filePath }: { filePath: string | undefined }) => {
   // Relevant time is the player's playback position if we're currently playing - if not, it's the user's commanded time.
   const relevantTime = useMemo(() => (playing ? playerTime : commandedTime) || 0, [commandedTime, playerTime, playing]);
   // The reason why we also have a getter is because it can be used when we need to get the time, but don't want to re-render for every time update (which can be heavy!)
-  const getRelevantTime = useCallback(() => (playingRef.current ? videoRef.current!.currentTime : commandedTimeRef.current) || 0, []);
+  const getRelevantTime = useCallback(() => (playingRef.current ? videoRef.current?.currentTime : commandedTimeRef.current) || 0, []);
 
   const seekRel = useCallback((val: number) => {
     seekAbs(getRelevantTime() + val);

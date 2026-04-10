@@ -649,7 +649,8 @@ export function createMediaSourceProcess({ path, videoStreamIndex, audioStreamIn
     if (audioStreamIndexes.length > 0) {
       const getVolumeFilter = (streamIndex: number) => {
         const audioGainDb = audioGainByStreamId[streamIndex];
-        return audioGainDb != null && Math.abs(audioGainDb) >= 0.01 ? `volume=${audioGainDb.toFixed(2)}dB` : undefined;
+        if (audioGainDb == null || Math.abs(audioGainDb) < 0.01) return undefined;
+        return audioGainDb <= -50 ? 'volume=0' : `volume=${audioGainDb.toFixed(2)}dB`;
       };
 
       if (audioStreamIndexes.length > 1) {

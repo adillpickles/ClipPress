@@ -13,3 +13,90 @@
     padding-right: .2em;
   }
 }
+
+.simpleList {
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+}
+
+.simpleStreamButton {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .95rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--gray-8) 32%, transparent);
+  background: color-mix(in srgb, var(--gray-2) 84%, transparent);
+  color: var(--gray-12);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color .15s ease,
+    background-color .15s ease,
+    transform .15s ease;
+}
+
+.simpleStreamButton:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--gray-9) 42%, transparent);
+}
+
+.simpleStreamButtonActive {
+  border-color: color-mix(in srgb, var(--blue-8) 48%, transparent);
+  background: color-mix(in srgb, var(--blue-4) 16%, transparent);
+}
+
+.simpleStreamMain {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  min-width: 0;
+}
+
+.simpleStreamIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: .8rem;
+  background: color-mix(in srgb, var(--gray-3) 84%, transparent);
+  color: var(--gray-12);
+  flex-shrink: 0;
+}
+
+.simpleStreamButtonActive .simpleStreamIcon {
+  background: color-mix(in srgb, var(--blue-5) 22%, transparent);
+  color: var(--blue-11);
+}
+
+.simpleStreamLabel {
+  font-size: .98rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.simpleStreamState {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 5.6rem;
+  padding: .35rem .65rem;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  border: 1px solid color-mix(in srgb, var(--gray-8) 28%, transparent);
+  background: color-mix(in srgb, var(--gray-3) 86%, transparent);
+  color: var(--gray-10);
+}
+
+.simpleStreamStateActive {
+  border-color: color-mix(in srgb, var(--blue-8) 42%, transparent);
+  background: color-mix(in srgb, var(--blue-4) 18%, transparent);
+  color: var(--blue-11);
+}

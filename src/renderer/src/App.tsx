@@ -63,7 +63,7 @@ import OutputFormatSelect from './components/OutputFormatSelect';
 import Button from './components/Button';
 import * as Dialog from './components/Dialog';
 
-import { loadMifiLink, runStartupCheck } from './mifi';
+import { runStartupCheck } from './mifi';
 import { darkModeTransition } from './colors';
 import {
   exportSizeLimitedMerge,
@@ -113,8 +113,6 @@ import {
   isMatroska,
   isNeutralAudioGain,
   defaultAudioGainDb,
-  maxAudioGainDb,
-  minAudioGainDb,
 } from './util/streams';
 import {
   exportEdlFile,
@@ -126,7 +124,6 @@ import { formatYouTube, getFrameCountRaw, formatTsvHuman } from './edlFormats';
 import {
   getOutPath,
   getOutDir,
-  isStoreBuild,
   dragPreventer,
   havePermissionToReadFile,
   resolvePathIfNeeded,
@@ -277,7 +274,7 @@ const {
   dirname,
 } = window.require('path');
 
-const { hasDisabledNetworking, pathToFileURL, lossyMode, isLinux } = window
+const { pathToFileURL, lossyMode, isLinux } = window
   .require('@electron/remote')
   .require('./index.js');
 
@@ -347,7 +344,6 @@ function App() {
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [tunerVisible, setTunerVisible] = useState<TunerType>();
   const [keyboardShortcutsVisible, setKeyboardShortcutsVisible] = useState(false);
-  const [mifiLink, setMifiLink] = useState<unknown>();
   const [alwaysConcatMultipleFiles, setAlwaysConcatMultipleFiles] = useState(false);
   const [editingSegmentTagsSegmentIndex, setEditingSegmentTagsSegmentIndex] = useState<number>();
   const [editingSegmentTags, setEditingSegmentTags] = useState<SegmentTags>();
@@ -550,6 +546,7 @@ function App() {
     pause,
     seekRel,
   } = useVideo({ filePath });
+  const appDropRef = useRef<HTMLDivElement>(null);
   const {
     timecodePlaceholder,
     formatTimecode,
@@ -811,6 +808,11 @@ function App() {
     [],
   );
 
+  const removeOverlayClip = useCallback((overlayId: string) => {
+    setOverlayClips((existingClips) => existingClips.filter((overlayClip) => overlayClip.overlayId !== overlayId));
+    setSelectedOverlayId((existingOverlayId) => (existingOverlayId === overlayId ? undefined : existingOverlayId));
+  }, []);
+
   const addTextOverlay = useCallback(() => {
     if (mainVideoStream == null) return;
     const overlayClip = createDefaultTextOverlayClip({
@@ -831,6 +833,34 @@ function App() {
     ) return;
     setSelectedOverlayId(undefined);
   }, [overlayClips, selectedOverlayId]);
+
+  useEffect(() => {
+    if (selectedOverlayId == null) return undefined;
+    const overlayId = selectedOverlayId;
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (exportConfirmOpen || streamsSelectorShown || settingsVisible || keyboardShortcutsVisible) return;
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+
+      const { target } = event;
+      if (
+        target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || target instanceof HTMLSelectElement
+        || (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      removeOverlayClip(overlayId);
+    }
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [exportConfirmOpen, keyboardShortcutsVisible, removeOverlayClip, selectedOverlayId, settingsVisible, streamsSelectorShown]);
 
   // 360 means we don't modify rotation gtrgt
   const isRotationSet = rotation !== 360;
@@ -1520,7 +1550,7 @@ function App() {
     console.log('State reset');
     const video = videoRef.current;
     setCommandedTime(0);
-    video!.currentTime = 0;
+    if (video != null) video.currentTime = 0;
     setPlaybackRate(1);
 
     // setWorking();
@@ -2850,12 +2880,6 @@ function App() {
       setWorking({ text: i18n.t('Exporting') });
 
       if (isSizeLimitedExport) {
-        if (hasOverlayClips) {
-          throw new UserFacingError(
-            i18n.t('Size-limited export does not support text overlays yet.'),
-          );
-        }
-
         const notices = new Set<string>();
         const warnings = new Set<string>();
         const useAutoSeparateNaming = sizeLimitSeparateNamingMode === 'auto';
@@ -2876,6 +2900,9 @@ function App() {
             'ClipPress created a shareable MP4 and kept only the main video plus one audio track.',
           ),
         );
+        if (hasOverlayClips) {
+          warnings.add(i18n.t('Text overlays may cause size limit inaccuracies'));
+        }
         if (!exportConfirmEnabled) {
           notices.add(
             i18n.t(
@@ -5596,6 +5623,7 @@ function App() {
   const handleBatchFilesDrop = useCallback<DragEventHandler<HTMLDivElement>>(
     async (ev) => {
       ev.preventDefault();
+      ev.stopPropagation();
       if (!ev.dataTransfer) return;
       await withErrorHandling(async () => {
         const filePaths = [...ev.dataTransfer.files].map((f) => electron.webUtils.getPathForFile(f));
@@ -5611,6 +5639,7 @@ function App() {
   >(
     async (ev) => {
       ev.preventDefault();
+      ev.stopPropagation();
       if (!ev.dataTransfer) return;
       await withErrorHandling(async () => {
         const filePaths = [...ev.dataTransfer.files].map((f) => electron.webUtils.getPathForFile(f));
@@ -5626,14 +5655,17 @@ function App() {
     async function onDrop(ev: DragEvent) {
       ev.preventDefault();
       if (!ev.dataTransfer) return;
-      const filePaths = [...ev.dataTransfer.files].map((f) => electron.webUtils.getPathForFile(f));
+      const filePaths = [...ev.dataTransfer.files]
+        .map((f) => electron.webUtils.getPathForFile(f))
+        .filter(Boolean);
+      if (filePaths.length === 0) return;
       await mainApi.focusWindow();
       userOpenFiles(filePaths);
     }
-    const element = videoContainerRef.current;
+    const element = appDropRef.current;
     element?.addEventListener('drop', onDrop);
     return () => element?.removeEventListener('drop', onDrop);
-  }, [userOpenFiles, videoContainerRef]);
+  }, [userOpenFiles]);
 
   useEffect(() => {
     function onDrop(ev: DragEvent) {
@@ -5666,10 +5698,6 @@ function App() {
     },
     [setWaveformMode],
   );
-
-  useEffect(() => {
-    if (!isStoreBuild && !hasDisabledNetworking()) loadMifiLink().then(setMifiLink);
-  }, []);
 
   useEffect(() => {
     (async () => {
@@ -5754,24 +5782,26 @@ function App() {
       <AppContext.Provider value={appContext}>
         <SegColorsContext.Provider value={segColorsContext}>
           <UserSettingsContext.Provider value={userSettingsContext}>
-            <div className={rootClass} style={rootStyle} id="app-root">
-              <TopMenu
-                filePath={filePath}
-                currentClipName={currentClipName}
-                onCurrentClipNameChange={(name) => setCurrentClipName(name)}
-                toggleSettings={toggleSettings}
-                numStreamsToCopy={numStreamsToCopy}
-                numStreamsTotal={numStreamsTotal}
-                setStreamsSelectorShown={setStreamsSelectorShown}
-                onOpenFiles={openFilesDialog}
-                onExportPress={onExportPress}
-                segmentsToExport={segmentsToExport}
-                areWeCutting={areWeCutting}
-              />
+            <div ref={appDropRef} className={rootClass} style={rootStyle} id="app-root">
+              {isFileOpened && (
+                <TopMenu
+                  filePath={filePath}
+                  currentClipName={currentClipName}
+                  onCurrentClipNameChange={(name) => setCurrentClipName(name)}
+                  toggleSettings={toggleSettings}
+                  numStreamsToCopy={numStreamsToCopy}
+                  numStreamsTotal={numStreamsTotal}
+                  setStreamsSelectorShown={setStreamsSelectorShown}
+                  onOpenFiles={openFilesDialog}
+                  onExportPress={onExportPress}
+                  segmentsToExport={segmentsToExport}
+                  areWeCutting={areWeCutting}
+                />
+              )}
 
               <div className={styles['mainArea']}>
                 <AnimatePresence>
-                  {showLeftBar && (
+                  {showLeftBar && isFileOpened && (
                     <BatchFilesList
                       selectedBatchFiles={selectedBatchFiles}
                       filePath={filePath}
@@ -5789,70 +5819,69 @@ function App() {
                 </AnimatePresence>
 
                 <div className={styles['workspaceColumn']}>
-                  <div
-                    className={styles['previewCard']}
-                    ref={videoContainerRef}
-                  >
-                    {!isFileOpened && (
+                  {!isFileOpened ? (
+                    <div className={styles['emptyStateShell']}>
                       <NoFileLoaded
-                        mifiLink={mifiLink}
-                        currentCutSeg={currentCutSeg}
                         onClick={openFilesDialog}
-                        darkMode={darkMode}
                         keyBindingByAction={keyBindingByAction}
                       />
-                    )}
-
-                    <div
-                      className="no-user-select"
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        visibility:
-                          !isFileOpened || !hasVideo || bigWaveformEnabled
-                            ? 'hidden'
-                            : undefined,
-                      }}
-                      onWheel={onTimelineWheel}
-                    >
-                      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                      <video
-                        className={styles['video']}
-                        tabIndex={-1}
-                        muted={playbackVolume === 0 || compatPlayerEnabled}
-                        ref={videoRef}
-                        style={videoStyle}
-                        src={fileUri}
-                        onPlay={onStartPlaying}
-                        onPause={onStopPlaying}
-                        onAbort={onVideoAbort}
-                        onDurationChange={onDurationChange}
-                        onTimeUpdate={onTimeUpdate}
-                        onError={onVideoError}
-                        onClick={onVideoClick}
-                        onDoubleClick={toggleFullscreenVideo}
-                        onFocusCapture={onVideoFocus}
-                        onSeeked={onSeeked}
+                    </div>
+                  ) : (
+                    <>
+                      <div
+                        className={styles['previewCard']}
+                        ref={videoContainerRef}
                       >
-                        {renderSubtitles()}
-                      </video>
+                        <div
+                          className="no-user-select"
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            visibility:
+                              !hasVideo || bigWaveformEnabled
+                                ? 'hidden'
+                                : undefined,
+                          }}
+                          onWheel={onTimelineWheel}
+                        >
+                          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                          <video
+                            className={styles['video']}
+                            tabIndex={-1}
+                            muted={playbackVolume === 0 || compatPlayerEnabled}
+                            ref={videoRef}
+                            style={videoStyle}
+                            src={fileUri}
+                            onPlay={onStartPlaying}
+                            onPause={onStopPlaying}
+                            onAbort={onVideoAbort}
+                            onDurationChange={onDurationChange}
+                            onTimeUpdate={onTimeUpdate}
+                            onError={onVideoError}
+                            onClick={onVideoClick}
+                            onDoubleClick={toggleFullscreenVideo}
+                            onFocusCapture={onVideoFocus}
+                            onSeeked={onSeeked}
+                          >
+                            {renderSubtitles()}
+                          </video>
 
-                      {filePath != null && compatPlayerEnabled && (
-                        <MediaSourcePlayer
-                          rotate={effectiveRotation}
-                          filePath={filePath}
-                          videoStream={activeVideoStream}
-                          audioStreams={activeAudioStreams}
-                          audioGainByStreamId={activeAudioGainByStreamId}
-                          masterVideoRef={videoRef}
-                          mediaSourceQuality={mediaSourceQuality}
-                          ffmpegHwaccel={ffmpegHwaccel}
-                        />
-                      )}
-                      {activeVideoStream?.width != null
+                          {filePath != null && compatPlayerEnabled && (
+                          <MediaSourcePlayer
+                            rotate={effectiveRotation}
+                            filePath={filePath}
+                            videoStream={activeVideoStream}
+                            audioStreams={activeAudioStreams}
+                            audioGainByStreamId={activeAudioGainByStreamId}
+                            masterVideoRef={videoRef}
+                            mediaSourceQuality={mediaSourceQuality}
+                            ffmpegHwaccel={ffmpegHwaccel}
+                          />
+                          )}
+                          {activeVideoStream?.width != null
                         && activeVideoStream.height != null && (
                           <TextOverlayEditor
                             overlayClips={overlayClips}
@@ -5864,46 +5893,46 @@ function App() {
                             onSelectOverlay={setSelectedOverlayId}
                             onUpdateOverlay={updateOverlayClip}
                           />
-                      )}
-                    </div>
-
-                    {bigWaveformEnabled && (
-                      <BigWaveform
-                        waveforms={waveforms}
-                        relevantTime={relevantTime}
-                        playing={playing}
-                        fileDurationNonZero={fileDurationNonZero}
-                        zoom={zoomUnrounded}
-                        seekRel={seekRel}
-                        darkMode={darkMode}
-                      />
-                    )}
-
-                    {compatPlayerEnabled && (
-                      <div className={styles['previewNotice']}>
-                        {isRotationSet ? (
-                          <>
-                            <MdRotate90DegreesCcw size={22} />
-                            {t('Rotation preview')}
-                          </>
-                        ) : (
-                          <>{t('FFmpeg-assisted playback')}</>
-                        )}
-
-                        <div
-                          style={{
-                            cursor: 'pointer',
-                            pointerEvents: 'initial',
-                            padding: '.1em .25em',
-                          }}
-                          role="button"
-                          onClick={() => incrementMediaSourceQuality()}
-                          title={t('Select playback quality')}
-                        >
-                          {mediaSourceQualities[mediaSourceQuality]}
+                          )}
                         </div>
 
-                        {!compatPlayerRequired && (
+                        {bigWaveformEnabled && (
+                        <BigWaveform
+                          waveforms={waveforms}
+                          relevantTime={relevantTime}
+                          playing={playing}
+                          fileDurationNonZero={fileDurationNonZero}
+                          zoom={zoomUnrounded}
+                          seekRel={seekRel}
+                          darkMode={darkMode}
+                        />
+                        )}
+
+                        {compatPlayerEnabled && (
+                        <div className={styles['previewNotice']}>
+                          {isRotationSet ? (
+                            <>
+                              <MdRotate90DegreesCcw size={22} />
+                              {t('Rotation preview')}
+                            </>
+                          ) : (
+                            <>{t('FFmpeg-assisted playback')}</>
+                          )}
+
+                          <div
+                            style={{
+                              cursor: 'pointer',
+                              pointerEvents: 'initial',
+                              padding: '.1em .25em',
+                            }}
+                            role="button"
+                            onClick={() => incrementMediaSourceQuality()}
+                            title={t('Select playback quality')}
+                          >
+                            {mediaSourceQualities[mediaSourceQuality]}
+                          </div>
+
+                          {!compatPlayerRequired && (
                           <FaRegTimesCircle
                             role="button"
                             style={{
@@ -5913,51 +5942,50 @@ function App() {
                             }}
                             onClick={handleHideCompatPlayerClick}
                           />
+                          )}
+                        </div>
                         )}
-                      </div>
-                    )}
 
-                    {isFileOpened && (
-                      <div
-                        className="no-user-select"
-                        style={{
-                          position: 'absolute',
-                          right: 0,
-                          bottom: 0,
-                          marginBottom: 10,
-                          display: 'flex',
-                          alignItems: 'flex-end',
-                        }}
-                      >
-                        <VolumeControl
-                          playbackVolume={playbackVolume}
-                          setPlaybackVolume={setPlaybackVolume}
-                          onToggleMutedClick={toggleMuted}
-                          audioGainControls={previewAudioGainControls}
-                          onAudioGainChange={updateAudioGainForStream}
-                        />
+                        <div
+                          className="no-user-select"
+                          style={{
+                            position: 'absolute',
+                            right: 0,
+                            bottom: 0,
+                            marginBottom: 10,
+                            display: 'flex',
+                            alignItems: 'flex-end',
+                          }}
+                        >
+                          <VolumeControl
+                            playbackVolume={playbackVolume}
+                            setPlaybackVolume={setPlaybackVolume}
+                            onToggleMutedClick={toggleMuted}
+                            audioGainControls={previewAudioGainControls}
+                            onAudioGainChange={updateAudioGainForStream}
+                          />
 
-                        {!simpleMode && shouldShowPlaybackStreamSelector && (
+                          {!simpleMode && shouldShowPlaybackStreamSelector && (
                           <PlaybackStreamSelector
                             subtitleStreams={subtitleStreams}
                             videoStreams={videoStreams}
                             audioStreams={audioStreams}
                             activeSubtitleStreamIndex={
-                              activeSubtitleStreamIndex
-                            }
+                            activeSubtitleStreamIndex
+                          }
                             activeVideoStreamIndex={activeVideoStreamIndex}
                             activeAudioStreamIndexes={activeAudioStreamIndexes}
                             onActiveSubtitleChange={onActiveSubtitleChange}
                             onActiveVideoStreamChange={
-                              onActiveVideoStreamChange
-                            }
+                            onActiveVideoStreamChange
+                          }
                             onActiveAudioStreamsChange={
-                              onActiveAudioStreamsChange
-                            }
+                            onActiveAudioStreamsChange
+                          }
                           />
-                        )}
+                          )}
 
-                        {!showRightBar && (
+                          {!showRightBar && (
                           <IoMdMenu
                             title={t('Show clips')}
                             size={30}
@@ -5965,203 +5993,114 @@ function App() {
                             className={styles['sidebarToggle']}
                             onClick={toggleSegmentsList}
                           />
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div
-                    className={`no-user-select ${styles['editorCard']}`}
-                    style={bottomStyle}
-                  >
-                    <div className={styles['editorHeader']}>
-                      <div className={styles['editorHeaderMain']}>
-                        {!simpleMode && (
-                          <div>
-                            <div className={styles['editorLabel']}>
-                              {t('Main workflow')}
-                            </div>
-                            <div className={styles['editorTitle']}>
-                              {t(
-                                'Mark the clip, tweak what matters, then export',
-                              )}
-                            </div>
-                            <div className={styles['editorHint']}>
-                              {t(
-                                'Press I for the start, O for the end, then optionally add text or adjust audio gain before exporting.',
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        <Button onClick={addTextOverlay} disabled={!hasVideo}>
-                          {t('Add Text')}
-                        </Button>
+                          )}
+                        </div>
                       </div>
 
-                      {!simpleMode
-                        && isFileOpened
-                        && filePath != null
-                        && activeAudioStreams.length > 0 && (
-                          <div className={styles['trackStrip']}>
-                            {activeAudioStreams.map((stream, index) => {
-                              const audioGainDb = paramsByStreamId
-                                .get(filePath)
-                                ?.get(stream.index)?.audioGainDb
-                                ?? defaultAudioGainDb;
-                              const audioTrackSummary = [
-                                stream.tags?.title,
-                                stream.tags?.language,
-                                stream.codec_name,
-                              ]
-                                .filter(Boolean)
-                                .join(' | ') || t('Main clip audio');
-
-                              return (
-                                <div
-                                  key={stream.index}
-                                  className={styles['audioLaneRow']}
-                                >
-                                  <div className={styles['audioLaneMeta']}>
-                                    <div className={styles['audioLaneLabel']}>
-                                      {activeAudioStreams.length === 1
-                                        ? t('Audio lane')
-                                        : t('Audio lane {{index}}', {
-                                          index: index + 1,
-                                        })}
-                                    </div>
-                                    <div
-                                      className={styles['audioLaneDetail']}
-                                      title={audioTrackSummary}
-                                    >
-                                      {audioTrackSummary}
-                                    </div>
-                                  </div>
-
-                                  <div className={styles['gainControl']}>
-                                    <div className={styles['gainValue']}>
-                                      {audioGainDb > 0
-                                        ? `+${audioGainDb}`
-                                        : audioGainDb}{' '}
-                                      dB
-                                    </div>
-                                    <input
-                                      className={styles['gainSlider']}
-                                      type="range"
-                                      min={minAudioGainDb}
-                                      max={maxAudioGainDb}
-                                      step={1}
-                                      value={audioGainDb}
-                                      onChange={(event) => updateAudioGainForStream(
-                                        stream.index,
-                                        Number(event.target.value),
-                                      )}
-                                    />
-                                    <Button
-                                      onClick={() => updateAudioGainForStream(
-                                        stream.index,
-                                        defaultAudioGainDb,
-                                      )}
-                                    >
-                                      {t('Reset')}
-                                    </Button>
-                                  </div>
-                                </div>
-                              );
-                            })}
+                      <div
+                        className={`no-user-select ${styles['editorCard']}`}
+                        style={bottomStyle}
+                      >
+                        <div className={styles['editorHeader']}>
+                          <div className={styles['editorHeaderMain']}>
+                            <Button onClick={addTextOverlay} disabled={!hasVideo}>
+                              {t('Add Text')}
+                            </Button>
                           </div>
-                      )}
-                    </div>
+                        </div>
 
-                    <BottomBar
-                      zoom={zoom}
-                      setZoom={zoomAbs}
-                      timelineToggleComfortZoom={timelineToggleComfortZoom}
-                      hasVideo={hasVideo}
-                      isRotationSet={isRotationSet}
-                      rotation={rotation}
-                      increaseRotation={increaseRotation}
-                      cleanupFilesDialog={cleanupFilesDialog}
-                      captureSnapshot={captureSnapshot}
-                      seekAbs={seekAbs}
-                      currentSegIndexSafe={currentSegIndexSafe}
-                      cutSegments={cutSegments}
-                      currentCutSeg={currentCutSeg}
-                      selectedSegments={selectedSegments}
-                      setCutStart={setCutStart}
-                      setCutEnd={setCutEnd}
-                      setCurrentSegIndex={setCurrentSegIndex}
-                      jumpCutEnd={jumpCutEnd}
-                      jumpCutStart={jumpCutStart}
-                      jumpTimelineStart={jumpTimelineStart}
-                      jumpTimelineEnd={jumpTimelineEnd}
-                      startTimeOffset={startTimeOffset}
-                      setCutTime={setCutTime}
-                      playing={playing}
-                      shortStep={shortStep}
-                      seekClosestKeyframe={seekClosestKeyframe}
-                      togglePlay={togglePlay}
-                      showThumbnails={showThumbnails}
-                      toggleShowThumbnails={toggleShowThumbnails}
-                      toggleWaveformMode={toggleWaveformMode}
-                      waveformMode={waveformMode}
-                      hasAudio={hasAudio}
-                      keyframesEnabled={keyframesEnabled}
-                      toggleShowKeyframes={toggleShowKeyframes}
-                      detectedFps={detectedFps}
-                      toggleLoopSelectedSegments={toggleLoopSelectedSegments}
-                      isFileOpened={isFileOpened}
-                      darkMode={darkMode}
-                      outputPlaybackRate={outputPlaybackRate}
-                      setOutputPlaybackRate={setOutputPlaybackRate}
-                      formatTimecode={formatTimecode}
-                      parseTimecode={parseTimecode}
-                      playbackRate={playbackRate}
-                      currentFrame={currentFrame}
-                      playbackMode={playbackMode}
-                    />
+                        <BottomBar
+                          zoom={zoom}
+                          setZoom={zoomAbs}
+                          timelineToggleComfortZoom={timelineToggleComfortZoom}
+                          hasVideo={hasVideo}
+                          isRotationSet={isRotationSet}
+                          rotation={rotation}
+                          increaseRotation={increaseRotation}
+                          cleanupFilesDialog={cleanupFilesDialog}
+                          captureSnapshot={captureSnapshot}
+                          seekAbs={seekAbs}
+                          currentSegIndexSafe={currentSegIndexSafe}
+                          cutSegments={cutSegments}
+                          currentCutSeg={currentCutSeg}
+                          selectedSegments={selectedSegments}
+                          setCutStart={setCutStart}
+                          setCutEnd={setCutEnd}
+                          setCurrentSegIndex={setCurrentSegIndex}
+                          jumpCutEnd={jumpCutEnd}
+                          jumpCutStart={jumpCutStart}
+                          jumpTimelineStart={jumpTimelineStart}
+                          jumpTimelineEnd={jumpTimelineEnd}
+                          startTimeOffset={startTimeOffset}
+                          setCutTime={setCutTime}
+                          playing={playing}
+                          shortStep={shortStep}
+                          seekClosestKeyframe={seekClosestKeyframe}
+                          togglePlay={togglePlay}
+                          showThumbnails={showThumbnails}
+                          toggleShowThumbnails={toggleShowThumbnails}
+                          toggleWaveformMode={toggleWaveformMode}
+                          waveformMode={waveformMode}
+                          hasAudio={hasAudio}
+                          keyframesEnabled={keyframesEnabled}
+                          toggleShowKeyframes={toggleShowKeyframes}
+                          detectedFps={detectedFps}
+                          toggleLoopSelectedSegments={toggleLoopSelectedSegments}
+                          isFileOpened={isFileOpened}
+                          darkMode={darkMode}
+                          outputPlaybackRate={outputPlaybackRate}
+                          setOutputPlaybackRate={setOutputPlaybackRate}
+                          formatTimecode={formatTimecode}
+                          parseTimecode={parseTimecode}
+                          playbackRate={playbackRate}
+                          currentFrame={currentFrame}
+                          playbackMode={playbackMode}
+                        />
 
-                    <Timeline
-                      shouldShowKeyframes={shouldShowKeyframes}
-                      waveforms={waveforms}
-                      overviewWaveform={overviewWaveform}
-                      shouldShowWaveform={shouldShowWaveform}
-                      waveformEnabled={waveformEnabled}
-                      waveformHeight={waveformHeight}
-                      showThumbnails={showThumbnails}
-                      neighbouringKeyFrames={neighbouringKeyFrames}
-                      thumbnails={thumbnailsSorted}
-                      playerTime={playerTime}
-                      commandedTime={commandedTime}
-                      relevantTime={relevantTime}
-                      commandedTimeRef={commandedTimeRef}
-                      startTimeOffset={startTimeOffset}
-                      zoom={zoom}
-                      seekAbs={seekAbs}
-                      fileDurationNonZero={fileDurationNonZero}
-                      cutSegments={cutSegments}
-                      setCurrentSegIndex={setCurrentSegIndex}
-                      currentSegIndexSafe={currentSegIndexSafe}
-                      currentCutSeg={currentCutSeg}
-                      inverseCutSegments={inverseCutSegments}
-                      formatTimecode={formatTimecode}
-                      formatTimeAndFrames={formatTimeAndFrames}
-                      zoomWindowStartTime={zoomWindowStartTime}
-                      zoomWindowEndTime={zoomWindowEndTime}
-                      onZoomWindowStartTimeChange={setZoomWindowStartTime}
-                      onGenerateOverviewWaveformClick={generateOverviewWaveform}
-                      playing={playing}
-                      isFileOpened={isFileOpened}
-                      onWheel={onTimelineWheel}
-                      goToTimecode={goToTimecode}
-                      darkMode={darkMode}
-                      setCutTime={setCutTime}
-                      overlayClips={overlayClips}
-                      selectedOverlayId={selectedOverlayId}
-                      onSelectOverlay={setSelectedOverlayId}
-                      onUpdateOverlayClip={updateOverlayClip}
-                    />
-                  </div>
+                        <Timeline
+                          shouldShowKeyframes={shouldShowKeyframes}
+                          waveforms={waveforms}
+                          overviewWaveform={overviewWaveform}
+                          shouldShowWaveform={shouldShowWaveform}
+                          waveformEnabled={waveformEnabled}
+                          waveformHeight={waveformHeight}
+                          showThumbnails={showThumbnails}
+                          neighbouringKeyFrames={neighbouringKeyFrames}
+                          thumbnails={thumbnailsSorted}
+                          playerTime={playerTime}
+                          commandedTime={commandedTime}
+                          relevantTime={relevantTime}
+                          commandedTimeRef={commandedTimeRef}
+                          startTimeOffset={startTimeOffset}
+                          zoom={zoom}
+                          seekAbs={seekAbs}
+                          fileDurationNonZero={fileDurationNonZero}
+                          cutSegments={cutSegments}
+                          setCurrentSegIndex={setCurrentSegIndex}
+                          currentSegIndexSafe={currentSegIndexSafe}
+                          currentCutSeg={currentCutSeg}
+                          inverseCutSegments={inverseCutSegments}
+                          formatTimecode={formatTimecode}
+                          formatTimeAndFrames={formatTimeAndFrames}
+                          zoomWindowStartTime={zoomWindowStartTime}
+                          zoomWindowEndTime={zoomWindowEndTime}
+                          onZoomWindowStartTimeChange={setZoomWindowStartTime}
+                          onGenerateOverviewWaveformClick={generateOverviewWaveform}
+                          playing={playing}
+                          isFileOpened={isFileOpened}
+                          onWheel={onTimelineWheel}
+                          goToTimecode={goToTimecode}
+                          darkMode={darkMode}
+                          setCutTime={setCutTime}
+                          overlayClips={overlayClips}
+                          selectedOverlayId={selectedOverlayId}
+                          onSelectOverlay={setSelectedOverlayId}
+                          onUpdateOverlayClip={updateOverlayClip}
+                          onDeleteOverlayClip={removeOverlayClip}
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <AnimatePresence>
@@ -6289,12 +6228,14 @@ function App() {
               >
                 <Dialog.Portal>
                   <Dialog.Overlay />
-                  <Dialog.Content style={{ width: '80em' }}>
+                  <Dialog.Content style={{ width: simpleMode ? '34em' : '80em' }}>
                     <Dialog.Title>{t('Tracks')}</Dialog.Title>
                     <Dialog.Description>
-                      {t(
-                        'Click to select which tracks to keep when exporting:',
-                      )}
+                      {simpleMode
+                        ? t('Choose which video and audio tracks to keep.')
+                        : t(
+                          'Click to select which tracks to keep when exporting:',
+                        )}
                     </Dialog.Description>
 
                     {mainStreams && filePath != null && (
@@ -6331,6 +6272,7 @@ function App() {
                           toggleCopyAllStreamsForPath
                         }
                         onStreamSourceFileDrop={handleStreamSourceFileDrop}
+                        simpleMode={simpleMode}
                       />
                     )}
 

@@ -1,0 +1,81 @@
+.dropzone {
+  position: absolute;
+  inset: 0;
+  margin: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--gray-12);
+  cursor: pointer;
+  border: 1px dashed color-mix(in srgb, var(--gray-8) 42%, transparent);
+  border-radius: 1.9rem;
+  background:
+    radial-gradient(circle at top, color-mix(in srgb, var(--blue-8) 10%, transparent), transparent 42%),
+    linear-gradient(180deg, color-mix(in srgb, var(--gray-2) 92%, transparent), color-mix(in srgb, var(--gray-1) 96%, transparent));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 20px 48px rgba(0, 0, 0, 0.16);
+  transition:
+    border-color .18s ease,
+    background-color .18s ease,
+    box-shadow .18s ease,
+    transform .18s ease;
+}
+
+.dropzoneDragging {
+  border-color: color-mix(in srgb, var(--blue-8) 58%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 24px 56px rgba(0, 0, 0, 0.18),
+    0 0 0 1px color-mix(in srgb, var(--blue-8) 20%, transparent);
+  transform: translateY(-1px);
+}
+
+.content {
+  width: min(100%, 46rem);
+  padding: 2.6rem 1.6rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.45rem;
+}
+
+.title {
+  margin: 0;
+  color: var(--gray-12);
+  font-size: clamp(2.95rem, 5.4vw, 3.95rem);
+  font-weight: 800;
+  letter-spacing: -.05em;
+  line-height: .98;
+}
+
+.instructions {
+  display: flex;
+  flex-direction: column;
+  gap: .72rem;
+  max-width: 39rem;
+  color: var(--gray-11);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.instruction {
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .dropzone {
+    margin: 1rem;
+    border-radius: 1.4rem;
+  }
+
+  .content {
+    padding: 1.8rem 1rem;
+    gap: 1.05rem;
+  }
+
+  .instructions {
+    font-size: .96rem;
+  }
+}

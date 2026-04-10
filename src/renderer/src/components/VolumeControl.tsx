@@ -1,11 +1,13 @@
 import type { ChangeEventHandler } from 'react';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { FaVolumeMute, FaVolumeUp } from 'react-icons/fa';
+import { FaUndo, FaVolumeMute, FaVolumeUp } from 'react-icons/fa';
 import { useTranslation } from 'react-i18next';
 
 import Button from './Button';
 import styles from './VolumeControl.module.css';
 import {
+  defaultAudioGainDb,
+  isMutedAudioGain,
   maxAudioGainDb,
   minAudioGainDb,
 } from '../util/streams';
@@ -25,7 +27,7 @@ interface VolumeControlProps {
 }
 
 function formatAudioGain(audioGainDb: number, t: (key: string) => string) {
-  if (audioGainDb <= minAudioGainDb) return t('Mute');
+  if (isMutedAudioGain(audioGainDb)) return t('Mute');
   return `${audioGainDb > 0 ? `+${audioGainDb}` : audioGainDb} dB`;
 }
 
@@ -62,7 +64,43 @@ function VolumeControl({
     <div ref={wrapperRef} className={styles['wrapper']}>
       {isOpen && (
         <div className={styles['popover']}>
-          <div className={styles['section']}>
+          {audioGainControls.length > 0 && (
+            <div className={styles['section']}>
+              <div className={styles['sectionLabel']}>{t('Clip gain')}</div>
+              <div className={styles['gainList']}>
+                {audioGainControls.map(({ streamIndex, label, audioGainDb }) => (
+                  <div key={streamIndex} className={styles['gainItem']}>
+                    <div className={styles['gainHeader']}>
+                      <div className={styles['gainLabel']}>{label}</div>
+                      <div className={styles['value']}>
+                        {formatAudioGain(audioGainDb, t)}
+                      </div>
+                      <button
+                        type="button"
+                        className={styles['resetButton']}
+                        title={t('Reset gain')}
+                        aria-label={t('Reset gain')}
+                        onClick={() => onAudioGainChange?.(streamIndex, defaultAudioGainDb)}
+                      >
+                        <FaUndo size={11} />
+                      </button>
+                    </div>
+                    <input
+                      className={styles['slider']}
+                      type="range"
+                      min={minAudioGainDb}
+                      max={maxAudioGainDb}
+                      step={1}
+                      value={audioGainDb}
+                      onChange={(e) => onAudioGainChange?.(streamIndex, Number(e.target.value))}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className={`${styles['section']} ${styles['previewSection']}`}>
             <div className={styles['sectionLabel']}>{t('Preview volume')}</div>
             <div className={styles['sliderRow']}>
               <input
@@ -79,33 +117,6 @@ function VolumeControl({
               {playbackVolume === 0 ? t('Unmute preview') : t('Mute preview')}
             </Button>
           </div>
-
-          {audioGainControls.length > 0 && (
-            <div className={styles['section']}>
-              <div className={styles['sectionLabel']}>{t('Clip gain')}</div>
-              <div className={styles['gainList']}>
-                {audioGainControls.map(({ streamIndex, label, audioGainDb }) => (
-                  <div key={streamIndex} className={styles['gainItem']}>
-                    <div className={styles['gainHeader']}>
-                      <div className={styles['gainLabel']}>{label}</div>
-                      <div className={styles['value']}>
-                        {formatAudioGain(audioGainDb, t)}
-                      </div>
-                    </div>
-                    <input
-                      className={styles['slider']}
-                      type="range"
-                      min={minAudioGainDb}
-                      max={maxAudioGainDb}
-                      step={1}
-                      value={audioGainDb}
-                      onChange={(e) => onAudioGainChange?.(streamIndex, Number(e.target.value))}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
 

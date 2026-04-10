@@ -37,11 +37,12 @@
   gap: .1rem;
   min-width: 0;
   flex: 1 1 auto;
-  max-width: 24rem;
+  max-width: min(32rem, 48vw);
   padding: .55rem .8rem;
   border-radius: 1rem;
   background: color-mix(in srgb, var(--gray-2) 88%, transparent);
   border: 1px solid color-mix(in srgb, var(--gray-8) 34%, transparent);
+  overflow: hidden;
 }
 
 .fileLabel {
@@ -56,11 +57,15 @@
 .fileNameButton {
   all: unset;
   display: block;
+  width: 100%;
   cursor: text;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .fileName,
 .fileNameInput {
+  display: block;
   width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;

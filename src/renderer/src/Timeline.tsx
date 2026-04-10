@@ -3,7 +3,7 @@ import { memo, useRef, useMemo, useCallback, useEffect, useState } from 'react';
 import { motion, useMotionValue, useSpring } from 'motion/react';
 import debounce from 'lodash/debounce';
 import { useTranslation } from 'react-i18next';
-import { FaCaretDown, FaCaretUp } from 'react-icons/fa';
+import { FaCaretDown, FaCaretUp, FaTimes } from 'react-icons/fa';
 import invariant from 'tiny-invariant';
 
 import TimelineSeg from './TimelineSeg';
@@ -21,6 +21,9 @@ import Button from './components/Button';
 import type { UseSegments } from './hooks/useSegments';
 import { keyMap } from './hooks/useTimelineScroll';
 import { minTextOverlayDuration } from './textOverlays';
+
+const remote = window.require('@electron/remote');
+const { Menu } = remote;
 
 
 type CalculateTimelinePercent = (time: number) => string | undefined;
@@ -138,6 +141,7 @@ function Timeline({
   selectedOverlayId,
   onSelectOverlay,
   onUpdateOverlayClip,
+  onDeleteOverlayClip,
 } : {
   fileDurationNonZero: number,
   startTimeOffset: number,
@@ -177,6 +181,7 @@ function Timeline({
   selectedOverlayId: string | undefined,
   onSelectOverlay: (overlayId: string | undefined) => void,
   onUpdateOverlayClip: (overlayId: string, updater: (clip: OverlayClip) => OverlayClip) => void,
+  onDeleteOverlayClip: (overlayId: string) => void,
 }) {
   const { t } = useTranslation();
 
@@ -322,7 +327,10 @@ function Timeline({
   }, [currentCutSeg]);
 
   const resizingSegmentRef = useRef<{ operation: 'start' | 'end' | 'move', offset?: number } | undefined>();
-  const overlayResizeRef = useRef<{ overlayId: string, edge: 'start' | 'end' } | undefined>();
+  const overlayInteractionRef = useRef<
+    | { overlayId: string, mode: 'start' | 'end' | 'move', pointerStart: number, start: number, end: number }
+    | undefined
+  >();
 
   const onMouseDown = useCallback<MouseEventHandler<HTMLElement>>((e) => {
     if (e.nativeEvent.buttons !== 1) return; // not primary button
@@ -380,36 +388,63 @@ function Timeline({
     window.addEventListener('mousemove', onMouseMove);
   }, [fileDurationNonZero, getMouseTimelinePos, seekAbs, segmentMouseModifierKey, setCutTime, zoom]);
 
-  const onOverlayMouseDown = useCallback((overlayClip: OverlayClip, edge: 'start' | 'end') => (e: ReactMouseEvent<HTMLElement>) => {
+  const onOverlayMouseDown = useCallback((overlayClip: OverlayClip, mode: 'start' | 'end' | 'move') => (e: ReactMouseEvent<HTMLElement>) => {
     if (e.nativeEvent.buttons !== 1) return;
     e.preventDefault();
     e.stopPropagation();
 
     onSelectOverlay(overlayClip.overlayId);
-    seekAbs(edge === 'start' ? overlayClip.start : overlayClip.end);
-    overlayResizeRef.current = { overlayId: overlayClip.overlayId, edge };
+    const mouseTimelinePos = getMouseTimelinePos(e.nativeEvent);
+    seekAbs(mode === 'end' ? overlayClip.end : overlayClip.start);
+    overlayInteractionRef.current = {
+      overlayId: overlayClip.overlayId,
+      mode,
+      pointerStart: mouseTimelinePos,
+      start: overlayClip.start,
+      end: overlayClip.end,
+    };
 
     function onMouseMove(e2: MouseEvent) {
-      if (overlayResizeRef.current == null) return;
+      const overlayInteraction = overlayInteractionRef.current;
+      if (overlayInteraction == null) return;
       const mouseDragTimelinePos = getMouseTimelinePos(e2);
       seekAbs(mouseDragTimelinePos);
       onUpdateOverlayClip(overlayClip.overlayId, (clip) => {
-        if (overlayResizeRef.current?.edge === 'start') {
+        if (overlayInteraction.mode === 'start') {
+          const delta = mouseDragTimelinePos - overlayInteraction.pointerStart;
           return {
             ...clip,
-            start: Math.max(0, Math.min(mouseDragTimelinePos, clip.end - minTextOverlayDuration)),
+            start: Math.max(0, Math.min(overlayInteraction.start + delta, overlayInteraction.end - minTextOverlayDuration)),
           };
         }
 
+        if (overlayInteraction.mode === 'move') {
+          const duration = overlayInteraction.end - overlayInteraction.start;
+          const delta = mouseDragTimelinePos - overlayInteraction.pointerStart;
+          const nextStart = Math.max(
+            0,
+            Math.min(
+              overlayInteraction.start + delta,
+              fileDurationNonZero - duration,
+            ),
+          );
+          return {
+            ...clip,
+            start: nextStart,
+            end: nextStart + duration,
+          };
+        }
+
+        const delta = mouseDragTimelinePos - overlayInteraction.pointerStart;
         return {
           ...clip,
-          end: Math.min(fileDurationNonZero, Math.max(mouseDragTimelinePos, clip.start + minTextOverlayDuration)),
+          end: Math.min(fileDurationNonZero, Math.max(overlayInteraction.end + delta, overlayInteraction.start + minTextOverlayDuration)),
         };
       });
     }
 
     function onMouseUp() {
-      overlayResizeRef.current = undefined;
+      overlayInteractionRef.current = undefined;
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('mousemove', onMouseMove);
     }
@@ -417,6 +452,19 @@ function Timeline({
     window.addEventListener('mouseup', onMouseUp, { once: true });
     window.addEventListener('mousemove', onMouseMove);
   }, [fileDurationNonZero, getMouseTimelinePos, onSelectOverlay, onUpdateOverlayClip, seekAbs]);
+
+  const onOverlayContextMenu = useCallback((overlayClip: OverlayClip) => (event: ReactMouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onSelectOverlay(overlayClip.overlayId);
+    const menu = Menu.buildFromTemplate([
+      {
+        label: t('Delete text clip'),
+        click: () => onDeleteOverlayClip(overlayClip.overlayId),
+      },
+    ]);
+    menu.popup({ window: remote.getCurrentWindow() });
+  }, [onDeleteOverlayClip, onSelectOverlay, t]);
 
   const timeRef = useRef<HTMLDivElement>(null);
   const timeFadeTimeoutRef = useRef<NodeJS.Timeout>();
@@ -502,8 +550,84 @@ function Timeline({
           </div>
         )}
 
+        {overlayClips.length > 0 && (
+          <div style={{ height: textLaneHeight, width: `${zoom * 100}%`, position: 'relative', backgroundColor: 'var(--gray-3)', borderTop: '1px solid var(--gray-7)' }}>
+            <div style={laneLabelStyle}>Text</div>
+
+            {overlayClips.map((overlayClip) => {
+              const left = calculateTimelinePercent(overlayClip.start);
+              const width = `${Math.max(((overlayClip.end - overlayClip.start) / fileDurationNonZero) * 100, 0.5)}%`;
+              const selected = overlayClip.overlayId === selectedOverlayId;
+
+              return (
+                <div
+                  key={overlayClip.overlayId}
+                  role="button"
+                  tabIndex={-1}
+                  onMouseDown={onOverlayMouseDown(overlayClip, 'move')}
+                  onContextMenu={onOverlayContextMenu(overlayClip)}
+                  style={{
+                    position: 'absolute',
+                    left,
+                    width,
+                    top: 3,
+                    bottom: 3,
+                    background: selected ? 'rgba(76, 191, 255, 0.2)' : 'rgba(255, 255, 255, 0.12)',
+                    border: selected ? '1px solid rgba(76, 191, 255, 0.95)' : '1px solid rgba(255, 255, 255, 0.22)',
+                    borderRadius: 6,
+                    color: 'var(--gray-12)',
+                    fontSize: 12,
+                    display: 'flex',
+                    alignItems: 'center',
+                    overflow: 'hidden',
+                    boxSizing: 'border-box',
+                    cursor: 'grab',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onMouseDown={onOverlayMouseDown(overlayClip, 'start')}
+                    style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 8, cursor: 'ew-resize', border: 'none', background: 'transparent' }}
+                  />
+                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', pointerEvents: 'none', margin: selected ? '0 30px 0 10px' : '0 10px', width: '100%' }}>{overlayClip.text || 'Text'}</div>
+                  {selected && (
+                    <button
+                      type="button"
+                      title={t('Delete text clip')}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onDeleteOverlayClip(overlayClip.overlayId);
+                      }}
+                      style={{ position: 'absolute', right: 11, top: '50%', transform: 'translateY(-50%)', width: 16, height: 16, borderRadius: 999, border: '1px solid rgba(255, 255, 255, 0.18)', background: 'rgba(10, 14, 22, 0.7)', color: 'white', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, cursor: 'pointer' }}
+                    >
+                      <FaTimes size={8} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onMouseDown={onOverlayMouseDown(overlayClip, 'end')}
+                    style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 8, cursor: 'ew-resize', border: 'none', background: 'transparent' }}
+                  />
+                </div>
+              );
+            })}
+
+            {currentTimePercent !== undefined && (
+              <motion.div transition={springAnimation} animate={{ left: currentTimePercent }} style={{ position: 'absolute', bottom: 0, top: 0, backgroundColor: 'var(--gray-12)', width: currentTimeWidth, pointerEvents: 'none' }} />
+            )}
+            {commandedTimePercent !== undefined && (
+              <CommandedTime commandedTimePercent={commandedTimePercent} />
+            )}
+          </div>
+        )}
+
         <div
-          style={{ height: timelineHeight, width: `${zoom * 100}%`, position: 'relative', backgroundColor: timelineBackground, transition: darkModeTransition }}
+          style={{ height: timelineHeight, width: `${zoom * 100}%`, position: 'relative', backgroundColor: timelineBackground, transition: darkModeTransition, borderTop: overlayClips.length > 0 ? '1px solid var(--gray-7)' : undefined }}
           ref={timelineWrapperRef}
         >
           <div style={laneLabelStyle}>Video</div>
@@ -547,68 +671,6 @@ function Timeline({
             <CommandedTime commandedTimePercent={commandedTimePercent} />
           )}
         </div>
-
-        {overlayClips.length > 0 && (
-          <div style={{ height: textLaneHeight, width: `${zoom * 100}%`, position: 'relative', backgroundColor: 'var(--gray-3)', borderTop: '1px solid var(--gray-7)' }}>
-            <div style={laneLabelStyle}>Text</div>
-
-            {overlayClips.map((overlayClip) => {
-              const left = calculateTimelinePercent(overlayClip.start);
-              const width = `${Math.max(((overlayClip.end - overlayClip.start) / fileDurationNonZero) * 100, 0.5)}%`;
-              const selected = overlayClip.overlayId === selectedOverlayId;
-
-              return (
-                <div
-                  key={overlayClip.overlayId}
-                  role="button"
-                  tabIndex={-1}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onSelectOverlay(overlayClip.overlayId);
-                    seekAbs(overlayClip.start);
-                  }}
-                  style={{
-                    position: 'absolute',
-                    left,
-                    width,
-                    top: 3,
-                    bottom: 3,
-                    background: selected ? 'rgba(76, 191, 255, 0.2)' : 'rgba(255, 255, 255, 0.12)',
-                    border: selected ? '1px solid rgba(76, 191, 255, 0.95)' : '1px solid rgba(255, 255, 255, 0.22)',
-                    borderRadius: 6,
-                    color: 'var(--gray-12)',
-                    fontSize: 12,
-                    display: 'flex',
-                    alignItems: 'center',
-                    overflow: 'hidden',
-                    padding: '0 8px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onMouseDown={onOverlayMouseDown(overlayClip, 'start')}
-                    style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 10, cursor: 'ew-resize', border: 'none', background: 'transparent' }}
-                  />
-                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', pointerEvents: 'none' }}>{overlayClip.text || 'Text'}</div>
-                  <button
-                    type="button"
-                    onMouseDown={onOverlayMouseDown(overlayClip, 'end')}
-                    style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 10, cursor: 'ew-resize', border: 'none', background: 'transparent' }}
-                  />
-                </div>
-              );
-            })}
-
-            {currentTimePercent !== undefined && (
-              <motion.div transition={springAnimation} animate={{ left: currentTimePercent }} style={{ position: 'absolute', bottom: 0, top: 0, backgroundColor: 'var(--gray-12)', width: currentTimeWidth, pointerEvents: 'none' }} />
-            )}
-            {commandedTimePercent !== undefined && (
-              <CommandedTime commandedTimePercent={commandedTimePercent} />
-            )}
-          </div>
-        )}
       </div>
 
       <div style={timeWrapperStyle} className={styles['time-wrapper']}>

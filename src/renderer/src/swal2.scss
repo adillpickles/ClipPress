@@ -56,21 +56,156 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
   pointer-events: auto;
 }
 
+.swal2-container.swal2-bottom-end {
+  pointer-events: none !important;
+  padding: 1rem !important;
+}
+
 .clippress-toast {
-  border-radius: 1rem !important;
+  border-radius: .95rem !important;
   border: 1px solid color-mix(in srgb, var(--gray-8) 28%, transparent) !important;
-  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.2) !important;
-  padding: .8rem .95rem !important;
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.16) !important;
+  padding: .7rem .85rem !important;
+  pointer-events: auto !important;
 }
 
 .clippress-toast .swal2-title,
 .clippress-toast .swal2-html-container {
-  font-size: .92rem !important;
+  font-size: .88rem !important;
   line-height: 1.4 !important;
+  margin: 0 !important;
+}
+
+.clippress-toast .swal2-icon {
+  margin: 0 .55rem 0 0 !important;
+  width: 1.15rem !important;
+  min-width: 1.15rem !important;
+  height: 1.15rem !important;
+  border-width: 0 !important;
+  transform: scale(.82);
 }
 
 .clippress-toast .swal2-close {
-  transition: none !important;
+  position: absolute !important;
+  top: .18rem !important;
+  right: .22rem !important;
+  width: 1.4rem !important;
+  height: 1.4rem !important;
+  color: var(--gray-10) !important;
+}
+
+.clippress-toast .swal2-close {
+  transition: opacity .15s ease !important;
+}
+
+.clippress-toast-show {
+  animation: clippress-toast-fade-in .18s ease-out;
+}
+
+.clippress-toast-hide {
+  animation: clippress-toast-fade-out .18s ease-in forwards;
+}
+
+.clippress-choice-popup {
+  width: min(34rem, 92vw) !important;
+  border-radius: 1.35rem !important;
+  border: 1px solid color-mix(in srgb, var(--gray-8) 36%, transparent) !important;
+  background:
+    radial-gradient(circle at top, color-mix(in srgb, var(--blue-8) 10%, transparent), transparent 44%),
+    linear-gradient(180deg, color-mix(in srgb, var(--gray-2) 94%, transparent), color-mix(in srgb, var(--gray-1) 96%, transparent)) !important;
+  box-shadow: 0 26px 72px rgba(0, 0, 0, 0.26) !important;
+  padding: 1.2rem 1.2rem 1rem !important;
+}
+
+.clippress-choice-popup .swal2-title {
+  font-size: 1.2rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -.02em;
+  margin-bottom: .45rem !important;
+}
+
+.clippress-choice-close {
+  color: var(--gray-10) !important;
+}
+
+.clippress-choice-modal {
+  display: flex;
+  flex-direction: column;
+  gap: .7rem;
+  text-align: left;
+}
+
+.clippress-choice-modal-copy {
+  color: var(--gray-10);
+  font-size: .95rem;
+  line-height: 1.45;
+  margin-bottom: .15rem;
+}
+
+.clippress-choice-action {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  padding: .9rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--gray-8) 30%, transparent);
+  background: color-mix(in srgb, var(--gray-1) 88%, transparent);
+  color: var(--gray-12);
+  transition:
+    border-color .15s ease,
+    background-color .15s ease,
+    transform .15s ease;
+}
+
+.clippress-choice-action:hover {
+  border-color: color-mix(in srgb, var(--blue-8) 45%, transparent);
+  background: color-mix(in srgb, var(--blue-4) 14%, transparent);
+  transform: translateY(-1px);
+}
+
+.clippress-choice-action-cancel:hover {
+  border-color: color-mix(in srgb, var(--red-8) 42%, transparent);
+  background: color-mix(in srgb, var(--red-4) 12%, transparent);
+}
+
+.clippress-choice-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  color: var(--gray-10);
+  flex-shrink: 0;
+}
+
+.clippress-choice-action-label {
+  font-size: .95rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+@keyframes clippress-toast-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(.45rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes clippress-toast-fade-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(.35rem);
+  }
 }
 
 @import 'sweetalert2/src/sweetalert2.scss';

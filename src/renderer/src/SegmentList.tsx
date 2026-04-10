@@ -33,6 +33,33 @@ const buttonBaseStyle: CSSProperties = {
 const disabledButtonStyle = { color: 'var(--gray-10)', backgroundColor: 'var(--gray-6)' };
 const neutralButtonColor = 'var(--gray-9)';
 
+function padSimpleTime(value: number) {
+  return String(value).padStart(2, '0');
+}
+
+function formatSimpleTimestamp(seconds: number) {
+  const totalSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
+
+  if (hours > 0) return `${hours}:${padSimpleTime(minutes)}:${padSimpleTime(secs)}`;
+  return `${padSimpleTime(minutes)}:${padSimpleTime(secs)}`;
+}
+
+function formatSimpleDuration(seconds: number) {
+  if (seconds < 60) return `${seconds.toFixed(1)} sec`;
+
+  const roundedSeconds = Math.round(seconds);
+  const hours = Math.floor(roundedSeconds / 3600);
+  const minutes = Math.floor((roundedSeconds % 3600) / 60);
+  const secs = roundedSeconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (secs === 0) return `${minutes} min`;
+  return `${minutes}m ${secs}s`;
+}
+
 // eslint-disable-next-line react/display-name
 const Segment = memo(({
   seg,
@@ -99,7 +126,7 @@ const Segment = memo(({
   onDuplicateSegmentClick: UseSegments['duplicateSegment'],
   getSegEstimatedSize: UseSegments['getSegEstimatedSize'],
 }) => {
-  const { invertCutSegments, darkMode } = useUserSettings();
+  const { invertCutSegments, darkMode, simpleMode } = useUserSettings();
   const { t } = useTranslation();
   const { getSegColor } = useSegColors();
 
@@ -157,12 +184,24 @@ const Segment = memo(({
   const estimatedSize = useMemo(() => getSegEstimatedSize(seg), [getSegEstimatedSize, seg]);
 
   const timeStr = useMemo(() => (
-    seg.end == null
-      ? formatTimecode({ seconds: seg.start })
-      : `${formatTimecode({ seconds: seg.start })} - ${formatTimecode({ seconds: seg.end })}`
-  ), [formatTimecode, seg]);
+    simpleMode
+      ? (seg.end == null
+        ? formatSimpleTimestamp(seg.start)
+        : `${formatSimpleTimestamp(seg.start)} - ${formatSimpleTimestamp(seg.end)}`)
+      : (seg.end == null
+        ? formatTimecode({ seconds: seg.start })
+        : `${formatTimecode({ seconds: seg.start })} - ${formatTimecode({ seconds: seg.end })}`)
+  ), [formatTimecode, seg, simpleMode]);
 
   function renderNumber() {
+    if (simpleMode) {
+      return (
+        <b style={{ color: 'var(--gray-12)', padding: '0 .42em', minWidth: '1.55rem', height: '1.55rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginRight: '.5em', background: 'color-mix(in srgb, var(--gray-5) 82%, transparent)', border: '1px solid color-mix(in srgb, var(--gray-8) 26%, transparent)', borderRadius: '999px', fontSize: '.72rem', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+          {index + 1}
+        </b>
+      );
+    }
+
     if (invertCutSegments || !('segColorIndex' in seg)) {
       return <FaSave style={{ color: saveColor, marginRight: '.2em', verticalAlign: 'middle' }} size={14} />;
     }
@@ -220,19 +259,20 @@ const Segment = memo(({
     ];
     return {
       visibility: sortable.isDragging ? 'hidden' : undefined,
-      padding: '3px 5px',
-      margin: '1px 0',
+      padding: simpleMode ? '.68rem .75rem' : '3px 5px',
+      margin: simpleMode ? '3px 0' : '1px 0',
       boxSizing: 'border-box',
       originY: 0,
       position: 'relative',
       transform: CSS.Transform.toString(sortable.transform),
       transition: transitions.length > 0 ? transitions.join(', ') : undefined,
-      background: 'var(--gray-1)',
-      border: `1px solid ${isActive ? 'var(--gray-10)' : 'transparent'}`,
-      borderRadius: 5,
-      opacity: !selected && !invertCutSegments ? 0.5 : undefined,
+      background: simpleMode ? 'color-mix(in srgb, var(--gray-1) 88%, transparent)' : 'var(--gray-1)',
+      border: `1px solid ${isActive ? 'var(--gray-10)' : (simpleMode ? 'color-mix(in srgb, var(--gray-8) 24%, transparent)' : 'transparent')}`,
+      borderRadius: simpleMode ? 12 : 5,
+      opacity: !selected && !invertCutSegments ? (simpleMode ? 0.92 : 0.5) : undefined,
+      boxShadow: simpleMode ? '0 1px 0 rgba(255, 255, 255, 0.03)' : undefined,
     };
-  }, [invertCutSegments, isActive, selected, sortable.isDragging, sortable.transform, sortable.transition]);
+  }, [invertCutSegments, isActive, selected, simpleMode, sortable.isDragging, sortable.transform, sortable.transition]);
 
   const setRef = useCallback((node: HTMLDivElement | null) => {
     sortable.setNodeRef(node);
@@ -255,33 +295,40 @@ const Segment = memo(({
         {...sortable.listeners}
         role="button"
         tabIndex={-1}
-        style={{ cursor, color: 'var(--gray-12)', marginBottom: duration != null ? '.1em' : undefined, display: 'flex', alignItems: 'center', height: '1em' }}
+        style={{ cursor, color: 'var(--gray-12)', marginBottom: duration != null ? '.15em' : undefined, display: 'flex', alignItems: 'center', minHeight: simpleMode ? '1.55rem' : '1em' }}
         onClick={handleDraggableClick}
       >
         {renderNumber()}
-        <span style={{ cursor, fontSize: `${Math.min(1, 26 / timeStr.length) * 0.75}em`, whiteSpace: 'nowrap' }}>{timeStr}</span>
+        <span style={{ cursor, fontSize: simpleMode ? '.92rem' : `${Math.min(1, 26 / timeStr.length) * 0.75}em`, whiteSpace: 'nowrap', fontWeight: simpleMode ? 700 : undefined, fontVariantNumeric: 'tabular-nums', letterSpacing: simpleMode ? '-.01em' : undefined }}>{timeStr}</span>
       </div>
 
-      {'name' in seg && seg.name && <span style={{ fontSize: '.75em', color: primaryTextColor, marginRight: '.3em' }}>{seg.name}</span>}
-      {Object.entries(tags).map(([name, value]) => (
+      {'name' in seg && seg.name && <span style={{ fontSize: simpleMode ? '.8em' : '.75em', color: primaryTextColor, marginRight: '.3em', display: 'block', marginTop: duration != null ? '.22rem' : 0, lineHeight: 1.35 }}>{seg.name}</span>}
+      {!simpleMode && Object.entries(tags).map(([name, value]) => (
         <span style={{ fontSize: '.7em', backgroundColor: 'var(--gray-5)', color: 'var(--gray-12)', borderRadius: '.4em', padding: '0 .2em', marginRight: '.1em' }} key={name}>{name}:<b>{value}</b></span>
       ))}
 
       {duration != null && (
         <>
-          <div style={{ fontSize: '.75em' }}>
-            {t('Duration')} {formatTimecode({ seconds: duration, shorten: true })}
-          </div>
-          <div style={{ fontSize: '.75em' }}>
-            <Trans>{{ durationMsFormatted: Math.floor(duration * 1000) }} ms</Trans>
-            <span>, <Trans>{{ frameCount: (duration && getFrameCount(duration)) ?? '?' }} frames</Trans></span>
+          <div style={{ fontSize: simpleMode ? '.82em' : '.75em', marginTop: simpleMode ? '.32rem' : 0, color: simpleMode ? 'var(--gray-10)' : undefined, lineHeight: 1.35 }}>
+            {simpleMode ? formatSimpleDuration(duration) : `${t('Duration')} ${formatTimecode({ seconds: duration, shorten: true })}`}
             {estimatedSize != null && (
-              <span style={{ fontSize: '.9em' }}>
-                , ~{prettyBytes(estimatedSize, { space: false, maximumFractionDigits: 1, minimumFractionDigits: 0 })}
+              <span style={{ fontSize: simpleMode ? '1em' : '.9em' }}>
+                {simpleMode ? ' | ~' : ', ~'}
+                {prettyBytes(estimatedSize, { space: false, maximumFractionDigits: 1, minimumFractionDigits: 0 })}
               </span>
             )}
-
           </div>
+          {!simpleMode && (
+            <div style={{ fontSize: '.75em' }}>
+              <Trans>{{ durationMsFormatted: Math.floor(duration * 1000) }} ms</Trans>
+              <span>, <Trans>{{ frameCount: (duration && getFrameCount(duration)) ?? '?' }} frames</Trans></span>
+              {estimatedSize != null && (
+                <span style={{ fontSize: '.9em' }}>
+                  , ~{prettyBytes(estimatedSize, { space: false, maximumFractionDigits: 1, minimumFractionDigits: 0 })}
+                </span>
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -491,9 +538,9 @@ function SegmentList({
           </div>
         )}
 
-        <div style={{ padding: '5px 10px', boxSizing: 'border-box', borderBottom: '1px solid var(--gray-6)', borderTop: '1px solid var(--gray-6)', display: 'flex', justifyContent: 'space-between', fontSize: '.8em' }}>
-          <div>{t('Segments total:')}</div>
-          <div>{formatTimecode({ seconds: segmentsTotal })}</div>
+        <div style={{ padding: '.8rem 1rem .85rem', boxSizing: 'border-box', borderBottom: '1px solid var(--gray-6)', borderTop: '1px solid var(--gray-6)', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '1rem', fontSize: '.8em', background: 'color-mix(in srgb, var(--gray-2) 76%, transparent)' }}>
+          <div style={{ color: 'var(--gray-10)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em' }}>{t('Segments total')}</div>
+          <div style={{ color: 'var(--gray-12)', fontWeight: 800, fontVariantNumeric: 'tabular-nums', fontSize: '.98rem', lineHeight: 1 }}>{formatTimecode({ seconds: segmentsTotal })}</div>
         </div>
       </>
     );

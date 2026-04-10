@@ -108,25 +108,46 @@ export async function askForFileOpenAction(inputOptions: Record<string, string>)
   }
 
   const swal = getSwal().ReactSwal.fire({
+    title: i18n.t('Open new file'),
     html: (
-      <div style={{ textAlign: 'left' }}>
-        <div style={{ marginBottom: '1em' }}>{i18n.t('You opened a new file. What do you want to do?')}</div>
+      <div className="clippress-choice-modal">
+        <div className="clippress-choice-modal-copy">
+          {i18n.t('You opened a new file. What do you want to do?')}
+        </div>
 
         {Object.entries(inputOptions).map(([key, text]) => (
-          <button type="button" key={key} onClick={() => onClick(key)} className="button-unstyled" style={{ display: 'block', marginBottom: '.5em' }}>
-            <FaArrowRight style={{ color: 'var(--gray-10)', verticalAlign: 'middle' }} /> {text}
+          <button
+            type="button"
+            key={key}
+            onClick={() => onClick(key)}
+            className="button-unstyled clippress-choice-action"
+          >
+            <span className="clippress-choice-action-icon">
+              <FaArrowRight />
+            </span>
+            <span className="clippress-choice-action-label">{text}</span>
           </button>
         ))}
 
-        <button type="button" onClick={() => onClick()} className="button-unstyled" style={{ display: 'block', marginTop: '.5em' }}>
-          <FaArrowRight style={{ color: dangerColor, verticalAlign: 'middle' }} /> {i18n.t('Cancel')}
+        <button
+          type="button"
+          onClick={() => onClick()}
+          className="button-unstyled clippress-choice-action clippress-choice-action-cancel"
+        >
+          <span className="clippress-choice-action-icon" style={{ color: dangerColor }}>
+            <FaArrowRight />
+          </span>
+          <span className="clippress-choice-action-label">{i18n.t('Cancel')}</span>
         </button>
-
       </div>
     ),
     showCancelButton: false,
     showConfirmButton: false,
-    showCloseButton: false,
+    showCloseButton: true,
+    customClass: {
+      popup: 'clippress-choice-popup',
+      closeButton: 'clippress-choice-close',
+    },
   });
 
   await swal;
