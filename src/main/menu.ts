@@ -503,4 +503,9 @@ export default ({ app, mainWindow, newVersion, isStoreBuild }: {
   }
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(menu));
+
+  if (process.platform !== 'darwin') {
+    mainWindow.setAutoHideMenuBar(true);
+    mainWindow.setMenuBarVisibility(false);
+  }
 };

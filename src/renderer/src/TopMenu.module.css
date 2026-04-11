@@ -4,7 +4,7 @@
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: nowrap;
-  padding: .9rem 1rem .55rem;
+  padding: .72rem 1rem .55rem;
 }
 
 .primary {
@@ -14,21 +14,6 @@
   flex-wrap: nowrap;
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.brandBlock {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-}
-
-.brandTitle {
-  color: var(--gray-12);
-  font-size: 1.1rem;
-  font-weight: 800;
-  line-height: 1.1;
-  letter-spacing: -.02em;
 }
 
 .fileChip {

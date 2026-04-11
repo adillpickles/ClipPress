@@ -42,6 +42,7 @@ import type {
 import { UserSettingsContext, SegColorsContext, AppContext } from './contexts';
 
 import NoFileLoaded from './NoFileLoaded';
+import AppChrome from './AppChrome';
 import MediaSourcePlayer from './MediaSourcePlayer';
 import TopMenu from './TopMenu';
 import LastCommands from './LastCommands';
@@ -5855,6 +5856,8 @@ function App() {
         <SegColorsContext.Provider value={segColorsContext}>
           <UserSettingsContext.Provider value={userSettingsContext}>
             <div ref={appDropRef} className={rootClass} style={rootStyle} id="app-root">
+              <AppChrome />
+
               {isFileOpened && (
                 <TopMenu
                   filePath={filePath}

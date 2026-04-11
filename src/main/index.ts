@@ -159,6 +159,13 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     ...savedBounds.options,
     darkTheme: true,
+    ...(isMac
+      ? { titleBarStyle: 'hiddenInset' as const }
+      : {
+        frame: false,
+        titleBarStyle: 'hidden' as const,
+        autoHideMenuBar: true,
+      }),
     webPreferences: {
       contextIsolation: false,
       nodeIntegration: true,
@@ -170,6 +177,11 @@ function createWindow() {
     minWidth: 960,
     minHeight: 680,
   });
+
+  if (!isMac) {
+    mainWindow.setAutoHideMenuBar(true);
+    mainWindow.setMenuBarVisibility(false);
+  }
 
   if (savedBounds.isMaximized) mainWindow.maximize();
 

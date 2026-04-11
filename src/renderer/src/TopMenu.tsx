@@ -54,10 +54,6 @@ function TopMenu({
   return (
     <div className={`no-user-select ${styles['wrapper']}`}>
       <div className={styles['primary']}>
-        <div className={styles['brandBlock']}>
-          <div className={styles['brandTitle']}>ClipPress</div>
-        </div>
-
         <Button onClick={onOpenFiles} className={styles['secondaryAction']}>
           <span className={styles['secondaryActionLabel']}>
             <FaFolderOpen style={{ fontSize: '.85em' }} />

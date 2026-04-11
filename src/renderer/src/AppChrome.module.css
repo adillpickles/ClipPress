@@ -1,0 +1,113 @@
+.wrapper {
+  height: 2.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 .35rem 0 .8rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--gray-8) 26%, transparent);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--blue-8) 12%, transparent), transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--gray-2) 96%, transparent), color-mix(in srgb, var(--gray-1) 98%, transparent));
+  color: var(--gray-12);
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+
+.wrapperInactive {
+  opacity: .92;
+}
+
+.left {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: .95rem;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
+  min-width: 0;
+}
+
+.brandMark {
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: .55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--blue-5) 24%, transparent);
+  border: 1px solid color-mix(in srgb, var(--blue-8) 28%, transparent);
+  color: var(--blue-11);
+  font-size: .92rem;
+  flex-shrink: 0;
+}
+
+.brandText {
+  font-size: .9rem;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  color: var(--gray-12);
+}
+
+.menuBar {
+  display: flex;
+  align-items: center;
+  gap: .18rem;
+  min-width: 0;
+  -webkit-app-region: no-drag;
+}
+
+.menuButton {
+  all: unset;
+  cursor: pointer;
+  padding: .42rem .66rem;
+  border-radius: .7rem;
+  color: var(--gray-10);
+  font-size: .8rem;
+  font-weight: 700;
+  line-height: 1;
+  transition: background-color .14s ease, color .14s ease;
+}
+
+.menuButton:hover,
+.menuButton:focus-visible {
+  background: color-mix(in srgb, var(--gray-4) 42%, transparent);
+  color: var(--gray-12);
+}
+
+.windowControls {
+  display: flex;
+  align-items: stretch;
+  gap: .15rem;
+  margin-left: auto;
+  -webkit-app-region: no-drag;
+}
+
+.windowControl {
+  all: unset;
+  width: 2.55rem;
+  height: 2.1rem;
+  border-radius: .75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gray-11);
+  cursor: pointer;
+  transition: background-color .14s ease, color .14s ease;
+}
+
+.windowControl:hover,
+.windowControl:focus-visible {
+  background: color-mix(in srgb, var(--gray-4) 44%, transparent);
+  color: var(--gray-12);
+}
+
+.closeControl:hover,
+.closeControl:focus-visible {
+  background: color-mix(in srgb, var(--red-4) 26%, transparent);
+  color: var(--red-11);
+}
