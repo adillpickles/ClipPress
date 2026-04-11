@@ -279,7 +279,7 @@ function AutoNamePreview({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '.75rem', marginBottom: '.45rem' }}>
         <div className={styles['summaryLabel']}>{title}</div>
         {simpleMode && (
-          <div className={styles['autoNamePill']}>{t('Auto naming')}</div>
+          <div className={styles['autoNamePill']}>{t('Auto filename')}</div>
         )}
       </div>
       <div style={{ marginBottom: simpleMode ? 0 : '.4rem' }}>
@@ -302,7 +302,7 @@ function AutoNamePreview({
       {simpleMode ? (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '.7rem' }}>
           <Button onClick={onCustomize} style={{ padding: '.35rem .7rem' }}>
-            {t('Use custom name')}
+            {t('Use custom filename')}
           </Button>
         </div>
       ) : (
@@ -1815,7 +1815,7 @@ function ExportConfirm({
               && generateAutoCutFileNames != null
               && !showSeparateNameEditor ? (
                 <AutoNamePreview
-                  title={t('Filename')}
+                  title={simpleMode ? t('Export filename') : t('Filename')}
                   generateFileNames={generateAutoCutFileNames}
                   currentSegIndexSafe={currentSegIndexSafe}
                   onCustomize={openSeparateNameEditor}
@@ -1862,7 +1862,7 @@ function ExportConfirm({
                 && generateAutoCutMergedFileNames != null
                 && !showMergedNameEditor ? (
                   <AutoNamePreview
-                    title={t('Merged filename')}
+                    title={simpleMode ? t('Merged export filename') : t('Merged filename')}
                     generateFileNames={generateAutoCutMergedFileNames}
                     onCustomize={openMergedNameEditor}
                   />

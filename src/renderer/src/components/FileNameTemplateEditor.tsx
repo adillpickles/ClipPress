@@ -226,15 +226,20 @@ function FileNameTemplateEditor(opts: {
   }, [commitSimpleRename, previewFileName]);
 
   if (simpleMode) {
+    const simpleTitle = (mode === 'merge-files' || mode === 'merge-segments')
+      ? t('Merged export filename')
+      : t('Export filename');
+    const simpleModeStateLabel = onReset != null ? t('Custom filename') : t('Export filename');
+
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '.6rem', width: '100%', minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '.75rem' }}>
           <div style={{ color: 'var(--gray-10)', fontSize: '.76rem', fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase' }}>
-            {(mode === 'merge-files' || mode === 'merge-segments') ? t('Merged filename') : t('Filename')}
+            {simpleTitle}
           </div>
           {onReset != null && (
             <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '.26rem .55rem', borderRadius: '999px', background: 'color-mix(in srgb, var(--gray-4) 32%, transparent)', border: '1px solid color-mix(in srgb, var(--gray-8) 26%, transparent)', color: 'var(--gray-11)', fontSize: '.72rem', fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase' }}>
-              {t('Custom name')}
+              {simpleModeStateLabel}
             </div>
           )}
         </div>
@@ -280,7 +285,7 @@ function FileNameTemplateEditor(opts: {
             {generated?.problems.sameAsInputFileNameWarning && (
               <div style={{ marginBottom: '.2rem' }}>
                 <FaExclamationTriangle style={{ verticalAlign: 'middle', marginRight: '.3rem' }} color={warningColor} />
-                {t('Output file name is the same as the source file name. This increases the risk of accidentally overwriting or deleting source files!')}
+                {t('This export would use the same path as the source file. Change the filename or save location to avoid overwriting it.')}
               </div>
             )}
 

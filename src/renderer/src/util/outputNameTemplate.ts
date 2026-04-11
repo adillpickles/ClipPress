@@ -59,6 +59,10 @@ function getTemplateProblems({ fileNames, filePath, outputDir, safeOutputFileNam
   let error: string | undefined;
 
   let sameAsInputFileNameWarning = false;
+  const normalizeForComparison = (inputPath: string) => {
+    const normalized = pathNormalize(inputPath);
+    return isWindows ? normalized.toLowerCase() : normalized;
+  };
 
   for (const fileName of fileNames) {
     if (!filePath) {
@@ -87,16 +91,14 @@ function getTemplateProblems({ fileNames, filePath, outputDir, safeOutputFileNam
       }
     }
 
-    const inPathNormalized = pathNormalize(filePath);
-    const outPathNormalized = pathNormalize(pathJoin(outputDir, fileName));
+    const inPathNormalized = normalizeForComparison(filePath);
+    const outPathNormalized = normalizeForComparison(pathJoin(outputDir, fileName));
     const sameAsInputPath = outPathNormalized === inPathNormalized;
     const windowsMaxPathLength = 259;
     const shouldCheckPathLength = isWindows || isDev;
     const shouldCheckFileEnd = isWindows || isDev;
 
-    if (basename(filePath) === fileName) {
-      sameAsInputFileNameWarning = true; // just an extra warning in case sameAsInputPath doesn't work
-    }
+    if (sameAsInputPath) sameAsInputFileNameWarning = true;
 
     if (fileName.length === 0) {
       error = i18n.t('At least one resulting file name has no length');
