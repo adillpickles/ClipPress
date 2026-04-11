@@ -108,6 +108,8 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
 
 .clippress-choice-popup {
   width: min(34rem, 92vw) !important;
+  max-width: min(34rem, 92vw) !important;
+  box-sizing: border-box !important;
   border-radius: 1.35rem !important;
   border: 1px solid color-mix(in srgb, var(--gray-8) 36%, transparent) !important;
   background:
@@ -115,6 +117,7 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
     linear-gradient(180deg, color-mix(in srgb, var(--gray-2) 94%, transparent), color-mix(in srgb, var(--gray-1) 96%, transparent)) !important;
   box-shadow: 0 26px 72px rgba(0, 0, 0, 0.26) !important;
   padding: 1.2rem 1.2rem 1rem !important;
+  overflow-x: hidden !important;
 }
 
 .clippress-choice-popup .swal2-title {
@@ -128,11 +131,20 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
   color: var(--gray-10) !important;
 }
 
+.clippress-choice-popup .swal2-html-container {
+  margin: 0 !important;
+  overflow-x: hidden !important;
+}
+
 .clippress-choice-modal {
   display: flex;
   flex-direction: column;
   gap: .7rem;
   text-align: left;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .clippress-choice-modal-copy {
@@ -152,6 +164,7 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
   border: 1px solid color-mix(in srgb, var(--gray-8) 30%, transparent);
   background: color-mix(in srgb, var(--gray-1) 88%, transparent);
   color: var(--gray-12);
+  box-sizing: border-box;
   transition:
     border-color .15s ease,
     background-color .15s ease,

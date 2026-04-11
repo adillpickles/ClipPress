@@ -11,6 +11,7 @@ import { defaultAudioGainDb, getMapStreamsArgs, getStreamIdsToCopy, isMutedAudio
 import { needsSmartCut, getCodecParams } from '../smartcut';
 import { getGuaranteedSegments, isDurationValid } from '../segments';
 import { getRotatedVideoDimensions, renderTextOverlayPng } from '../textOverlays';
+import { getRelativeSegmentOverlapWindow } from '../exportSegmentMath';
 import type { FFprobeStream } from '../../../common/ffprobe';
 import type { AvoidNegativeTs, FfmpegHwAccel, Html5ifyMode, PreserveMetadata } from '../../../common/types';
 import type { AllFilesMeta, Chapter, CopyfileStreams, CustomTagsByFile, LiteFFprobeStream, OverlayClip, ParamsByStreamId, SegmentToExport } from '../types';
@@ -79,7 +80,7 @@ function getAdjustedAudioEncodeArgs({ outFormat, outputIndex }: { outFormat: str
 
 function getAdjustedAudioGainArgs({ audioGainDb, outFormat, outputIndex }: { audioGainDb: number, outFormat: string | undefined, outputIndex: number }) {
   return [
-    `-filter:a:${outputIndex}`, isMutedAudioGain(audioGainDb) ? 'volume=0' : `volume=${audioGainDb.toFixed(2)}dB`,
+    `-filter:${outputIndex}`, isMutedAudioGain(audioGainDb) ? 'volume=0' : `volume=${audioGainDb.toFixed(2)}dB`,
     ...getAdjustedAudioEncodeArgs({ outFormat, outputIndex }),
   ];
 }
@@ -178,10 +179,16 @@ function buildTextOverlayFilterGraph({
 
   const overlappingAssets = overlayAssets.filter((overlayAsset) => overlayAsset.start < segmentEnd && overlayAsset.end > segmentStart);
   overlappingAssets.forEach((overlayAsset, index) => {
-    const relativeStart = Math.max(0, (Math.max(overlayAsset.start, segmentStart) - segmentStart) / outputPlaybackRate);
-    const relativeEnd = Math.max(relativeStart, (Math.min(overlayAsset.end, segmentEnd) - segmentStart) / outputPlaybackRate);
+    const overlapWindow = getRelativeSegmentOverlapWindow({
+      overlayStart: overlayAsset.start,
+      overlayEnd: overlayAsset.end,
+      segmentStart,
+      segmentEnd,
+      outputPlaybackRate,
+    });
+    invariant(overlapWindow != null);
     const nextLabel = `[video${index + 1}]`;
-    graph.push(`${currentLabel}[${imageInputStartIndex + index}:v]overlay=${overlayAsset.x}:${overlayAsset.y}:enable='between(t,${relativeStart.toFixed(5)},${relativeEnd.toFixed(5)})'${nextLabel}`);
+    graph.push(`${currentLabel}[${imageInputStartIndex + index}:v]overlay=${overlayAsset.x}:${overlayAsset.y}:enable='between(t,${overlapWindow.start.toFixed(5)},${overlapWindow.end.toFixed(5)})'${nextLabel}`);
     currentLabel = nextLabel;
   });
 
@@ -239,7 +246,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     preserveMetadataOnMerge: boolean,
     videoTimebase?: number | undefined,
   }) => {
-    if (await shouldSkipExistingFile(outPath)) return { haveExcludedStreams: false };
+    if (await shouldSkipExistingFile(outPath)) {
+      onProgress(1);
+      return { haveExcludedStreams: false };
+    }
 
     console.log('Merging files', { paths }, 'to', outPath);
 
@@ -340,6 +350,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       logStdoutStderr(result);
 
       await transferTimestamps({ inPath: metadataFromPath, outPath, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, duration: totalDuration });
+      onProgress(1);
 
       return { haveExcludedStreams: excludedStreamIds.length > 0 };
     } finally {
@@ -679,14 +690,17 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
         return await pMap(segments, async ({ start, end }, index) => {
           const finalOutPath = join(outputDir, cutFileNames[index]!);
-          if (await shouldSkipExistingFile(finalOutPath)) return { path: finalOutPath, created: false };
+          if (await shouldSkipExistingFile(finalOutPath)) {
+            onSingleProgress(index, 1);
+            return { path: finalOutPath, created: false };
+          }
 
           await maybeMkDeepOutDir({ outputDir, fileOutPath: finalOutPath });
 
           const segmentDuration = end - start;
           const mediaInputArgs = copyFileStreamsFiltered.length > 1
-            ? flatMap(copyFileStreamsFiltered, ({ path }) => [...getOutputPlaybackRateArgs(), '-ss', start.toFixed(5), '-i', path, '-t', segmentDuration.toFixed(5)])
-            : [...getOutputPlaybackRateArgs(), '-ss', start.toFixed(5), '-i', copyFileStreamsFiltered[0]!.path, '-t', segmentDuration.toFixed(5)];
+            ? flatMap(copyFileStreamsFiltered, ({ path }) => [...getOutputPlaybackRateArgs(), '-ss', start.toFixed(5), '-i', path])
+            : [...getOutputPlaybackRateArgs(), '-ss', start.toFixed(5), '-i', copyFileStreamsFiltered[0]!.path];
 
           const segmentOverlayAssets = preparedOverlayAssets.filter((overlayAsset) => overlayAsset.start < end && overlayAsset.end > start);
           const overlayInputArgs = flatMap(segmentOverlayAssets, ({ imagePath }) => ['-loop', '1', '-i', imagePath]);
@@ -735,6 +749,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
             '-ignore_unknown',
             ...getExperimentalArgs(ffmpegExperimental),
             '-shortest',
+            '-t', segmentDuration.toFixed(5),
             '-f', outFormat,
             '-y', finalOutPath,
           ];
@@ -757,6 +772,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
             treatOutputFileModifiedTimeAsStart,
           });
 
+          onSingleProgress(index, 1);
           return { path: finalOutPath, created: true };
         }, { concurrency: 1 });
       } finally {
@@ -893,7 +909,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
       const finalOutPath = join(outputDir, cutFileNames[i]!);
 
-      if (await shouldSkipExistingFile(finalOutPath)) return { path: finalOutPath, created: false };
+      if (await shouldSkipExistingFile(finalOutPath)) {
+        onSingleProgress(i, 1);
+        return { path: finalOutPath, created: false };
+      }
 
       await maybeMkDeepOutDir({ outputDir, fileOutPath: finalOutPath });
 
@@ -903,6 +922,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         await losslessCutSingle({
           cutFrom: desiredCutFrom, cutTo, chaptersPath, outPath: finalOutPath, copyFileStreams, keyframeCut, avoidNegativeTs, fileDuration, rotation, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMovData, preserveChapters, movFastStart, customTagsByFile, paramsByStreamId, onProgress: (progress) => onSingleProgress(i, progress),
         });
+        onSingleProgress(i, 1);
         return { path: finalOutPath, created: true };
       }
 
@@ -940,6 +960,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
       const cutEncodeWholePart = async () => {
         await cutEncodeSmartPartWrapper({ cutFrom: desiredCutFrom, cutTo, outPath: finalOutPath });
+        onSingleProgress(i, 1);
         return { path: finalOutPath, created: true };
       };
 
@@ -977,7 +998,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       });
 
       // We don't need to concat, just return the single cut file (we may need smart cut in other segments though)
-      if (!segmentNeedsSmartCut) return { path: finalOutPath, created: true };
+      if (!segmentNeedsSmartCut) {
+        onSingleProgress(i, 1);
+        return { path: finalOutPath, created: true };
+      }
 
       // We need to concat
 
@@ -996,6 +1020,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         const { streams: streamsAfterCut } = await readFileFfprobeMeta(losslessPartOutPath);
 
         await concatFiles({ paths: smartCutSegmentsToConcat, outDir: outputDir, outPath: finalOutPath, metadataFromPath: losslessPartOutPath, outFormat, includeAllStreams: true, streams: streamsAfterCut, ffmpegExperimental, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge, videoTimebase, onProgress: onConcatProgress });
+        onSingleProgress(i, 1);
         return { path: finalOutPath, created: true };
       } finally {
         await tryDeleteFiles(smartCutSegmentsToConcat);
@@ -1023,7 +1048,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   }) => {
     const outDir = getOutDir(customOutDir, filePath);
 
-    if (await shouldSkipExistingFile(mergedOutFilePath)) return;
+    if (await shouldSkipExistingFile(mergedOutFilePath)) {
+      onProgress(1);
+      return;
+    }
 
     const chapters = await createChaptersFromSegments({ segmentPaths, chapterNames });
 
@@ -1032,6 +1060,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     // need to re-read streams because may have changed
     const { streams } = await readFileFfprobeMeta(metadataFromPath);
     await concatFiles({ paths: segmentPaths, outDir, outPath: mergedOutFilePath, metadataFromPath, outFormat, includeAllStreams: true, streams, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge });
+    onProgress(1);
   }, [concatFiles, filePath, shouldSkipExistingFile]);
 
   // This is just used to load something into the player with correct duration,

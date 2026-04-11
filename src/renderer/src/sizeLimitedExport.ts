@@ -16,9 +16,10 @@ import { finalizeSizeLimitedExecutionResult } from './sizeLimitedExecutionPolicy
 import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile, sizeLimitedSwsFlags } from './sizeLimitedResolution';
 import { getNextSizeLimitedRetryStep, planSizeLimitedEncode } from './sizeLimitedPlanner';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
+import { buildConcatSegmentInputArgs, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
 import type { OverlayClip, SegmentToExport, SizeLimitedEncoderCapabilities, SizeLimitedExecutionResult, SizeLimitedProgressMetadata, SizeLimitedResolvedStrategy, SizeLimitedRetryStep } from './types';
 import type { SizeLimitedVideoTransformProfile } from './sizeLimitedResolution';
-import { isMutedAudioGain } from './util/streams';
+import { isMutedAudioGain, isNeutralAudioGain } from './util/streams';
 import { assertFileExists, readFileSize, renameWithRetry, transferTimestamps, unlinkWithRetry } from './util';
 import { UserFacingError } from '../errors';
 import { getRotatedVideoDimensions, renderTextOverlayPng } from './textOverlays';
@@ -212,10 +213,16 @@ function buildSegmentTextOverlayFilter({
   graph.push(`[0:${videoStreamIndex}]null${currentLabel}`);
 
   overlayAssets.forEach((overlayAsset, index) => {
-    const relativeStart = Math.max(0, (Math.max(overlayAsset.start, segmentStart) - segmentStart) / outputPlaybackRate);
-    const relativeEnd = Math.max(relativeStart, (Math.min(overlayAsset.end, segmentEnd) - segmentStart) / outputPlaybackRate);
+    const overlapWindow = getRelativeSegmentOverlapWindow({
+      overlayStart: overlayAsset.start,
+      overlayEnd: overlayAsset.end,
+      segmentStart,
+      segmentEnd,
+      outputPlaybackRate,
+    });
+    if (overlapWindow == null) return;
     const nextLabel = index === overlayAssets.length - 1 && videoFilter == null ? '[v]' : `[v${index + 1}]`;
-    graph.push(`${currentLabel}[${imageInputStartIndex + index}:v]overlay=${overlayAsset.x}:${overlayAsset.y}:enable='between(t,${relativeStart.toFixed(5)},${relativeEnd.toFixed(5)})'${nextLabel}`);
+    graph.push(`${currentLabel}[${imageInputStartIndex + index}:v]overlay=${overlayAsset.x}:${overlayAsset.y}:enable='between(t,${overlapWindow.start.toFixed(5)},${overlapWindow.end.toFixed(5)})'${nextLabel}`);
     currentLabel = nextLabel;
   });
 
@@ -239,11 +246,19 @@ function getMergedOverlayAssets({
   segments.forEach((segment) => {
     const segmentDuration = (segment.end - segment.start) / outputPlaybackRate;
     overlayAssets.forEach((overlayAsset) => {
-      if (overlayAsset.start >= segment.end || overlayAsset.end <= segment.start) return;
+      const overlapWindow = getRelativeSegmentOverlapWindow({
+        overlayStart: overlayAsset.start,
+        overlayEnd: overlayAsset.end,
+        segmentStart: segment.start,
+        segmentEnd: segment.end,
+        outputPlaybackRate,
+        timelineOffset: mergedCursor,
+      });
+      if (overlapWindow == null) return;
       mergedAssets.push({
         ...overlayAsset,
-        start: mergedCursor + ((Math.max(overlayAsset.start, segment.start) - segment.start) / outputPlaybackRate),
-        end: mergedCursor + ((Math.min(overlayAsset.end, segment.end) - segment.start) / outputPlaybackRate),
+        start: overlapWindow.start,
+        end: overlapWindow.end,
       });
     });
     mergedCursor += segmentDuration;
@@ -368,13 +383,10 @@ function getSegmentInputArgs({ filePath, segment, outputPlaybackRate }: {
   segment: SegmentToExport,
   outputPlaybackRate: number,
 }) {
-  const duration = segment.end - segment.start;
   return [
     ...(outputPlaybackRate !== 1 ? ['-itsscale', String(1 / outputPlaybackRate)] : []),
     '-ss', segment.start.toFixed(5),
     '-i', filePath,
-    '-ss', '0',
-    '-t', duration.toFixed(5),
   ];
 }
 
@@ -383,22 +395,17 @@ function getMergeInputArgs({ filePath, segments, outputPlaybackRate }: {
   segments: SegmentToExport[],
   outputPlaybackRate: number,
 }) {
-  return segments.flatMap((segment) => [
-    ...(outputPlaybackRate !== 1 ? ['-itsscale', String(1 / outputPlaybackRate)] : []),
-    '-ss', segment.start.toFixed(5),
-    '-i', filePath,
-    '-ss', '0',
-    '-t', (segment.end - segment.start).toFixed(5),
-  ]);
+  return buildConcatSegmentInputArgs({ filePath, segments, outputPlaybackRate });
 }
 
-function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoProfile, overlayAssets, outputPlaybackRate }: {
+function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoProfile, overlayAssets, outputPlaybackRate, audioGainDb }: {
   segments: SegmentToExport[],
   videoStreamIndex: number,
   audioStreamIndex: number | undefined,
   videoProfile: SizeLimitedVideoTransformProfile,
   overlayAssets?: PreparedTextOverlayAsset[] | undefined,
   outputPlaybackRate: number,
+  audioGainDb?: number | undefined,
 }) {
   const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
   const mergedOverlayAssets = overlayAssets != null
@@ -407,13 +414,15 @@ function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoPr
   const graph: string[] = [];
   const needsVideoPostProcessing = mergedOverlayAssets.length > 0 || videoFilter != null;
   const concatVideoLabel = needsVideoPostProcessing ? '[vconcat]' : '[v]';
+  const needsAudioPostProcessing = audioStreamIndex != null && !isNeutralAudioGain(audioGainDb);
+  const concatAudioLabel = needsAudioPostProcessing ? '[aconcat]' : '[a]';
 
   if (audioStreamIndex == null) {
     const labels = segments.map((_, index) => `[${index}:${videoStreamIndex}]`).join('');
     graph.push(`${labels}concat=n=${segments.length}:v=1:a=0${concatVideoLabel}`);
   } else {
     const labels = segments.map((_, index) => `[${index}:${videoStreamIndex}][${index}:${audioStreamIndex}]`).join('');
-    graph.push(`${labels}concat=n=${segments.length}:v=1:a=1${concatVideoLabel}[a]`);
+    graph.push(`${labels}concat=n=${segments.length}:v=1:a=1${concatVideoLabel}${concatAudioLabel}`);
   }
 
   let currentLabel = concatVideoLabel;
@@ -424,6 +433,10 @@ function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoPr
   });
 
   if (videoFilter != null) graph.push(`${currentLabel}${videoFilter}[v]`);
+  if (needsAudioPostProcessing) {
+    const resolvedAudioGainDb = audioGainDb ?? 0;
+    graph.push(`${concatAudioLabel}${isMutedAudioGain(resolvedAudioGainDb) ? 'volume=0' : `volume=${resolvedAudioGainDb.toFixed(2)}dB`}[a]`);
+  }
 
   return graph.join(';');
 }
@@ -736,6 +749,7 @@ export async function exportSizeLimitedSegment({
   const shouldSkip = await ensureWritableOutput(outPath, enableOverwriteOutput);
   if (shouldSkip) {
     const existingSize = await readFileSize(outPath);
+    onProgress(1);
     return {
       path: outPath,
       size: existingSize,
@@ -768,6 +782,7 @@ export async function exportSizeLimitedSegment({
       buildAttempt: async (attempt) => {
         const attemptOutPath = makeAttemptPath(outPath, attempt.attemptNumber);
         const inputArgs = getSegmentInputArgs({ filePath, segment, outputPlaybackRate });
+        const outputTrimArgs = ['-t', (segment.end - segment.start).toFixed(5)];
         const videoProfile = resolveSizeLimitedVideoProfile({
           resolution,
           fps,
@@ -806,6 +821,7 @@ export async function exportSizeLimitedSegment({
             '-hide_banner',
             ...getSwsFlagsArgs(),
             ...commonArgs,
+            ...outputTrimArgs,
             ...getTwoPassEncodeArgs({
               strategy,
               videoBitrate: attempt.videoBitrate,
@@ -828,6 +844,7 @@ export async function exportSizeLimitedSegment({
             '-hide_banner',
             ...getSwsFlagsArgs(),
             ...commonArgs,
+            ...outputTrimArgs,
             ...getTwoPassEncodeArgs({
               strategy,
               videoBitrate: attempt.videoBitrate,
@@ -855,6 +872,7 @@ export async function exportSizeLimitedSegment({
           '-hide_banner',
           ...getSwsFlagsArgs(),
           ...commonArgs,
+          ...outputTrimArgs,
           ...getCommonEncodeArgs({
             strategy,
             videoBitrate: attempt.videoBitrate,
@@ -898,6 +916,7 @@ export async function exportSizeLimitedSegment({
     treatOutputFileModifiedTimeAsStart,
   });
 
+  onProgress(1);
   return { ...result, path: outPath };
 }
 
@@ -988,6 +1007,7 @@ export async function exportSizeLimitedMerge({
   const shouldSkip = await ensureWritableOutput(outPath, enableOverwriteOutput);
   if (shouldSkip) {
     const existingSize = await readFileSize(outPath);
+    onProgress(1);
     return {
       path: outPath,
       size: existingSize,
@@ -1021,6 +1041,7 @@ export async function exportSizeLimitedMerge({
         const attemptOutPath = makeAttemptPath(outPath, attempt.attemptNumber);
         const inputArgs = getMergeInputArgs({ filePath, segments, outputPlaybackRate });
         const overlayInputArgs = preparedOverlayAssets.flatMap(({ imagePath }) => ['-loop', '1', '-i', imagePath]);
+        const outputTrimArgs = ['-t', plannedDuration.toFixed(5)];
         const videoProfile = resolveSizeLimitedVideoProfile({
           resolution,
           fps,
@@ -1037,7 +1058,9 @@ export async function exportSizeLimitedMerge({
           videoProfile,
           overlayAssets: preparedOverlayAssets,
           outputPlaybackRate,
+          audioGainDb,
         });
+        const applyAudioGainInFilterGraph = audioStream != null && !isNeutralAudioGain(audioGainDb);
 
         const commonArgs = [
           ...inputArgs,
@@ -1052,6 +1075,7 @@ export async function exportSizeLimitedMerge({
             '-hide_banner',
             ...getSwsFlagsArgs(),
             ...commonArgs,
+            ...outputTrimArgs,
             ...getTwoPassEncodeArgs({
               strategy,
               videoBitrate: attempt.videoBitrate,
@@ -1066,7 +1090,7 @@ export async function exportSizeLimitedMerge({
               passNumber: 1,
               sourceFps,
               outputPlaybackRate,
-              audioGainDb,
+              audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
             }),
           ];
 
@@ -1074,6 +1098,7 @@ export async function exportSizeLimitedMerge({
             '-hide_banner',
             ...getSwsFlagsArgs(),
             ...commonArgs,
+            ...outputTrimArgs,
             ...getTwoPassEncodeArgs({
               strategy,
               videoBitrate: attempt.videoBitrate,
@@ -1088,7 +1113,7 @@ export async function exportSizeLimitedMerge({
               passNumber: 2,
               sourceFps,
               outputPlaybackRate,
-              audioGainDb,
+              audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
             }),
           ];
 
@@ -1101,6 +1126,7 @@ export async function exportSizeLimitedMerge({
           '-hide_banner',
           ...getSwsFlagsArgs(),
           ...commonArgs,
+          ...outputTrimArgs,
           ...getCommonEncodeArgs({
             strategy,
             videoBitrate: attempt.videoBitrate,
@@ -1113,7 +1139,7 @@ export async function exportSizeLimitedMerge({
             outPath: attemptOutPath,
             sourceFps,
             outputPlaybackRate,
-            audioGainDb,
+            audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
           }),
         ];
 
@@ -1143,5 +1169,6 @@ export async function exportSizeLimitedMerge({
     treatOutputFileModifiedTimeAsStart,
   });
 
+  onProgress(1);
   return { ...result, path: outPath };
 }
