@@ -276,7 +276,12 @@ function AutoNamePreview({
 
   return (
     <div>
-      <div className={styles['summaryLabel']} style={{ marginBottom: '.45rem' }}>{title}</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '.75rem', marginBottom: '.45rem' }}>
+        <div className={styles['summaryLabel']}>{title}</div>
+        {simpleMode && (
+          <div className={styles['autoNamePill']}>{t('Auto naming')}</div>
+        )}
+      </div>
       <div style={{ marginBottom: simpleMode ? 0 : '.4rem' }}>
         <HighlightedText
           style={{
@@ -294,7 +299,13 @@ function AutoNamePreview({
           {previewName ?? t('Generating preview...')}
         </HighlightedText>
       </div>
-      {!simpleMode && (
+      {simpleMode ? (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '.7rem' }}>
+          <Button onClick={onCustomize} style={{ padding: '.35rem .7rem' }}>
+            {t('Use custom name')}
+          </Button>
+        </div>
+      ) : (
         <Button onClick={onCustomize} style={{ padding: '.25em .7em' }}>
           {t('Edit filename')}
         </Button>
@@ -1398,6 +1409,13 @@ function ExportConfirm({
     sizeLimitMergedNamingMode,
   ]);
 
+  const exportActionLabel = useMemo(() => {
+    if (effectiveExportMode === 'merge') return t('Export merged clip');
+    if (effectiveExportMode === 'merge+separate') return t('Export all');
+    return t('Export');
+  }, [effectiveExportMode, t]);
+  const shouldRenderAdvancedTable = !simpleMode || showAdvanced;
+
   return (
     <ExportSheet
       width="58em"
@@ -1408,6 +1426,8 @@ function ExportConfirm({
         <ExportButton
           segmentsToExport={segmentsToExport}
           areWeCutting={areWeCutting}
+          label={exportActionLabel}
+          titleOverride={exportActionLabel}
           onClick={withBlur(() => onExportConfirm())}
           style={{ fontSize: '1.3em' }}
         />
@@ -1437,57 +1457,58 @@ function ExportConfirm({
           </div>
         )}
 
-        <div className={styles['heroGrid']}>
-          <section className={styles['sectionCard']}>
-            <div className={styles['sectionHeader']}>
-              <div>
-                <div className={styles['sectionEyebrow']}>
-                  {t('Output goal')}
+        {simpleMode ? (
+          <div className={styles['heroGrid']}>
+            <section className={styles['sectionCard']}>
+              <div className={styles['sectionHeader']}>
+                <div>
+                  <div className={styles['sectionEyebrow']}>
+                    {t('Output goal')}
+                  </div>
+                  <div className={styles['sectionTitle']}>
+                    {t('Choose how this export should feel')}
+                  </div>
                 </div>
-                <div className={styles['sectionTitle']}>
-                  {t('Choose how this export should feel')}
-                </div>
+                {!simpleMode && <HelpIcon onClick={onExportEncodeModeHelpPress} />}
               </div>
-              {!simpleMode && <HelpIcon onClick={onExportEncodeModeHelpPress} />}
-            </div>
 
-            <div className={styles['choiceGrid']}>
-              <button
-                type="button"
-                className={[
-                  styles['choiceCard'],
-                  ...(!isSizeLimited ? [styles['choiceCardActive']] : []),
-                ].join(' ')}
-                onClick={() => handleExportEncodeModeChange('lossless')}
-              >
-                <div className={styles['choiceTitle']}>
-                  {t('Keep source quality')}
-                </div>
-                <div className={styles['choiceBody']}>
-                  {t(
-                    'Use the regular ClipPress export path and preserve the original quality when possible.',
-                  )}
-                </div>
-              </button>
+              <div className={styles['choiceGrid']}>
+                <button
+                  type="button"
+                  className={[
+                    styles['choiceCard'],
+                    ...(!isSizeLimited ? [styles['choiceCardActive']] : []),
+                  ].join(' ')}
+                  onClick={() => handleExportEncodeModeChange('lossless')}
+                >
+                  <div className={styles['choiceTitle']}>
+                    {t('Keep source quality')}
+                  </div>
+                  <div className={styles['choiceBody']}>
+                    {t(
+                      'Use the regular ClipPress export path and preserve the original quality when possible.',
+                    )}
+                  </div>
+                </button>
 
-              <button
-                type="button"
-                className={[
-                  styles['choiceCard'],
-                  ...(isSizeLimited ? [styles['choiceCardActive']] : []),
-                ].join(' ')}
-                onClick={() => handleExportEncodeModeChange('size_limited')}
-              >
-                <div className={styles['choiceTitle']}>
-                  {t('Target file size')}
-                </div>
-                <div className={styles['choiceBody']}>
-                  {t('Make a shareable MP4 that lands under a size cap.')}
-                </div>
-              </button>
-            </div>
+                <button
+                  type="button"
+                  className={[
+                    styles['choiceCard'],
+                    ...(isSizeLimited ? [styles['choiceCardActive']] : []),
+                  ].join(' ')}
+                  onClick={() => handleExportEncodeModeChange('size_limited')}
+                >
+                  <div className={styles['choiceTitle']}>
+                    {t('Target file size')}
+                  </div>
+                  <div className={styles['choiceBody']}>
+                    {t('Make a shareable MP4 that lands under a size cap.')}
+                  </div>
+                </button>
+              </div>
 
-            {isSizeLimited && (
+              {isSizeLimited && (
               <>
                 <div className={styles['inlineFieldRow']}>
                   <label
@@ -1621,95 +1642,111 @@ function ExportConfirm({
                   </div>
                 )}
               </>
-            )}
-          </section>
+              )}
+            </section>
 
-          <section className={styles['sectionCard']}>
-            <div className={styles['sectionHeader']}>
-              <div>
-                <div className={styles['sectionEyebrow']}>
-                  {t('Clip output')}
+            <section className={styles['sectionCard']}>
+              <div className={styles['sectionHeader']}>
+                <div>
+                  <div className={styles['sectionEyebrow']}>
+                    {t('Clip output')}
+                  </div>
+                  <div className={styles['sectionTitle']}>
+                    {t('Pick how the finished clip files are produced')}
+                  </div>
                 </div>
-                <div className={styles['sectionTitle']}>
-                  {t('Pick how the finished clip files are produced')}
-                </div>
+                {!simpleMode && <HelpIcon onClick={onExportModeHelpPress} />}
               </div>
-              {!simpleMode && <HelpIcon onClick={onExportModeHelpPress} />}
-            </div>
 
-            <div className={styles['choiceGrid']}>
-              <button
-                type="button"
-                className={[
-                  styles['choiceCard'],
-                  ...(effectiveExportMode === 'separate'
-                    ? [styles['choiceCardActive']]
-                    : []),
-                ].join(' ')}
-                onClick={() => handleQuickExportModeChange('separate')}
-              >
-                <div className={styles['choiceTitle']}>
-                  {t('Separate clips')}
-                </div>
-                <div className={styles['choiceBody']}>
-                  {t('Export each marked clip as its own file.')}
-                </div>
-              </button>
+              <div className={styles['choiceGrid']}>
+                <button
+                  type="button"
+                  className={[
+                    styles['choiceCard'],
+                    ...(effectiveExportMode === 'separate'
+                      ? [styles['choiceCardActive']]
+                      : []),
+                  ].join(' ')}
+                  onClick={() => handleQuickExportModeChange('separate')}
+                >
+                  <div className={styles['choiceTitle']}>
+                    {t('Separate clips')}
+                  </div>
+                  <div className={styles['choiceBody']}>
+                    {t('Export each marked clip as its own file.')}
+                  </div>
+                </button>
 
-              <button
-                type="button"
-                className={[
-                  styles['choiceCard'],
-                  ...(effectiveExportMode === 'merge'
-                    ? [styles['choiceCardActive']]
-                    : []),
-                ].join(' ')}
-                onClick={() => handleQuickExportModeChange('merge')}
-                disabled={segmentsOrInverse.selected.length < 2}
-              >
-                <div className={styles['choiceTitle']}>
-                  {t('Merge into one clip')}
-                </div>
-                <div className={styles['choiceBody']}>
-                  {t('Combine the selected clips into one final video.')}
-                </div>
-              </button>
+                <button
+                  type="button"
+                  className={[
+                    styles['choiceCard'],
+                    ...(effectiveExportMode === 'merge'
+                      ? [styles['choiceCardActive']]
+                      : []),
+                  ].join(' ')}
+                  onClick={() => handleQuickExportModeChange('merge')}
+                  disabled={segmentsOrInverse.selected.length < 2}
+                >
+                  <div className={styles['choiceTitle']}>
+                    {t('Merge into one clip')}
+                  </div>
+                  <div className={styles['choiceBody']}>
+                    {t('Combine the selected clips into one final video.')}
+                  </div>
+                </button>
 
-              <button
-                type="button"
-                className={[
-                  styles['choiceCard'],
-                  ...(effectiveExportMode === 'merge+separate'
-                    ? [styles['choiceCardActive']]
-                    : []),
-                ].join(' ')}
-                onClick={() => handleQuickExportModeChange('merge+separate')}
-                disabled={segmentsOrInverse.selected.length < 2}
-              >
-                <div className={styles['choiceTitle']}>{t('Both')}</div>
-                <div className={styles['choiceBody']}>
-                  {t(
-                    'Keep the separate clip files and also make one merged version.',
-                  )}
-                </div>
-              </button>
-            </div>
+                <button
+                  type="button"
+                  className={[
+                    styles['choiceCard'],
+                    ...(effectiveExportMode === 'merge+separate'
+                      ? [styles['choiceCardActive']]
+                      : []),
+                  ].join(' ')}
+                  onClick={() => handleQuickExportModeChange('merge+separate')}
+                  disabled={segmentsOrInverse.selected.length < 2}
+                >
+                  <div className={styles['choiceTitle']}>{t('Both')}</div>
+                  <div className={styles['choiceBody']}>
+                    {t(
+                      'Keep the separate clip files and also make one merged version.',
+                    )}
+                  </div>
+                </button>
+              </div>
 
-            {effectiveExportMode === 'segments_to_chapters' && (
+              {effectiveExportMode === 'segments_to_chapters' && (
               <div className={styles['helperText']}>
                 {t(
                   'Chapters-only export is still available in Advanced settings, but it stays out of the default path.',
                 )}
               </div>
-            )}
+              )}
+            </section>
+          </div>
+        ) : (
+          <section className={styles['sectionCard']}>
+            <div className={styles['sectionHeader']}>
+              <div>
+                <div className={styles['sectionEyebrow']}>
+                  {t('Advanced export')}
+                </div>
+                <div className={styles['sectionTitle']}>
+                  {t('Direct codec, container, and export controls')}
+                </div>
+              </div>
+            </div>
+            <div className={styles['helperText']}>
+              {t('Advanced mode foregrounds direct export controls. Simple presets stay in Simple mode so this view can stay focused on explicit options.')}
+            </div>
           </section>
-        </div>
+        )}
 
         <div className={styles['summaryGrid']}>
           <section
             className={[
               styles['summaryCard'],
-              ...(!simpleMode ? [styles['summaryCardWide']] : []),
             ].join(' ')}
           >
             <div className={styles['summaryLabel']}>{t('Tracks kept')}</div>
@@ -1776,8 +1813,7 @@ function ExportConfirm({
             {isSizeLimited
               && sizeLimitSeparateNamingMode === 'auto'
               && generateAutoCutFileNames != null
-              && !showSeparateNameEditor
-              && !simpleMode ? (
+              && !showSeparateNameEditor ? (
                 <AutoNamePreview
                   title={t('Filename')}
                   generateFileNames={generateAutoCutFileNames}
@@ -1824,8 +1860,7 @@ function ExportConfirm({
               {isSizeLimited
                 && sizeLimitMergedNamingMode === 'auto'
                 && generateAutoCutMergedFileNames != null
-                && !showMergedNameEditor
-                && !simpleMode ? (
+                && !showMergedNameEditor ? (
                   <AutoNamePreview
                     title={t('Merged filename')}
                     generateFileNames={generateAutoCutMergedFileNames}
@@ -1867,28 +1902,38 @@ function ExportConfirm({
           <div>
             <div className={styles['sectionEyebrow']}>{t('Advanced')}</div>
             <div className={styles['sectionTitle']}>
-              {t('Codec, naming, compatibility, and technical controls')}
+              {simpleMode
+                ? t('Codec, naming, compatibility, and technical controls')
+                : t('Full export controls')}
             </div>
           </div>
-          <Button onClick={toggleAdvanced}>
-            {showAdvanced
-              ? t('Hide advanced settings')
-              : t('Show advanced settings')}
-          </Button>
+          {simpleMode && (
+            <Button onClick={toggleAdvanced}>
+              {showAdvanced
+                ? t('Hide advanced settings')
+                : t('Show advanced settings')}
+            </Button>
+          )}
         </div>
 
-        {showAdvanced && (
+        {shouldRenderAdvancedTable && (
           <>
-            <table className={styles['options']}>
-              <tbody>
-                <tr>
-                  <td colSpan={2}>
-                    {notices.generic.map((notice) => renderNotice(notice, {}))}
-                  </td>
-                  <td />
-                </tr>
+            {!simpleMode && (
+              <div className={styles['helperText']} style={{ marginBottom: '.9rem' }}>
+                {t('Advanced mode keeps all export controls available and prioritizes direct format choices over curated presets.')}
+              </div>
+            )}
+            <div className={styles['advancedTableWrap']}>
+              <table className={styles['options']}>
+                <tbody>
+                  <tr>
+                    <td colSpan={2}>
+                      {notices.generic.map((notice) => renderNotice(notice, {}))}
+                    </td>
+                    <td />
+                  </tr>
 
-                {segmentsOrInverse.selected.length
+                  {segmentsOrInverse.selected.length
                   !== segmentsOrInverse.all.length && (
                   <tr>
                     <td colSpan={2}>
@@ -1903,9 +1948,9 @@ function ExportConfirm({
                     </td>
                     <td />
                   </tr>
-                )}
+                  )}
 
-                {!simpleMode && (
+                  {!simpleMode && (
                   <tr>
                     <td>{t('Export type')}</td>
                     <td>
@@ -1928,9 +1973,9 @@ function ExportConfirm({
                       <HelpIcon onClick={onExportEncodeModeHelpPress} />
                     </td>
                   </tr>
-                )}
+                  )}
 
-                {isSizeLimited && (
+                  {isSizeLimited && (
                   <>
                     {!simpleMode && (
                       <tr>
@@ -2227,9 +2272,9 @@ function ExportConfirm({
                       </tr>
                     )}
                   </>
-                )}
+                  )}
 
-                {!simpleMode && (
+                  {!simpleMode && (
                   <tr>
                     <td>
                       {segmentsOrInverse.selected.length > 1
@@ -2253,23 +2298,23 @@ function ExportConfirm({
                       ) ?? <HelpIcon onClick={onExportModeHelpPress} />}
                     </td>
                   </tr>
-                )}
+                  )}
 
-                <tr>
-                  <td>{t('Output container format:')}</td>
-                  <td>
-                    {isSizeLimited ? (
-                      <HighlightedText>mp4 - MPEG-4 Part 14</HighlightedText>
-                    ) : (
-                      renderOutFmt({ height: '1.8em', maxWidth: 150 })
-                    )}
-                  </td>
-                  <td>
-                    <HelpIcon onClick={onOutFmtHelpPress} />
-                  </td>
-                </tr>
+                  <tr>
+                    <td>{t('Output container format:')}</td>
+                    <td>
+                      {isSizeLimited ? (
+                        <HighlightedText>mp4 - MPEG-4 Part 14</HighlightedText>
+                      ) : (
+                        renderOutFmt({ height: '1.8em', maxWidth: 150 })
+                      )}
+                    </td>
+                    <td>
+                      <HelpIcon onClick={onOutFmtHelpPress} />
+                    </td>
+                  </tr>
 
-                {!simpleMode && (
+                  {!simpleMode && (
                   <>
                     <tr>
                       <td>
@@ -2400,24 +2445,24 @@ function ExportConfirm({
                       </tr>
                     )}
                   </>
-                )}
+                  )}
 
-                <tr>
-                  <td>
-                    {t('Overwrite existing files')}
-                    {renderNotice(notices.specific['overwriteOutput'], {})}
-                  </td>
-                  <td>
-                    <Switch
-                      checked={enableOverwriteOutput}
-                      onCheckedChange={setEnableOverwriteOutput}
-                    />
-                  </td>
-                  <td>
-                    {renderNoticeIcon(
-                      notices.specific['overwriteOutput'],
-                      rightIconStyle,
-                    ) ?? (
+                  <tr>
+                    <td>
+                      {t('Overwrite existing files')}
+                      {renderNotice(notices.specific['overwriteOutput'], {})}
+                    </td>
+                    <td>
+                      <Switch
+                        checked={enableOverwriteOutput}
+                        onCheckedChange={setEnableOverwriteOutput}
+                      />
+                    </td>
+                    <td>
+                      {renderNoticeIcon(
+                        notices.specific['overwriteOutput'],
+                        rightIconStyle,
+                      ) ?? (
                       <HelpIcon
                         onClick={() => showHelpText({
                           text: t(
@@ -2425,13 +2470,13 @@ function ExportConfirm({
                           ),
                         })}
                       />
-                    )}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                      )}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
 
-            {!isSizeLimited && (
+              {!isSizeLimited && (
               <>
                 <h3 style={{ marginBottom: '.5em' }}>
                   {t('Advanced options')}
@@ -2774,7 +2819,8 @@ function ExportConfirm({
                   </tbody>
                 </table>
               </>
-            )}
+              )}
+            </div>
           </>
         )}
       </div>

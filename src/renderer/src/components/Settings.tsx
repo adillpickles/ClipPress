@@ -391,35 +391,35 @@ function Settings({
         <Row>
           <KeyCell>{t('Timeline trackpad/wheel sensitivity')}</KeyCell>
           <td>
-            <Button onClick={() => onTunerRequested('wheelSensitivity')}><FaCogs style={{ verticalAlign: 'middle', marginRight: '.4em' }} />{t('Change value')}</Button>
+            <Button onClick={() => onTunerRequested('wheelSensitivity')}>{t('Adjust')}</Button>
           </td>
         </Row>
 
         <Row>
           <KeyCell>{t('Timeline keyboard seek interval')}</KeyCell>
           <td>
-            <Button onClick={() => onTunerRequested('keyboardNormalSeekSpeed')}><FaCogs style={{ verticalAlign: 'middle', marginRight: '.4em' }} /> {t('Change value')}</Button>
+            <Button onClick={() => onTunerRequested('keyboardNormalSeekSpeed')}>{t('Adjust')}</Button>
           </td>
         </Row>
 
         <Row>
           <KeyCell>{t('Timeline keyboard seek interval (longer)')}</KeyCell>
           <td>
-            <Button onClick={() => onTunerRequested('keyboardSeekSpeed2')}><FaCogs style={{ verticalAlign: 'middle', marginRight: '.4em' }} /> {t('Change value')}</Button>
+            <Button onClick={() => onTunerRequested('keyboardSeekSpeed2')}>{t('Adjust')}</Button>
           </td>
         </Row>
 
         <Row>
           <KeyCell>{t('Timeline keyboard seek interval (longest)')}</KeyCell>
           <td>
-            <Button onClick={() => onTunerRequested('keyboardSeekSpeed3')}><FaCogs style={{ verticalAlign: 'middle', marginRight: '.4em' }} /> {t('Change value')}</Button>
+            <Button onClick={() => onTunerRequested('keyboardSeekSpeed3')}>{t('Adjust')}</Button>
           </td>
         </Row>
 
         <Row>
           <KeyCell>{t('Timeline keyboard seek acceleration')}</KeyCell>
           <td>
-            <Button onClick={() => onTunerRequested('keyboardSeekAccFactor')}><FaCogs style={{ verticalAlign: 'middle', marginRight: '.4em' }} /> {t('Change value')}</Button>
+            <Button onClick={() => onTunerRequested('keyboardSeekAccFactor')}>{t('Adjust')}</Button>
           </td>
         </Row>
 
@@ -446,7 +446,7 @@ function Settings({
           <Row>
             <KeyCell>{t('Waveform height')}</KeyCell>
             <td>
-              <Button onClick={() => onTunerRequested('waveformHeight')}><FaCogs style={{ verticalAlign: 'middle', marginRight: '.4em' }} /> {t('Change value')}</Button>
+              <Button onClick={() => onTunerRequested('waveformHeight')}>{t('Adjust')}</Button>
             </td>
           </Row>
         )}

@@ -60,7 +60,6 @@ import ConcatDialog from './components/ConcatDialog';
 import KeyboardShortcuts from './components/KeyboardShortcuts';
 import Working from './components/Working';
 import OutputFormatSelect from './components/OutputFormatSelect';
-import Button from './components/Button';
 import * as Dialog from './components/Dialog';
 
 import { runStartupCheck } from './mifi';
@@ -5764,7 +5763,6 @@ function App() {
 
   const onTunerRequested = useCallback(
     (type: TunerType) => {
-      setSettingsVisible(false);
       setTunerVisible(type);
       if (type === 'waveformHeight') {
         setWaveformMode('waveform');
@@ -6075,14 +6073,6 @@ function App() {
                         className={`no-user-select ${styles['editorCard']}`}
                         style={bottomStyle}
                       >
-                        <div className={styles['editorHeader']}>
-                          <div className={styles['editorHeaderMain']}>
-                            <Button onClick={addTextOverlay} disabled={!hasVideo}>
-                              {t('Add Text')}
-                            </Button>
-                          </div>
-                        </div>
-
                         <BottomBar
                           zoom={zoom}
                           setZoom={zoomAbs}
@@ -6129,6 +6119,7 @@ function App() {
                           playbackRate={playbackRate}
                           currentFrame={currentFrame}
                           playbackMode={playbackMode}
+                          onAddTextOverlay={addTextOverlay}
                         />
 
                         <Timeline
@@ -6232,13 +6223,6 @@ function App() {
                   )}
                 </AnimatePresence>
               </div>
-
-              {tunerVisible != null && (
-                <ValueTuners
-                  type={tunerVisible}
-                  onFinished={() => setTunerVisible(undefined)}
-                />
-              )}
 
               {/* Dialogs */}
 
@@ -6382,7 +6366,7 @@ function App() {
                       </Dialog.Description>
                     </div>
 
-                    <div className={styles['settingsDialogBody']}>
+                    <div className={`consistent-scrollbar ${styles['settingsDialogBody']}`}>
                       <Settings
                         onTunerRequested={onTunerRequested}
                         onKeyboardShortcutsDialogRequested={
@@ -6396,6 +6380,30 @@ function App() {
                         setShowAdvancedSettings={setShowAdvancedSettings}
                       />
                     </div>
+                    <Dialog.CloseButton />
+                  </Dialog.Content>
+                </Dialog.Portal>
+              </Dialog.Root>
+
+              <Dialog.Root
+                open={tunerVisible != null}
+                onOpenChange={(open) => !open && setTunerVisible(undefined)}
+              >
+                <Dialog.Portal>
+                  <Dialog.Overlay />
+                  <Dialog.Content
+                    style={{
+                      width: '30rem',
+                      maxWidth: 'min(92vw, 30rem)',
+                    }}
+                    aria-describedby={undefined}
+                  >
+                    {tunerVisible != null && (
+                      <ValueTuners
+                        type={tunerVisible}
+                        onFinished={() => setTunerVisible(undefined)}
+                      />
+                    )}
                     <Dialog.CloseButton />
                   </Dialog.Content>
                 </Dialog.Portal>

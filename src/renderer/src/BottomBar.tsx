@@ -10,7 +10,6 @@ import { MdRotate90DegreesCcw } from 'react-icons/md';
 import { useTranslation } from 'react-i18next';
 import { IoIosCamera, IoMdKey, IoMdSpeedometer } from 'react-icons/io';
 import {
-  FaYinYang,
   FaTrashAlt,
   FaStepBackward,
   FaStepForward,
@@ -21,6 +20,7 @@ import {
   FaImages,
   FaKey,
 } from 'react-icons/fa';
+import { FiScissors } from 'react-icons/fi';
 import { GiSoundWaves } from 'react-icons/gi';
 // import useTraceUpdate from 'use-trace-update';
 import invariant from 'tiny-invariant';
@@ -99,7 +99,7 @@ const InvertCutModeButton = memo(
         }
         style={{ minHeight: '2rem', padding: '0 .72rem', display: 'inline-flex', alignItems: 'center', gap: '.45rem', color: invertCutSegments ? dangerColor : undefined }}
       >
-        <FaYinYang style={{ fontSize: '1.05rem' }} />
+        <FiScissors style={{ fontSize: '1rem' }} />
         <span style={{ fontSize: '.82rem', fontWeight: 700 }}>
           {invertCutSegments ? t('Remove') : t('Keep')}
         </span>
@@ -377,6 +377,7 @@ function BottomBar({
   playbackRate,
   currentFrame,
   playbackMode,
+  onAddTextOverlay,
 }: {
   zoom: number;
   setZoom: (fn: (z: number) => number) => void;
@@ -423,6 +424,7 @@ function BottomBar({
   playbackRate: number;
   currentFrame: Frame | undefined;
   playbackMode: PlaybackMode | undefined;
+  onAddTextOverlay: () => void;
 }) {
   const { t } = useTranslation();
   const { getSegColor } = useSegColors();
@@ -771,7 +773,13 @@ function BottomBar({
 
         <div style={{ flexGrow: 1 }} />
 
-        <div style={{ flexBasis: leftRightWidth }} />
+        <div style={{ flexBasis: leftRightWidth, display: 'flex', justifyContent: 'flex-end' }}>
+          {hasVideo && (
+            <Button onClick={onAddTextOverlay} style={{ minHeight: '2rem', padding: '0 .82rem' }}>
+              {t('Add Text')}
+            </Button>
+          )}
+        </div>
       </div>
 
       {!simpleMode && (

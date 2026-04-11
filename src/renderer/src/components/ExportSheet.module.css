@@ -83,6 +83,23 @@
   overflow-y: auto;
   padding-right: .35rem;
   margin-right: -.35rem;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--gray-8) 42%, transparent) transparent;
+}
+
+.scrollArea::-webkit-scrollbar {
+  width: 10px;
+}
+
+.scrollArea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollArea::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--gray-8) 42%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 @media (max-width: 900px) {

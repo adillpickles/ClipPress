@@ -228,8 +228,15 @@ function FileNameTemplateEditor(opts: {
   if (simpleMode) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '.6rem', width: '100%', minWidth: 0 }}>
-        <div style={{ color: 'var(--gray-10)', fontSize: '.76rem', fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase' }}>
-          {(mode === 'merge-files' || mode === 'merge-segments') ? t('Merged filename') : t('Filename')}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '.75rem' }}>
+          <div style={{ color: 'var(--gray-10)', fontSize: '.76rem', fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase' }}>
+            {(mode === 'merge-files' || mode === 'merge-segments') ? t('Merged filename') : t('Filename')}
+          </div>
+          {onReset != null && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '.26rem .55rem', borderRadius: '999px', background: 'color-mix(in srgb, var(--gray-4) 32%, transparent)', border: '1px solid color-mix(in srgb, var(--gray-8) 26%, transparent)', color: 'var(--gray-11)', fontSize: '.72rem', fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase' }}>
+              {t('Custom name')}
+            </div>
+          )}
         </div>
 
         <TextInput

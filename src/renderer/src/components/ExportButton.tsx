@@ -15,6 +15,8 @@ interface Props {
   areWeCutting: boolean,
   onClick: MouseEventHandler<HTMLButtonElement>,
   style?: CSSProperties,
+  label?: string,
+  titleOverride?: string,
 }
 
 // eslint-disable-next-line react/display-name
@@ -23,6 +25,8 @@ const ExportButton = forwardRef<HTMLButtonElement, Props>(({
   areWeCutting,
   onClick,
   style,
+  label,
+  titleOverride,
 }, ref) => {
   const CutIcon = areWeCutting ? FiScissors : FaFileExport;
 
@@ -30,14 +34,14 @@ const ExportButton = forwardRef<HTMLButtonElement, Props>(({
 
   const { autoMerge, simpleMode } = useUserSettings();
 
-  let title = t('Export');
-  if (segmentsToExport.length === 1) {
+  let title = titleOverride ?? t('Export');
+  if (titleOverride == null && segmentsToExport.length === 1) {
     title = t('Export selection');
-  } else if (segmentsToExport.length > 1) {
+  } else if (titleOverride == null && segmentsToExport.length > 1) {
     title = t('Export {{ num }} segments', { num: segmentsToExport.length });
   }
 
-  const text = autoMerge && segmentsToExport && segmentsToExport.length > 1 ? t('Export+merge') : t('Export');
+  const text = label ?? (autoMerge && segmentsToExport && segmentsToExport.length > 1 ? t('Export all') : t('Export'));
 
   return (
     <button

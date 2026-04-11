@@ -193,10 +193,15 @@ const Segment = memo(({
         : `${formatTimecode({ seconds: seg.start })} - ${formatTimecode({ seconds: seg.end })}`)
   ), [formatTimecode, seg, simpleMode]);
 
+  const simpleSegColor = useMemo(() => {
+    if (!simpleMode || invertCutSegments || !('segColorIndex' in seg)) return undefined;
+    return getSegColor(seg).desaturate(0.45).lightness(darkMode ? 50 : 56);
+  }, [darkMode, getSegColor, invertCutSegments, seg, simpleMode]);
+
   function renderNumber() {
     if (simpleMode) {
       return (
-        <b style={{ color: 'var(--gray-12)', padding: '0 .42em', minWidth: '1.55rem', height: '1.55rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginRight: '.5em', background: 'color-mix(in srgb, var(--gray-5) 82%, transparent)', border: '1px solid color-mix(in srgb, var(--gray-8) 26%, transparent)', borderRadius: '999px', fontSize: '.72rem', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+        <b style={{ color: simpleSegColor?.lightness(78).string() ?? 'var(--gray-12)', padding: '0 .42em', minWidth: '1.55rem', height: '1.55rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginRight: '.5em', background: simpleSegColor?.alpha(0.2).string() ?? 'color-mix(in srgb, var(--gray-5) 82%, transparent)', border: `1px solid ${simpleSegColor?.alpha(0.45).string() ?? 'color-mix(in srgb, var(--gray-8) 26%, transparent)'}`, borderRadius: '999px', fontSize: '.72rem', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
           {index + 1}
         </b>
       );
@@ -266,13 +271,20 @@ const Segment = memo(({
       position: 'relative',
       transform: CSS.Transform.toString(sortable.transform),
       transition: transitions.length > 0 ? transitions.join(', ') : undefined,
-      background: simpleMode ? 'color-mix(in srgb, var(--gray-1) 88%, transparent)' : 'var(--gray-1)',
+      background: simpleMode
+        ? (simpleSegColor != null
+          ? `linear-gradient(90deg, ${simpleSegColor.alpha(0.12).string()}, transparent 28%), color-mix(in srgb, var(--gray-1) 88%, transparent)`
+          : 'color-mix(in srgb, var(--gray-1) 88%, transparent)')
+        : 'var(--gray-1)',
       border: `1px solid ${isActive ? 'var(--gray-10)' : (simpleMode ? 'color-mix(in srgb, var(--gray-8) 24%, transparent)' : 'transparent')}`,
+      borderLeft: simpleMode && simpleSegColor != null
+        ? `3px solid ${simpleSegColor.alpha(isActive ? 0.9 : 0.72).string()}`
+        : undefined,
       borderRadius: simpleMode ? 14 : 5,
       opacity: !selected && !invertCutSegments ? (simpleMode ? 0.92 : 0.5) : undefined,
       boxShadow: simpleMode ? '0 8px 22px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.03)' : undefined,
     };
-  }, [invertCutSegments, isActive, selected, simpleMode, sortable.isDragging, sortable.transform, sortable.transition]);
+  }, [invertCutSegments, isActive, selected, simpleMode, simpleSegColor, sortable.isDragging, sortable.transform, sortable.transition]);
 
   const setRef = useCallback((node: HTMLDivElement | null) => {
     sortable.setNodeRef(node);

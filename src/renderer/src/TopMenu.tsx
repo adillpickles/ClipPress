@@ -39,14 +39,14 @@ function TopMenu({
   const { simpleMode } = useUserSettings();
   const fallbackFileName = filePath ? window.require('path').basename(filePath) : undefined;
   const fileName = currentClipName ?? fallbackFileName;
-  const [renameDraft, setRenameDraft] = useState<{ sourceName: string, value: string }>();
-  const isRenaming = fileName != null && renameDraft?.sourceName === fileName;
-  const draftName = useMemo(() => (isRenaming ? renameDraft.value : (fileName ?? '')), [fileName, isRenaming, renameDraft]);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [isRenaming, setIsRenaming] = useState(false);
+  const draftName = useMemo(() => (isRenaming ? renameDraft : (fileName ?? '')), [fileName, isRenaming, renameDraft]);
 
   const commitRename = useCallback(() => {
     if (fallbackFileName == null) return;
     onCurrentClipNameChange(draftName.trim() === '' ? fallbackFileName : draftName.trim());
-    setRenameDraft(undefined);
+    setIsRenaming(false);
   }, [draftName, fallbackFileName, onCurrentClipNameChange]);
 
   if (filePath == null) return null;
@@ -67,34 +67,38 @@ function TopMenu({
 
         {fileName != null && (
           <div className={styles['fileChip']}>
-            <div className={styles['fileLabel']}>{t('Current clip')}</div>
-            {isRenaming ? (
-              <input
-                className={styles['fileNameInput']}
-                value={draftName}
-                title={fileName}
-                onChange={(e) => setRenameDraft(fileName != null ? { sourceName: fileName, value: e.target.value } : undefined)}
-                onBlur={commitRename}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') commitRename();
-                  if (e.key === 'Escape') {
-                    setRenameDraft(undefined);
-                  }
-                }}
-              />
-            ) : (
-              <button
-                type="button"
-                className={styles['fileNameButton']}
-                title={fileName}
-                onClick={() => {
-                  if (fileName == null) return;
-                  setRenameDraft({ sourceName: fileName, value: fileName });
-                }}
-              >
-                <span className={styles['fileName']}>{fileName}</span>
-              </button>
-            )}
+            <div className={styles['fileLabel']}>{t('Export name')}</div>
+            <div className={styles['fileNameShell']}>
+              {isRenaming ? (
+                <input
+                  className={styles['fileNameInput']}
+                  value={draftName}
+                  title={fileName}
+                  onChange={(e) => setRenameDraft(e.target.value)}
+                  onBlur={commitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitRename();
+                    if (e.key === 'Escape') {
+                      setRenameDraft(fileName ?? '');
+                      setIsRenaming(false);
+                    }
+                  }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className={styles['fileNameButton']}
+                  title={fileName}
+                  onClick={() => {
+                    if (fileName == null) return;
+                    setRenameDraft(fileName);
+                    setIsRenaming(true);
+                  }}
+                >
+                  <span className={styles['fileName']}>{fileName}</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
