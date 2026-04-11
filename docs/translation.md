@@ -1,68 +1,43 @@
-# Translation ![](https://hosted.weblate.org/widgets/losslesscut/-/losslesscut/svg-badge.svg)
+# Translation
 
-![](https://hosted.weblate.org/widgets/losslesscut/zh_Hans/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/cs/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/sl/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/it/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/ko/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/de/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/nl/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/fi/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/zh_Hant/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/et/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/fr/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/he/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/hu/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/id/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/lt/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/nb_NO/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/nn/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/fa/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/pl/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/pt/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/pt_BR/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/ro/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/ru/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/sr/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/es/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/sv/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/tr/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/uk/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/vi/losslesscut/svg-badge.svg)
-![](https://hosted.weblate.org/widgets/losslesscut/sk/losslesscut/svg-badge.svg)
+Thanks to everyone who has helped translate ClipPress.
 
-Thanks to everyone who helped translate the app! Ã°Å¸â„¢Å’
+ClipPress currently uses the inherited upstream LosslessCut project in Weblate. You can help translate the app in [Weblate](https://hosted.weblate.org/projects/losslesscut/losslesscut/). Please do not open pull requests with translation files manually. Weblate pushes translation updates back through its normal sync flow.
 
-ClipPress currently uses the inherited upstream translation project in Weblate. You can view the status of [all translations here](https://hosted.weblate.org/projects/losslesscut/losslesscut/) and help translate the app in [Weblate](https://hosted.weblate.org/projects/losslesscut/losslesscut/). **Do not submit a PR** yourself with translations. Weblate will automatically push translations as a Pull Request in this repo, but this PR is not merged immediately by maintainers.
-
-Master language is English and i18n keys are the English strings.
+Master language is English, and the i18n keys are the English strings.
 
 ## Testing translations locally
 
-Because the Weblate PR with translation updates is not merged immediately, your changes made in Weblate will not appear automatically in the next build. If you want to test new Weblate translations in the app, you need to:
-1. Download the translation for your language from Weblate: **Files -> Download translation**
-2. Rename the downloaded `.json` file to: `translation.json`
-3. Create a [folder structure](../src/main/locales) somewhere on your computer that looks like this:
-```
+Because Weblate translation updates are not merged immediately, your latest changes may not show up in the next local build automatically. If you want to test a translation locally:
+
+1. Download the translation for your language from Weblate through `Files -> Download translation`.
+2. Rename the downloaded file to `translation.json`.
+3. Create a folder structure somewhere on your computer that looks like this:
+
+```text
 translations/locales/localeCode
 ```
-You can find a list of the available [`localeCode`s here](../src/main/locales). In our example we will use `nb_NO` (Norwegian Ã°Å¸â€¡Â³Ã°Å¸â€¡Â´) with this path:
-```
-/Users/mifi/Desktop/translations/locales/nb_NO
+
+You can find the available `localeCode` values in [../src/main/locales](../src/main/locales). For example, using `nb_NO`:
+
+```text
+/path/to/translations/locales/nb_NO
 ```
 
-4. Now move your `translation.json` file into the folder:
-```
-/Users/mifi/Desktop/translations/locales/nb_NO/translation.json
+4. Move `translation.json` into that folder:
+
+```text
+/path/to/translations/locales/nb_NO/translation.json
 ```
 
-5. Now run ClipPress from the [command line](cli.md), with the special command line argument `--locales-path`. Current packaged binaries may still use a legacy executable name, so the example below keeps that name:
+5. Run ClipPress from the [command line](cli.md) with the special `--locales-path` argument. Depending on the build you are using, the packaged executable may still have a legacy name. The command below shows the current argument format:
+
 ```bash
-./LosslessCut --locales-path /Users/mifi/Desktop/translations
+clippress --locales-path /path/to/translations
 ```
 
-Now ClipPress will use your local language file.
+ClipPress will then load your local translation files.
 
-## Weblate
+## Maintainer note
 
-Note to ClipPress maintainers: Weblate [does not allow](https://github.com/WeblateOrg/weblate/issues/7081) any pushes to the inherited LosslessCut Weblate Git repository (`https://hosted.weblate.org/git/losslesscut/losslesscut/`). This means if that repo becomes out of sync with this repo, the translations will be locked and the main branch here needs to be synced with their branch. This should normally not happen unless the Weblate PR has been accidentally merged with a squash commit.
+Weblate currently [does not allow](https://github.com/WeblateOrg/weblate/issues/7081) pushes directly to the inherited LosslessCut Weblate Git repository (`https://hosted.weblate.org/git/losslesscut/losslesscut/`). If that repo ever falls out of sync with this one, translation updates can become blocked until the branches are realigned.

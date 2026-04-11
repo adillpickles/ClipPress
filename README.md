@@ -1,75 +1,74 @@
-<div align="center">
-  <br>
-  <p><img src="src/renderer/src/icon.svg" width="120" alt="ClipPress" /></p>
-  <p><b>ClipPress</b></p>
-  <p>Fast, lightweight desktop video clipping with built-in size-limited export for shareable clips.</p>
-  <br>
-  <p align="center"><img src="main_screenshot.jpg" width="600" alt="ClipPress screenshot" /></p>
-  <br>
-</div>
+# ClipPress
 
-ClipPress is a desktop video clipping app built for fast, practical export workflows. Open a file, mark `I` and `O`, export, and keep moving.
+ClipPress is a fast open-source clip editor for making shareable clips from gameplay, streams, screen recordings, and other long videos. Open a clip, press `I` and `O`, optionally add text or tweak gain, then export something ready to send in Discord or anywhere else.
 
-It keeps the fast clipping workflow people like, while adding a simple built-in size-limited export path so clips can be made ready to share without bouncing through a second app.
+> ClipPress is open-source and ad-free. If it saves you time and you want to support continued development and polish, you can [Support ClipPress](https://ko-fi.com/adillpickles).
 
 ## Highlights
 
-- Fast clip selection and export workflow
-- Lossless trimming, cutting, rearranging, and merging for supported media
-- Built-in size-limited export for shareable MP4 clips
-- Track selection, metadata editing, and stream extraction tools
-- Keyboard-driven workflow with project save/load support
-- Snapshots, frame export, chapters, labels, tags, and timeline tools
-- CLI and HTTP API support for automation
+- Fast clip workflow built around `I` / `O` marking and quick export
+- Simple mode for an easy default flow, plus Advanced mode for deeper control
+- Plain text overlays for quick callouts and captions
+- Per-track audio gain for practical volume adjustments
+- Keep-source-quality export and target-file-size export
+- Multi-segment export as separate clips, one merged clip, or both
+- Modern desktop UI with keyboard shortcuts, project save/load, and track selection
 
-## Typical uses
+## What ClipPress is for
 
-- Clip gameplay, screen recordings, and camera footage quickly
-- Export short clips that fit under platform upload limits
-- Rough-cut large recordings without a full editing timeline
-- Merge compatible segments or files together
-- Extract tracks, subtitles, or audio from existing media
+ClipPress is designed for fast clipping and practical exports, not for full motion graphics or heavy timeline editing.
 
-## Current scope
+It works especially well when you want to:
 
-ClipPress is designed around fast clipping and export, not full timeline editing or motion graphics work.
+- clip a gameplay moment quickly
+- turn a long recording into one or more short shareable exports
+- stay under upload size limits without bouncing to another app
+- make lightweight text and audio tweaks before exporting
 
-- It is great for clipping, trimming, merging, remuxing, and simple shareable exports.
-- It is not trying to be a full replacement for a traditional editor for cropping, overlays, transitions, color grading, watermarking, or complex compositing.
+## Built on top of LosslessCut
 
-## Download and setup
+ClipPress is built on top of [LosslessCut](https://github.com/mifi/lossless-cut) by Mikael Finstad and the LosslessCut contributors. Big thanks for the open-source foundation that made ClipPress possible.
+
+## Installation and development
 
 - Use this repository's Releases page for packaged builds when available.
-- If you are working from source, see [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
-- For installation notes, settings locations, and legacy executable/path details, see [docs/installation.md](docs/installation.md).
-
-## Supported formats
-
-ClipPress uses Chromium's HTML5 media playback support for preview, plus FFmpeg for inspection and export operations. Common containers such as `MP4`, `MOV`, `WebM`, `Matroska`, `OGG`, and `WAV` generally work well, along with common audio and video codecs supported by Chromium and FFmpeg.
-
-If a file does not preview natively, ClipPress can often still work with it through FFmpeg-assisted playback or export workflows. See [docs/troubleshooting.md](docs/troubleshooting.md) and [docs/index.md](docs/index.md) for details.
+- For installation notes, app-data locations, and legacy executable/package naming details, see [docs/installation.md](docs/installation.md).
+- For local development setup, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Documentation
 
-- [Getting started, FAQ, and usage guide](docs/index.md)
+- [Getting started, usage notes, and FAQ](docs/index.md)
 - [Installation and files](docs/installation.md)
-- [Troubleshooting, known issues, and limitations](docs/troubleshooting.md)
+- [Troubleshooting and known limitations](docs/troubleshooting.md)
 - [CLI](docs/cli.md)
 - [HTTP API](docs/api.md)
 - [Batch processing notes](docs/batch.md)
-- [Export file name templates](docs/file-name-template.md)
+- [Export file name behavior](docs/file-name-template.md)
+- [Translation workflow](docs/translation.md)
 - [Contributing](CONTRIBUTING.md)
 
-## Acknowledgment
+## Supported formats
 
-ClipPress is built from the open-source [mifi/lossless-cut](https://github.com/mifi/lossless-cut) project. Thanks to that project and its contributors for the foundation this app builds on.
+ClipPress uses Chromium for preview playback and FFmpeg for inspection and export operations. Common containers such as `MP4`, `MOV`, `WebM`, `Matroska`, `OGG`, and `WAV` generally work well, along with common audio and video codecs supported by Chromium and FFmpeg.
 
-## Attributions
+If a file does not preview natively, ClipPress can often still work with it through FFmpeg-assisted playback or export workflows. See [docs/troubleshooting.md](docs/troubleshooting.md) for more detail.
 
-- App icon made by [Dimi Kazak](http://www.flaticon.com/authors/dimi-kazak "Dimi Kazak") from [www.flaticon.com](http://www.flaticon.com "Flaticon") is licensed by [CC 3.0 BY](http://creativecommons.org/licenses/by/3.0/ "Creative Commons BY 3.0").
+## Credits
+
+- App icon made by [Dimi Kazak](http://www.flaticon.com/authors/dimi-kazak "Dimi Kazak") from [www.flaticon.com](http://www.flaticon.com "Flaticon"), licensed under [CC BY 3.0](http://creativecommons.org/licenses/by/3.0/ "Creative Commons BY 3.0").
 - [Lottie animation by Chris Gannon](https://lottiefiles.com/7077-magic-flow).
 - Thanks to Adi Abinun and [@abdul-alhasany](https://github.com/mifi/lossless-cut/issues/2561) for UI work.
-- Thanks to translators who helped translate the app. [You can help too.](docs/translation.md)
+- Thanks to everyone who has helped translate the app. [You can help too.](docs/translation.md)
+
+## Screenshot placeholders
+
+Screenshots are intentionally omitted for now while the ClipPress UI settles. Recommended captures to add later:
+
+- Simple mode empty state
+- Simple mode editing view with timeline and clips rail
+- Simple mode export panel
+- Text overlay editing example
+- Advanced mode export and settings view
 
 ## License
 
