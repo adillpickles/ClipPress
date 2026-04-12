@@ -2,8 +2,6 @@
 
 ClipPress is built for fast interactive clipping, not fully automated batch processing. If you need to repeat the exact same FFmpeg operation across many files, the most practical approach is usually to script that operation directly.
 
-See also [recipes](recipes.md).
-
 ## Set up FFmpeg
 
 Install [FFmpeg](https://ffmpeg.org/) and make sure the `ffmpeg` command works in your terminal or shell.

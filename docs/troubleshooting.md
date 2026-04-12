@@ -1,6 +1,6 @@
 # Troubleshooting, known issues and limitations
 
-When troubleshooting or trying to understand a problem, it can be beneficial to first read the [documentation](index.md) so that you get a deep understanding of how the app works. In particular, the [difference between a codec and a format](index.md#primer-videoaudio-codecs-vs-formats).
+When troubleshooting, it helps to keep one basic idea in mind: a media file's container and its codecs are different things. For example, `.mov` is a container format while `H265` / `HEVC` is a codec. Many export and playback issues come from container and codec compatibility rather than from the cut itself.
 
 ## The exported video has a problem
 

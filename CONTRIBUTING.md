@@ -115,7 +115,7 @@ For per-platform build/signing setup, see [this article](https://mifi.no/blog/au
 
 Find the latest Weblate PR in the repository pull request list and **rebase+merge** it.
 
-**Warning:** Do not squash and merge (see [here why](docs/translation.md#weblate))!
+**Warning:** Do not squash and merge (see [maintainer note](docs/translation.md#maintainer-note))!
 
 ## Minimum OS version
 
