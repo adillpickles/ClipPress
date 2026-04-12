@@ -4159,16 +4159,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@uidotdev/usehooks@npm:^2.4.1":
-  version: 2.4.1
-  resolution: "@uidotdev/usehooks@npm:2.4.1"
-  peerDependencies:
-    react: ">=18.0.0"
-    react-dom: ">=18.0.0"
-  checksum: 10/7f2e1dcfcaf654841150fde36556a257afb2240bca0145586b4e1e9385b85fea108a7dd17c2cbc4c2bd46d136126ffdf84267118933120fe54ad2e028c2dfa68
-  languageName: node
-  linkType: hard
-
 "@ungap/structured-clone@npm:^1.0.0, @ungap/structured-clone@npm:^1.2.0":
   version: 1.3.0
   resolution: "@ungap/structured-clone@npm:1.3.0"
@@ -9142,6 +9132,7 @@ __metadata:
     "@dnd-kit/core": "npm:^6.3.1"
     "@dnd-kit/modifiers": "npm:^9.0.0"
     "@dnd-kit/sortable": "npm:^10.0.0"
+    "@dnd-kit/utilities": "npm:^3.2.2"
     "@electron/remote": "npm:^2.1.3"
     "@fontsource/open-sans": "npm:^5.2.7"
     "@octokit/core": "npm:7.0.6"
@@ -9176,7 +9167,6 @@ __metadata:
     "@types/yargs-parser": "npm:^21.0.3"
     "@typescript-eslint/eslint-plugin": "npm:^8.52.0"
     "@typescript-eslint/parser": "npm:^8.52.0"
-    "@uidotdev/usehooks": "npm:^2.4.1"
     "@vitejs/plugin-react": "npm:^5.1.2"
     canvas-confetti: "npm:^1.9.4"
     color: "npm:^5.0.3"
@@ -9227,7 +9217,6 @@ __metadata:
     react-i18next: "npm:^16.5.1"
     react-icons: "npm:^5.5.0"
     react-leaflet: "npm:^4.2.1"
-    react-lottie-player: "npm:^2.1.0"
     react-markdown: "npm:^10.1.0"
     react-syntax-highlighter: "npm:^16.1.0"
     react-use: "npm:^17.6.0"
@@ -9244,7 +9233,6 @@ __metadata:
     type-fest: "npm:^5.3.1"
     typescript: "npm:~5.9.3"
     use-debounce: "npm:^5.2.1"
-    use-trace-update: "npm:^1.3.3"
     vite: "npm:^7.3.0"
     vitest: "npm:^4.0.16"
     winston: "npm:^3.19.0"
@@ -9253,13 +9241,6 @@ __metadata:
     zod: "npm:^4.3.5"
   languageName: unknown
   linkType: soft
-
-"lottie-web@npm:^5.12.2":
-  version: 5.13.0
-  resolution: "lottie-web@npm:5.13.0"
-  checksum: 10/ccc65b91ddc569c874de265252ef41cb546798515dd63c5ee366844efd1e10335c080c483ce4305faba0cebd54c4afd6bb918fd0d6f4394dcc284fc0c3944941
-  languageName: node
-  linkType: hard
 
 "lowercase-keys@npm:^2.0.0":
   version: 2.0.0
@@ -11120,19 +11101,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-lottie-player@npm:^2.1.0":
-  version: 2.1.0
-  resolution: "react-lottie-player@npm:2.1.0"
-  dependencies:
-    fast-deep-equal: "npm:^3.1.3"
-    lottie-web: "npm:^5.12.2"
-    rfdc: "npm:^1.3.0"
-  peerDependencies:
-    react: ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
-  checksum: 10/29bcc9e4304beb1b8cfdc935a35a2fb83b84fc38887d0eae0d73f5778691a7c7197987c8d7fc9841307286ed2f6ce965b9a42ca0a6b68bfaad395a81880eface
-  languageName: node
-  linkType: hard
-
 "react-markdown@npm:^10.1.0":
   version: 10.1.0
   resolution: "react-markdown@npm:10.1.0"
@@ -11602,13 +11570,6 @@ __metadata:
   version: 1.0.4
   resolution: "reusify@npm:1.0.4"
   checksum: 10/14222c9e1d3f9ae01480c50d96057228a8524706db79cdeb5a2ce5bb7070dd9f409a6f84a02cbef8cdc80d39aef86f2dd03d155188a1300c599b05437dcd2ffb
-  languageName: node
-  linkType: hard
-
-"rfdc@npm:^1.3.0":
-  version: 1.3.0
-  resolution: "rfdc@npm:1.3.0"
-  checksum: 10/76dedd9700cdf132947fde7ce1a8838c9cbb7f3e8f9188af0aaf97194cce745f42094dd2cf547426934cc83252ee2c0e432b2e0222a4415ab0db32de82665c69
   languageName: node
   linkType: hard
 
@@ -13510,13 +13471,6 @@ __metadata:
   peerDependencies:
     react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
   checksum: 10/b40ad2847ba220695bff2d4ba4f4d60391c0fb4fb012faa7a4c18eb38b69181936f5edc55a522c4d20a788d1a879b73c3810952c9d0fd128d01cb3f22042c09e
-  languageName: node
-  linkType: hard
-
-"use-trace-update@npm:^1.3.3":
-  version: 1.3.3
-  resolution: "use-trace-update@npm:1.3.3"
-  checksum: 10/432b0bc037e49cb9aa077d87b4f6bb87b02e31c6e6b00cb3ff35e5d8c5c905c74f3378f321f8d3ccddd0fe3b6083a5062f011e6295c7636781e3511f7513e16c
   languageName: node
   linkType: hard
 
