@@ -24,8 +24,6 @@ ClipPress is built on top of [LosslessCut](https://github.com/mifi/lossless-cut)
 
 - Packaged builds: use this repository's Releases page when builds are available
 - Installation notes: [docs/installation.md](docs/installation.md)
-- Troubleshooting: [docs/troubleshooting.md](docs/troubleshooting.md)
-- CLI / automation: [docs/cli.md](docs/cli.md), [docs/api.md](docs/api.md)
 - Local development: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## Images to add when UI settles

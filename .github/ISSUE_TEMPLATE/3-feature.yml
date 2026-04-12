@@ -10,7 +10,7 @@ body:
           required: true
         - label: I tried the current version from this repository.
           required: true
-        - label: I checked `docs/index.md` and `docs/troubleshooting.md` to make sure this is not already covered.
+        - label: I checked the README and installation notes to make sure this is not already covered.
           required: true
         - label: I searched existing issues and discussions in this repository.
           required: true

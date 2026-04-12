@@ -10,7 +10,6 @@ export const faqUrl = 'https://mifi.no/losslesscut/faq';
 export const featureRequestUrl = 'https://mifi.no/losslesscut/feature-request';
 export const publicBugReportUrl = 'https://mifi.no/losslesscut/bug-report';
 export const troubleshootingUrl = 'https://mifi.no/losslesscut/troubleshooting';
-// Note: https://github.com/mifi/lossless-cut/blob/master/docs/file-name-template.md used to be https://github.com/mifi/lossless-cut/blob/master/docs.md#custom-exported-file-names
 export const exportedFileNameTemplateHelpUrl = 'https://mifi.no/losslesscut/file-name-template';
 export const selectSegmentByExpressionHelpUrl = 'https://mifi.no/losslesscut/select-segments-by-expression';
 export const editSegmentByExpressionHelpUrl = 'https://mifi.no/losslesscut/edit-segments-by-expression';

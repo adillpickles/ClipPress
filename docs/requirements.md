@@ -1,9 +1,0 @@
-# Supported OS versions
-
-ClipPress is based on Electron, which routinely drops support for older operating system versions, and ClipPress inherits those platform support limits. [More info](https://github.com/mifi/lossless-cut/discussions/1476#discussioncomment-5012521). Older versions of the app may still work on older operating systems.
-
-- v3.66 [dropped support](https://www.electronjs.org/blog/electron-38-0#removed-macos-11-support) for MacOS 11.
-- v3.58.0 [dropped support](https://www.electronjs.org/docs/latest/breaking-changes#removed-macos-1013--1014-support) for MacOS 10.14 and older.
-- v3.52.0 dropped support for [Windows 8.1 and older](https://github.com/mifi/lossless-cut/discussions/1476).
-- v3.48.2 dropped support for MacOS 10.12 and older.
-- v3.48.2 dropped support for 32 bit Linux.

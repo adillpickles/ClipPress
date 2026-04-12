@@ -1,7 +1,5 @@
 # Contributing
 
-## [Translations](docs/translation.md)
-
 ## Development environment setup
 
 ClipPress is built using Electron.
@@ -109,17 +107,13 @@ Before releasing, consider [Maintainence chores](#maintainence-chores) first.
 
 For per-platform build/signing setup, see [this article](https://mifi.no/blog/automated-electron-build-with-release-to-mac-app-store-microsoft-store-snapcraft/).
 
-## Weblate
+## Translations
 
-`yarn scan-i18n` to get the newest English strings and push so Weblate gets them.
+`yarn scan-i18n` updates the extracted English strings.
 
-Find the latest Weblate PR in the repository pull request list and **rebase+merge** it.
-
-**Warning:** Do not squash and merge (see [maintainer note](docs/translation.md#maintainer-note))!
+If translation sync is still being handled through the inherited Weblate workflow, prefer merging those updates as dedicated translation PRs instead of mixing them into unrelated code changes.
 
 ## Minimum OS version
-
-See [requirements](docs/requirements.md).
 
 ### MacOS [`LSMinimumSystemVersion`](https://developer.apple.com/documentation/bundleresources/information_property_list/lsminimumsystemversion)
 

@@ -8,7 +8,7 @@ body:
       options:
         - label: I tried the current version from this repository.
           required: true
-        - label: I read `docs/index.md` and `docs/troubleshooting.md`.
+        - label: I read the README and installation notes.
           required: true
         - label: I searched existing issues and discussions in this repository.
           required: true

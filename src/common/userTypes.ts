@@ -1,8 +1,6 @@
-// ⚠️ These types are a the contract with the user, through the documentation.
-// ⚠️ JSDoc comments get converted to user documentation.
+// ⚠️ These types are part of the user-facing export/expression contract.
+// ⚠️ JSDoc comments get converted to generated documentation.
 // ‼️ DO NOT change these types without considering the user impact!
-// See https://github.com/mifi/lossless-cut/blob/master/expressions.md
-// https://github.com/mifi/lossless-cut/blob/master/docs.md#custom-exported-file-names
 
 /**
  * Properties of a source file made available to the user in the export file name template.
@@ -27,7 +25,6 @@ export interface SourceFile {
 
 /**
  * The global context made available to the user in the export file name template.
- * See docs/file-name-template.md documentation for details.
  */
 export interface FileNameTemplateContext {
   FILENAME: string;
@@ -50,9 +47,6 @@ export interface FileNameTemplateContext {
   EXPORT_COUNT?: number | undefined;
 }
 
-/**
- * See https://github.com/mifi/lossless-cut/blob/master/docs/expressions.md
- */
 export interface Segment {
   /** Index of the segment in the segment list, starting with 0 */
   index: number,

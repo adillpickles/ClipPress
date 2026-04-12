@@ -14,7 +14,7 @@ body:
           required: true
         - label: I tried the current version from this repository.
           required: true
-        - label: I checked the documentation in `docs/index.md` and `docs/troubleshooting.md`.
+        - label: I checked the README and installation notes before opening this report.
           required: true
         - label: I searched existing issues and discussions in this repository.
           required: true
