@@ -26,4 +26,6 @@ memoryFile.getInterfaces().forEach((iface) => {
   md += '\n```\n\n';
 });
 
-fs.writeFileSync('docs/generated/types.md', md);
+const outputPath = 'docs/generated/types.md';
+fs.mkdirSync('docs/generated', { recursive: true });
+fs.writeFileSync(outputPath, md);
