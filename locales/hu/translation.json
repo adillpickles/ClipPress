@@ -902,5 +902,6 @@
   "Copyright": "Szerzői jog",
   "Import chapters to segments when opening file": "Fejezetek importálása szegmensekbe a fájl megnyitásakor",
   "Language": "Nyelv",
-  "The output location has no storage space remaining. Please free up some space and try again.": "A kimeneti helyen nincs több szabad tárhely. Kérjük, szabadítson fel némi helyet, és próbálja újra."
+  "The output location has no storage space remaining. Please free up some space and try again.": "A kimeneti helyen nincs több szabad tárhely. Kérjük, szabadítson fel némi helyet, és próbálja újra.",
+  "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing.": "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing."
 }

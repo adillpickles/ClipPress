@@ -1027,5 +1027,6 @@
   "Ask": "Chiedi",
   "Import chapters to segments when opening file": "All'apertura del file importa capitoli in segmenti",
   "Language": "Lingua",
-  "The output location has no storage space remaining. Please free up some space and try again.": "Il percorso destinazione non ha spazio di archiviazione rimanente. Libera spazio e riprova."
+  "The output location has no storage space remaining. Please free up some space and try again.": "Il percorso destinazione non ha spazio di archiviazione rimanente. Libera spazio e riprova.",
+  "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing.": "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing."
 }

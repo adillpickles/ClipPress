@@ -1015,5 +1015,6 @@
   "Tracks with at least 720p video": "有至少 720p 視訊的軌道",
   "Tracks with H264 codec": "採用 H264 編碼的音軌",
   "Video tracks": "影像軌道",
-  "What's new in LosslessCut?": "ClipPress 有什麼新功能 ？"
+  "What's new in LosslessCut?": "ClipPress 有什麼新功能 ？",
+  "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing.": "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing."
 }

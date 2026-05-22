@@ -1037,5 +1037,6 @@
   "Copyright": "Telif hakkı",
   "Import chapters to segments when opening file": "Dosyayı açarken bölümleri parçalara aktarın",
   "Language": "Diller",
-  "The output location has no storage space remaining. Please free up some space and try again.": "Çıktı konumunda yeterli depolama alanı kalmadı. Lütfen biraz yer açıp tekrar deneyin."
+  "The output location has no storage space remaining. Please free up some space and try again.": "Çıktı konumunda yeterli depolama alanı kalmadı. Lütfen biraz yer açıp tekrar deneyin.",
+  "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing.": "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing."
 }

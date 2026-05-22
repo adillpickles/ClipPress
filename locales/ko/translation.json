@@ -1039,5 +1039,6 @@
   "Parameters": "매개 변수",
   "Read more": "더 읽어보기",
   "Screenshot captured clipboard": "스크린샷이 클립보드에 캡처되었습니다.",
-  "Track {{num}}": "트랙 {{num}}"
+  "Track {{num}}": "트랙 {{num}}",
+  "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing.": "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing."
 }

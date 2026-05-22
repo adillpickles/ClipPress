@@ -1059,5 +1059,6 @@
   "Ask": "Спрашивать",
   "Import chapters to segments when opening file": "Импорт глав в сегменты при открытии файла",
   "Language": "Язык",
-  "The output location has no storage space remaining. Please free up some space and try again.": "Недостаточно места для сохранения. Освободите место и повторите попытку."
+  "The output location has no storage space remaining. Please free up some space and try again.": "Недостаточно места для сохранения. Освободите место и повторите попытку.",
+  "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing.": "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing."
 }

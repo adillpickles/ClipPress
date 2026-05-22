@@ -908,5 +908,6 @@
   "Parameters": "Parametre",
   "Read more": "Viac informácií",
   "Screenshot captured clipboard": "Snímka obrazovky uložená do schránky",
-  "Track {{num}}": "Stopa {{num}}"
+  "Track {{num}}": "Stopa {{num}}",
+  "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing.": "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing."
 }

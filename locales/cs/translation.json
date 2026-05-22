@@ -1070,5 +1070,6 @@
   "Copyright": "Copyright",
   "Import chapters to segments when opening file": "Importovat kapitoly na segmenty při otevírání souboru",
   "Language": "Jazyk",
-  "The output location has no storage space remaining. Please free up some space and try again.": "V cílovém umístění nezbývá dostatek volného prostoru. Uvolněte prosím prostor a zkuste to znovu."
+  "The output location has no storage space remaining. Please free up some space and try again.": "V cílovém umístění nezbývá dostatek volného prostoru. Uvolněte prosím prostor a zkuste to znovu.",
+  "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing.": "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing."
 }

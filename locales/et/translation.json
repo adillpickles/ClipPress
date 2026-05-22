@@ -107,5 +107,6 @@
   "Exit": "Välju",
   "Auto save project file?": "Automaatselt salvesta projekti fail?",
   "Permanently delete": "Kustuta ära igaveseks",
-  "Check to hide notifications": "Vali, et peita teavitused"
+  "Check to hide notifications": "Vali, et peita teavitused",
+  "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing.": "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing."
 }

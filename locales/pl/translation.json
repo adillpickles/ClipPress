@@ -971,5 +971,6 @@
   "What's new in LosslessCut?": "Co nowego w ClipPress?",
   "Yes": "Tak",
   "{{durationMsFormatted}} ms": "{{durationMsFormatted}} ms",
-  "{{frameCount}} frames": "{{frameCount}} klatek"
+  "{{frameCount}} frames": "{{frameCount}} klatek",
+  "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing.": "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing."
 }
