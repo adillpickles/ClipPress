@@ -358,7 +358,7 @@
   "Confirm quit": "Bekreft avslutning",
   "Subtitle": "Undertekst",
   "This file does not have a valid duration. This may cause issues. You can try to fix the file's duration from the File menu": "Filen har ikke gyldig varighet. Dette kan forårsake problemer. Du kan prøve å fikse filens varighet fra filmenyen.",
-  "LosslessCut (CSV)": "LosslessCut (CSV)",
+  "LosslessCut (CSV)": "ClipPress (CSV)",
   "Export project (LLC)...": "Eksporter prosjekt (LLC) …",
   "Import project (LLC)...": "Importer prosjekt (LLC) …",
   "Lock/unlock output format": "Lås/lås opp utgangsformat",
