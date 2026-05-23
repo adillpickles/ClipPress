@@ -757,7 +757,7 @@
   "Smart cut (experimental):": "Умная обрезка (экспериментально):",
   "Slow down playback more": "Замедлить воспроизведение ещё больше",
   "<0>If you&apos;re having a problem or question about LosslessCut, please first check the links in the <1>Help</1> menu. If you cannot find any resolution, you may ask a question in <3>GitHub discussions</3> or on <5>Discord.</5></0><1>If you believe that you found a bug in LosslessCut, you may <1>report a bug</1>.</1>": "<0>Если у вас возникла проблема или вопрос о ClipPress, сначала посмотрите ссылки в меню <1>Справка</1>. Если вы не можете найти какое-либо решение, можно задать вопрос в обсуждениях на <3>GitHub</3> или в <5>Discord.</5></0><1>Если вы считаете, что нашли ошибку в ClipPress , можете <1>сообщить об ошибке</1>.</1>",
-  "Non-store problem report instructions": "<0>If you're having a problem or question about ClipPress, please first check the links in the <1>Help</1> menu. If you still need help, you can ask a question in <3>GitHub discussions</3> or review the <5>project repository</5>.</0><1>If you believe that you found a bug in ClipPress, you may <1>report a bug</1>.</1>",
+  "Non-store problem report instructions": "<0>Если у вас возникла проблема или вопрос о ClipPress, сначала проверьте ссылки в меню <1>Справка</1>. Если вам всё ещё нужна помощь, вы можете задать вопрос в <3>обсуждениях GitHub</3> или посмотреть <5>репозиторий проекта</5>.</0><1>Если вы считаете, что нашли ошибку в ClipPress, вы можете <1>сообщить об ошибке</1>.</1>",
   "All other formats:": "Все остальные форматы:",
   "Common audio formats:": "Распространённые форматы звука:",
   "Common video/audio formats:": "Распространённые форматы видео/звука:",

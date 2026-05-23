@@ -757,7 +757,7 @@
   "Segments to chapters": "セグメントをチャプターに",
   "Feature request": "機能要望",
   "<0>If you&apos;re having a problem or question about LosslessCut, please first check the links in the <1>Help</1> menu. If you cannot find any resolution, you may ask a question in <3>GitHub discussions</3> or on <5>Discord.</5></0><1>If you believe that you found a bug in LosslessCut, you may <1>report a bug</1>.</1>": "<0>ClipPress に問題や質問があれば、<1>ヘルプ</1>メニュー内のリンクを最初にご覧ください。それでも分からなければ、<3>GitHub の discussions</3> や <5>Discord</5> から質問してください。</0><1>ClipPress のバグを発見したなら<1>バグ報告する</1>こともできます。</1>",
-  "Non-store problem report instructions": "<0>If you're having a problem or question about ClipPress, please first check the links in the <1>Help</1> menu. If you still need help, you can ask a question in <3>GitHub discussions</3> or review the <5>project repository</5>.</0><1>If you believe that you found a bug in ClipPress, you may <1>report a bug</1>.</1>",
+  "Non-store problem report instructions": "<0>ClipPress について問題や質問がある場合は、まず <1>ヘルプ</1> メニューのリンクを確認してください。それでもサポートが必要な場合は、<3>GitHub Discussions</3> で質問するか、<5>プロジェクトリポジトリ</5>を確認できます。</0><1>ClipPress のバグを見つけたと思う場合は、<1>バグを報告</1>できます。</1>",
   "All other formats:": "ほかのすべての形式:",
   "Segments to chapters mode is active, this means that the file will not be cut. Instead chapters will be created from the segments.": "「セグメントをチャプターに」が有効なら、ファイルを切り取らず、代わりに、セグメントからチャプターを作成します。",
   "Output file name template results in duplicate file names (you are trying to export multiple files with the same name). You can fix this for example by adding the \"{{segNumVariable}}\" variable.": "出力ファイル名のテンプレートで生成した結果、ファイル名が重複します (複数の同じ名前のファイルを出力しようとしています)。修正するには、例えば、変数の {{segNumVariable}} を追加することもできます。",

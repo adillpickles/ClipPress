@@ -542,7 +542,7 @@
   "Abort": "Abortar",
   "Add segment tag": "Agregar etiqueta de segmento",
   "<0>If you're having a problem or question about LosslessCut, please first check the links in the <1>Help</1> menu. If you cannot find any resolution, you may ask a question in <3>GitHub discussions</3> or on <5>Discord.</5></0><1>If you believe that you found a bug in LosslessCut, you may <1>report a bug</1>.</1>": "<0>Si tiene un problema o duda sobre LossLessCut, por favor compruebe los enlaces en el menú <1>Ayuda</1>. Si no encuentra solución, puede preguntar en <3>GitHub discussions</3> o en <5>Discord</5>. Si cree haber encontrado un fallo en LossLessCut, puede enviar un mensaje a <1>Reportar un error</1>.</1>",
-  "Non-store problem report instructions": "<0>If you're having a problem or question about ClipPress, please first check the links in the <1>Help</1> menu. If you still need help, you can ask a question in <3>GitHub discussions</3> or review the <5>project repository</5>.</0><1>If you believe that you found a bug in ClipPress, you may <1>report a bug</1>.</1>",
+  "Non-store problem report instructions": "<0>Si tiene un problema o una pregunta sobre ClipPress, primero revise los enlaces del menú <1>Ayuda</1>. Si aún necesita ayuda, puede hacer una pregunta en <3>GitHub discussions</3> o revisar el <5>repositorio del proyecto</5>.</0><1>Si cree que ha encontrado un error en ClipPress, puede <1>informar de un error</1>.</1>",
   "All Files": "Todos los archivos",
   "File names of extracted video frames": "Nombres de archivos de fotogramas de vídeo extraídos",
   "Batch convert files to supported format": "Convertir archivos por lotes a formatos compatibles",
