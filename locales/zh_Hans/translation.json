@@ -801,6 +801,7 @@
   "Segments to chapters": "片段到章节",
   "Enabling this will allow faster playback of the exported file. This makes processing use 3 times as much export I/O, which is negligible for small files but might slow down exporting of large files.": "启用此选项将允许更快地播放导出的文件。这使得处理使用的导出 I/O 量是其 3 倍，这对于小文件来说可以忽略不计，但可能会减慢大文件的导出速度。",
   "<0>If you&apos;re having a problem or question about LosslessCut, please first check the links in the <1>Help</1> menu. If you cannot find any resolution, you may ask a question in <3>GitHub discussions</3> or on <5>Discord.</5></0><1>If you believe that you found a bug in LosslessCut, you may <1>report a bug</1>.</1>": "<0>如果您对无损切割有疑问，请先查看<1>帮助</1>菜单中的链接。如果找不到任何解决方案，您可以在 <3>GitHub 讨论</3> 或 <5>Discord.</5></0 上提问><1>如果您认为自己在无损切割中发现了错误，您可以<1>报告错误</1>.</1>",
+  "Non-store problem report instructions": "<0>If you're having a problem or question about ClipPress, please first check the links in the <1>Help</1> menu. If you still need help, you can ask a question in <3>GitHub discussions</3> or review the <5>project repository</5>.</0><1>If you believe that you found a bug in ClipPress, you may <1>report a bug</1>.</1>",
   "Reload current media": "重新加载当前媒体",
   "Show advanced settings": "显示高级设置",
   "Treat source file modification date/time as:": "将源文件的修改日期/时间视为：",

@@ -468,6 +468,7 @@
   "Could not open media due to error {{errorCode}}": "Impossible d'ouvrir le média en raison de l'erreur {{errorCode}}",
   "Create segments from keyframes": "Créer des segments à partir des images clés",
   "<0>If you&apos;re having a problem or question about LosslessCut, please first check the links in the <1>Help</1> menu. If you cannot find any resolution, you may ask a question in <3>GitHub discussions</3> or on <5>Discord.</5></0><1>If you believe that you found a bug in LosslessCut, you may <1>report a bug</1>.</1>": "<0>Si vous avez un probl&egrave;me ou une question &agrave; propos de ClipPress, v&eacute;rifier d&apos;abord les liens dans le menu <1>Aide</1>. Si vous n&apos;y trouvez pas de solutions, vous pouvez poser une question dans les <3>discussions GitHub</3> ou sur <5>Discord.</5></0><1> Si vous pensez avoir trouv&eacute; un bug dans ClipPress, vous pouvez <1>signaler un bug</1>.</1>",
+  "Non-store problem report instructions": "<0>If you're having a problem or question about ClipPress, please first check the links in the <1>Help</1> menu. If you still need help, you can ask a question in <3>GitHub discussions</3> or review the <5>project repository</5>.</0><1>If you believe that you found a bug in ClipPress, you may <1>report a bug</1>.</1>",
   "Detect black scenes": "Détecter les scènes noires",
   "Detecting black scenes": "Détection des scènes noires",
   "Extracting frames": "Extraction des trames",

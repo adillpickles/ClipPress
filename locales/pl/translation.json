@@ -690,6 +690,7 @@
   "Merge & Separate": "Scal & Podziel",
   "Unable to delete file: {{message}}": "Nie można usunąć pliku: {{message}}",
   "<0>If you&apos;re having a problem or question about LosslessCut, please first check the links in the <1>Help</1> menu. If you cannot find any resolution, you may ask a question in <3>GitHub discussions</3> or on <5>Discord.</5></0><1>If you believe that you found a bug in LosslessCut, you may <1>report a bug</1>.</1>": "<0>Jeśli masz problem lub pytanie dotyczące ClipPress, najpierw sprawdź link w menu <1>Pomoc</1>. Jeśli nie możesz znaleźć żadnego rozwiązania, możesz zadać pytanie w <3>dyskusjach na GitHubie</3> lub na <5>Discord.</5></0><1>Jeśli uważasz, że znalazłeś błąd w ClipPress , możesz <1>zgłosić błąd</1>.</1>",
+  "Non-store problem report instructions": "<0>If you're having a problem or question about ClipPress, please first check the links in the <1>Help</1> menu. If you still need help, you can ask a question in <3>GitHub discussions</3> or review the <5>project repository</5>.</0><1>If you believe that you found a bug in ClipPress, you may <1>report a bug</1>.</1>",
   "Common audio formats:": "Popularne formaty audio:",
   "Duration has been fixed": "Czas trwania został ustalony",
   "audio": "audio",
