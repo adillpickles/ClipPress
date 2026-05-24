@@ -1,6 +1,6 @@
 {
   "name": "lossless-cut",
-  "productName": "LosslessCut",
+  "productName": "ClipPress",
   "description": "The swiss army knife of lossless video/audio editing",
   "copyright": "Copyright © 2021 ${author}",
   "version": "3.68.1",
@@ -42,7 +42,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/mifi/lossless-cut.git"
+    "url": "https://github.com/adillpickles/ClipPress.git"
   },
   "license": "GPL-2.0-only",
   "devDependencies": {
@@ -436,7 +436,7 @@
       "publisherDisplayName": "mifi.no"
     },
     "linux": {
-      "executableName": "losslesscut",
+      "executableName": "clippress",
       "extraResources": [
         {
           "from": "ffmpeg/linux-${arch}/lib",

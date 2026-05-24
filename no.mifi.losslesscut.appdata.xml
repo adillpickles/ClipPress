@@ -6,21 +6,21 @@
   </developer>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-2.0</project_license>
-  <name>LosslessCut</name>
-  <summary>Losslessly trim audio and video</summary>
+  <name>ClipPress</name>
+  <summary>Fast desktop video clipping</summary>
   <description>
-    <p>Simple and ultra fast cross platform tool for lossless trimming/cutting of video and audio files. Great for saving space by rough cutting your large video files taken from a video camera, GoPro, drone, etc. It lets you quickly extract the good parts from your videos and discard many gigabytes of data without doing a slow re-encode and thereby losing quality. It extremely fast because it does an almost direct data copy. It is fueled by the awesome ffmpeg (included) for doing the grunt work. It also features some other lossless operations on videos.</p>
+    <p>Fast open-source clip editor for turning long recordings into clean, shareable clips. Open media, mark the in and out points, optionally adjust clip details, then export a shareable result. ClipPress is built on top of LosslessCut and uses ffmpeg for media processing.</p>
   </description>
   <launchable type="desktop-id">no.mifi.losslesscut.desktop</launchable>
   <screenshots>
     <screenshot type="default">
       <image>https://raw.githubusercontent.com/mifi/lossless-cut/master/main_screenshot.jpg</image>
-      <caption>A screenshot of the main window of LosslessCut</caption>
+      <caption>A screenshot of the main window of ClipPress</caption>
     </screenshot>
   </screenshots>
-  <url type="homepage">https://mifi.no/losslesscut/</url>
-  <url type="bugtracker">https://github.com/mifi/lossless-cut/issues</url>
-  <url type="donation">https://paypal.me/mifino/usd</url>
+  <url type="homepage">https://github.com/adillpickles/ClipPress</url>
+  <url type="bugtracker">https://github.com/adillpickles/ClipPress/issues</url>
+  <url type="donation">https://ko-fi.com/adillpickles</url>
   <releases>
     <release version="3.68.1" date="2026-01-30"/>
     <release version="3.68.0" date="2026-01-30"/>

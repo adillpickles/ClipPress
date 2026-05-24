@@ -65,7 +65,7 @@ jobs:
         run: yarn pack-win
 
       - name: Smoke test packaged app
-        run: node script/e2e.ts 'dist\win-unpacked\LosslessCut.exe' desktop screenshot.jpeg
+        run: node script/e2e.ts 'dist\win-unpacked\ClipPress.exe' desktop screenshot.jpeg
 
       - name: Upload Windows portable EXE artifact
         if: env.is_tag == 'false'

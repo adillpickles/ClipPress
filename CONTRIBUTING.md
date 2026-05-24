@@ -121,8 +121,8 @@ How to check the value:
 
 ```bash
 yarn pack-mas-dev
-# Current packaged app names may still use legacy LosslessCut identifiers:
-cat dist/mas-dev-arm64/LosslessCut.app/Contents/Info.plist
+# Current package identifiers may still use legacy LosslessCut IDs:
+cat dist/mas-dev-arm64/ClipPress.app/Contents/Info.plist
 ```
 
 ```xml

@@ -181,7 +181,7 @@
   "Merge/concatenate files": "Slå samman/länka ihop filer",
   "Import project (LLC)...": "Importera projekt (LLC)...",
   "Export project (LLC)...": "Exportera projekt (LLC)...",
-  "LosslessCut (CSV)": "LosslessCut (CSV)",
+  "LosslessCut (CSV)": "ClipPress (CSV)",
   "Invalid JSON": "Ogiltig JSON",
   "Loading subtitle": "Laddar undertext",
   "Failed to open file": "Det gick inte att öppna filen",
@@ -198,5 +198,7 @@
   "Merge!": "Slå samman!",
   "Select a different output <1>Format</1> (<3>matroska</3> and <5>mp4</5> support most codecs)": "Välj en annan utdata <1>Format</1> (<3>matroska</3> och <5>mp4</5> stöder de flesta codecs)",
   "Try one of the following before exporting again:": "Prova en av följande innan du exporterar igen:",
-  "Disable unnecessary <1>Tracks</1>": "Inaktivera onödiga <1>Spår</1>"
+  "Disable unnecessary <1>Tracks</1>": "Inaktivera onödiga <1>Spår</1>",
+  "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing.": "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing.",
+  "Non-store problem report instructions": "<0>If you're having a problem or question about ClipPress, please first check the links in the <1>Help</1> menu. If you still need help, you can ask a question in <3>GitHub discussions</3> or review the <5>project repository</5>.</0><1>If you believe that you found a bug in ClipPress, you may <1>report a bug</1>.</1>"
 }
