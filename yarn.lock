@@ -5531,7 +5531,7 @@ __metadata:
     csv-parse: "npm:^6.1.0"
     csv-stringify: "npm:^6.6.0"
     cue-parser: "npm:^0.3.0"
-    data-uri-to-buffer: "npm:^6.0.2"
+    data-uri-to-buffer: "npm:^8.0.0"
     electron: "npm:^38.8.6"
     electron-builder: "npm:26.8.1"
     electron-devtools-installer: "npm:^4.0.0"
@@ -5963,10 +5963,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"data-uri-to-buffer@npm:^6.0.2":
-  version: 6.0.2
-  resolution: "data-uri-to-buffer@npm:6.0.2"
-  checksum: 10/8b6927c33f9b54037f442856be0aa20e5fd49fa6c9c8ceece408dc306445d593ad72d207d57037c529ce65f413b421da800c6827b1dbefb607b8056f17123a61
+"data-uri-to-buffer@npm:^8.0.0":
+  version: 8.0.0
+  resolution: "data-uri-to-buffer@npm:8.0.0"
+  checksum: 10/629a57906faab66bd56d299c3944f5314c2fe876d3c2a3553019635c0984464df00ec1938f23cd4e00fe34c32157eeaa73f49f8c994a56dd19f932ee628c99d8
   languageName: node
   linkType: hard
 
