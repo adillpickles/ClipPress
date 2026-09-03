@@ -35,6 +35,8 @@ import { checkNewVersion } from './updateChecker.js';
 import * as i18nCommon from './i18nCommon.js';
 import './i18n.js';
 import type { ApiActionRequest } from '../common/types.js';
+import { isSafeKey } from './objectKeys.js';
+import { isAllowedAppNavigation, isExternallyOpenableUrl } from './navigation.js';
 import * as ffmpeg from './ffmpeg.js';
 import * as compatPlayer from './compatPlayer.js';
 import { downloadMediaUrl } from './ffmpeg.js';
@@ -189,18 +191,23 @@ function createWindow() {
 
   attachContextMenu(mainWindow);
 
-  // Incremental hardening: deny window open and external navigation. Full
-  // contextIsolation:false / nodeIntegration:true migration is tracked separately.
+  // Incremental hardening: never open a child window, and never navigate the app
+  // window away from its own document. Full contextIsolation:true / nodeIntegration:false
+  // migration is tracked separately.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url).catch((err) => logger.error('Failed to open external URL', err));
+    // Only hand http(s) to the OS. shell.openExternal on e.g. file: or ms-msdt: is a
+    // code execution primitive.
+    if (isExternallyOpenableUrl(url)) {
+      shell.openExternal(url).catch((err) => logger.error('Failed to open external URL', err));
+    } else {
+      logger.warn('Blocked window.open for non-http(s) URL', url);
+    }
     return { action: 'deny' };
   });
   mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
-    const allowed = isDev && navigationUrl.startsWith('http://localhost:3001');
-    const currentUrl = mainWindow?.webContents.getURL();
-    if (!allowed && navigationUrl !== currentUrl) {
-      event.preventDefault();
-    }
+    if (isAllowedAppNavigation({ navigationUrl, currentUrl: mainWindow?.webContents.getURL(), isDev })) return;
+    logger.warn('Blocked navigation', navigationUrl);
+    event.preventDefault();
   });
 
   if (isDev) mainWindow.loadURL('http://localhost:3001');
@@ -283,10 +290,6 @@ function parseCliArgs(rawArgv = process.argv) {
     boolean: ['disable-networking'],
     string: ['settings-json', 'config-dir', 'lossy-mode'],
   });
-}
-
-function isSafeKey(key: string) {
-  return key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
 }
 
 const argv = parseCliArgs();

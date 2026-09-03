@@ -11,6 +11,7 @@ import isDev from '../isDev';
 import { getSegmentTags, formatSegNum, getGuaranteedSegments } from '../segments';
 import type { FileStats, FormatTimecode, SegmentToExport } from '../types';
 import safeishEval from '../worker/eval';
+import { isUnsafeOutputFileName } from './outputPathSafety';
 import { UserFacingError } from '../../errors';
 import type { FileFfprobeMeta } from '../ffmpeg';
 
@@ -26,7 +27,8 @@ export const segTagsVariable = 'SEG_TAGS';
 // I don't remember why I set it to 200, but on Windows max length seems to be 256, on MacOS it seems to be 255.
 export const maxFileNameLength = 250;
 
-const { parse: parsePath, sep: pathSep, join: pathJoin, normalize: pathNormalize, basename }: PlatformPath = window.require('path');
+const path: PlatformPath = window.require('path');
+const { parse: parsePath, sep: pathSep, join: pathJoin, normalize: pathNormalize, basename } = path;
 
 
 export interface GeneratedOutFileNames {
@@ -104,15 +106,10 @@ function getTemplateProblems({ fileNames, filePath, outputDir, safeOutputFileNam
       error = i18n.t('At least one resulting file name has no length');
       break;
     }
-    // Even when sanitize is off, never allow directory traversal outside the output directory
-    // or absolute paths. This prevents `../../` via templates when safeOutputFileName=false.
-    const expectedPrefix = normalizeForComparison(`${pathNormalize(outputDir)}${pathSep}`);
-    const isTraversal = outPathNormalized === normalizeForComparison(pathNormalize(outputDir))
-      || (!outPathNormalized.startsWith(expectedPrefix) && outPathNormalized !== inPathNormalized);
-    // Allow sameAsInputPath already handled, but otherwise enforce containment
-    const hasTraversalSegments = fileName.split('/').includes('..') || fileName.split('\\').includes('..') || pathNormalize(fileName).startsWith(`${'..'}${pathSep}`) || fileName.startsWith('/') || fileName.startsWith('\\') || /^[a-zA-Z]:[\\/]/.test(fileName);
-    if (hasTraversalSegments || (isTraversal && !sameAsInputPath && fileName.includes(pathSep))) {
-      error = i18n.t('At least one resulting file name contains invalid traversal characters');
+    // Even when sanitize is off, the template must not be able to write outside the
+    // output directory. Nested names stay allowed; `..` and absolute paths do not.
+    if (isUnsafeOutputFileName({ fileName, outputDir, path })) {
+      error = i18n.t('At least one resulting file name would be written outside the output directory');
       break;
     }
     const matchingInvalidChars = new Set([...fileName].filter((char) => invalidChars.has(char)));

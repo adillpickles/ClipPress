@@ -25,8 +25,10 @@ const safeLicenses: Record<string, true | string[]> = {
   'Apache-2.0': true,
 
   // Copyleft licenses: These require that derivative works be distributed under the same license terms. They ensure that modifications remain open source.
-  // which is OK because LosslessCut is also GPL-2.0-only
-  'GPL-2.0-only': ['lossless-cut'],
+  // which is OK because ClipPress, like the LosslessCut it is derived from, is GPL-2.0-only.
+  // Both workspace names are listed: the package was renamed, the upstream name is kept
+  // so this stays correct for anything still resolving under it.
+  'GPL-2.0-only': ['clippress', 'lossless-cut'],
   // Weak copyleft licenses: These allow linking with proprietary software under certain conditions, making them more flexible than strong copyleft licenses.
   'LGPL-3.0-only': true,
   'LGPL-3.0-or-later': true,

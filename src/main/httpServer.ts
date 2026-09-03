@@ -6,6 +6,7 @@ import assert from 'node:assert';
 
 import { homepageUrl } from '../common/constants.js';
 import logger from './logger.js';
+import { hasUnsafeKeys } from './objectKeys.js';
 import type { AppEvent } from './index.js';
 
 
@@ -27,7 +28,7 @@ export default ({ port, onKeyboardAction, onAwaitAppEvent }: {
 
   app.get('/', (_req, res) => res.send(`See ${homepageUrl}`));
 
-  // Only expose API on loopback; reject traversal / large bodies
+  // Server binds to loopback only (see startHttpServer); bodies are size limited below.
   app.use('/api', apiRouter);
 
   apiRouter.post('/action/:action', express.json({ limit: '10kb' }), asyncHandler(async (req, res) => {
@@ -35,13 +36,10 @@ export default ({ port, onKeyboardAction, onAwaitAppEvent }: {
     const action = req.params['action'];
     const parameters = req.body as unknown;
     assert(action != null);
-    // Basic hygiene: block prototype pollution keys in body
-    if (parameters != null && typeof parameters === 'object') {
-      const obj = parameters as Record<string, unknown>;
-      if ('__proto__' in obj || 'constructor' in obj || 'prototype' in obj) {
-        res.status(400).end();
-        return;
-      }
+    // Reject bodies carrying prototype pollution keys at any depth
+    if (hasUnsafeKeys(parameters)) {
+      res.status(400).json({ error: 'Invalid request body' });
+      return;
     }
     await onKeyboardAction(action, [parameters]);
     res.end();

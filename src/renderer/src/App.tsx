@@ -155,6 +155,7 @@ import {
 } from './util';
 import getSwal, { errorToast, showPlaybackFailedMessage } from './swal';
 import { adjustRate } from './util/rate-calculator';
+import { resetSegmentHistory } from './util/segmentHistory';
 import { askExtractFramesAsImages } from './dialogs/extractFrames';
 import type { CleanupChoicesType } from './dialogs';
 import {
@@ -1588,13 +1589,10 @@ function App() {
     playingRef.current = false;
     setPlaybackMode(undefined);
     setFileDuration(undefined);
-    // Reset segment history so undo cannot resurrect a previous file's segments.
-    // Truncate to a single empty entry instead of just overwriting history[0].
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (cutSegmentsHistory as any).history.splice(0, (cutSegmentsHistory as any).history.length);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (cutSegmentsHistory as any).history.push([]);
-    cutSegmentsHistory.go(0);
+    // Reset segment history so undo/redo cannot resurrect the previous file's segments.
+    // Truncating to a single empty entry (rather than only overwriting history[0])
+    // also removes every forward entry, so redo has nothing left to restore.
+    resetSegmentHistory(cutSegmentsHistory);
     setDetectedFileFormat(undefined);
     setRotation(360);
     setProgress(undefined);
@@ -4096,8 +4094,12 @@ function App() {
       filePath: string;
       projectPath?: string | undefined;
     }) => {
+      // Every loadMedia call claims a generation. A load whose generation is no longer
+      // current has been superseded by a newer file, so it must not touch state.
       loadGenerationRef.current += 1;
       const generation = loadGenerationRef.current;
+      const isStale = () => generation !== loadGenerationRef.current;
+
       async function tryOpenProjectPath(path: string) {
         if (!(await mainApi.pathExists(path))) return false;
         await loadProjectIntoState({ path, mediaFilePath: fp });
@@ -4237,7 +4239,7 @@ function App() {
         });
 
         // BEGIN STATE UPDATES:
-        if (generation !== loadGenerationRef.current) return;
+        if (isStale()) return;
 
         resetState();
         clearSegColorCounter();
@@ -4261,6 +4263,7 @@ function App() {
             firstVideoStream != null,
             firstAudioStream != null,
           );
+          if (isStale()) return;
         }
 
         // eslint-disable-next-line unicorn/prefer-ternary
@@ -4272,6 +4275,7 @@ function App() {
             cod,
           });
         }
+        if (isStale()) return;
 
         // throw new Error('test');
 
@@ -4339,13 +4343,18 @@ function App() {
           });
         }
 
-        if (generation !== loadGenerationRef.current) return;
+        if (isStale()) return;
         // This needs to be last, because it triggers <video> to load the video
         // If not, onVideoError might be triggered before setWorking() has been cleared.
         // https://github.com/mifi/lossless-cut/issues/515
         setFilePath(fp);
       } catch (err) {
-        if (generation !== loadGenerationRef.current) return;
+        // A superseded load must not reset the newer file's state nor surface its error,
+        // but it still has to stop propagating, so swallow it here.
+        if (isStale()) {
+          console.warn('Ignoring error from superseded file load', fp, err);
+          return;
+        }
         if (err instanceof DirectoryAccessDeclinedError) return;
         resetState();
         throw err;

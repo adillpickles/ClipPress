@@ -28,3 +28,7 @@
 *.tar binary
 *.gz binary
 *.bz2 binary
+
+# Parser test fixtures are byte-for-byte inputs (several are CRLF or UTF-16).
+# Renormalizing them would change what the snapshot tests actually parse.
+src/renderer/src/test/fixtures/** -text

@@ -873,5 +873,6 @@
   "Zoom in timeline": "Zoom in timeline",
   "Zoom in/out timeline": "Zoom in/out timeline",
   "Zoom out timeline": "Zoom out timeline",
-  "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing.": "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing."
+  "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing.": "Please report the issue in the <1>ClipPress repository</1> and describe what you were doing.",
+  "At least one resulting file name would be written outside the output directory": "At least one resulting file name would be written outside the output directory"
 }
