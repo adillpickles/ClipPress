@@ -155,6 +155,7 @@ import {
 } from './util';
 import getSwal, { errorToast, showPlaybackFailedMessage } from './swal';
 import { adjustRate } from './util/rate-calculator';
+import { resetSegmentHistory } from './util/segmentHistory';
 import { askExtractFramesAsImages } from './dialogs/extractFrames';
 import type { CleanupChoicesType } from './dialogs';
 import {
@@ -339,6 +340,7 @@ function App() {
   // State per application launch
   const [ffmpegInfo, setFfmpegInfo] = useState<Awaited<ReturnType<typeof runStartupCheck>>>();
   const lastOpenedPathRef = useRef<string>();
+  const loadGenerationRef = useRef(0);
   const [showRightBar, setShowRightBar] = useState(true);
   const [lastCommandsVisible, setLastCommandsVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -812,10 +814,10 @@ function App() {
   const updateOverlayClip = useCallback(
     (overlayId: string, updater: (clip: OverlayClip) => OverlayClip) => {
       setOverlayClips((existingClips) => existingClips.map((overlayClip) => (overlayClip.overlayId === overlayId
-        ? sanitizeOverlayClip(updater(overlayClip))
+        ? sanitizeOverlayClip(updater(overlayClip), fileDuration)
         : overlayClip)));
     },
-    [],
+    [fileDuration],
   );
 
   const removeOverlayClip = useCallback((overlayId: string) => {
@@ -1587,8 +1589,10 @@ function App() {
     playingRef.current = false;
     setPlaybackMode(undefined);
     setFileDuration(undefined);
-    cutSegmentsHistory.history[0] = []; // in case we have exceeded capacity
-    cutSegmentsHistory.go(0);
+    // Reset segment history so undo/redo cannot resurrect the previous file's segments.
+    // Truncating to a single empty entry (rather than only overwriting history[0])
+    // also removes every forward entry, so redo has nothing left to restore.
+    resetSegmentHistory(cutSegmentsHistory);
     setDetectedFileFormat(undefined);
     setRotation(360);
     setProgress(undefined);
@@ -1969,6 +1973,7 @@ function App() {
 
   const sizeLimitedSegmentsForExport = useMemo<SegmentToExport[]>(() => {
     if (segmentsToExport.length > 0) return segmentsToExport;
+    if (!isDurationValid(fileDuration)) return [];
 
     const { start, end } = currentCutSegOrWholeTimeline;
     if (!(end > start)) return [];
@@ -1986,6 +1991,7 @@ function App() {
     currentCutSeg,
     currentCutSegOrWholeTimeline,
     currentSegIndexSafe,
+    fileDuration,
     segmentsToExport,
   ]);
 
@@ -4088,6 +4094,12 @@ function App() {
       filePath: string;
       projectPath?: string | undefined;
     }) => {
+      // Every loadMedia call claims a generation. A load whose generation is no longer
+      // current has been superseded by a newer file, so it must not touch state.
+      loadGenerationRef.current += 1;
+      const generation = loadGenerationRef.current;
+      const isStale = () => generation !== loadGenerationRef.current;
+
       async function tryOpenProjectPath(path: string) {
         if (!(await mainApi.pathExists(path))) return false;
         await loadProjectIntoState({ path, mediaFilePath: fp });
@@ -4227,6 +4239,7 @@ function App() {
         });
 
         // BEGIN STATE UPDATES:
+        if (isStale()) return;
 
         resetState();
         clearSegColorCounter();
@@ -4250,6 +4263,7 @@ function App() {
             firstVideoStream != null,
             firstAudioStream != null,
           );
+          if (isStale()) return;
         }
 
         // eslint-disable-next-line unicorn/prefer-ternary
@@ -4261,6 +4275,7 @@ function App() {
             cod,
           });
         }
+        if (isStale()) return;
 
         // throw new Error('test');
 
@@ -4328,11 +4343,18 @@ function App() {
           });
         }
 
+        if (isStale()) return;
         // This needs to be last, because it triggers <video> to load the video
         // If not, onVideoError might be triggered before setWorking() has been cleared.
         // https://github.com/mifi/lossless-cut/issues/515
         setFilePath(fp);
       } catch (err) {
+        // A superseded load must not reset the newer file's state nor surface its error,
+        // but it still has to stop propagating, so swallow it here.
+        if (isStale()) {
+          console.warn('Ignoring error from superseded file load', fp, err);
+          return;
+        }
         if (err instanceof DirectoryAccessDeclinedError) return;
         resetState();
         throw err;
@@ -4785,6 +4807,10 @@ function App() {
           console.log('Reading directory...');
           invariant(firstNewFilePath != null);
           newFilePaths = await readDirRecursively(firstNewFilePath);
+          if (newFilePaths.length === 0) {
+            errorToast(i18n.t('No files found in folder'));
+            return;
+          }
         }
 
         // Only allow opening regular files

@@ -26,15 +26,6 @@ ClipPress is built on top of [LosslessCut](https://github.com/mifi/lossless-cut)
 - Installation notes: [docs/installation.md](docs/installation.md)
 - Local development: [CONTRIBUTING.md](CONTRIBUTING.md)
 
-## Images to add when UI settles
-
-- Simple mode empty state
-- Simple mode editing view with timeline and Clips rail
-- Simple mode export panel
-- Text overlay editing example
-- Advanced mode export/settings view
-- Custom title bar / top chrome
-
 ## License
 
 ClipPress is licensed under [GPL-2.0-only](LICENSE).

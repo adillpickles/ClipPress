@@ -6,6 +6,7 @@ import assert from 'node:assert';
 
 import { homepageUrl } from '../common/constants.js';
 import logger from './logger.js';
+import { hasUnsafeKeys } from './objectKeys.js';
 import type { AppEvent } from './index.js';
 
 
@@ -27,18 +28,24 @@ export default ({ port, onKeyboardAction, onAwaitAppEvent }: {
 
   app.get('/', (_req, res) => res.send(`See ${homepageUrl}`));
 
+  // Server binds to loopback only (see startHttpServer); bodies are size limited below.
   app.use('/api', apiRouter);
 
-  apiRouter.post('/action/:action', express.json(), asyncHandler(async (req, res) => {
+  apiRouter.post('/action/:action', express.json({ limit: '10kb' }), asyncHandler(async (req, res) => {
     // eslint-disable-next-line prefer-destructuring
     const action = req.params['action'];
     const parameters = req.body as unknown;
     assert(action != null);
+    // Reject bodies carrying prototype pollution keys at any depth
+    if (hasUnsafeKeys(parameters)) {
+      res.status(400).json({ error: 'Invalid request body' });
+      return;
+    }
     await onKeyboardAction(action, [parameters]);
     res.end();
   }));
 
-  apiRouter.post('/await-event/:eventName', express.json(), asyncHandler(async (req, res) => {
+  apiRouter.post('/await-event/:eventName', express.json({ limit: '10kb' }), asyncHandler(async (req, res) => {
     const { eventName } = req.params;
     assert(eventName != null);
     const abortController = new AbortController();

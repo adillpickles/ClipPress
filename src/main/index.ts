@@ -35,6 +35,8 @@ import { checkNewVersion } from './updateChecker.js';
 import * as i18nCommon from './i18nCommon.js';
 import './i18n.js';
 import type { ApiActionRequest } from '../common/types.js';
+import { isSafeKey } from './objectKeys.js';
+import { isAllowedAppNavigation, isExternallyOpenableUrl } from './navigation.js';
 import * as ffmpeg from './ffmpeg.js';
 import * as compatPlayer from './compatPlayer.js';
 import { downloadMediaUrl } from './ffmpeg.js';
@@ -188,6 +190,25 @@ function createWindow() {
   remote.enable(mainWindow.webContents);
 
   attachContextMenu(mainWindow);
+
+  // Incremental hardening: never open a child window, and never navigate the app
+  // window away from its own document. Full contextIsolation:true / nodeIntegration:false
+  // migration is tracked separately.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    // Only hand http(s) to the OS. shell.openExternal on e.g. file: or ms-msdt: is a
+    // code execution primitive.
+    if (isExternallyOpenableUrl(url)) {
+      shell.openExternal(url).catch((err) => logger.error('Failed to open external URL', err));
+    } else {
+      logger.warn('Blocked window.open for non-http(s) URL', url);
+    }
+    return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    if (isAllowedAppNavigation({ navigationUrl, currentUrl: mainWindow?.webContents.getURL(), isDev })) return;
+    logger.warn('Blocked navigation', navigationUrl);
+    event.preventDefault();
+  });
 
   if (isDev) mainWindow.loadURL('http://localhost:3001');
   // Need to useloadFile for special characters https://github.com/mifi/lossless-cut/issues/40
@@ -390,7 +411,9 @@ async function init() {
 
     if (settingsJson != null) {
       logger.info('initializing settings', settingsJson);
-      Object.entries(JSON5.parse(settingsJson)).forEach(([key, value]) => {
+      const parsedSettings = JSON5.parse(settingsJson, (key, value) => (isSafeKey(key) ? value : undefined)) as Record<string, unknown>;
+      Object.entries(parsedSettings).forEach(([key, value]) => {
+        if (!isSafeKey(key)) return;
         // @ts-expect-error todo use zod?
         configStore.set(key, value);
       });

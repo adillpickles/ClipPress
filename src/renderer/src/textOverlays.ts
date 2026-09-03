@@ -67,9 +67,12 @@ export function createDefaultTextOverlayClip({
   const maxStart = safeDuration != null ? Math.max(0, safeDuration - minTextOverlayDuration) : safeCurrentTime;
   const start = clamp(safeCurrentTime, 0, maxStart);
   const preferredEnd = start + defaultTextOverlayDuration;
-  const end = safeDuration != null
+  let end = safeDuration != null
     ? Math.max(start + minTextOverlayDuration, Math.min(preferredEnd, safeDuration))
     : preferredEnd;
+  // For very short media (< min duration), we cannot satisfy min duration without exceeding file length.
+  // Clamp to file duration instead.
+  if (safeDuration != null && end > safeDuration) end = safeDuration;
 
   return {
     overlayId,
@@ -195,11 +198,16 @@ export async function renderTextOverlayPng({
   return new Uint8Array(await response.arrayBuffer());
 }
 
-export function sanitizeOverlayClip(overlayClip: OverlayClip): OverlayClip {
+export function sanitizeOverlayClip(overlayClip: OverlayClip, fileDuration?: number): OverlayClip {
+  const safeDuration = fileDuration != null && Number.isFinite(fileDuration) && fileDuration > 0 ? fileDuration : undefined;
+  const clampedStart = Math.max(0, Math.min(overlayClip.start, safeDuration != null ? Math.max(0, safeDuration - minTextOverlayDuration) : overlayClip.start));
+  const maxEnd = safeDuration != null ? safeDuration : Number.POSITIVE_INFINITY;
+  const desiredEnd = Math.max(clampedStart + minTextOverlayDuration, overlayClip.end);
+  const clampedEnd = Math.min(desiredEnd, maxEnd);
   return {
     ...overlayClip,
-    start: Math.max(0, overlayClip.start),
-    end: Math.max(overlayClip.start + minTextOverlayDuration, overlayClip.end),
+    start: clampedStart,
+    end: clampedEnd,
     text: overlayClip.text,
     box: clampOverlayBox({
       x: clampOverlayNumber(overlayClip.box.x),

@@ -10,12 +10,15 @@ import type { CustomTagsByFile, EdlExportType, EdlFileType, EdlImportType, GetFr
 import { llcProjectV1Schema, llcProjectV2Schema, llcProjectV3Schema } from './types';
 import { mapSaveableSegments } from './segments';
 import isDev from './isDev';
+import { createWriteFileAtomically } from './util/atomicWrite';
 
-const { readFile, writeFile } = window.require('fs/promises');
+const { readFile, writeFile, rename, unlink } = window.require('fs/promises');
 const cueParser = window.require('cue-parser');
-const { basename } = window.require('path');
+const { basename, dirname, join } = window.require('path');
 
 const { dialog } = window.require('@electron/remote');
+
+const writeFileAtomically = createWriteFileAtomically({ writeFile, rename, unlink, dirname, basename, join });
 
 
 // When readFile is used with 'utf8', ef bb bf is its UTF-8 representation of BOM. As BOM is considered white-space, it can be stripped by .trim(). Node.js does not strip BOM, it is a userland task.
@@ -129,7 +132,7 @@ export async function saveLlcProject({ savePath, mediaFilePath, cutSegments, cus
   overlayClips?: OverlayClip[] | undefined,
 }) {
   const projectData = buildLlcProjectData({ mediaFilePath, cutSegments, customTagsByFile, paramsByStreamId, overlayClips });
-  await writeFile(savePath, JSON5.stringify(projectData, null, 2));
+  await writeFileAtomically(savePath, JSON5.stringify(projectData, null, 2));
 }
 
 export async function loadLlcProject(path: string) {

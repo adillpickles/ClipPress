@@ -11,6 +11,7 @@ import isDev from '../isDev';
 import { getSegmentTags, formatSegNum, getGuaranteedSegments } from '../segments';
 import type { FileStats, FormatTimecode, SegmentToExport } from '../types';
 import safeishEval from '../worker/eval';
+import { isUnsafeOutputFileName } from './outputPathSafety';
 import { UserFacingError } from '../../errors';
 import type { FileFfprobeMeta } from '../ffmpeg';
 
@@ -26,7 +27,8 @@ export const segTagsVariable = 'SEG_TAGS';
 // I don't remember why I set it to 200, but on Windows max length seems to be 256, on MacOS it seems to be 255.
 export const maxFileNameLength = 250;
 
-const { parse: parsePath, sep: pathSep, join: pathJoin, normalize: pathNormalize, basename }: PlatformPath = window.require('path');
+const path: PlatformPath = window.require('path');
+const { parse: parsePath, sep: pathSep, join: pathJoin, normalize: pathNormalize, basename } = path;
 
 
 export interface GeneratedOutFileNames {
@@ -102,6 +104,12 @@ function getTemplateProblems({ fileNames, filePath, outputDir, safeOutputFileNam
 
     if (fileName.length === 0) {
       error = i18n.t('At least one resulting file name has no length');
+      break;
+    }
+    // Even when sanitize is off, the template must not be able to write outside the
+    // output directory. Nested names stay allowed; `..` and absolute paths do not.
+    if (isUnsafeOutputFileName({ fileName, outputDir, path })) {
+      error = i18n.t('At least one resulting file name would be written outside the output directory');
       break;
     }
     const matchingInvalidChars = new Set([...fileName].filter((char) => invalidChars.has(char)));
