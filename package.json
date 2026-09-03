@@ -59,7 +59,7 @@
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-switch": "^1.2.6",
     "@tanstack/react-virtual": "3.13.18",
-    "@tsconfig/node22": "^22.0.5",
+    "@tsconfig/node22": "^22.0.6",
     "@tsconfig/strictest": "^2.0.8",
     "@tsconfig/vite-react": "^7.0.2",
     "@types/canvas-confetti": "^1.9.0",
