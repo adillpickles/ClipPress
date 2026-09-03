@@ -104,6 +104,17 @@ function getTemplateProblems({ fileNames, filePath, outputDir, safeOutputFileNam
       error = i18n.t('At least one resulting file name has no length');
       break;
     }
+    // Even when sanitize is off, never allow directory traversal outside the output directory
+    // or absolute paths. This prevents `../../` via templates when safeOutputFileName=false.
+    const expectedPrefix = normalizeForComparison(`${pathNormalize(outputDir)}${pathSep}`);
+    const isTraversal = outPathNormalized === normalizeForComparison(pathNormalize(outputDir))
+      || (!outPathNormalized.startsWith(expectedPrefix) && outPathNormalized !== inPathNormalized);
+    // Allow sameAsInputPath already handled, but otherwise enforce containment
+    const hasTraversalSegments = fileName.split('/').includes('..') || fileName.split('\\').includes('..') || pathNormalize(fileName).startsWith(`${'..'}${pathSep}`) || fileName.startsWith('/') || fileName.startsWith('\\') || /^[a-zA-Z]:[\\/]/.test(fileName);
+    if (hasTraversalSegments || (isTraversal && !sameAsInputPath && fileName.includes(pathSep))) {
+      error = i18n.t('At least one resulting file name contains invalid traversal characters');
+      break;
+    }
     const matchingInvalidChars = new Set([...fileName].filter((char) => invalidChars.has(char)));
     if (matchingInvalidChars.size > 0) {
       error = i18n.t('At least one resulting file name contains invalid character(s): {{invalidChars}}', { invalidChars: `"${[...matchingInvalidChars].join('", "')}"` });

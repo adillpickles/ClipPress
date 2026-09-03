@@ -129,7 +129,14 @@ export async function saveLlcProject({ savePath, mediaFilePath, cutSegments, cus
   overlayClips?: OverlayClip[] | undefined,
 }) {
   const projectData = buildLlcProjectData({ mediaFilePath, cutSegments, customTagsByFile, paramsByStreamId, overlayClips });
-  await writeFile(savePath, JSON5.stringify(projectData, null, 2));
+  const serialized = JSON5.stringify(projectData, null, 2);
+  const { writeFile: writeFileAtomic, rename: renameFile } = window.require('fs/promises');
+  const { dirname, join, basename: pathBasename } = window.require('path');
+  const dir = dirname(savePath);
+  const tmpPath = join(dir, `.${pathBasename(savePath)}.tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  await writeFileAtomic(tmpPath, serialized);
+  // Atomic replace to avoid truncated project files on crash/power loss
+  await renameFile(tmpPath, savePath);
 }
 
 export async function loadLlcProject(path: string) {

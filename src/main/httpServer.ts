@@ -27,18 +27,27 @@ export default ({ port, onKeyboardAction, onAwaitAppEvent }: {
 
   app.get('/', (_req, res) => res.send(`See ${homepageUrl}`));
 
+  // Only expose API on loopback; reject traversal / large bodies
   app.use('/api', apiRouter);
 
-  apiRouter.post('/action/:action', express.json(), asyncHandler(async (req, res) => {
+  apiRouter.post('/action/:action', express.json({ limit: '10kb' }), asyncHandler(async (req, res) => {
     // eslint-disable-next-line prefer-destructuring
     const action = req.params['action'];
     const parameters = req.body as unknown;
     assert(action != null);
+    // Basic hygiene: block prototype pollution keys in body
+    if (parameters != null && typeof parameters === 'object') {
+      const obj = parameters as Record<string, unknown>;
+      if ('__proto__' in obj || 'constructor' in obj || 'prototype' in obj) {
+        res.status(400).end();
+        return;
+      }
+    }
     await onKeyboardAction(action, [parameters]);
     res.end();
   }));
 
-  apiRouter.post('/await-event/:eventName', express.json(), asyncHandler(async (req, res) => {
+  apiRouter.post('/await-event/:eventName', express.json({ limit: '10kb' }), asyncHandler(async (req, res) => {
     const { eventName } = req.params;
     assert(eventName != null);
     const abortController = new AbortController();

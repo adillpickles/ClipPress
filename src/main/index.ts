@@ -189,6 +189,20 @@ function createWindow() {
 
   attachContextMenu(mainWindow);
 
+  // Incremental hardening: deny window open and external navigation. Full
+  // contextIsolation:false / nodeIntegration:true migration is tracked separately.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url).catch((err) => logger.error('Failed to open external URL', err));
+    return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    const allowed = isDev && navigationUrl.startsWith('http://localhost:3001');
+    const currentUrl = mainWindow?.webContents.getURL();
+    if (!allowed && navigationUrl !== currentUrl) {
+      event.preventDefault();
+    }
+  });
+
   if (isDev) mainWindow.loadURL('http://localhost:3001');
   // Need to useloadFile for special characters https://github.com/mifi/lossless-cut/issues/40
   else mainWindow.loadFile('out/renderer/index.html');
@@ -269,6 +283,10 @@ function parseCliArgs(rawArgv = process.argv) {
     boolean: ['disable-networking'],
     string: ['settings-json', 'config-dir', 'lossy-mode'],
   });
+}
+
+function isSafeKey(key: string) {
+  return key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
 }
 
 const argv = parseCliArgs();
@@ -390,7 +408,9 @@ async function init() {
 
     if (settingsJson != null) {
       logger.info('initializing settings', settingsJson);
-      Object.entries(JSON5.parse(settingsJson)).forEach(([key, value]) => {
+      const parsedSettings = JSON5.parse(settingsJson, (key, value) => (isSafeKey(key) ? value : undefined)) as Record<string, unknown>;
+      Object.entries(parsedSettings).forEach(([key, value]) => {
+        if (!isSafeKey(key)) return;
         // @ts-expect-error todo use zod?
         configStore.set(key, value);
       });

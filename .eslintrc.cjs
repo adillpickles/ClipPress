@@ -6,6 +6,7 @@ module.exports = {
     'jsx-a11y/control-has-associated-label': 0,
     'react/no-unused-prop-types': 0,
     'func-call-spacing': 0,
+    'linebreak-style': 0,
   },
 
   overrides: [

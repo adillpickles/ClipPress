@@ -739,6 +739,15 @@ export function createMediaSourceProcess({ path, videoStreamIndex, audioStreamIn
 }
 
 export async function downloadMediaUrl(url: string, outPath: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('Invalid URL');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Only http and https URLs are allowed');
+  }
   // User agent taken from https://techblog.willshouse.com/2012/01/03/most-common-user-agents/
   const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
   const args = [

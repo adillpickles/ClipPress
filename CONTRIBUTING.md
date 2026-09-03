@@ -3,11 +3,12 @@
 ## Development environment setup
 
 ClipPress is built using Electron.
-Make sure you have at least Node v16. The app uses ffmpeg from PATH when developing.
+Make sure you have at least Node v22 (see `packageManager` in `package.json`). Enable Corepack with `corepack enable`. The app uses ffmpeg from PATH when developing.
 
 ```bash
 git clone <your ClipPress repository URL>
 cd ClipPress
+corepack enable
 yarn
 ```
 
@@ -42,7 +43,7 @@ yarn pack-mas-dev
 
 MAS builds have some restrictions, see `isMasBuild` variable in code. In particular, any file cannot be read without the user's consent.
 
-NOTE: when MAS (dev) build, Application Support will instead be located here:
+NOTE: when MAS (dev) build, Application Support will instead be located here (legacy LosslessCut identifier retained for compatibility):
 ```
 ~/Library/Containers/no.mifi.losslesscut-mac/Data/Library/Application Support
 ```
@@ -121,7 +122,7 @@ How to check the value:
 
 ```bash
 yarn pack-mas-dev
-# Current package identifiers may still use legacy LosslessCut IDs:
+# Note: package identifiers currently retain legacy LosslessCut IDs (no.mifi.losslesscut) for storage/update continuity:
 cat dist/mas-dev-arm64/ClipPress.app/Contents/Info.plist
 ```
 

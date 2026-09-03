@@ -339,6 +339,7 @@ function App() {
   // State per application launch
   const [ffmpegInfo, setFfmpegInfo] = useState<Awaited<ReturnType<typeof runStartupCheck>>>();
   const lastOpenedPathRef = useRef<string>();
+  const loadGenerationRef = useRef(0);
   const [showRightBar, setShowRightBar] = useState(true);
   const [lastCommandsVisible, setLastCommandsVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -812,10 +813,10 @@ function App() {
   const updateOverlayClip = useCallback(
     (overlayId: string, updater: (clip: OverlayClip) => OverlayClip) => {
       setOverlayClips((existingClips) => existingClips.map((overlayClip) => (overlayClip.overlayId === overlayId
-        ? sanitizeOverlayClip(updater(overlayClip))
+        ? sanitizeOverlayClip(updater(overlayClip), fileDuration)
         : overlayClip)));
     },
-    [],
+    [fileDuration],
   );
 
   const removeOverlayClip = useCallback((overlayId: string) => {
@@ -1587,7 +1588,12 @@ function App() {
     playingRef.current = false;
     setPlaybackMode(undefined);
     setFileDuration(undefined);
-    cutSegmentsHistory.history[0] = []; // in case we have exceeded capacity
+    // Reset segment history so undo cannot resurrect a previous file's segments.
+    // Truncate to a single empty entry instead of just overwriting history[0].
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (cutSegmentsHistory as any).history.splice(0, (cutSegmentsHistory as any).history.length);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (cutSegmentsHistory as any).history.push([]);
     cutSegmentsHistory.go(0);
     setDetectedFileFormat(undefined);
     setRotation(360);
@@ -1969,6 +1975,7 @@ function App() {
 
   const sizeLimitedSegmentsForExport = useMemo<SegmentToExport[]>(() => {
     if (segmentsToExport.length > 0) return segmentsToExport;
+    if (!isDurationValid(fileDuration)) return [];
 
     const { start, end } = currentCutSegOrWholeTimeline;
     if (!(end > start)) return [];
@@ -1986,6 +1993,7 @@ function App() {
     currentCutSeg,
     currentCutSegOrWholeTimeline,
     currentSegIndexSafe,
+    fileDuration,
     segmentsToExport,
   ]);
 
@@ -4088,6 +4096,8 @@ function App() {
       filePath: string;
       projectPath?: string | undefined;
     }) => {
+      loadGenerationRef.current += 1;
+      const generation = loadGenerationRef.current;
       async function tryOpenProjectPath(path: string) {
         if (!(await mainApi.pathExists(path))) return false;
         await loadProjectIntoState({ path, mediaFilePath: fp });
@@ -4227,6 +4237,7 @@ function App() {
         });
 
         // BEGIN STATE UPDATES:
+        if (generation !== loadGenerationRef.current) return;
 
         resetState();
         clearSegColorCounter();
@@ -4328,11 +4339,13 @@ function App() {
           });
         }
 
+        if (generation !== loadGenerationRef.current) return;
         // This needs to be last, because it triggers <video> to load the video
         // If not, onVideoError might be triggered before setWorking() has been cleared.
         // https://github.com/mifi/lossless-cut/issues/515
         setFilePath(fp);
       } catch (err) {
+        if (generation !== loadGenerationRef.current) return;
         if (err instanceof DirectoryAccessDeclinedError) return;
         resetState();
         throw err;
@@ -4785,6 +4798,10 @@ function App() {
           console.log('Reading directory...');
           invariant(firstNewFilePath != null);
           newFilePaths = await readDirRecursively(firstNewFilePath);
+          if (newFilePaths.length === 0) {
+            errorToast(i18n.t('No files found in folder'));
+            return;
+          }
         }
 
         // Only allow opening regular files
