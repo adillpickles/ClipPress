@@ -142,7 +142,7 @@
     "@octokit/core": "7.0.6",
     "cue-parser": "^0.3.0",
     "electron-devtools-installer": "^4.0.0",
-    "electron-store": "5.1.1",
+    "electron-store": "11.0.2",
     "electron-unhandled": "^5.0.0",
     "execa": "^9.6.1",
     "express": "^5.2.1",
