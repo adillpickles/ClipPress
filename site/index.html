@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>ClipPress — cut the clip, skip the render</title>
+    <meta
+      name="description"
+      content="ClipPress is an open-source clip editor for Windows. Mark in and out on a long recording, then export just that segment while keeping the source quality where the format allows."
+    />
+
+    <!--
+      TODO: no production domain has been chosen yet, so this page ships without
+      <link rel="canonical"> and <meta property="og:url">. Once the production
+      domain exists, set SITE.siteUrl in src/site.config.ts and add both tags
+      here. Do not invent a domain.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ClipPress" />
+    <meta property="og:title" content="ClipPress — cut the clip, skip the render" />
+    <meta
+      property="og:description"
+      content="Open-source clip editor for Windows. Mark in and out, export the segment, keep the source quality where the format allows."
+    />
+    <meta property="og:image" content="./og-image.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="ClipPress — cut the clip, skip the render" />
+    <meta
+      name="twitter:description"
+      content="Open-source clip editor for Windows. Mark in and out, export the segment, keep the source quality where the format allows."
+    />
+    <meta name="twitter:image" content="./og-image.svg" />
+
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./src/styles.css" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "ClipPress",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "Windows 10, Windows 11",
+        "license": "https://github.com/adillpickles/ClipPress/blob/master/LICENSE",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "codeRepository": "https://github.com/adillpickles/ClipPress"
+      }
+    </script>
+  </head>
+
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="topbar">
+      <div class="topbar__inner">
+        <a class="wordmark" href="#top">ClipPress</a>
+        <nav class="topbar__nav" aria-label="Primary">
+          <a
+            class="link-quiet"
+            href="https://github.com/adillpickles/ClipPress"
+            rel="noopener"
+            target="_blank"
+            >Source</a
+          >
+          <a class="btn btn--small" data-download href="https://github.com/adillpickles/ClipPress/releases" rel="noopener"
+            >Download</a
+          >
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top">
+        <div class="hero__grid" aria-hidden="true"></div>
+        <div class="wrap hero__inner">
+          <h1 class="hero__title">Cut the clip.<br />Skip the render.</h1>
+          <p class="hero__lede">
+            Mark in and out on a long recording, then export just that segment. ClipPress keeps the
+            source quality where the format allows, instead of re-encoding the whole thing.
+          </p>
+
+          <div class="cta">
+            <a
+              class="btn btn--primary"
+              data-download
+              href="https://github.com/adillpickles/ClipPress/releases"
+              rel="noopener"
+            >
+              <svg class="btn__glyph" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M0 2.2 6.5 1.3v6.2H0zM7.4 1.2 16 0v7.5H7.4zM0 8.5h6.5v6.2L0 13.8zM7.4 8.5H16V16l-8.6-1.2z"
+                />
+              </svg>
+              Download for Windows
+            </a>
+            <a
+              class="btn btn--quiet"
+              href="https://github.com/adillpickles/ClipPress"
+              rel="noopener"
+              target="_blank"
+            >
+              View the source
+              <span class="btn__ext" aria-hidden="true">↗</span>
+            </a>
+          </div>
+
+          <p class="cta__meta" data-release-meta>
+            Windows 10/11 x64 · v0.1.0 Beta 3 · unsigned preview build
+          </p>
+
+          <!--
+            PRODUCT MEDIA SLOT — replace the placeholder <div> below with real
+            media. Nothing else needs to change; the frame keeps the 16:10 box,
+            the rounded corner and the border.
+
+              <img src="/product.png" alt="ClipPress editing a recording" width="1600" height="1000" />
+              <video src="/product.mp4" poster="/product.png" autoplay muted loop playsinline></video>
+
+            Put the file in site/public/ and reference it as "/product.png".
+            Delete the placeholder div and its aria-label when you do.
+          -->
+          <figure class="shot">
+            <div class="shot__frame">
+              <div class="shot__placeholder" role="img" aria-label="ClipPress screenshot placeholder"></div>
+            </div>
+          </figure>
+        </div>
+      </section>
+
+      <section class="band">
+        <div class="wrap">
+          <ol class="steps">
+            <li class="step">
+              <h2 class="step__label">Mark</h2>
+              <p class="step__body">
+                Press <kbd>I</kbd> for the start and <kbd>O</kbd> for the end. That is the whole
+                loop for a single clip.
+              </p>
+            </li>
+            <li class="step">
+              <h2 class="step__label">Cut</h2>
+              <p class="step__body">
+                Export the selected segment. Mark several and get separate clips, one merged clip,
+                or both.
+              </p>
+            </li>
+            <li class="step">
+              <h2 class="step__label">Skip the render</h2>
+              <p class="step__body">
+                Keep source quality copies the original streams rather than re-encoding them, so
+                the export is a copy, not a render.
+              </p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="band">
+        <div class="wrap split">
+          <div class="split__lead">
+            <h2 class="h2">Enough editing to finish the clip.</h2>
+            <p class="prose">
+              Simple mode is the default and keeps the everyday path clear. Advanced mode is there
+              when a clip needs more, and it is still experimental.
+            </p>
+          </div>
+          <ul class="checks">
+            <li>Target file size export, for uploads that have a cap</li>
+            <li>Text overlays for quick callouts and captions</li>
+            <li>Per-track audio gain when one source is too loud</li>
+            <li>Multi-segment export as separate clips, one merged clip, or both</li>
+            <li>Keyboard shortcuts and project save and load</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="band band--center">
+        <div class="wrap">
+          <p class="eyebrow">Open source</p>
+          <h2 class="h2 h2--center">Don't like something? Fork it.</h2>
+          <p class="prose prose--center">
+            The whole app is in the repository. Clone it, change what bothers you, and build your
+            own.
+          </p>
+
+          <div class="fork">
+            <pre class="term"><code><span class="term__p">$</span> git clone https://github.com/adillpickles/ClipPress
+<span class="term__p">$</span> yarn
+<span class="term__p">$</span> yarn download-ffmpeg-win32-x64
+<span class="term__p">$</span> yarn dev</code></pre>
+            <div class="fork__side">
+              <p class="fork__note">
+                GPL-2.0-only, and built on top of
+                <a href="https://github.com/mifi/lossless-cut" rel="noopener" target="_blank"
+                  >LosslessCut</a
+                >
+                by Mikael Finstad and the LosslessCut contributors.
+              </p>
+              <div class="fork__actions">
+                <a
+                  class="btn btn--primary"
+                  href="https://github.com/adillpickles/ClipPress/fork"
+                  rel="noopener"
+                  target="_blank"
+                  >Fork on GitHub</a
+                >
+                <a
+                  class="btn btn--quiet"
+                  href="https://github.com/adillpickles/ClipPress/blob/master/CONTRIBUTING.md"
+                  rel="noopener"
+                  target="_blank"
+                  >Build it yourself <span class="btn__ext" aria-hidden="true">↗</span></a
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="band band--center closer">
+        <div class="wrap">
+          <h2 class="h2 h2--closer">Stop re-encoding clips you only trimmed.</h2>
+          <p class="prose prose--center">
+            <span data-release-name>ClipPress v0.1.0 Beta 3</span> is a preview build for Windows.
+            One portable <span data-asset-name>ClipPress-Windows-x64.exe</span>, no installer,
+            ffmpeg included.
+          </p>
+          <div class="cta cta--center">
+            <a
+              class="btn btn--primary"
+              data-download
+              href="https://github.com/adillpickles/ClipPress/releases"
+              rel="noopener"
+            >
+              <svg class="btn__glyph" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M0 2.2 6.5 1.3v6.2H0zM7.4 1.2 16 0v7.5H7.4zM0 8.5h6.5v6.2L0 13.8zM7.4 8.5H16V16l-8.6-1.2z"
+                />
+              </svg>
+              Download for Windows
+            </a>
+            <a
+              class="btn btn--quiet"
+              href="https://github.com/adillpickles/ClipPress/releases"
+              data-releases-link
+              rel="noopener"
+              target="_blank"
+              >All releases <span class="btn__ext" aria-hidden="true">↗</span></a
+            >
+          </div>
+          <p class="cta__meta">
+            The build is unsigned, so Windows SmartScreen may warn on first run. No macOS or Linux
+            build was produced for this preview.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="wrap foot__inner">
+        <p class="foot__legal">
+          © <span data-year>2026</span> ClipPress · GPL-2.0-only
+        </p>
+        <nav class="foot__links" aria-label="Footer">
+          <a href="https://github.com/adillpickles/ClipPress" rel="noopener" target="_blank">GitHub</a>
+          <a
+            href="https://github.com/adillpickles/ClipPress/releases"
+            data-releases-link
+            rel="noopener"
+            target="_blank"
+            >Releases</a
+          >
+          <a
+            href="https://github.com/adillpickles/ClipPress/blob/master/docs/installation.md"
+            rel="noopener"
+            target="_blank"
+            >Install notes</a
+          >
+          <a
+            href="https://github.com/adillpickles/ClipPress/blob/master/LICENSE"
+            rel="noopener"
+            target="_blank"
+            >License</a
+          >
+        </nav>
+      </div>
+    </footer>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
