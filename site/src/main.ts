@@ -1,4 +1,4 @@
-import { PREVIEW, RELEASES_URL, previewAssetUrl, previewDownloadHref, releaseMetaLine } from './site.config';
+import { RELEASES_URL, previewAssetUrl, previewDownloadHref, releaseMetaLine } from './site.config';
 
 // Every download link ships pointing at the Releases page so the no-JS path can
 // never 404. When a preview asset is published we swap in the direct asset URL.
@@ -18,14 +18,6 @@ function applyRelease(): void {
 
   document.querySelectorAll('[data-release-meta]').forEach((el) => {
     el.textContent = releaseMetaLine();
-  });
-
-  document.querySelectorAll('[data-release-name]').forEach((el) => {
-    el.textContent = `ClipPress ${PREVIEW.releaseLabel}`;
-  });
-
-  document.querySelectorAll('[data-asset-name]').forEach((el) => {
-    el.textContent = PREVIEW.assetFileName;
   });
 }
 

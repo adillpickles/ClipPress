@@ -1,13 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="ClipPress — cut the clip, skip the render">
-  <rect width="1200" height="630" fill="#08080A"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="ClipPress — trim the clip, set the file size">
+  <rect width="1200" height="630" fill="#09090B"/>
   <g stroke="#FFFFFF" stroke-opacity="0.07" stroke-width="1">
     <path d="M136.5 0V630M272.5 0V630M408.5 0V630M544.5 0V630M680.5 0V630M816.5 0V630M952.5 0V630M1088.5 0V630"/>
     <path d="M0 90.5H1200M0 226.5H1200M0 362.5H1200M0 498.5H1200"/>
   </g>
-  <text x="96" y="128" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="26" font-weight="600" letter-spacing="-0.4" fill="#8E8E95">ClipPress</text>
-  <text x="96" y="300" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="86" font-weight="700" letter-spacing="-3.4" fill="#F3F3F1">Cut the clip.</text>
-  <text x="96" y="392" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="86" font-weight="700" letter-spacing="-3.4" fill="#F3F3F1">Skip the render.</text>
-  <text x="96" y="470" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="26" letter-spacing="-0.2" fill="#8E8E95">Open-source clip editor for Windows.</text>
+  <text x="96" y="128" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="26" font-weight="600" letter-spacing="-0.4" fill="#A1A1AA">ClipPress</text>
+  <text x="96" y="300" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="82" font-weight="500" letter-spacing="-3" fill="#FAFAFA">Trim the clip.</text>
+  <text x="96" y="388" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="82" font-weight="500" letter-spacing="-3" fill="#FAFAFA">Set the file size.</text>
+  <text x="96" y="466" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="25" letter-spacing="-0.2" fill="#A1A1AA">Open-source clip editor for Windows.</text>
   <rect x="96" y="524" width="1008" height="1" fill="#FFFFFF" fill-opacity="0.12"/>
-  <text x="96" y="568" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="20" fill="#61616A">GPL-2.0-only · github.com/adillpickles/ClipPress</text>
+  <text x="96" y="568" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="20" fill="#7D7D86">GPL-2.0-only · github.com/adillpickles/ClipPress</text>
 </svg>

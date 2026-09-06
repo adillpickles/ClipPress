@@ -48,7 +48,7 @@ mustNot(config, /clippress\.app/i, 'do not ship an unchosen production domain');
 
 // ---------- accessibility ----------
 must(html, 'skip-link', 'missing skip link');
-must(html, 'aria-label="Primary"', 'missing primary nav label');
+must(html, 'aria-label="Footer"', 'missing footer nav label');
 must(html, '<main', 'missing <main>');
 if (count(html, /<h1[\s>]/g) !== 1) errors.push('exactly one <h1> expected');
 if (!css.includes(':focus-visible')) errors.push('CSS must include :focus-visible styles');
@@ -75,9 +75,9 @@ for (const [name, value] of Object.entries({ releaseLabel, assetFileName, platfo
 if (releaseLabel && !html.includes(releaseLabel)) {
   errors.push(`static fallback copy must mention the release ${releaseLabel}`);
 }
-if (assetFileName && !html.includes(assetFileName)) {
-  errors.push(`static fallback copy must mention the asset ${assetFileName}`);
-}
+// The asset filename is deliberately NOT printed on the page — it belongs on
+// the release, not in the pitch. It still has to exist in config so main.ts can
+// build the direct download URL.
 if (releaseLabel && platform) {
   const expected = `${platform} · ${releaseLabel} · unsigned preview build`;
   if (!html.includes(expected)) {
@@ -111,10 +111,10 @@ if (sections > 6) errors.push(`too many <section>s (${sections} > 6) — the pag
 const h2s = count(html, /<h2[\s>]/g);
 if (h2s > 7) errors.push(`too many <h2>s (${h2s} > 7) — collapse or cut content`);
 const downloads = count(html, /data-download\b/g);
-if (downloads > 3) errors.push(`too many download CTAs (${downloads} > 3)`);
+if (downloads > 2) errors.push(`too many download CTAs (${downloads} > 2) — hero and closer only`);
 const headerMarkup = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
 const navLinks = count(headerMarkup, /<a[\s>]/g);
-if (navLinks > 3) errors.push(`header has ${navLinks} links — keep it to the wordmark plus two`);
+if (navLinks > 1) errors.push(`header has ${navLinks} links — the centred wordmark is the whole header`);
 mustNot(html, /<details[\s>]|\bfaq\b|frequently asked/i, 'no FAQ / accordion — put the sentence next to the content instead');
 
 // ---------- facts that must be present, and present once ----------
@@ -125,6 +125,12 @@ must(html, 'Windows 10/11 x64', 'must state Windows 10/11 x64 support');
 mustMatch(html, /unsigned/i, 'must disclose that the build is unsigned');
 mustMatch(html, /<kbd>I<\/kbd>[\s\S]{0,60}<kbd>O<\/kbd>/, 'must document the real I / O marking workflow');
 mustMatch(html, /ffmpeg/i, 'must state that ffmpeg is included in the build');
+// Positioning guard: the differentiator is the size-targeted export, not the
+// stream copy inherited from upstream. Both real modes must be named, and the
+// headline must lead with the size one.
+mustMatch(flatHtml, /target size/i, 'must name the real "Target size" workflow');
+mustMatch(flatHtml, /keep source quality/i, 'must name the real "Keep source quality" mode');
+mustMatch(/<h1[^>]*>([\s\S]*?)<\/h1>/.exec(flatHtml)?.[1] ?? '', /size/i, 'the h1 must lead with the file-size pitch');
 
 const licenseMentions = count(html, /GPL-2\.0-only/g);
 if (licenseMentions > 2) errors.push(`GPL-2.0-only stated ${licenseMentions} times — say it once or twice`);

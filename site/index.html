@@ -4,10 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
-    <title>ClipPress — cut the clip, skip the render</title>
+    <title>ClipPress — trim the clip, set the file size</title>
     <meta
       name="description"
-      content="ClipPress is an open-source clip editor for Windows. Mark in and out on a long recording, then export just that segment while keeping the source quality where the format allows."
+      content="ClipPress is an open-source clip editor for Windows. Trim a recording to the part you want, type the size it has to fit under, and ClipPress works out the bitrate and encoder itself."
     />
 
     <!--
@@ -18,17 +18,17 @@
     -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="ClipPress" />
-    <meta property="og:title" content="ClipPress — cut the clip, skip the render" />
+    <meta property="og:title" content="ClipPress — trim the clip, set the file size" />
     <meta
       property="og:description"
-      content="Open-source clip editor for Windows. Mark in and out, export the segment, keep the source quality where the format allows."
+      content="Open-source clip editor for Windows. Trim a recording, type the size it has to fit under, and ClipPress works out the bitrate and encoder itself."
     />
     <meta property="og:image" content="./og-image.svg" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="ClipPress — cut the clip, skip the render" />
+    <meta name="twitter:title" content="ClipPress — trim the clip, set the file size" />
     <meta
       name="twitter:description"
-      content="Open-source clip editor for Windows. Mark in and out, export the segment, keep the source quality where the format allows."
+      content="Open-source clip editor for Windows. Trim a recording, type the size it has to fit under, and ClipPress works out the bitrate and encoder itself."
     />
     <meta name="twitter:image" content="./og-image.svg" />
 
@@ -54,36 +54,37 @@
     <a class="skip-link" href="#main">Skip to content</a>
 
     <header class="topbar">
-      <div class="topbar__inner">
-        <a class="wordmark" href="#top">ClipPress</a>
-        <nav class="topbar__nav" aria-label="Primary">
-          <a
-            class="link-quiet"
-            href="https://github.com/adillpickles/ClipPress"
-            rel="noopener"
-            target="_blank"
-            >Source</a
-          >
-          <a class="btn btn--small" data-download href="https://github.com/adillpickles/ClipPress/releases" rel="noopener"
-            >Download</a
-          >
-        </nav>
-      </div>
+      <a class="wordmark" href="#top">
+        <span class="wordmark__clip">Clip</span><span class="wordmark__press">Press</span>
+      </a>
     </header>
 
     <main id="main">
       <section class="hero" id="top">
         <div class="hero__grid" aria-hidden="true"></div>
+
+        <!--
+          Format tiles: the container extensions ClipPress registers as file
+          associations in the root package.json build config. Decorative only —
+          they are not a claim about codec support inside a container.
+        -->
+        <div class="floats" aria-hidden="true">
+          <span class="float float--a"><span class="float__tile">MP4</span></span>
+          <span class="float float--b"><span class="float__tile">MKV</span></span>
+          <span class="float float--c"><span class="float__tile">MOV</span></span>
+          <span class="float float--d"><span class="float__tile">WEBM</span></span>
+        </div>
+
         <div class="wrap hero__inner">
-          <h1 class="hero__title">Cut the clip.<br />Skip the render.</h1>
-          <p class="hero__lede">
-            Mark in and out on a long recording, then export just that segment. ClipPress keeps the
-            source quality where the format allows, instead of re-encoding the whole thing.
+          <h1 class="hero__title display">Trim the clip.<br />Set the file size.</h1>
+          <p class="hero__sub">
+            Trim a recording to the part you want, then type the size it has to fit under. ClipPress
+            works out the bitrate and encoder itself.
           </p>
 
           <div class="cta">
             <a
-              class="btn btn--primary"
+              class="btn btn--primary btn--lg"
               data-download
               href="https://github.com/adillpickles/ClipPress/releases"
               rel="noopener"
@@ -96,16 +97,23 @@
               </svg>
               Download for Windows
             </a>
-            <a
-              class="btn btn--quiet"
-              href="https://github.com/adillpickles/ClipPress"
-              rel="noopener"
-              target="_blank"
-            >
-              View the source
-              <span class="btn__ext" aria-hidden="true">↗</span>
-            </a>
           </div>
+
+          <a
+            class="cta__source"
+            href="https://github.com/adillpickles/ClipPress"
+            rel="noopener"
+            target="_blank"
+          >
+            <!-- GitHub mark: primer/octicons "mark-github-16", MIT licensed. -->
+            <svg class="gh" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"
+              />
+            </svg>
+            View the source
+          </a>
 
           <p class="cta__meta" data-release-meta>
             Windows 10/11 x64 · v0.1.0 Beta 3 · unsigned preview build
@@ -134,24 +142,24 @@
         <div class="wrap">
           <ol class="steps">
             <li class="step">
-              <h2 class="step__label">Mark</h2>
+              <h2 class="step__label">Trim</h2>
               <p class="step__body">
-                Press <kbd>I</kbd> for the start and <kbd>O</kbd> for the end. That is the whole
-                loop for a single clip.
+                Mark in and out with <kbd>I</kbd> and <kbd>O</kbd>. Add a text overlay, pull down a
+                loud track, split the recording into as many segments as you need.
               </p>
             </li>
             <li class="step">
-              <h2 class="step__label">Cut</h2>
+              <h2 class="step__label">Target</h2>
               <p class="step__body">
-                Export the selected segment. Mark several and get separate clips, one merged clip,
-                or both.
+                Keep source quality copies the original streams where the format allows it. Or type
+                a target size in megabytes and pick a quality preset.
               </p>
             </li>
             <li class="step">
-              <h2 class="step__label">Skip the render</h2>
+              <h2 class="step__label">Export</h2>
               <p class="step__body">
-                Keep source quality copies the original streams rather than re-encoding them, so
-                the export is a copy, not a render.
+                ClipPress plans the bitrate, chooses the encoder, and measures the finished file
+                against your target. If it overshoots, it tries again.
               </p>
             </li>
           </ol>
@@ -160,77 +168,88 @@
 
       <section class="band">
         <div class="wrap split">
-          <div class="split__lead">
-            <h2 class="h2">Enough editing to finish the clip.</h2>
+          <!--
+            SECONDARY MEDIA SLOT — same deal as the hero. A short recording of a
+            trim, a target size and an export belongs here. Replace the
+            placeholder div with an <img> or <video>; the frame handles sizing.
+          -->
+          <figure class="shot shot--inline">
+            <div class="shot__frame">
+              <div class="shot__placeholder" role="img" aria-label="ClipPress demo placeholder"></div>
+            </div>
+          </figure>
+
+          <div class="split__copy">
+            <h2 class="h2 display">Enough editing to finish the clip.</h2>
             <p class="prose">
-              Simple mode is the default and keeps the everyday path clear. Advanced mode is there
-              when a clip needs more, and it is still experimental.
+              Simple mode keeps the everyday path clear. Advanced mode opens up the encoder,
+              resolution and frame-rate controls for the clips that need them.
             </p>
+            <ul class="checks">
+              <li>Text overlays for callouts and captions</li>
+              <li>Per-track audio gain when one source is too loud</li>
+              <li>Export segments separately, merged into one clip, or both</li>
+              <li>Quality, resolution and frame-rate presets for size-limited exports</li>
+              <li>Keyboard shortcuts, and projects you can save and reopen</li>
+            </ul>
           </div>
-          <ul class="checks">
-            <li>Target file size export, for uploads that have a cap</li>
-            <li>Text overlays for quick callouts and captions</li>
-            <li>Per-track audio gain when one source is too loud</li>
-            <li>Multi-segment export as separate clips, one merged clip, or both</li>
-            <li>Keyboard shortcuts and project save and load</li>
-          </ul>
         </div>
       </section>
 
-      <section class="band band--center">
-        <div class="wrap">
-          <p class="eyebrow">Open source</p>
-          <h2 class="h2 h2--center">Don't like something? Fork it.</h2>
-          <p class="prose prose--center">
-            The whole app is in the repository. Clone it, change what bothers you, and build your
-            own.
-          </p>
-
-          <div class="fork">
-            <pre class="term"><code><span class="term__p">$</span> git clone https://github.com/adillpickles/ClipPress
+      <section class="band">
+        <div class="wrap split split--fork">
+          <pre class="term" aria-label="Cloning and running ClipPress from source"><code><span class="term__p">$</span> git clone https://github.com/adillpickles/ClipPress
 <span class="term__p">$</span> yarn
 <span class="term__p">$</span> yarn download-ffmpeg-win32-x64
-<span class="term__p">$</span> yarn dev</code></pre>
-            <div class="fork__side">
-              <p class="fork__note">
-                GPL-2.0-only, and built on top of
-                <a href="https://github.com/mifi/lossless-cut" rel="noopener" target="_blank"
-                  >LosslessCut</a
-                >
-                by Mikael Finstad and the LosslessCut contributors.
-              </p>
-              <div class="fork__actions">
-                <a
-                  class="btn btn--primary"
-                  href="https://github.com/adillpickles/ClipPress/fork"
-                  rel="noopener"
-                  target="_blank"
-                  >Fork on GitHub</a
-                >
-                <a
-                  class="btn btn--quiet"
-                  href="https://github.com/adillpickles/ClipPress/blob/master/CONTRIBUTING.md"
-                  rel="noopener"
-                  target="_blank"
-                  >Build it yourself <span class="btn__ext" aria-hidden="true">↗</span></a
-                >
-              </div>
+<span class="term__p">$</span> yarn dev<span class="term__cursor" aria-hidden="true"></span></code></pre>
+
+          <div class="split__copy">
+            <p class="eyebrow">Open source</p>
+            <h2 class="h2 display">Don't like something? Fork it.</h2>
+            <p class="prose">
+              The whole app is in the repository under GPL-2.0-only, built on top of
+              <a href="https://github.com/mifi/lossless-cut" rel="noopener" target="_blank"
+                >LosslessCut</a
+              >
+              by Mikael Finstad and the LosslessCut contributors. Read it, change it, build your own.
+            </p>
+            <div class="split__actions">
+              <a
+                class="btn btn--primary"
+                href="https://github.com/adillpickles/ClipPress/fork"
+                rel="noopener"
+                target="_blank"
+              >
+                <svg class="gh" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"
+                  />
+                </svg>
+                Fork on GitHub
+              </a>
+              <a
+                class="btn btn--quiet"
+                href="https://github.com/adillpickles/ClipPress"
+                rel="noopener"
+                target="_blank"
+                >Browse source <span class="btn__ext" aria-hidden="true">↗</span></a
+              >
             </div>
           </div>
         </div>
       </section>
 
-      <section class="band band--center closer">
+      <section class="band band--cta">
         <div class="wrap">
-          <h2 class="h2 h2--closer">Stop re-encoding clips you only trimmed.</h2>
+          <h2 class="cta__title display">Your clips deserve better than a compression website.</h2>
           <p class="prose prose--center">
-            <span data-release-name>ClipPress v0.1.0 Beta 3</span> is a preview build for Windows.
-            One portable <span data-asset-name>ClipPress-Windows-x64.exe</span>, no installer,
-            ffmpeg included.
+            ClipPress is free and open source. ffmpeg ships inside the download, so there is nothing
+            else to install, and every clip is trimmed and encoded on your own machine.
           </p>
           <div class="cta cta--center">
             <a
-              class="btn btn--primary"
+              class="btn btn--primary btn--lg"
               data-download
               href="https://github.com/adillpickles/ClipPress/releases"
               rel="noopener"
@@ -244,7 +263,7 @@
               Download for Windows
             </a>
             <a
-              class="btn btn--quiet"
+              class="btn btn--quiet btn--lg"
               href="https://github.com/adillpickles/ClipPress/releases"
               data-releases-link
               rel="noopener"
@@ -252,19 +271,13 @@
               >All releases <span class="btn__ext" aria-hidden="true">↗</span></a
             >
           </div>
-          <p class="cta__meta">
-            The build is unsigned, so Windows SmartScreen may warn on first run. No macOS or Linux
-            build was produced for this preview.
-          </p>
         </div>
       </section>
     </main>
 
     <footer class="foot">
       <div class="wrap foot__inner">
-        <p class="foot__legal">
-          © <span data-year>2026</span> ClipPress · GPL-2.0-only
-        </p>
+        <p class="foot__legal">© <span data-year>2026</span> ClipPress · GPL-2.0-only</p>
         <nav class="foot__links" aria-label="Footer">
           <a href="https://github.com/adillpickles/ClipPress" rel="noopener" target="_blank">GitHub</a>
           <a
