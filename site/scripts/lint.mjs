@@ -28,16 +28,19 @@ function mustNotMatch(haystack, re, msg) {
   if (re.test(haystack)) errors.push(msg);
 }
 
-// SEO / social
+// SEO / social (no production domain yet: canonical/og:url ship only as a
+// TODO until SITE.siteUrl is set — see the <head> comment in index.html)
 mustContain(html, '<title>', 'missing <title>');
 mustContain(html, 'name="description"', 'missing meta description');
-mustContain(html, 'rel="canonical"', 'missing canonical');
+mustContain(html, 'production domain', 'missing configurable-domain TODO in <head>');
 mustContain(html, 'property="og:title"', 'missing OG title');
 mustContain(html, 'property="og:image"', 'missing OG image');
 mustContain(html, 'name="twitter:card"', 'missing Twitter card');
 mustContain(html, 'application/ld+json', 'missing JSON-LD');
 mustContain(html, '<h1', 'missing H1');
 mustContain(html, 'lang="en"', 'missing lang="en"');
+mustNotMatch(html, /clippress\.app/i, 'do not ship an unchosen production domain');
+mustNotMatch(config, /clippress\.app/i, 'do not ship an unchosen production domain');
 
 // A11y
 mustContain(html, 'skip-link', 'missing skip link');
@@ -49,16 +52,23 @@ if (!readFileSync(cssPath, 'utf8').includes('prefers-reduced-motion')) {
 }
 
 // Release config discipline: HTML must not hardcode a direct asset download URL.
-// All "data-download" anchors should point at the Releases page in static HTML;
-// main.ts swaps in the asset URL only when PREVIEW.status === "ready".
+// All "data-download" anchors point at the Releases page in static HTML;
+// main.ts swaps in the asset URL from site.config.ts when status is "ready".
 const hardcodedAsset = /releases\/download\//i;
 if (hardcodedAsset.test(html)) {
-  errors.push('index.html must not hardcode /releases/download/ asset URLs (use Releases page; asset URL lives in site.config.ts)');
+  errors.push('index.html must not hardcode /releases/download/ asset URLs (asset URL lives in site.config.ts)');
 }
-mustContain(config, "status: 'coming-soon'", 'site.config.ts should default to coming-soon until a preview is actually published (flip to ready on release)');
+mustContain(config, "status: 'ready'", 'site.config.ts should be "ready" while a preview asset is published');
 mustContain(config, 'previewAssetUrl', 'site.config.ts must export previewAssetUrl()');
 mustContain(html, 'data-download', 'missing data-download hooks');
-mustContain(html, 'Preview release coming soon', 'missing coming-soon fallback copy');
+mustNotMatch(html, /coming soon/i, 'shipped release must not show coming-soon copy');
+// Static no-JS fallback copy must mirror the single-source tag + asset name.
+const tag = /tag:\s*'([^']+)'/.exec(config)?.[1];
+const asset = /assetFileName:\s*'([^']+)'/.exec(config)?.[1];
+if (!tag) errors.push('could not parse PREVIEW.tag from site.config.ts');
+if (!asset) errors.push('could not parse PREVIEW.assetFileName from site.config.ts');
+if (tag && !html.includes(tag)) errors.push(`index.html fallback copy must mention the release tag ${tag}`);
+if (asset && !html.includes(asset)) errors.push(`index.html fallback copy must mention the asset ${asset}`);
 
 // External link hygiene
 const externalAnchors = [...html.matchAll(/<a[^>]*href="https:\/\/[^"]*"[^>]*>/g)];
@@ -79,7 +89,8 @@ mustNotMatch(html, /screenshot\.jpeg|screenshot\.png/i, 'do not claim screenshot
 mustContain(html, 'LosslessCut', 'must attribute LosslessCut foundation');
 mustContain(html, 'Mikael Finstad', 'must credit Mikael Finstad');
 mustContain(html, 'GPL-2.0-only', 'must state GPL-2.0-only license');
-mustContain(html, 'Windows x64', 'must state tested Windows x64 preview path');
+mustContain(html, 'Windows 10/11 x64', 'must state Windows 10/11 x64 support');
+mustContain(html, 'Unsigned beta', 'must disclose unsigned beta builds');
 mustContain(html, 'I</kbd> and <kbd>O', 'hero/workflow should document the real I/O workflow');
 
 if (errors.length > 0) {

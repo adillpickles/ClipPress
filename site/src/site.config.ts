@@ -1,13 +1,16 @@
 // Single source of truth for all release / download links on this site.
-// To publish the preview: set `preview.status` to "ready", set `tag` to the
-// published GitHub tag (e.g. "v0.1.0-beta.2"), confirm `assetFileName` matches
-// the uploaded asset, then rebuild + redeploy. Nothing else needs editing.
+// To publish a new preview: set `tag` to the published GitHub tag (e.g.
+// "v0.1.0-beta.3"), confirm `assetFileName` matches the uploaded asset, then
+// rebuild + redeploy. Only set `status` back to "coming-soon" if there is no
+// live asset — in that mode the site links to the Releases page instead of
+// a file, so visitors can't hit a 404.
 //
-// While `status` is "coming-soon" the site never links directly to an asset
-// file. It links to the Releases page instead, so visitors can't hit a 404.
+// NOTE: SITE.siteUrl stays empty until the production domain is chosen. Do
+// not invent one — index.html deliberately ships without canonical/og:url
+// until then (see the TODO in <head>).
 
 export const SITE = {
-  siteUrl: 'https://clippress.app',
+  siteUrl: '',
   productName: 'ClipPress',
   githubOwner: 'adillpickles',
   githubRepo: 'adillpickles/ClipPress',
@@ -23,9 +26,10 @@ export const LOSSLESSCUT_URL = 'https://github.com/mifi/lossless-cut';
 export type PreviewStatus = 'coming-soon' | 'ready';
 
 export const PREVIEW = {
-  status: 'coming-soon' as PreviewStatus,
-  // Only used when status === "ready".
-  tag: 'v0.1.0-beta.2',
+  status: 'ready' as PreviewStatus,
+  // Only used when status === "ready". Static no-JS fallback copy in
+  // index.html mirrors this tag + asset name (lint enforces the sync).
+  tag: 'v0.1.0-beta.3',
   assetFileName: 'ClipPress-Windows-x64.exe',
   label: 'Preview',
 } as const;

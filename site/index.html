@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ClipPress — Fast open-source clip editor for shareable clips</title>
   <meta name="description" content="ClipPress is a fast, open-source clip editor for turning long recordings into clean, shareable clips. Mark I and O, tidy up with text and gain, export without unnecessary re-encoding." />
-  <link rel="canonical" href="https://clippress.app/" />
+  <!-- TODO: add <link rel="canonical"> and og:url once the production domain
+       is chosen (see SITE.siteUrl in src/site.config.ts). No placeholder
+       domain is shipped on purpose. -->
   <meta name="robots" content="index, follow" />
   <meta name="theme-color" content="#0f303f" />
   <meta name="color-scheme" content="light" />
@@ -14,12 +16,11 @@
   <meta property="og:site_name" content="ClipPress" />
   <meta property="og:title" content="ClipPress — Fast open-source clip editor" />
   <meta property="og:description" content="Open a recording, mark I and O, add text or fix gain, export a clip ready to share. Keep-source-quality export, multi-segment export, keyboard-first workflow." />
-  <meta property="og:url" content="https://clippress.app/" />
-  <meta property="og:image" content="https://clippress.app/og-image.svg" />
+  <meta property="og:image" content="./og-image.svg" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="ClipPress — Fast open-source clip editor" />
   <meta name="twitter:description" content="Turn long recordings into clean, shareable clips. Fast I/O workflow, keep-source-quality export, text overlays, open source (GPL-2.0-only)." />
-  <meta name="twitter:image" content="https://clippress.app/og-image.svg" />
+  <meta name="twitter:image" content="./og-image.svg" />
 
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
   <link rel="stylesheet" href="/src/styles.css" />
@@ -30,7 +31,8 @@
     "@type": "SoftwareApplication",
     "name": "ClipPress",
     "applicationCategory": "MultimediaApplication",
-    "operatingSystem": "Windows",
+    "operatingSystem": "Windows 10/11 x64",
+    "softwareVersion": "v0.1.0-beta.3",
     "description": "Fast open-source clip editor for turning long recordings into clean, shareable clips.",
     "license": "https://github.com/adillpickles/ClipPress/blob/master/LICENSE",
     "codeRepository": "https://github.com/adillpickles/ClipPress",
@@ -98,8 +100,8 @@
               View Source
             </a>
           </div>
-          <p class="download-note" data-download-note>Preview release coming soon — get notified on the Releases page.</p>
-          <p class="platform-note">Tested preview: <code>Windows x64 portable EXE</code> · No installer · Settings stay in the OS app-data folder</p>
+          <p class="download-note" data-download-note>Preview v0.1.0-beta.3 · Windows 10/11 x64 portable EXE · Unsigned beta build.</p>
+          <p class="platform-note">Direct download: <code>ClipPress-Windows-x64.exe</code> · No installer · Settings stay in the OS app-data folder</p>
         </div>
 
         <div class="visual" role="img" aria-label="Illustration of the ClipPress workflow: a timeline with In and Out marks, one kept segment and one skipped section, plus export options for separate clips, merged clip, or both.">
@@ -239,23 +241,23 @@
           <div>
             <p class="kicker" style="color:#8fd6dc">Download</p>
             <h2 id="download-title">Get the preview.</h2>
-            <p data-download-note>Preview release coming soon — get notified on the Releases page.</p>
+            <p data-download-note>Preview v0.1.0-beta.3 · Windows 10/11 x64 portable EXE · Unsigned beta build.</p>
             <div class="download-actions">
               <div class="cta-row">
                 <a class="btn btn-light" href="https://github.com/adillpickles/ClipPress/releases" data-download rel="noopener"><span data-download-label>Download Preview</span></a>
                 <a class="btn btn-ghost" href="https://github.com/adillpickles/ClipPress" rel="noopener">View Source</a>
               </div>
-              <p class="fineprint">Free and open source (<a href="https://github.com/adillpickles/ClipPress/blob/master/LICENSE" rel="noopener">GPL-2.0-only</a>). Preview builds are unsigned test builds — your OS may ask for confirmation.</p>
+              <p class="fineprint">Free and open source (<a href="https://github.com/adillpickles/ClipPress/blob/master/LICENSE" rel="noopener">GPL-2.0-only</a>). Preview builds are unsigned beta builds — Windows may ask for confirmation on first run.</p>
             </div>
           </div>
           <div class="os-cards">
             <div class="os-card">
               <span class="os-badge">Windows</span>
-              <div><b>Windows x64 · portable EXE</b><p>Tested in CI: build + packaged-app smoke test on every tag. Extract and run — no installer.</p></div>
+              <div><b>Windows 10/11 x64 · portable EXE</b><p>ClipPress v0.1.0 Beta 3 · <code>ClipPress-Windows-x64.exe</code>. Tested in CI: build + packaged-app smoke test on every tag. Extract and run — no installer.</p></div>
             </div>
             <div class="os-card">
-              <span class="os-badge soon">Soon</span>
-              <div><b>macOS · Linux</b><p>Not published from this repo right now. The pipeline publishes Windows only — watch Releases or build from source.</p></div>
+              <span class="os-badge soon">None</span>
+              <div><b>macOS · Linux</b><p>No macOS or Linux release. The pipeline publishes Windows only — watch Releases or build from source.</p></div>
             </div>
             <div class="os-card">
               <span class="os-badge soon">Source</span>
@@ -275,12 +277,12 @@
         </div>
         <div class="faq reveal">
           <details>
-            <summary>Is there a preview I can download yet?</summary>
-            <p>Preview builds appear on the <a href="https://github.com/adillpickles/ClipPress/releases" rel="noopener">Releases page</a> when published. If the button above says “coming soon”, the first preview hasn’t been tagged yet — use “Get notified” on GitHub or build from source.</p>
+            <summary>Where do I download the preview?</summary>
+            <p><strong>ClipPress v0.1.0 Beta 3</strong> is out now. Hit the Download Preview button for the Windows 10/11 x64 portable EXE (unsigned beta build), or grab it from the <a href="https://github.com/adillpickles/ClipPress/releases" rel="noopener">Releases page</a>, which also has the release notes.</p>
           </details>
           <details>
             <summary>Which platforms are supported?</summary>
-            <p>The tested path is a <strong>Windows x64 portable EXE</strong> (built + smoke-tested in CI on tag). macOS and Linux artifacts are not published from this repo’s current pipeline. macOS would ship as a <code>.dmg</code> and Linux as an archive when enabled — check Releases for current state.</p>
+            <p>The supported and tested path is <strong>Windows 10/11 x64</strong> via the portable <code>ClipPress-Windows-x64.exe</code> (built + smoke-tested in CI on tag). There is no macOS or Linux release from this repo’s current pipeline.</p>
           </details>
           <details>
             <summary>Does ClipPress re-encode my video?</summary>
@@ -312,7 +314,7 @@
         <div class="card reveal" style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;justify-content:space-between">
           <div style="min-width:min(100%,26rem)">
             <h2 id="final-title" style="margin-bottom:0.3rem">Stop scrubbing. Start clipping.</h2>
-            <p style="margin:0;color:var(--muted)">Grab the preview when it lands, or read the source today.</p>
+            <p style="margin:0;color:var(--muted)">Grab the Beta 3 preview, or read the source today.</p>
           </div>
           <div class="cta-row" style="margin:0">
             <a class="btn btn-primary" href="https://github.com/adillpickles/ClipPress/releases" data-download rel="noopener"><span data-download-label>Download Preview</span></a>

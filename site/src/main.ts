@@ -23,7 +23,7 @@ function setDownloadLinks(): void {
   document.querySelectorAll('[data-download-note]').forEach((el) => {
     el.textContent =
       PREVIEW.status === 'ready'
-        ? `Preview ${PREVIEW.tag} · Windows x64 portable EXE · See Releases for notes.`
+        ? `Preview ${PREVIEW.tag} · Windows 10/11 x64 portable EXE · Unsigned beta build.`
         : 'Preview release coming soon — get notified on the Releases page.';
   });
 
