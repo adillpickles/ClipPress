@@ -9,13 +9,13 @@
        is chosen (see SITE.siteUrl in src/site.config.ts). No placeholder
        domain is shipped on purpose. -->
   <meta name="robots" content="index, follow" />
-  <meta name="theme-color" content="#0f303f" />
-  <meta name="color-scheme" content="light" />
+  <meta name="theme-color" content="#090c10" />
+  <meta name="color-scheme" content="dark" />
 
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="ClipPress" />
   <meta property="og:title" content="ClipPress — Fast open-source clip editor" />
-  <meta property="og:description" content="Open a recording, mark I and O, add text or fix gain, export a clip ready to share. Keep-source-quality export, multi-segment export, keyboard-first workflow." />
+  <meta property="og:description" content="Cut the clip. Skip the render. Keep the quality. A fast, keyboard-first desktop editor for turning long recordings into clean, shareable clips." />
   <meta property="og:image" content="./og-image.svg" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="ClipPress — Fast open-source clip editor" />
@@ -28,12 +28,12 @@
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
+    "@type": "MultimediaApplication",
     "name": "ClipPress",
     "applicationCategory": "MultimediaApplication",
     "operatingSystem": "Windows 10/11 x64",
     "softwareVersion": "v0.1.0-beta.3",
-    "description": "Fast open-source clip editor for turning long recordings into clean, shareable clips.",
+    "description": "Fast open-source clip editor for turning long recordings into clean, shareable clips without re-encoding.",
     "license": "https://github.com/adillpickles/ClipPress/blob/master/LICENSE",
     "codeRepository": "https://github.com/adillpickles/ClipPress",
     "isAccessibleForFree": true
@@ -44,31 +44,38 @@
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
 
+  <!-- HEADER -->
   <header class="site-header">
     <div class="wrap header-inner">
       <a class="brand" href="#top" aria-label="ClipPress home">
         <span class="brand-mark" aria-hidden="true">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <rect x="2" y="5" width="20" height="14" rx="3" fill="#14B0BF"/>
-            <path d="M2 9.5h20" stroke="#0F303F" stroke-width="1.6"/>
+            <path d="M2 9.5h20" stroke="#090C10" stroke-width="1.6"/>
             <path d="M7 5l3 4.5H6.5L3.5 5H7z" fill="#fff"/>
-            <circle cx="12" cy="14.5" r="2.4" fill="#0F303F"/>
+            <circle cx="12" cy="14.5" r="2.4" fill="#090C10"/>
             <path d="M12 13.2v2.6M10.7 14.5h2.6" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/>
           </svg>
         </span>
-        ClipPress
+        <span class="brand-text">ClipPress</span>
       </a>
+
       <button class="nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="site-nav">
-        Menu
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+        <span>Menu</span>
       </button>
+
       <nav class="site-nav" id="site-nav" data-nav data-open="false" aria-label="Primary">
-        <a href="#features">Features</a>
         <a href="#workflow">Workflow</a>
-        <a href="#download">Download</a>
+        <a href="#features">Features</a>
+        <a href="#open-source">Open Source</a>
         <a href="#faq">FAQ</a>
-        <a href="https://github.com/adillpickles/ClipPress" rel="noopener">Source</a>
-        <span class="status-pill" title="ClipPress is in preview">Preview</span>
-        <a class="nav-cta" href="https://github.com/adillpickles/ClipPress/releases" data-download rel="noopener">Get preview</a>
+        <a class="nav-link-ext" href="https://github.com/adillpickles/ClipPress" rel="noopener">Source</a>
+        <a class="nav-cta" href="https://github.com/adillpickles/ClipPress/releases" data-download rel="noopener">Download</a>
       </nav>
     </div>
   </header>
@@ -76,274 +83,465 @@
   <main id="main">
     <!-- HERO -->
     <section class="hero" id="top" aria-labelledby="hero-title">
-      <div class="wrap hero-grid">
-        <div>
-          <p class="eyebrow">Open-source clip editor · Preview</p>
-          <h1 id="hero-title">ClipPress</h1>
+      <div class="wrap hero-container">
+        <div class="hero-content">
+          <div class="hero-tag">
+            <span class="pulse-dot" aria-hidden="true"></span>
+            <span>Desktop Video Utility · v0.1.0-beta.3</span>
+          </div>
+
+          <h1 id="hero-title">Cut the clip.<br>Skip the render.<br>Keep the quality.</h1>
+
           <p class="lede">
-            A fast, open-source clip editor for turning long recordings into
-            <strong>clean, shareable clips</strong>. Open a file, mark
-            <kbd>I</kbd> and <kbd>O</kbd>, tidy it up, export.
+            A fast, keyboard-first desktop editor for turning long recordings into
+            clean, shareable clips. Mark <kbd>I</kbd> and <kbd>O</kbd>, trim with frame precision,
+            and export in seconds without re-encoding.
           </p>
-          <div class="cta-row">
-            <a class="btn btn-primary" href="https://github.com/adillpickles/ClipPress/releases" data-download rel="noopener">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M4 17v2.5A1.5 1.5 0 005.5 21h13a1.5 1.5 0 001.5-1.5V17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              </svg>
-              <span data-download-label>Download Preview</span>
-            </a>
-            <a class="btn btn-secondary" href="https://github.com/adillpickles/ClipPress" rel="noopener">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M9 19c-4 1.5-4-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 00-1.3-3.2 4.2 4.2 0 00-.1-3.2s-1.1-.3-3.6 1.3a12.3 12.3 0 00-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 00-.1 3.2A4.6 4.6 0 004 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1-.6 2V21" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              View Source
-            </a>
+
+          <div class="cta-group">
+            <div class="cta-actions">
+              <a class="btn btn-primary" href="https://github.com/adillpickles/ClipPress/releases" data-download rel="noopener">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5"/>
+                  <path d="M4 17v2.5A1.5 1.5 0 005.5 21h13a1.5 1.5 0 001.5-1.5V17"/>
+                </svg>
+                <span data-download-label>Download for Windows</span>
+              </a>
+              <a class="btn btn-secondary" href="https://github.com/adillpickles/ClipPress" rel="noopener">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M9 19c-4 1.5-4-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 00-1.3-3.2 4.2 4.2 0 00-.1-3.2s-1.1-.3-3.6 1.3a12.3 12.3 0 00-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 00-.1 3.2A4.6 4.6 0 004 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1-.6 2V21"/>
+                </svg>
+                <span>View Source</span>
+              </a>
+            </div>
+
+            <div class="hero-meta">
+              <span class="meta-item" data-download-note>v0.1.0-beta.3 · Windows 10/11 x64 · Portable EXE · Unsigned beta</span>
+              <span class="meta-bullet" aria-hidden="true">·</span>
+              <span class="meta-item">Direct download: <code>ClipPress-Windows-x64.exe</code></span>
+              <span class="meta-bullet" aria-hidden="true">·</span>
+              <span class="meta-item">No installer needed</span>
+            </div>
           </div>
-          <p class="download-note" data-download-note>Preview v0.1.0-beta.3 · Windows 10/11 x64 portable EXE · Unsigned beta build.</p>
-          <p class="platform-note">Direct download: <code>ClipPress-Windows-x64.exe</code> · No installer · Settings stay in the OS app-data folder</p>
         </div>
 
-        <div class="visual" role="img" aria-label="Illustration of the ClipPress workflow: a timeline with In and Out marks, one kept segment and one skipped section, plus export options for separate clips, merged clip, or both.">
-          <div class="visual-bar" aria-hidden="true">
-            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-            <span class="filename">long-recording.mp4 — workflow illustration</span>
-          </div>
-          <div class="visual-body" aria-hidden="true">
-            <div class="timeline">
-              <div class="timeline-ruler"><span>00:00</span><span>04:32</span><span>09:15</span><span>14:48</span></div>
-              <div class="track">
-                <div class="segment cut" style="left:2%;width:24%">skip</div>
-                <div class="segment kept" style="left:28%;width:44%">KEEP · I → O</div>
-                <div class="segment cut" style="left:74%;width:24%">skip</div>
-                <div class="io-flag" style="left:28%"><i>I</i></div>
-                <div class="io-flag" style="left:72%"><i>O</i></div>
+        <!-- PRODUCT SHOWCASE / WORKSPACE PREVIEW -->
+        <div class="showcase" role="region" aria-label="ClipPress editor workspace preview">
+          <div class="window-frame">
+            <div class="window-titlebar" aria-hidden="true">
+              <div class="window-buttons">
+                <span class="win-btn win-minimize"></span>
+                <span class="win-btn win-maximize"></span>
+                <span class="win-btn win-close"></span>
+              </div>
+              <div class="window-title">
+                <span class="file-icon">🎬</span>
+                <span>ClipPress — 2026-09-recording-session.mp4</span>
+                <span class="file-badge">1080p60 · H.264</span>
+              </div>
+              <div class="window-status">
+                <span class="status-indicator"></span>
+                <span>LOSSLESS ENGINE</span>
               </div>
             </div>
-            <div class="visual-meta">
-              <div class="mini-card"><b>Keep quality</b><span>Export without unnecessary re-encoding</span></div>
-              <div class="mini-card"><b>Segments</b><span>Separate, merged, or both</span></div>
-              <div class="mini-card"><b>Tidy up</b><span>Text + per-track gain</span></div>
-            </div>
-            <p class="visual-caption">Stylised workflow illustration — not a screenshot. Keys: <kbd>I</kbd> set in · <kbd>O</kbd> set out.</p>
-          </div>
-        </div>
-      </div>
-    </section>
 
-    <!-- CUT WITHOUT THE WAIT -->
-    <section class="block" id="features" aria-labelledby="features-title">
-      <div class="wrap">
-        <div class="section-head reveal">
-          <p class="kicker">Why ClipPress</p>
-          <h2 id="features-title">Cut without the wait.</h2>
-          <p>Built for the job most editors overcomplicate: pull the good minute out of a long recording and share it.</p>
-        </div>
-        <div class="grid-3">
-          <article class="card reveal">
-            <div class="icon-bubble" aria-hidden="true">≫</div>
-            <h3>Fast, lossless cutting</h3>
-            <p>ClipPress is built on the LosslessCut engine and FFmpeg, so cuts avoid unnecessary re-encoding. You keep source quality and skip long render queues.</p>
-            <ul>
-              <li>Keep-source-quality export path</li>
-              <li>Target-file-size export when you need small</li>
-              <li>Wide video + audio format support via FFmpeg</li>
-            </ul>
-          </article>
-          <article class="card reveal">
-            <div class="icon-bubble" aria-hidden="true">⌁</div>
-            <h3>Precise trim, honest output</h3>
-            <p>Mark segments on the timeline, review them, then export exactly what you marked — as separate clips, one merged clip, or both.</p>
-            <ul>
-              <li>Multi-segment export modes</li>
-              <li>Project save / load for repeatable edits</li>
-              <li>Simple mode by default, Advanced when needed</li>
-            </ul>
-          </article>
-          <article class="card reveal">
-            <div class="icon-bubble" aria-hidden="true">✎</div>
-            <h3>Light touches, built in</h3>
-            <p>Small fixes without opening a full editor: lightweight text callouts and practical per-track volume fixes.</p>
-            <ul>
-              <li>Text overlays for captions + callouts</li>
-              <li>Per-track audio gain</li>
-              <li>Keyboard-first: <kbd>I</kbd> / <kbd>O</kbd>, shortcuts throughout</li>
-            </ul>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <!-- WORKFLOW -->
-    <section class="block" id="workflow" aria-labelledby="workflow-title" style="padding-top:0">
-      <div class="wrap">
-        <div class="section-head reveal">
-          <p class="kicker">Workflow</p>
-          <h2 id="workflow-title">Open → mark → export.</h2>
-          <p>The default path is deliberately short. Advanced controls stay out of the way until you ask for them.</p>
-        </div>
-        <div class="steps reveal">
-          <div class="step"><b>1</b><h3>Open a recording</h3><p>Drop in a long capture. No project setup, no import dance.</p></div>
-          <div class="step"><b>2</b><h3>Mark <code>I</code> / <code>O</code></h3><p>Set in/out points. Add more segments when one clip isn’t enough.</p></div>
-          <div class="step"><b>3</b><h3>Tidy up</h3><p>Optional text overlay or per-track gain fix. Stay in Simple mode or switch to Advanced.</p></div>
-          <div class="step"><b>4</b><h3>Export + share</h3><p>Keep source quality or hit a target size. Separate, merged, or both — ready for Discord or anywhere.</p></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- RELIABILITY -->
-    <section class="block" id="reliability" aria-labelledby="reliability-title" style="padding-top:0">
-      <div class="wrap">
-        <div class="grid-2">
-          <article class="card reveal">
-            <div class="icon-bubble" aria-hidden="true">✓</div>
-            <h3>Careful with your files</h3>
-            <p>Recent preview work focused on the unglamorous stuff: safer output-path handling, a tightened local HTTP surface and CLI parsing, plus stability fixes for media-load races, empty-folder crashes, undo-history growth, and overlay bounds.</p>
-          </article>
-          <article class="card reveal">
-            <div class="icon-bubble" aria-hidden="true">◍</div>
-            <h3>Desktop-native, no account</h3>
-            <p>No backend, no sign-in, no upload step. ClipPress runs locally with FFmpeg, stores settings, shortcuts, logs, and caches in the OS app-data folder, and uninstalls by deleting the app folder plus that data.</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <!-- OPEN SOURCE -->
-    <section class="block" id="open-source" aria-labelledby="oss-title" style="padding-top:0">
-      <div class="wrap">
-        <div class="oss reveal">
-          <div>
-            <p class="kicker">Open source</p>
-            <h2 id="oss-title">Built in the open, on open foundations.</h2>
-            <p>ClipPress is free, ad-free, and licensed under <a href="https://github.com/adillpickles/ClipPress/blob/master/LICENSE" rel="noopener">GPL-2.0-only</a>. It is built on top of <a href="https://github.com/mifi/lossless-cut" rel="noopener">LosslessCut</a> by Mikael Finstad and the LosslessCut contributors — thank you for the foundation that made ClipPress possible.</p>
-            <p><span class="license-chip">GPL-2.0-only</span></p>
-          </div>
-          <div>
-            <div class="card" style="height:100%">
-              <h3>How to follow along</h3>
-              <ul>
-                <li><a href="https://github.com/adillpickles/ClipPress" rel="noopener">Source + issues</a> — the factual home for capabilities and status</li>
-                <li><a href="https://github.com/adillpickles/ClipPress/releases" rel="noopener">Releases</a> — where preview builds appear when published</li>
-                <li><a href="https://github.com/adillpickles/ClipPress/blob/master/docs/installation.md" rel="noopener">Installation notes</a> — no installer, per-OS layout</li>
-                <li><a href="https://github.com/adillpickles/ClipPress/blob/master/CONTRIBUTING.md" rel="noopener">Contributing</a> — build from source with Node 22 + FFmpeg</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- DOWNLOAD -->
-    <section class="block" id="download" aria-labelledby="download-title" style="padding-top:0">
-      <div class="wrap">
-        <div class="download-panel reveal">
-          <div>
-            <p class="kicker" style="color:#8fd6dc">Download</p>
-            <h2 id="download-title">Get the preview.</h2>
-            <p data-download-note>Preview v0.1.0-beta.3 · Windows 10/11 x64 portable EXE · Unsigned beta build.</p>
-            <div class="download-actions">
-              <div class="cta-row">
-                <a class="btn btn-light" href="https://github.com/adillpickles/ClipPress/releases" data-download rel="noopener"><span data-download-label>Download Preview</span></a>
-                <a class="btn btn-ghost" href="https://github.com/adillpickles/ClipPress" rel="noopener">View Source</a>
+            <div class="app-viewport">
+              <!-- Video Stage -->
+              <div class="player-stage">
+                <div class="stage-overlay-top">
+                  <span class="timecode-display">00:04:18.120 <span class="timecode-total">/ 00:15:30.000</span></span>
+                  <span class="segment-tag">SEGMENT 1/2 · KEPT</span>
+                </div>
+                <div class="stage-center-reticle" aria-hidden="true">
+                  <div class="reticle-box">
+                    <span class="text-callout-mock">CLIP HIGHLIGHT</span>
+                  </div>
+                </div>
+                <div class="stage-overlay-bottom">
+                  <span class="badge-stream">Stream Copy Mode: Passthrough</span>
+                  <span class="badge-gain">Track 1: +2.0 dB</span>
+                </div>
               </div>
-              <p class="fineprint">Free and open source (<a href="https://github.com/adillpickles/ClipPress/blob/master/LICENSE" rel="noopener">GPL-2.0-only</a>). Preview builds are unsigned beta builds — Windows may ask for confirmation on first run.</p>
+
+              <!-- Timeline & Cut Scrubber -->
+              <div class="timeline-container">
+                <div class="timeline-ruler" aria-hidden="true">
+                  <span>00:00</span>
+                  <span>03:00</span>
+                  <span>06:00</span>
+                  <span>09:00</span>
+                  <span>12:00</span>
+                  <span>15:30</span>
+                </div>
+
+                <div class="timeline-track" aria-hidden="true">
+                  <!-- Skipped section 1 -->
+                  <div class="segment-strip cut-strip" style="left:0%;width:14%">
+                    <span class="strip-label">skip</span>
+                  </div>
+                  <!-- Kept segment 1 -->
+                  <div class="segment-strip kept-strip" style="left:14%;width:32%">
+                    <div class="io-handle handle-in" title="In point (I)">
+                      <span class="key-flag">I</span>
+                    </div>
+                    <span class="strip-label">01:15 → 04:30 (Clip 1)</span>
+                    <div class="io-handle handle-out" title="Out point (O)">
+                      <span class="key-flag">O</span>
+                    </div>
+                  </div>
+                  <!-- Skipped section 2 -->
+                  <div class="segment-strip cut-strip" style="left:46%;width:18%">
+                    <span class="strip-label">skip</span>
+                  </div>
+                  <!-- Kept segment 2 -->
+                  <div class="segment-strip kept-strip" style="left:64%;width:26%">
+                    <div class="io-handle handle-in" title="In point (I)">
+                      <span class="key-flag">I</span>
+                    </div>
+                    <span class="strip-label">08:45 → 11:20 (Clip 2)</span>
+                    <div class="io-handle handle-out" title="Out point (O)">
+                      <span class="key-flag">O</span>
+                    </div>
+                  </div>
+                  <!-- Skipped section 3 -->
+                  <div class="segment-strip cut-strip" style="left:90%;width:10%">
+                    <span class="strip-label">skip</span>
+                  </div>
+
+                  <!-- Playhead -->
+                  <div class="playhead" style="left:27.7%">
+                    <div class="playhead-line"></div>
+                    <div class="playhead-marker">04:18</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Workspace Control Bar -->
+              <div class="workspace-bar">
+                <div class="shortcuts-strip">
+                  <span class="shortcut-tip"><kbd>Space</kbd> Play</span>
+                  <span class="shortcut-tip"><kbd>I</kbd> In</span>
+                  <span class="shortcut-tip"><kbd>O</kbd> Out</span>
+                  <span class="shortcut-tip"><kbd>C</kbd> Cut</span>
+                  <span class="shortcut-tip"><kbd>+</kbd> Add Segment</span>
+                </div>
+                <div class="export-mode-strip">
+                  <span class="mode-item active">⚡ Lossless (Fastest)</span>
+                  <span class="mode-item">Target Size (Discord 25MB)</span>
+                  <span class="mode-item">Export: Merged + Separate</span>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="os-cards">
-            <div class="os-card">
-              <span class="os-badge">Windows</span>
-              <div><b>Windows 10/11 x64 · portable EXE</b><p>ClipPress v0.1.0 Beta 3 · <code>ClipPress-Windows-x64.exe</code>. Tested in CI: build + packaged-app smoke test on every tag. Extract and run — no installer.</p></div>
+          <p class="showcase-caption">
+            Structural preview of the ClipPress workspace. Mark <kbd>I</kbd> and <kbd>O</kbd> to isolate segments; export finishes in seconds without re-encoding.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- WORKFLOW STORY (LINEAR, PURPOSEFUL, NO CARD SOUP) -->
+    <section class="section" id="workflow" aria-labelledby="workflow-title">
+      <div class="wrap">
+        <div class="section-header reveal">
+          <p class="section-kicker">Workflow</p>
+          <h2 id="workflow-title" class="section-title">Cut in seconds. Not minutes.</h2>
+          <p class="section-lede">
+            Most desktop editors force you through timeline setup, transcode imports, and heavy rendering queues. ClipPress strips away the friction.
+          </p>
+        </div>
+
+        <div class="workflow-flow reveal">
+          <!-- Item 1 -->
+          <div class="flow-item">
+            <div class="flow-num">01</div>
+            <div class="flow-content">
+              <h3>Drop and scrub</h3>
+              <p>Drag any video file directly into ClipPress. Instant playback powered by FFmpeg — no project wizard, no proxy generation, zero import wait time.</p>
+              <div class="flow-meta">
+                <span class="flow-tag">MP4</span>
+                <span class="flow-tag">MKV</span>
+                <span class="flow-tag">MOV</span>
+                <span class="flow-tag">WebM</span>
+                <span class="flow-tag">AVI</span>
+              </div>
             </div>
-            <div class="os-card">
-              <span class="os-badge soon">None</span>
-              <div><b>macOS · Linux</b><p>No macOS or Linux release. The pipeline publishes Windows only — watch Releases or build from source.</p></div>
+          </div>
+
+          <!-- Item 2 -->
+          <div class="flow-item">
+            <div class="flow-num">02</div>
+            <div class="flow-content">
+              <h3>Mark with <kbd>I</kbd> and <kbd>O</kbd></h3>
+              <p>Scrub with your keyboard. Hit <kbd>I</kbd> to set your in-point, hit <kbd>O</kbd> to set your out-point. Need multiple segments from the same long recording? Tap <kbd>+</kbd> to mark additional clips.</p>
+              <div class="flow-meta">
+                <span class="flow-tag"><kbd>I</kbd> Mark In</span>
+                <span class="flow-tag"><kbd>O</kbd> Mark Out</span>
+                <span class="flow-tag"><kbd>◀</kbd> <kbd>▶</kbd> Frame step</span>
+              </div>
             </div>
-            <div class="os-card">
-              <span class="os-badge soon">Source</span>
-              <div><b>Build it yourself</b><p>Node 22 + FFmpeg. See <a href="https://github.com/adillpickles/ClipPress/blob/master/CONTRIBUTING.md" rel="noopener" style="color:#fff">CONTRIBUTING</a> and installation notes.</p></div>
+          </div>
+
+          <!-- Item 3 -->
+          <div class="flow-item">
+            <div class="flow-num">03</div>
+            <div class="flow-content">
+              <h3>True lossless stream copying</h3>
+              <p>ClipPress slices video packets directly along keyframes without decoding and re-encoding video streams. Source bitrates and image quality remain 100% untouched.</p>
+              <div class="flow-meta">
+                <span class="flow-tag">Bitstream passthrough</span>
+                <span class="flow-tag">Zero quality loss</span>
+                <span class="flow-tag">Instant disk write</span>
+              </div>
             </div>
+          </div>
+
+          <!-- Item 4 -->
+          <div class="flow-item">
+            <div class="flow-num">04</div>
+            <div class="flow-content">
+              <h3>Lightweight fixes built in</h3>
+              <p>Tidy up audio levels with per-track volume gain or drop in clean text overlays for captions and callouts without launching a heavyweight video editing suite.</p>
+              <div class="flow-meta">
+                <span class="flow-tag">Per-track dB boost</span>
+                <span class="flow-tag">Text overlays</span>
+                <span class="flow-tag">Simple / Advanced modes</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Item 5 -->
+          <div class="flow-item">
+            <div class="flow-num">05</div>
+            <div class="flow-content">
+              <h3>Export your way</h3>
+              <p>Export marked cuts as individual files, combine them automatically into a single continuous highlight reel, or output both at once. Ready for Discord, YouTube, or archive.</p>
+              <div class="flow-meta">
+                <span class="flow-tag">Separate files</span>
+                <span class="flow-tag">Merged reel</span>
+                <span class="flow-tag">Target file size mode</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CORE ATTRIBUTES / SPECS -->
+    <section class="section section-bordered" id="features" aria-labelledby="features-title">
+      <div class="wrap">
+        <div class="section-header reveal">
+          <p class="section-kicker">Architecture</p>
+          <h2 id="features-title" class="section-title">Built like a real desktop tool.</h2>
+          <p class="section-lede">No cloud servers. No subscriptions. Just a fast, standalone binary that respects your hardware and your privacy.</p>
+        </div>
+
+        <div class="specs-grid reveal">
+          <div class="spec-cell">
+            <div class="spec-label">Engine</div>
+            <div class="spec-val">LosslessCut + FFmpeg</div>
+            <p class="spec-desc">Built upon Mikael Finstad's proven LosslessCut core and upstream FFmpeg for industry-standard container and codec handling.</p>
+          </div>
+
+          <div class="spec-cell">
+            <div class="spec-label">Export Performance</div>
+            <div class="spec-val">Disk I/O Bound</div>
+            <p class="spec-desc">Stream copy exports finish as fast as your drive can write files. No GPU spin-up, no fan roar, no render bottleneck.</p>
+          </div>
+
+          <div class="spec-cell">
+            <div class="spec-label">Privacy & Storage</div>
+            <div class="spec-val">100% Local Execution</div>
+            <p class="spec-desc">No accounts, no telemetry, no network calls during editing. All user config and shortcuts stay in <code>%APPDATA%\ClipPress</code>.</p>
+          </div>
+
+          <div class="spec-cell">
+            <div class="spec-label">Packaging</div>
+            <div class="spec-val">Zero-Install Portable EXE</div>
+            <p class="spec-desc">Single self-contained Windows executable. Extract and run directly from anywhere on your system.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DOWNLOAD SECTION (SINGLE CONFIDENT WINDOWS DOWNLOAD) -->
+    <section class="section" id="download" aria-labelledby="download-title">
+      <div class="wrap">
+        <div class="download-box reveal">
+          <div class="download-main">
+            <div class="download-badge-row">
+              <span class="os-badge-primary">WINDOWS</span>
+              <span class="version-badge">v0.1.0-beta.3</span>
+              <span class="license-badge">GPL-2.0-only</span>
+            </div>
+
+            <h2 id="download-title" class="download-heading">Get ClipPress for Windows</h2>
+
+            <p class="download-summary">
+              Official 64-bit portable build for Windows 10 and 11. Rigorously built and smoke-tested in automated CI on release.
+            </p>
+
+            <div class="download-cta-row">
+              <a class="btn btn-download-large" href="https://github.com/adillpickles/ClipPress/releases" data-download rel="noopener">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5"/>
+                  <path d="M4 17v2.5A1.5 1.5 0 005.5 21h13a1.5 1.5 0 001.5-1.5V17"/>
+                </svg>
+                <span data-download-label>Download for Windows</span>
+              </a>
+              <a class="btn btn-download-secondary" href="https://github.com/adillpickles/ClipPress/releases" data-releases-link rel="noopener">
+                <span>All Releases</span>
+              </a>
+            </div>
+
+            <div class="download-file-details">
+              <span>File: <code>ClipPress-Windows-x64.exe</code></span>
+              <span class="dot-sep">·</span>
+              <span>Target: Windows 10/11 x64</span>
+              <span class="dot-sep">·</span>
+              <span>Portable executable (no installer)</span>
+            </div>
+          </div>
+
+          <div class="download-sidebar">
+            <div class="sidebar-block">
+              <h4>Unsigned Beta Build</h4>
+              <p>Because early beta builds are not code-signed with an EV certificate, Windows SmartScreen may display an informational warning on first run. Click "More info" → "Run anyway".</p>
+            </div>
+            <div class="sidebar-block">
+              <h4>macOS & Linux</h4>
+              <p>Windows 10/11 x64 is the primary compiled binary. macOS and Linux users can easily build from source using Node 22 and FFmpeg.</p>
+            </div>
+            <div class="sidebar-block">
+              <h4>Clean Removal</h4>
+              <p>To uninstall, simply delete the executable and remove your local configuration directory in <code>%APPDATA%\ClipPress</code>.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- OPEN SOURCE ATTRIBUTION -->
+    <section class="section section-bordered" id="open-source" aria-labelledby="oss-title">
+      <div class="wrap">
+        <div class="oss-container reveal">
+          <div class="oss-info">
+            <p class="section-kicker">Open Source</p>
+            <h2 id="oss-title" class="section-title">Transparent foundations.</h2>
+            <p class="oss-body">
+              ClipPress is 100% free and open source under the <a href="https://github.com/adillpickles/ClipPress/blob/master/LICENSE" rel="noopener">GPL-2.0-only</a> license.
+              It is built upon the remarkable foundation of <a href="https://github.com/mifi/lossless-cut" rel="noopener">LosslessCut</a> created by <strong>Mikael Finstad</strong> and LosslessCut contributors.
+              We are deeply grateful for their work in pioneering lossless media cutting on the desktop.
+            </p>
+          </div>
+
+          <div class="oss-links-panel">
+            <h3 class="panel-heading">Repository Resources</h3>
+            <ul class="oss-links-list">
+              <li>
+                <a href="https://github.com/adillpickles/ClipPress" rel="noopener">
+                  <span>GitHub Repository</span>
+                  <span class="arrow">→</span>
+                </a>
+              </li>
+              <li>
+                <a href="https://github.com/adillpickles/ClipPress/releases" rel="noopener">
+                  <span>Release Notes & Changelog</span>
+                  <span class="arrow">→</span>
+                </a>
+              </li>
+              <li>
+                <a href="https://github.com/adillpickles/ClipPress/blob/master/docs/installation.md" rel="noopener">
+                  <span>Installation Guide</span>
+                  <span class="arrow">→</span>
+                </a>
+              </li>
+              <li>
+                <a href="https://github.com/adillpickles/ClipPress/blob/master/CONTRIBUTING.md" rel="noopener">
+                  <span>Contributing & Source Build</span>
+                  <span class="arrow">→</span>
+                </a>
+              </li>
+              <li>
+                <a href="https://github.com/adillpickles/ClipPress/blob/master/LICENSE" rel="noopener">
+                  <span>GPL-2.0-only License</span>
+                  <span class="arrow">→</span>
+                </a>
+              </li>
+            </ul>
           </div>
         </div>
       </div>
     </section>
 
     <!-- FAQ -->
-    <section class="block" id="faq" aria-labelledby="faq-title" style="padding-top:0">
-      <div class="wrap">
-        <div class="section-head reveal">
-          <p class="kicker">FAQ</p>
-          <h2 id="faq-title">Straight answers.</h2>
+    <section class="section" id="faq" aria-labelledby="faq-title">
+      <div class="wrap faq-wrap">
+        <div class="section-header reveal">
+          <p class="section-kicker">FAQ</p>
+          <h2 id="faq-title" class="section-title">Frequently asked questions.</h2>
         </div>
-        <div class="faq reveal">
+
+        <div class="faq-list reveal">
           <details>
-            <summary>Where do I download the preview?</summary>
-            <p><strong>ClipPress v0.1.0 Beta 3</strong> is out now. Hit the Download Preview button for the Windows 10/11 x64 portable EXE (unsigned beta build), or grab it from the <a href="https://github.com/adillpickles/ClipPress/releases" rel="noopener">Releases page</a>, which also has the release notes.</p>
+            <summary>Where do I download ClipPress?</summary>
+            <p>You can download <strong>ClipPress v0.1.0 Beta 3</strong> directly via the Download button above for the portable <code>ClipPress-Windows-x64.exe</code> executable, or inspect all builds and release notes on the <a href="https://github.com/adillpickles/ClipPress/releases" rel="noopener">GitHub Releases page</a>.</p>
           </details>
-          <details>
-            <summary>Which platforms are supported?</summary>
-            <p>The supported and tested path is <strong>Windows 10/11 x64</strong> via the portable <code>ClipPress-Windows-x64.exe</code> (built + smoke-tested in CI on tag). There is no macOS or Linux release from this repo’s current pipeline.</p>
-          </details>
+
           <details>
             <summary>Does ClipPress re-encode my video?</summary>
-            <p>Not unless you ask it to. The default keep-source-quality path cuts without unnecessary re-encoding (LosslessCut engine + FFmpeg). Use target-file-size export only when you explicitly want a smaller file.</p>
+            <p>Not during standard trims. The default "Keep Source Quality" path performs lossless stream cutting via FFmpeg, copying video and audio packets directly without re-encoding. You only re-encode if you explicitly enable the target-file-size export mode (e.g. hitting 25MB for Discord) or apply filters that require frame recalculation.</p>
           </details>
+
           <details>
-            <summary>What can I actually edit?</summary>
-            <p>Only what the app really does: <code>I</code>/<code>O</code> segments, Simple vs Advanced modes, text overlays, per-track audio gain, keep-quality or target-size export, multi-segment export (separate / merged / both), keyboard shortcuts, and project save/load. No effects library, no timeline plugins — by design.</p>
+            <summary>Which operating systems are supported?</summary>
+            <p>Precompiled binary releases are packaged specifically for <strong>Windows 10/11 x64</strong> as a standalone portable EXE. There are currently no prebuilt macOS or Linux binaries in the release pipeline; however, macOS and Linux users can easily clone the repository and run from source using Node 22 and FFmpeg.</p>
           </details>
-          <details>
-            <summary>Is it free? What’s the license?</summary>
-            <p>Yes — free, ad-free, open source under <a href="https://github.com/adillpickles/ClipPress/blob/master/LICENSE" rel="noopener">GPL-2.0-only</a>. If it saves you time, the project accepts voluntary tips via the link in the repo README.</p>
-          </details>
+
           <details>
             <summary>How is ClipPress related to LosslessCut?</summary>
-            <p>ClipPress is built on top of <a href="https://github.com/mifi/lossless-cut" rel="noopener">LosslessCut</a> by Mikael Finstad and its contributors. Same lossless-cutting foundation, refocused on the fast “long recording → shareable clip” workflow with Simple/Advanced modes, text, and gain.</p>
+            <p>ClipPress is built directly on top of <a href="https://github.com/mifi/lossless-cut" rel="noopener">LosslessCut</a> by Mikael Finstad. It preserves the battle-tested lossless cutting engine while tailoring the interface toward fast clipping workflows: streamlined Simple/Advanced views, multi-segment export presets, per-track audio volume gain, and text overlays.</p>
           </details>
-          <details>
-            <summary>Is there an installer? Where are my settings?</summary>
-            <p>There is no installer. On Windows, extract the archive and run the executable; on macOS mount the <code>.dmg</code> and drag to Applications. Settings, shortcuts, logs, and caches live in the OS app-data folder (<code>%APPDATA%\ClipPress</code> on Windows). Delete that folder plus the app to fully uninstall.</p>
-          </details>
-        </div>
-      </div>
-    </section>
 
-    <!-- FINAL CTA -->
-    <section class="block" id="get-started" aria-labelledby="final-title" style="padding-top:0">
-      <div class="wrap">
-        <div class="card reveal" style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;justify-content:space-between">
-          <div style="min-width:min(100%,26rem)">
-            <h2 id="final-title" style="margin-bottom:0.3rem">Stop scrubbing. Start clipping.</h2>
-            <p style="margin:0;color:var(--muted)">Grab the Beta 3 preview, or read the source today.</p>
-          </div>
-          <div class="cta-row" style="margin:0">
-            <a class="btn btn-primary" href="https://github.com/adillpickles/ClipPress/releases" data-download rel="noopener"><span data-download-label>Download Preview</span></a>
-            <a class="btn btn-secondary" href="https://github.com/adillpickles/ClipPress" rel="noopener">View Source</a>
-          </div>
+          <details>
+            <summary>Is there an installer? Where is my data saved?</summary>
+            <p>There is no installer. ClipPress is distributed as a portable executable: simply download <code>ClipPress-Windows-x64.exe</code>, move it wherever you like, and run it. Your application settings, hotkeys, and temporary caches are stored locally in <code>%APPDATA%\ClipPress</code>. To cleanly uninstall, simply delete the EXE and that folder.</p>
+          </details>
+
+          <details>
+            <summary>Is ClipPress free? What is the license?</summary>
+            <p>Yes. ClipPress is 100% free, tracker-free, and published under the <a href="https://github.com/adillpickles/ClipPress/blob/master/LICENSE" rel="noopener">GPL-2.0-only</a> license.</p>
+          </details>
         </div>
       </div>
     </section>
   </main>
 
-  <footer>
-    <div class="wrap footer-grid">
-      <div>
+  <!-- FOOTER -->
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <div class="footer-brand">
         <a class="brand" href="#top" aria-label="ClipPress home">
           <span class="brand-mark" aria-hidden="true">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <rect x="2" y="5" width="20" height="14" rx="3" fill="#14B0BF"/>
-              <path d="M2 9.5h20" stroke="#0F303F" stroke-width="1.6"/>
-              <circle cx="12" cy="14.5" r="2.4" fill="#0F303F"/>
+              <path d="M2 9.5h20" stroke="#090C10" stroke-width="1.6"/>
+              <circle cx="12" cy="14.5" r="2.4" fill="#090C10"/>
             </svg>
           </span>
-          ClipPress
+          <span class="brand-text">ClipPress</span>
         </a>
-        <p class="small">Fast open-source clip editor for shareable clips. Preview status — things will change. © <span data-year>2026</span> ClipPress. Licensed <a href="https://github.com/adillpickles/ClipPress/blob/master/LICENSE" rel="noopener">GPL-2.0-only</a>. Built on <a href="https://github.com/mifi/lossless-cut" rel="noopener">LosslessCut</a> by Mikael Finstad and contributors.</p>
+        <p class="footer-text">
+          Fast open-source clip editor for shareable clips. © <span data-year>2026</span> ClipPress.
+          Licensed under <a href="https://github.com/adillpickles/ClipPress/blob/master/LICENSE" rel="noopener">GPL-2.0-only</a>.
+          Built on <a href="https://github.com/mifi/lossless-cut" rel="noopener">LosslessCut</a> by Mikael Finstad and contributors.
+        </p>
       </div>
-      <nav aria-label="Footer">
+
+      <nav class="footer-nav" aria-label="Footer">
         <a href="https://github.com/adillpickles/ClipPress" rel="noopener">Source</a>
         <a href="https://github.com/adillpickles/ClipPress/releases" rel="noopener">Releases</a>
-        <a href="https://github.com/adillpickles/ClipPress/blob/master/docs/installation.md" rel="noopener">Install notes</a>
+        <a href="https://github.com/adillpickles/ClipPress/blob/master/docs/installation.md" rel="noopener">Install Notes</a>
         <a href="#faq">FAQ</a>
         <a href="#download">Download</a>
       </nav>

@@ -16,14 +16,13 @@ function setDownloadLinks(): void {
   });
 
   document.querySelectorAll('[data-download-label]').forEach((el) => {
-    el.textContent =
-      PREVIEW.status === 'ready' ? `Download Preview (${PREVIEW.assetFileName})` : 'Download Preview';
+    el.textContent = 'Download for Windows';
   });
 
   document.querySelectorAll('[data-download-note]').forEach((el) => {
     el.textContent =
       PREVIEW.status === 'ready'
-        ? `Preview ${PREVIEW.tag} · Windows 10/11 x64 portable EXE · Unsigned beta build.`
+        ? `${PREVIEW.tag} · Windows 10/11 x64 · Portable EXE · Unsigned beta`
         : 'Preview release coming soon — get notified on the Releases page.';
   });
 
@@ -57,8 +56,6 @@ function initNav(): void {
 function initReveal(): void {
   const els = Array.from(document.querySelectorAll('.reveal'));
   if (els.length === 0) return;
-  // Lets automated visual checks (and users who prefer no motion) see
-  // everything at once: #all-visible reveals all sections immediately.
   if (
     window.location.hash === '#all-visible' ||
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
