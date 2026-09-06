@@ -235,7 +235,11 @@ a {
 .hero__title {
   max-width: 20ch;
   margin: 40px auto 22px;
-  font-size: clamp(38px, 5.6vw, 76px);
+  /* A touch larger than the last pass, with breathing room between the lines
+     so the "p" descender and "S" cap never feel like they touch. Weight stays
+     at the lighter T3-style 500 from .display. */
+  font-size: clamp(44px, 6.2vw, 84px);
+  line-height: 1.14;
 }
 
 .hero__sub {
@@ -292,43 +296,90 @@ a {
   position: absolute;
   top: var(--y);
   left: calc(50% + var(--x));
-  margin-left: -27px;
+  margin-left: -36px;
+  /* Parallax offset driven by JS via --px/--py/--rot. The transition is what
+     makes the return-to-rest feel smooth; the inner tile keeps its own idle
+     float so the two motions compose instead of fighting. */
+  transform: translate3d(var(--px, 0px), var(--py, 0px), 0) rotate(var(--rot, 0deg));
+  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
 }
 
 .float__tile {
-  display: grid;
-  place-items: center;
-  width: 54px;
-  height: 54px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 72px;
+  height: 72px;
   border: 1px solid var(--line-strong);
   border-radius: 26%;
-  background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.07), #121216 68%);
+  background: radial-gradient(
+    circle at 30% 25%,
+    var(--tint, rgba(255, 255, 255, 0.07)),
+    #121216 68%
+  );
   box-shadow: 0 20px 48px -16px rgba(0, 0, 0, 0.65), inset 0 1px rgba(255, 255, 255, 0.05);
-  color: var(--faint);
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.02em;
   animation: drift 9s ease-in-out infinite;
+}
+
+.float__glyph {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.85;
+}
+
+.float__label {
+  color: #d4d4d8;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .float--a {
   --x: -430px;
   --y: 84px;
+  --tint: rgba(121, 192, 255, 0.14);
 }
 
 .float--b {
   --x: -330px;
   --y: 236px;
+  --tint: rgba(210, 168, 255, 0.13);
 }
 
 .float--c {
   --x: 330px;
   --y: 96px;
+  --tint: rgba(255, 255, 255, 0.07);
 }
 
 .float--d {
   --x: 424px;
   --y: 244px;
+  --tint: rgba(126, 231, 135, 0.12);
+}
+
+.float--a .float__glyph {
+  color: #79c0ff;
+}
+
+.float--b .float__glyph {
+  color: #d2a8ff;
+}
+
+.float--c .float__glyph {
+  color: #a1a1aa;
+}
+
+.float--d .float__glyph {
+  color: #7ee787;
 }
 
 .float--b .float__tile {
@@ -401,6 +452,36 @@ a {
   text-align: center;
 }
 
+/* The closer gets room to breathe: title → prose → primary CTA →
+   secondary action each sit on their own rhythm instead of bunching up. */
+.band--cta .prose--center {
+  margin-bottom: 42px;
+}
+
+.cta--center {
+  gap: 18px 14px;
+}
+
+.cta__note {
+  max-width: 62ch;
+  margin: 30px auto 0;
+  color: var(--faint);
+  font-size: 13px;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.cta__note a {
+  color: var(--muted);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+
+.cta__note a:hover {
+  color: var(--ink);
+}
+
 .h2 {
   max-width: 17ch;
   margin-bottom: 18px;
@@ -460,8 +541,32 @@ a {
 }
 
 .step {
+  position: relative;
+  overflow: hidden;
   padding-inline: clamp(20px, 3.4vw, 44px);
   border-left: 1px solid var(--line);
+}
+
+/* One restrained oversized mark per step. It sits behind the type at very low
+   opacity — visual identity, not illustration. */
+.step__icon {
+  position: absolute;
+  top: -14px;
+  right: -8px;
+  width: 128px;
+  height: 128px;
+  stroke: var(--ink);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.07;
+  pointer-events: none;
+}
+
+.step__label,
+.step__body {
+  position: relative;
+  z-index: 1;
 }
 
 .step:first-child {
@@ -563,18 +668,92 @@ kbd {
 
 /* ---------- terminal ---------- */
 
+/* macOS-style wrapper: thin chrome bar with traffic lights, body below. The
+   bar is deliberately quiet so the syntax colors do the talking. */
+.termwrap {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #0d0d10;
+  max-width: 100%;
+}
+
+.term__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.term__dots {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.term__dots i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.term__dots i:nth-child(1) {
+  background: #ff5f57;
+}
+
+.term__dots i:nth-child(2) {
+  background: #febc2e;
+}
+
+.term__dots i:nth-child(3) {
+  background: #28c840;
+}
+
+.term__title {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
 .term {
   margin: 0;
   padding: 26px 28px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #0d0d10;
-  color: var(--muted);
+  color: #c9c9d1;
   font-family: var(--mono);
   font-size: 13.5px;
   line-height: 2;
   text-align: left;
   overflow-x: auto;
+}
+
+.term--inwrap {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Restrained syntax palette: green for the VCS command, purple for the JS
+   runner, blue for the repository URL, neutral for args. Nothing else is
+   colored, so the terminal never turns into rainbow art. */
+.tok-cmd {
+  color: #7ee787;
+}
+
+.tok-yarn {
+  color: #d2a8ff;
+}
+
+.tok-url {
+  color: #79c0ff;
+}
+
+.tok-arg {
+  color: #c9c9d1;
 }
 
 .term code {
@@ -665,7 +844,7 @@ kbd {
   }
 
   /* Copy leads on narrow screens; the media follows it. */
-  .split--fork .term {
+  .split--fork .termwrap {
     order: 2;
   }
 
@@ -685,6 +864,12 @@ kbd {
     padding: 26px 0 0;
     border-left: 0;
     border-top: 1px solid var(--line);
+  }
+
+  .step__icon {
+    width: 96px;
+    height: 96px;
+    opacity: 0.06;
   }
 
   .step:first-child {

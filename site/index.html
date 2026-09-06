@@ -7,7 +7,7 @@
     <title>ClipPress — trim the clip, set the file size</title>
     <meta
       name="description"
-      content="ClipPress is an open-source clip editor for Windows. Trim a recording to the part you want, type the size it has to fit under, and ClipPress works out the bitrate and encoder itself."
+      content="ClipPress is a simple, local clip editor for Windows. Trim the part you want and export it under the file size you need."
     />
 
     <!--
@@ -21,14 +21,14 @@
     <meta property="og:title" content="ClipPress — trim the clip, set the file size" />
     <meta
       property="og:description"
-      content="Open-source clip editor for Windows. Trim a recording, type the size it has to fit under, and ClipPress works out the bitrate and encoder itself."
+      content="A simple, local clip editor for Windows. Trim the part you want and export it under the file size you need."
     />
     <meta property="og:image" content="./og-image.svg" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="ClipPress — trim the clip, set the file size" />
     <meta
       name="twitter:description"
-      content="Open-source clip editor for Windows. Trim a recording, type the size it has to fit under, and ClipPress works out the bitrate and encoder itself."
+      content="A simple, local clip editor for Windows. Trim the part you want and export it under the file size you need."
     />
     <meta name="twitter:image" content="./og-image.svg" />
 
@@ -69,17 +69,45 @@
           they are not a claim about codec support inside a container.
         -->
         <div class="floats" aria-hidden="true">
-          <span class="float float--a"><span class="float__tile">MP4</span></span>
-          <span class="float float--b"><span class="float__tile">MKV</span></span>
-          <span class="float float--c"><span class="float__tile">MOV</span></span>
-          <span class="float float--d"><span class="float__tile">WEBM</span></span>
+          <span class="float float--a" data-depth="14"
+            ><span class="float__tile"
+              ><svg class="float__glyph" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="2" y="4" width="20" height="16" rx="3" />
+                <path d="M7 4v16M17 4v16M2 9h5M2 15h5M17 9h5M17 15h5" />
+              </svg><span class="float__label">MP4</span></span
+            ></span
+          >
+          <span class="float float--b" data-depth="22"
+            ><span class="float__tile"
+              ><svg class="float__glyph" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="2" y="4" width="20" height="16" rx="3" />
+                <path d="M7 4v16M17 4v16M2 9h5M2 15h5M17 9h5M17 15h5" />
+              </svg><span class="float__label">MKV</span></span
+            ></span
+          >
+          <span class="float float--c" data-depth="18"
+            ><span class="float__tile"
+              ><svg class="float__glyph" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="2" y="4" width="20" height="16" rx="3" />
+                <path d="M7 4v16M17 4v16M2 9h5M2 15h5M17 9h5M17 15h5" />
+              </svg><span class="float__label">MOV</span></span
+            ></span
+          >
+          <span class="float float--d" data-depth="26"
+            ><span class="float__tile"
+              ><svg class="float__glyph" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="2" y="4" width="20" height="16" rx="3" />
+                <path d="M7 4v16M17 4v16M2 9h5M2 15h5M17 9h5M17 15h5" />
+              </svg><span class="float__label">WEBM</span></span
+            ></span
+          >
         </div>
 
         <div class="wrap hero__inner">
           <h1 class="hero__title display">Trim the clip.<br />Set the file size.</h1>
           <p class="hero__sub">
-            Trim a recording to the part you want, then type the size it has to fit under. ClipPress
-            works out the bitrate and encoder itself.
+            A simple, local clip editor for trimming the part you want and exporting it under
+            the file size you need.
           </p>
 
           <div class="cta">
@@ -115,9 +143,7 @@
             View the source
           </a>
 
-          <p class="cta__meta" data-release-meta>
-            Windows 10/11 x64 · v0.1.0 Beta 3 · unsigned preview build
-          </p>
+          <p class="cta__meta" data-release-meta>Currently available for Windows 10/11 x64.</p>
 
           <!--
             PRODUCT MEDIA SLOT — replace the placeholder <div> below with real
@@ -142,6 +168,14 @@
         <div class="wrap">
           <ol class="steps">
             <li class="step">
+              <!-- Feather "scissors", ISC licensed. Decorative background mark. -->
+              <svg class="step__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="6" cy="6" r="3" />
+                <circle cx="6" cy="18" r="3" />
+                <line x1="20" y1="4" x2="8.12" y2="15.88" />
+                <line x1="14.47" y1="14.48" x2="20" y2="20" />
+                <line x1="8.12" y1="8.12" x2="12" y2="12" />
+              </svg>
               <h2 class="step__label">Trim</h2>
               <p class="step__body">
                 Mark in and out with <kbd>I</kbd> and <kbd>O</kbd>. Add a text overlay, pull down a
@@ -149,6 +183,14 @@
               </p>
             </li>
             <li class="step">
+              <!-- Feather "crosshair", ISC licensed. Decorative background mark. -->
+              <svg class="step__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="22" y1="12" x2="18" y2="12" />
+                <line x1="6" y1="12" x2="2" y2="12" />
+                <line x1="12" y1="6" x2="12" y2="2" />
+                <line x1="12" y1="22" x2="12" y2="18" />
+              </svg>
               <h2 class="step__label">Target</h2>
               <p class="step__body">
                 Keep source quality copies the original streams where the format allows it. Or type
@@ -156,6 +198,12 @@
               </p>
             </li>
             <li class="step">
+              <!-- Feather "upload", ISC licensed. Decorative background mark. -->
+              <svg class="step__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <polyline points="16 16 12 12 8 16" />
+                <line x1="12" y1="12" x2="12" y2="21" />
+                <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" />
+              </svg>
               <h2 class="step__label">Export</h2>
               <p class="step__body">
                 ClipPress plans the bitrate, chooses the encoder, and measures the finished file
@@ -182,8 +230,9 @@
           <div class="split__copy">
             <h2 class="h2 display">Enough editing to finish the clip.</h2>
             <p class="prose">
-              Simple mode keeps the everyday path clear. Advanced mode opens up the encoder,
-              resolution and frame-rate controls for the clips that need them.
+              ClipPress is a small local editor that does just enough: trim your clip, make a few
+              quick edits, pick the size it has to fit under, and export. Deeper controls are
+              there when you want them.
             </p>
             <ul class="checks">
               <li>Text overlays for callouts and captions</li>
@@ -198,20 +247,26 @@
 
       <section class="band">
         <div class="wrap split split--fork">
-          <pre class="term" aria-label="Cloning and running ClipPress from source"><code><span class="term__p">$</span> git clone https://github.com/adillpickles/ClipPress
-<span class="term__p">$</span> yarn
-<span class="term__p">$</span> yarn download-ffmpeg-win32-x64
-<span class="term__p">$</span> yarn dev<span class="term__cursor" aria-hidden="true"></span></code></pre>
+          <div class="termwrap">
+            <div class="term__bar" aria-hidden="true">
+              <span class="term__dots"><i></i><i></i><i></i></span>
+              <span class="term__title">clippress — zsh</span>
+            </div>
+            <pre class="term term--inwrap" aria-label="Cloning and running ClipPress from source"><code><span class="term__p">$</span> <span class="tok-cmd">git</span> <span class="tok-arg">clone</span> <span class="tok-url">https://github.com/adillpickles/ClipPress</span>
+<span class="term__p">$</span> <span class="tok-yarn">yarn</span>
+<span class="term__p">$</span> <span class="tok-yarn">yarn</span> <span class="tok-arg">download-ffmpeg-win32-x64</span>
+<span class="term__p">$</span> <span class="tok-yarn">yarn</span> <span class="tok-arg">dev</span><span class="term__cursor" aria-hidden="true"></span></code></pre>
+          </div>
 
           <div class="split__copy">
             <p class="eyebrow">Open source</p>
             <h2 class="h2 display">Don't like something? Fork it.</h2>
             <p class="prose">
-              The whole app is in the repository under GPL-2.0-only, built on top of
+              ClipPress is open source under GPL-2.0-only, built on
               <a href="https://github.com/mifi/lossless-cut" rel="noopener" target="_blank"
                 >LosslessCut</a
               >
-              by Mikael Finstad and the LosslessCut contributors. Read it, change it, build your own.
+              by Mikael Finstad and contributors. Fork it, change it, make it yours.
             </p>
             <div class="split__actions">
               <a
@@ -242,10 +297,10 @@
 
       <section class="band band--cta">
         <div class="wrap">
-          <h2 class="cta__title display">Your clips deserve better than a compression website.</h2>
+          <h2 class="cta__title display">Trim it. Finish it. Make it fit.</h2>
           <p class="prose prose--center">
-            ClipPress is free and open source. ffmpeg ships inside the download, so there is nothing
-            else to install, and every clip is trimmed and encoded on your own machine.
+            ClipPress is free, open source, and local. Trim, make a few edits, pick a size, and
+            export — everything you need is included.
           </p>
           <div class="cta cta--center">
             <a
@@ -271,6 +326,23 @@
               >All releases <span class="btn__ext" aria-hidden="true">↗</span></a
             >
           </div>
+          <p class="cta__note">
+            Preview builds ship with ffmpeg included and are currently unsigned — see
+            <a
+              href="https://github.com/adillpickles/ClipPress/releases"
+              rel="noopener"
+              target="_blank"
+              >Releases</a
+            >
+            and
+            <a
+              href="https://github.com/adillpickles/ClipPress/blob/master/docs/installation.md"
+              rel="noopener"
+              target="_blank"
+              >Install notes</a
+            >
+            for details.
+          </p>
         </div>
       </section>
     </main>

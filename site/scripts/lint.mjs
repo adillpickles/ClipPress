@@ -65,21 +65,16 @@ must(html, 'data-download', 'missing data-download hooks');
 mustNot(html, /coming soon/i, 'a shipped release must not show coming-soon copy');
 
 const field = (name) => new RegExp(`${name}:\\s*'([^']+)'`).exec(config)?.[1];
-const releaseLabel = field('releaseLabel');
 const assetFileName = field('assetFileName');
 const platform = field('platform');
-for (const [name, value] of Object.entries({ releaseLabel, assetFileName, platform })) {
+for (const [name, value] of Object.entries({ assetFileName, platform })) {
   if (!value) errors.push(`could not parse PREVIEW.${name} from site.config.ts`);
 }
-// The static no-JS copy must already say what main.ts would say.
-if (releaseLabel && !html.includes(releaseLabel)) {
-  errors.push(`static fallback copy must mention the release ${releaseLabel}`);
-}
-// The asset filename is deliberately NOT printed on the page — it belongs on
-// the release, not in the pitch. It still has to exist in config so main.ts can
-// build the direct download URL.
-if (releaseLabel && platform) {
-  const expected = `${platform} · ${releaseLabel} · unsigned preview build`;
+// The hero line stays minimal on purpose: platform only. Version, build and
+// signing details live on GitHub Releases — main.ts injects this same line so
+// the no-JS fallback cannot drift.
+if (platform) {
+  const expected = `Currently available for ${platform}.`;
   if (!html.includes(expected)) {
     errors.push(`static hero meta must match releaseMetaLine(): "${expected}"`);
   }
