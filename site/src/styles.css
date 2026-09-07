@@ -1081,7 +1081,6 @@ kbd {
 }
 
 .appmock__transport {
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1112,30 +1111,6 @@ kbd {
 
 .appmock__iobtn:hover {
   border-color: rgba(255, 255, 255, 0.3);
-}
-
-.appmock__add {
-  position: absolute;
-  right: 0;
-  padding: 7px 13px;
-  border: 1px solid var(--line-strong);
-  border-radius: 9px;
-  background: transparent;
-  color: var(--muted);
-  font-family: inherit;
-  font-size: 12.5px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.appmock__add:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.3);
-  color: var(--ink);
-}
-
-.appmock__add:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 .appmock__play {
@@ -1289,9 +1264,9 @@ kbd {
 
 .appmock__clipcard {
   display: flex;
-  align-items: stretch;
-  gap: 4px;
-  padding: 5px;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 13px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: transparent;
@@ -1300,38 +1275,6 @@ kbd {
 .appmock__clipcard.is-on {
   border-color: rgba(59, 130, 246, 0.65);
   background: rgba(59, 130, 246, 0.07);
-}
-
-.appmock__clipmain {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: inherit;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.appmock__clipx {
-  flex: none;
-  align-self: center;
-  padding: 6px 9px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--faint);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.appmock__clipx:hover {
-  color: var(--ink);
 }
 
 .appmock__clipslist {

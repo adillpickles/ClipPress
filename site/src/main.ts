@@ -73,19 +73,12 @@ function initFloatParallax(): void {
 }
 
 // Simplified interactive miniature of the real ClipPress window. Everything
-// is deterministic and page-local: a procedural canvas frame stands in for
-// the demo clip (no video, no audio, no network), and the export is a fixed
-// fixture. Labels mirror real UI strings (Simple, Export name, Clips,
-// Mark In, Mark Out, Export options, Keep source quality, Target file size,
-// Separate clips, Merge into one clip, Both, Max Quality, Quality, Fast,
-// Exporting, Abort).
-// Simplified interactive miniature of the real ClipPress window. Everything
 // is deterministic and page-local: the preview plays a repo-local muted demo
-// clip (no audio, no network) while the timeline, segments and export flow
-// are a fixed fixture. Labels mirror real UI strings (Simple, Export name,
-// Clips, Export options, Keep source quality, Target file size, Separate
-// clips, Merge into one clip, Both, Max Quality, Quality, Fast, Exporting,
-// Abort).
+// clip (no audio, no network) while the timeline and export flow are a fixed
+// fixture. Single segment only: scrub, mark In and Out, export. Labels mirror
+// real UI strings (Simple, Export name, Clip, Mark In, Mark Out,
+// Export options, Keep source quality, Target file size, Max Quality,
+// Quality, Fast, Exporting, Abort).
 function initAppMock(): void {
   const root = document.getElementById('appmock');
   const video = document.getElementById('mockVideo') as HTMLVideoElement | null;
@@ -96,7 +89,6 @@ function initAppMock(): void {
   const playIcon = document.getElementById('mockPlayIcon');
   const inBtn = document.getElementById('mockInBtn');
   const outBtn = document.getElementById('mockOutBtn');
-  const addBtn = document.getElementById('mockAddBtn') as HTMLButtonElement | null;
   const tl = document.getElementById('mockTl');
   const range = document.getElementById('mockRange');
   const head = document.getElementById('mockHead');
@@ -104,7 +96,8 @@ function initAppMock(): void {
   const handleOut = document.getElementById('mockHandleOut');
   const tc = document.getElementById('mockTc');
   const total = document.getElementById('mockTotal');
-  const clipsList = document.getElementById('mockClipsList');
+  const clipRange = document.getElementById('mockClipRange');
+  const clipMeta = document.getElementById('mockClipMeta');
   const clipsSub = document.getElementById('mockClipsSub');
   const overlay = document.getElementById('mockOverlay');
   const dlgTitle = document.getElementById('mockDlgTitle');
@@ -112,8 +105,6 @@ function initAppMock(): void {
   const sizeInput = document.getElementById('mockSize') as HTMLInputElement | null;
   const sizeRow = document.getElementById('mockSizeRow');
   const presets = document.getElementById('mockPresets');
-  const clipOutLabel = document.getElementById('mockClipOutLabel');
-  const clipOut = document.getElementById('mockClipOut');
   const runExport = document.getElementById('mockRunExport') as HTMLButtonElement | null;
   const progress = document.getElementById('mockProgress');
   const workBar = document.getElementById('mockWorkBar');
@@ -126,9 +117,9 @@ function initAppMock(): void {
   const doneClose = document.getElementById('mockDoneClose');
   if (
     !root || !video || !novideo || !nameInput || !exportBtn || !playBtn || !playIcon ||
-    !inBtn || !outBtn || !addBtn || !tl || !range || !head || !handleIn || !handleOut ||
-    !tc || !total || !clipsList || !clipsSub || !overlay || !dlgTitle ||
-    !dlgClose || !sizeInput || !sizeRow || !presets || !clipOutLabel || !clipOut || !runExport ||
+    !inBtn || !outBtn || !tl || !range || !head || !handleIn || !handleOut ||
+    !tc || !total || !clipRange || !clipMeta || !clipsSub || !overlay || !dlgTitle ||
+    !dlgClose || !sizeInput || !sizeRow || !presets || !runExport ||
     !progress || !workBar || !elapsedEl || !pctEl || !abortBtn ||
     !done || !doneSize || !doneName || !doneClose
   ) {
@@ -139,34 +130,31 @@ function initAppMock(): void {
   // closures below, so bind every element once into a non-null bag.
   const ui = {
     root, video, novideo, nameInput, exportBtn, playBtn, playIcon, inBtn, outBtn,
-    addBtn, tl, range, head, handleIn, handleOut, tc, total, clipsList, clipsSub,
-    overlay, dlgTitle, dlgClose, sizeInput, sizeRow, presets, clipOutLabel, clipOut, runExport,
+    tl, range, head, handleIn, handleOut, tc, total, clipRange, clipMeta, clipsSub,
+    overlay, dlgTitle, dlgClose, sizeInput, sizeRow, presets, runExport,
     progress, workBar, elapsedEl, pctEl, abortBtn, done, doneSize, doneName, doneClose,
   };
 
-  interface Seg {
-    start: number;
-    end: number;
-  }
-
   let CLIP = 12;
   const MIN_GAP = 0.2;
-  const MAX_SEGS = 5;
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const ICON_PLAY = '<path d="M4 2.5v11l9-5.5z" />';
   const ICON_PAUSE = '<path d="M3.5 2.5h3.2v11H3.5zM9.3 2.5h3.2v11H9.3z" />';
   const CONFETTI_COLORS = ['#ffffff', '#7ee787', '#79c0ff', '#3bb3bd', '#e8c884'];
 
-  let segments: Seg[] = [{ start: 1.0, end: 3.1 }];
-  let active = 0;
+  // One active segment only. It starts as the full source clip: no custom
+  // trim is selected until the visitor marks In and Out.
+  const seg = { start: 0, end: CLIP };
   let t = 0;
   let playing = false;
   let goal: 'keep' | 'target' = 'target';
   let view: 'edit' | 'panel' | 'work' | 'done' = 'edit';
   let playRaf = 0;
   let workRaf = 0;
-  let seekTarget: number | null = null;
-  let seekRaf = 0;
+  // A seek already in flight plus the newest request. The timeline UI updates
+  // synchronously on every pointer event; only the media element itself is
+  // coalesced, via the seeking flag and the seeked handler below.
+  let pendingSeek: number | null = null;
 
   const pad = (n: number): string => String(n).padStart(2, '0');
   const fmtTC = (s: number): string => {
@@ -178,18 +166,7 @@ function initAppMock(): void {
   const clampT = (v: number): number => Math.min(CLIP, Math.max(0, Math.round(v * 10) / 10));
   // Integer tenths keep durations exact: binary float dust (2.2999 instead
   // of 2.3) would otherwise leak into the totals and estimates.
-  const segTenths = (s: Seg): number => Math.round(s.end * 10) - Math.round(s.start * 10);
-  // segments is never empty and active is always valid, but strict indexing
-  // needs the explicit fallback below.
-  function cur(): Seg {
-    let s: Seg | undefined = segments[active];
-    if (!s) {
-      s = { start: 0, end: Math.min(CLIP, 1) };
-      segments[active] = s;
-    }
-    return s;
-  }
-  const totalTenths = (): number => segments.reduce((n, s) => n + segTenths(s), 0);
+  const segTenths = (): number => Math.round(seg.end * 10) - Math.round(seg.start * 10);
   const fmtTotal = (tenths: number): string => {
     const ms = tenths * 100;
     const sec = Math.floor(ms / 1000);
@@ -198,7 +175,6 @@ function initAppMock(): void {
   const fmtEst = (tenths: number): string => `${(tenths / 10).toFixed(1)} sec · ~${(Math.round(tenths * 5.5) / 10).toFixed(1)} MB`;
 
   function renderFrame(): void {
-    const seg = cur();
     ui.range.style.left = `${(seg.start / CLIP) * 100}%`;
     ui.range.style.width = `${((seg.end - seg.start) / CLIP) * 100}%`;
     ui.head.style.left = `${(t / CLIP) * 100}%`;
@@ -209,63 +185,14 @@ function initAppMock(): void {
 
   function render(): void {
     renderFrame();
-    ui.total.textContent = fmtTotal(totalTenths());
-    renderClips();
-    ui.addBtn.disabled = segments.length >= MAX_SEGS;
-    ui.addBtn.title =
-      segments.length >= MAX_SEGS ? 'Demo holds up to 5 clips' : 'Add the current range as another clip';
+    renderTotals();
   }
 
-  function renderClips(): void {
-    ui.clipsList.innerHTML = '';
-    segments.forEach((seg, i) => {
-      const tenths = segTenths(seg);
-      const wrap = document.createElement('div');
-      wrap.className = `appmock__clipcard${i === active ? ' is-on' : ''}`;
-      const main = document.createElement('button');
-      main.type = 'button';
-      main.className = 'appmock__clipmain';
-      main.setAttribute('aria-label', `Edit clip ${i + 1}`);
-      const num = document.createElement('span');
-      num.className = 'appmock__clipnum';
-      num.textContent = String(i + 1);
-      const texts = document.createElement('span');
-      texts.className = 'appmock__cliptexts';
-      const rangeEl = document.createElement('span');
-      rangeEl.className = 'appmock__cliprange';
-      rangeEl.textContent = `${fmtRange(seg.start)} - ${fmtRange(seg.end)}`;
-      const meta = document.createElement('span');
-      meta.className = 'appmock__clipmeta';
-      meta.textContent = fmtEst(tenths);
-      texts.appendChild(rangeEl);
-      texts.appendChild(meta);
-      main.appendChild(num);
-      main.appendChild(texts);
-      main.addEventListener('click', () => {
-        if (view !== 'edit') return;
-        active = i;
-        t = cur().start;
-        renderClips();
-        requestSeek(t);
-      });
-      wrap.appendChild(main);
-      if (segments.length > 1) {
-        const remove = document.createElement('button');
-        remove.type = 'button';
-        remove.className = 'appmock__clipx';
-        remove.textContent = '✕';
-        remove.setAttribute('aria-label', `Remove clip ${i + 1}`);
-        remove.addEventListener('click', () => {
-          if (view !== 'edit' || segments.length <= 1) return;
-          segments.splice(i, 1);
-          active = Math.min(active, segments.length - 1);
-          render();
-        });
-        wrap.appendChild(remove);
-      }
-      ui.clipsList.appendChild(wrap);
-    });
-    ui.clipsSub.textContent = `${segments.length} clips ready`;
+  function renderTotals(): void {
+    const tenths = segTenths();
+    ui.total.textContent = fmtTotal(tenths);
+    ui.clipRange.textContent = `${fmtRange(seg.start)} - ${fmtRange(seg.end)}`;
+    ui.clipMeta.textContent = fmtEst(tenths);
   }
 
   function setPlaying(p: boolean): void {
@@ -274,25 +201,31 @@ function initAppMock(): void {
     ui.playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
   }
 
-  // Seeks are funneled through one rAF flush so fast pointer drags apply at
-  // most one seek per frame instead of hammering the media pipeline.
-  function requestSeek(v: number): void {
-    t = v;
-    seekTarget = v;
-    if (!seekRaf) seekRaf = requestAnimationFrame(flushSeek);
+  // Seeks apply to the timeline UI synchronously so the playhead follows
+  // the pointer on every event. The media element itself can only resolve
+  // one seek at a time (compressed H.264 decodes forward from the previous
+  // keyframe), so while a seek is in flight the newest request is parked in
+  // pendingSeek and flushed on the next seeked event. fastSeek is used where
+  // the browser offers it; otherwise currentTime is the same operation.
+  function setMediaTime(v: number): void {
+    const media = ui.video as HTMLVideoElement & { fastSeek?: (t: number) => void };
+    if (typeof media.fastSeek === 'function') media.fastSeek(v);
+    else ui.video.currentTime = v;
   }
 
-  function flushSeek(): void {
-    seekRaf = 0;
-    if (seekTarget !== null) {
-      try {
-        ui.video.currentTime = seekTarget;
-      } catch {
-        /* metadata pending */
-      }
-      seekTarget = null;
-    }
+  function seekNow(v: number): void {
+    t = v;
     renderFrame();
+    if (ui.video.seeking) {
+      pendingSeek = v;
+      return;
+    }
+    pendingSeek = null;
+    try {
+      setMediaTime(v);
+    } catch {
+      /* metadata pending */
+    }
   }
 
   function tick(): void {
@@ -350,10 +283,6 @@ function initAppMock(): void {
     view = 'panel';
     pressPause();
     render();
-    // Merge choices only make sense with two or more segments.
-    const multi = segments.length > 1;
-    ui.clipOutLabel.hidden = !multi;
-    ui.clipOut.hidden = !multi;
     show(ui.overlay);
     ui.dlgTitle.focus();
   }
@@ -370,8 +299,9 @@ function initAppMock(): void {
   }
 
   // Timeline pointer: drag a segment handle, or scrub anywhere else. Scrubbing
-  // pauses playback and seeks through the rAF flush, so the preview stays
-  // live without flooding the decoder. Pointer events cover mouse and touch.
+  // pauses playback and seeks immediately, so the preview follows the pointer
+  // while the decoder catches up as fast as it can. Pointer events cover
+  // mouse and touch.
   let drag: 'in' | 'out' | 'head' | null = null;
   function pointToT(clientX: number): number {
     const r = ui.tl.getBoundingClientRect();
@@ -384,31 +314,37 @@ function initAppMock(): void {
     const onIn = target === ui.handleIn || target.parentElement === ui.handleIn;
     const onOut = target === ui.handleOut || target.parentElement === ui.handleOut;
     drag = onIn ? 'in' : onOut ? 'out' : 'head';
-    ui.tl.setPointerCapture(e.pointerId);
-    const seg = cur();
+    try {
+      ui.tl.setPointerCapture(e.pointerId);
+    } catch {
+      /* capture is a nicety; the drag still tracks via the timeline bounds */
+    }
     const v = pointToT(e.clientX);
     if (drag === 'in') {
       seg.start = Math.min(v, seg.end - MIN_GAP);
-      requestSeek(seg.start);
+      seekNow(seg.start);
+      renderTotals();
     } else if (drag === 'out') {
       seg.end = Math.max(v, seg.start + MIN_GAP);
-      requestSeek(seg.end);
+      seekNow(seg.end);
+      renderTotals();
     } else {
-      requestSeek(v);
+      seekNow(v);
     }
   });
   ui.tl.addEventListener('pointermove', (e: PointerEvent) => {
     if (!drag || view !== 'edit') return;
-    const seg = cur();
     const v = pointToT(e.clientX);
     if (drag === 'in') {
       seg.start = Math.min(v, seg.end - MIN_GAP);
-      requestSeek(seg.start);
+      seekNow(seg.start);
+      renderTotals();
     } else if (drag === 'out') {
       seg.end = Math.max(v, seg.start + MIN_GAP);
-      requestSeek(seg.end);
+      seekNow(seg.end);
+      renderTotals();
     } else {
-      requestSeek(v);
+      seekNow(v);
     }
   });
   ui.tl.addEventListener('pointerup', () => {
@@ -424,15 +360,18 @@ function initAppMock(): void {
     else pressPlay();
   });
 
+  // Single-segment I / O. Each key moves only its own marker; when the new
+  // marker would cross the other one, the other one is pushed along so the
+  // segment never collapses into a sliver.
   function markIn(): void {
-    const seg = cur();
-    seg.start = Math.min(t, seg.end - MIN_GAP);
+    seg.start = clampT(Math.min(t, CLIP - MIN_GAP));
+    if (seg.start >= seg.end) seg.end = Math.min(CLIP, seg.start + MIN_GAP);
     render();
   }
 
   function markOut(): void {
-    const seg = cur();
-    seg.end = Math.max(t, seg.start + MIN_GAP);
+    seg.end = clampT(Math.max(t, MIN_GAP));
+    if (seg.end <= seg.start) seg.start = Math.max(0, seg.end - MIN_GAP);
     render();
   }
 
@@ -445,31 +384,7 @@ function initAppMock(): void {
     markOut();
   });
 
-  function defaultRange(): Seg {
-    const a = cur();
-    let s = Math.round((a.end + 0.3) * 10) / 10;
-    let e = Math.round((s + 2) * 10) / 10;
-    if (e > CLIP) {
-      e = Math.round((a.start - 0.3) * 10) / 10;
-      s = Math.round((e - 2) * 10) / 10;
-    }
-    if (s < 0 || e - s < MIN_GAP) {
-      s = Math.round(CLIP * 0.3 * 10) / 10;
-      e = Math.round(CLIP * 0.55 * 10) / 10;
-    }
-    return { start: Math.max(0, s), end: Math.min(CLIP, e) };
-  }
-
-  ui.addBtn.addEventListener('click', () => {
-    if (view !== 'edit' || segments.length >= MAX_SEGS) return;
-    const next = defaultRange();
-    segments.push(next);
-    active = segments.length - 1;
-    render();
-    requestSeek(next.start);
-  });
-
-  // I / O mirror the app shortcuts on the active clip, scoped to the mock.
+  // I / O mirror the app shortcuts on the single clip, scoped to the mock.
   // Inputs opt out, and nothing is bound globally. Escape dismisses the
   // panel and success card.
   ui.root.addEventListener('keydown', (e: KeyboardEvent) => {
@@ -515,23 +430,22 @@ function initAppMock(): void {
     });
   });
 
-  ui.clipOut.querySelectorAll<HTMLButtonElement>('[data-output]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      selectIn(ui.clipOut, btn);
-    });
-  });
-
   ui.exportBtn.addEventListener('click', openPanel);
   ui.dlgClose.addEventListener('click', () => closeOverlays(true));
 
   // One restrained celebration burst on success. Skipped entirely under
-  // reduced motion; the result card carries the message on its own.
+  // reduced motion; the result card carries the message on its own. Each
+  // particle removes itself when its animation finishes (the WAAPI effect
+  // uses fill forwards so a finished particle stays at opacity 0 instead of
+  // snapping back to a visible square), and the layer is removed wholesale
+  // afterwards as a backstop.
   function confettiBurst(): void {
     if (reduceMotion) return;
     const layer = document.createElement('div');
     layer.className = 'confetti-layer';
     layer.setAttribute('aria-hidden', 'true');
     ui.done.appendChild(layer);
+    const anims: Animation[] = [];
     for (let i = 0; i < 26; i += 1) {
       const p = document.createElement('i');
       const size = 4 + Math.random() * 3;
@@ -554,13 +468,21 @@ function initAppMock(): void {
             opacity: '0',
           },
         ],
-        { duration: 900 + Math.random() * 400, easing: 'cubic-bezier(.2,.7,.3,1)' },
+        { duration: 900 + Math.random() * 400, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'forwards' },
       );
-      if (anim && typeof anim.cancel === 'function') {
-        /* runs to completion; cleanup below removes the layer */
-      }
+      anims.push(anim);
+      anim.onfinish = (): void => {
+        p.remove();
+      };
     }
     window.setTimeout(() => {
+      for (const anim of anims) {
+        try {
+          anim.cancel();
+        } catch {
+          /* already finished */
+        }
+      }
       layer.remove();
     }, 1700);
   }
@@ -573,9 +495,9 @@ function initAppMock(): void {
     ui.abortBtn.focus();
     const target = Math.min(4000, Math.max(1, Math.floor(Number(ui.sizeInput.value) || 20)));
     ui.sizeInput.value = String(target);
-    // Fake duration follows the selected footage: about half the combined
-    // segment length, bounded so the demo never drags or flashes by.
-    const totalSecs = totalTenths() / 10;
+    // Fake duration follows the selected footage: about half the segment
+    // length, bounded so the demo never drags or flashes by.
+    const totalSecs = segTenths() / 10;
     const duration = reduceMotion ? 300 : Math.min(3000, Math.max(800, Math.round(totalSecs * 500)));
     const started = performance.now();
     const step = (now: number): void => {
@@ -617,27 +539,55 @@ function initAppMock(): void {
   ui.video.muted = true;
   ui.video.defaultMuted = true;
 
-  // Once metadata loads, the timeline runs on the real media duration with a
-  // deterministic starter selection inside the clip.
-  ui.video.addEventListener('loadedmetadata', () => {
+  // Once metadata loads, the timeline runs on the real media duration with
+  // the full source clip selected. The preview starts paused at the
+  // beginning: no autoplay, no audio (the clip ships without an audio track
+  // and the element is muted regardless).
+  function syncFromMetadata(): void {
     const d = ui.video.duration;
     if (!Number.isFinite(d) || d <= 0) return;
     CLIP = Math.round(d * 10) / 10;
-    const s = Math.max(0.5, Math.round(CLIP * 0.15 * 10) / 10);
-    const e = Math.min(CLIP - 0.3, Math.round(CLIP * 0.45 * 10) / 10);
-    segments = e - s >= MIN_GAP ? [{ start: s, end: e }] : [{ start: 0, end: CLIP }];
-    active = 0;
+    seg.start = 0;
+    seg.end = CLIP;
     t = 0;
+    pendingSeek = null;
     try {
       ui.video.currentTime = 0;
     } catch {
       /* not ready */
     }
     render();
+  }
+
+  ui.video.addEventListener('loadedmetadata', syncFromMetadata);
+  // The module is deferred while the video preloads during parsing, so on a
+  // fast (or cached) load the metadata may already be in place before this
+  // listener exists. Catch that case up front instead of stranding the
+  // timeline on the fallback duration.
+  if (ui.video.readyState >= 1) syncFromMetadata();
+
+  // A finished seek flushes the newest parked request, if any. While the
+  // visitor is dragging, the timeline UI already shows the pointer position,
+  // so seeked only tops up the media element and never moves the playhead.
+  ui.video.addEventListener('seeked', () => {
+    if (pendingSeek !== null) {
+      const next = pendingSeek;
+      pendingSeek = null;
+      try {
+        setMediaTime(next);
+      } catch {
+        /* metadata pending */
+      }
+      return;
+    }
+    if (!playing && drag === null) {
+      t = clampT(ui.video.currentTime);
+      renderFrame();
+    }
   });
 
   ui.video.addEventListener('timeupdate', () => {
-    if (!playing) {
+    if (!playing && drag === null) {
       t = clampT(ui.video.currentTime);
       renderFrame();
     }
@@ -662,7 +612,6 @@ function initAppMock(): void {
 
   setPlaying(false);
   render();
-  if (!reduceMotion) pressPlay();
 }
 
 applyRelease();
