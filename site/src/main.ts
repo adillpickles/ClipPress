@@ -688,7 +688,333 @@ function initAppMock(): void {
   if (!reduceMotion) ui.playBtn.classList.add('is-nudge');
 }
 
+// Website-native figure stories for the two split sections. Each figure is
+// authored in its final state; here it is reset to the initial state and the
+// short sequence replays when the figure meaningfully enters the viewport.
+// A generation token cancels a run that is interrupted (scroll-away). No
+// network, no media, no layout thrash: values are text swaps and class
+// toggles, and the fake cursor rides one composited transform.
+interface FigStory {
+  root: HTMLElement;
+  play: () => void;
+  reset: () => void;
+}
+
+function initFigureStories(): void {
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Reduced motion and no-observer environments keep the authored final
+  // state: the complete picture with zero animation. This check must come
+  // first, because the story factories reset the DOM when they take over.
+  if (reduceMotion || typeof IntersectionObserver === 'undefined') return;
+  const stories: FigStory[] = [];
+  const tools = initToolsStory();
+  if (tools) stories.push(tools);
+  const target = initTargetStory();
+  if (target) stories.push(target);
+  if (stories.length === 0) return;
+  const seen = new Map<HTMLElement, FigStory>(stories.map((s) => [s.root, s]));
+  const io = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        const story = seen.get(entry.target as HTMLElement);
+        if (!story) continue;
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.3) story.play();
+        else if (!entry.isIntersecting) story.reset();
+      }
+    },
+    { threshold: [0, 0.3] },
+  );
+  stories.forEach((s) => io.observe(s.root));
+}
+
+// Finishing-tools story: rows stagger in, a caption types out, the gain
+// knob slides to -6 dB, I / O chips populate, shortcut keys light up, and
+// the status resolves to Ready. About four seconds end to end.
+function initToolsStory(): FigStory | null {
+  const root = document.getElementById('figTools');
+  if (!root) return null;
+  const typed = root.querySelector<HTMLElement>('[data-typed]');
+  const caret = root.querySelector<HTMLElement>('[data-caret]');
+  const knob = root.querySelector<HTMLElement>('[data-knob]');
+  const gain = root.querySelector<HTMLElement>('[data-gain]');
+  const inEl = root.querySelector<HTMLElement>('[data-in]');
+  const outEl = root.querySelector<HTMLElement>('[data-out]');
+  const status = root.querySelector<HTMLElement>('[data-status]');
+  const statusText = root.querySelector<HTMLElement>('[data-statustext]');
+  if (!typed || !caret || !knob || !gain || !inEl || !outEl || !status || !statusText) return null;
+
+  // Strict TS does not carry the early-return narrowing into the closures
+  // below, so bind every element once into a non-null bag.
+  const ui = { root, typed, caret, knob, gain, inEl, outEl, status, statusText };
+  const keys = [...root.querySelectorAll<HTMLElement>('[data-keys] kbd')];
+
+  const FINAL_TEXT = 'Final lap!';
+  let gen = 0;
+  let timer = 0;
+  let playing = false;
+  let done = false;
+
+  function clearTimers(): void {
+    window.clearTimeout(timer);
+  }
+
+  function reset(): void {
+    gen += 1;
+    clearTimers();
+    playing = false;
+    done = false;
+    ui.root.classList.add('fig--js');
+    ui.root.classList.remove('is-play');
+    ui.typed.textContent = '';
+    ui.caret.classList.remove('is-on');
+    ui.knob.classList.remove('is-set');
+    ui.gain.textContent = '0 dB';
+    ui.inEl.textContent = '--:--';
+    ui.outEl.textContent = '--:--';
+    keys.forEach((k) => k.classList.remove('is-on'));
+    ui.status.classList.remove('is-done');
+    ui.statusText.textContent = 'Working…';
+  }
+
+  function later(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(resolve, ms);
+    });
+  }
+
+  function typeText(text: string, at: number): Promise<void> {
+    return new Promise((resolve) => {
+      let i = at;
+      const step = (): void => {
+        i += 1;
+        ui.typed.textContent = text.slice(0, i);
+        if (i < text.length) {
+          window.clearTimeout(timer);
+          timer = window.setTimeout(step, 55);
+        } else {
+          resolve();
+        }
+      };
+      step();
+    });
+  }
+
+  async function run(g: number): Promise<void> {
+    const live = (): boolean => g === gen;
+    ui.root.classList.add('is-play');
+    await later(500);
+    if (!live()) return;
+    ui.caret.classList.add('is-on');
+    await typeText(FINAL_TEXT, ui.typed.textContent.length);
+    if (!live()) return;
+    ui.caret.classList.remove('is-on');
+    await later(350);
+    if (!live()) return;
+    ui.knob.classList.add('is-set');
+    ui.gain.textContent = '-6 dB';
+    await later(750);
+    if (!live()) return;
+    ui.inEl.textContent = '00:03';
+    ui.outEl.textContent = '00:05';
+    await later(600);
+    if (!live()) return;
+    for (const k of keys) {
+      if (!live()) return;
+      k.classList.add('is-on');
+      await later(160);
+    }
+    if (!live()) return;
+    ui.status.classList.add('is-done');
+    ui.statusText.textContent = 'Ready';
+    playing = false;
+    done = true;
+  }
+
+  // Take over from the authored final state immediately; the observer
+  // replays the sequence on entry.
+  reset();
+
+  return {
+    root,
+    play(): void {
+      if (playing || done) return;
+      playing = true;
+      void run(gen);
+    },
+    reset(): void {
+      // A completed story stays put while visible; leaving re-arms it.
+      if (playing) reset();
+      else if (done) {
+        done = false;
+        reset();
+      }
+    },
+  };
+}
+
+// Target-size story: a clip card lands, a fake cursor types the target,
+// picks the Quality preset, presses Export, progress fills, and the
+// under-target result resolves. About six seconds end to end. Cursor
+// waypoints are measured live from the anchors, so the path stays truthful
+// at every viewport width.
+function initTargetStory(): FigStory | null {
+  const root = document.getElementById('figTarget');
+  const inner = root?.querySelector<HTMLElement>('.fig__inner');
+  const cursor = root?.querySelector<HTMLElement>('[data-cursor]');
+  const targetEl = root?.querySelector<HTMLElement>('[data-target]');
+  const preset = root?.querySelector<HTMLElement>('[data-preset]');
+  const exportBtn = root?.querySelector<HTMLElement>('[data-export]');
+  const bar = root?.querySelector<HTMLElement>('[data-bar]');
+  const result = root?.querySelector<HTMLElement>('[data-result]');
+  if (!root || !inner || !cursor || !targetEl || !preset || !exportBtn || !bar || !result) return null;
+
+  const ui = { root, inner, cursor, targetEl, preset, exportBtn, bar, result };
+  let gen = 0;
+  let timer = 0;
+  let playing = false;
+  let done = false;
+
+  function anchorPoint(name: string): { x: number; y: number } | null {
+    const anchor = ui.root.querySelector<HTMLElement>(`[data-anchor="${name}"]`);
+    if (!anchor) return null;
+    const fig = ui.inner.getBoundingClientRect();
+    const r = anchor.getBoundingClientRect();
+    return { x: r.left + r.width / 2 - fig.left, y: r.top + r.height / 2 - fig.top };
+  }
+
+  function moveCursor(p: { x: number; y: number }): void {
+    ui.cursor.style.transform = `translate3d(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px, 0)`;
+  }
+
+  function later(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(resolve, ms);
+    });
+  }
+
+  function clickPulse(): Promise<void> {
+    return new Promise((resolve) => {
+      ui.cursor.classList.remove('is-click');
+      // Restart the ping keyframe.
+      void ui.cursor.offsetWidth;
+      ui.cursor.classList.add('is-click');
+      window.clearTimeout(timer);
+      timer = window.setTimeout(resolve, 380);
+    });
+  }
+
+  function typeValue(text: string): Promise<void> {
+    return new Promise((resolve) => {
+      ui.targetEl.textContent = '';
+      let i = 0;
+      const step = (): void => {
+        i += 1;
+        ui.targetEl.textContent = text.slice(0, i);
+        if (i < text.length) {
+          window.clearTimeout(timer);
+          timer = window.setTimeout(step, 110);
+        } else {
+          resolve();
+        }
+      };
+      step();
+    });
+  }
+
+  function reset(): void {
+    gen += 1;
+    window.clearTimeout(timer);
+    playing = false;
+    done = false;
+    ui.root.classList.add('fig--js');
+    ui.root.classList.remove('is-play');
+    ui.targetEl.textContent = '';
+    ui.preset.classList.remove('is-on');
+    ui.exportBtn.classList.remove('is-pressed');
+    ui.bar.classList.remove('is-run');
+    ui.result.classList.remove('is-on');
+    ui.cursor.classList.remove('is-on', 'is-click');
+  }
+
+  async function run(g: number): Promise<void> {
+    const live = (): boolean => g === gen;
+    ui.root.classList.add('is-play');
+    const file = anchorPoint('file');
+    if (file) {
+      // Park without transition on the first frame, then fade in.
+      ui.cursor.style.transition = 'none';
+      moveCursor(file);
+      void ui.cursor.offsetWidth;
+      ui.cursor.style.transition = '';
+    }
+    await later(650);
+    if (!live()) return;
+    ui.cursor.classList.add('is-on');
+    const field = anchorPoint('field');
+    if (!field) return;
+    moveCursor(field);
+    await later(800);
+    if (!live()) return;
+    await clickPulse();
+    if (!live()) return;
+    await typeValue('25');
+    if (!live()) return;
+    const chip = anchorPoint('preset');
+    if (!chip) return;
+    moveCursor(chip);
+    await later(800);
+    if (!live()) return;
+    await clickPulse();
+    if (!live()) return;
+    ui.preset.classList.add('is-on');
+    await later(350);
+    if (!live()) return;
+    const go = anchorPoint('export');
+    if (!go) return;
+    moveCursor(go);
+    await later(800);
+    if (!live()) return;
+    await clickPulse();
+    if (!live()) return;
+    ui.exportBtn.classList.add('is-pressed');
+    await later(250);
+    if (!live()) return;
+    ui.bar.classList.add('is-run');
+    await later(1550);
+    if (!live()) return;
+    ui.result.classList.add('is-on');
+    await later(650);
+    if (!live()) return;
+    ui.cursor.classList.remove('is-on');
+    playing = false;
+    done = true;
+  }
+
+  // Take over from the authored final state immediately; the observer
+  // replays the sequence on entry.
+  reset();
+
+  return {
+    root: ui.root,
+    play(): void {
+      if (playing || done) return;
+      playing = true;
+      void run(gen);
+    },
+    reset(): void {
+      if (playing) reset();
+      else if (done) {
+        done = false;
+        reset();
+      }
+    },
+  };
+}
+
 applyRelease();
 applyYear();
 initFloatParallax();
 initAppMock();
+initFigureStories();

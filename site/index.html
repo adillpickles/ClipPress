@@ -390,13 +390,52 @@
       <section class="band">
         <div class="wrap split">
           <!--
-            SECONDARY MEDIA SLOT - same deal as the hero. A short recording of a
-            trim, a target size and an export belongs here. Replace the
-            placeholder div with an <img> or <video>; the frame handles sizing.
+            FINISHING-TOOLS SLOT - a website-native illustration of the small
+            tools panel (see the APP MOCK comment style above for the pattern).
+            The .fig markup below is the illustration; the frame handles sizing.
           -->
           <figure class="shot shot--inline">
             <div class="shot__frame">
-              <div class="shot__placeholder" role="img" aria-label="ClipPress demo placeholder"></div>
+              <!--
+                FINISHING-TOOLS FIGURE. A website-native illustration of the
+                small tools ClipPress stays limited to. Authored in its final
+                state so no-JS and reduced-motion visitors see the complete
+                picture; main.ts resets it and replays the short sequence
+                when it scrolls into view.
+              -->
+              <div
+                class="fig"
+                id="figTools"
+                role="img"
+                aria-label="Illustration of ClipPress finishing tools. A text overlay reads Final lap. Audio gain is set to minus 6 dB. Trim marks read In 00:03 and Out 00:05. The I, O and Space keys light up. Status resolves to Ready."
+              >
+                <div class="fig__inner" aria-hidden="true">
+                  <span class="fig__tag">Illustration</span>
+                  <ul class="fig__rows">
+                    <li class="fig__row" style="--d: 0s">
+                      <span class="fig__label">Text</span>
+                      <span class="fig__field"><span data-typed>Final lap!</span><span class="fig__caret" data-caret></span></span>
+                    </li>
+                    <li class="fig__row" style="--d: 0.15s">
+                      <span class="fig__label">Audio</span>
+                      <span class="fig__slider"><span class="fig__knob" data-knob></span></span>
+                      <span class="fig__value" data-gain>-6 dB</span>
+                    </li>
+                    <li class="fig__row" style="--d: 0.3s">
+                      <span class="fig__label">Trim</span>
+                      <span class="fig__chips">
+                        <span class="fig__chip"><b>I</b> <span data-in>00:03</span></span>
+                        <span class="fig__chip"><b>O</b> <span data-out>00:05</span></span>
+                      </span>
+                    </li>
+                    <li class="fig__row" style="--d: 0.45s">
+                      <span class="fig__label">Shortcuts</span>
+                      <span class="fig__keys" data-keys><kbd>I</kbd><kbd>O</kbd><kbd>Space</kbd></span>
+                    </li>
+                  </ul>
+                  <p class="fig__status" data-status><span class="fig__dot"></span><span data-statustext>Ready</span></p>
+                </div>
+              </div>
             </div>
           </figure>
 
@@ -436,13 +475,59 @@
           </div>
 
           <!--
-            WORKFLOW MEDIA SLOT - a short recording of the full quick workflow
-            (opening a clip through export) belongs here. Replace the
-            placeholder div with an <img> or <video>; the frame handles sizing.
+            TARGET-SIZE SLOT - a website-native illustration of the
+            target-size workflow (source, target, preset, export, result).
+            The .fig markup below is the illustration; the frame handles sizing.
+            Sizes shown are illustrative fixture values.
           -->
           <figure class="shot shot--inline">
             <div class="shot__frame">
-              <div class="shot__placeholder" role="img" aria-label="ClipPress workflow recording placeholder"></div>
+              <!--
+                TARGET-SIZE FIGURE. A website-native miniature of the size
+                workflow: source clip, target field, preset, export, result.
+                Authored in its final state so no-JS and reduced-motion
+                visitors see the complete story; main.ts resets it and
+                replays the short sequence when it scrolls into view.
+                Sizes are illustrative fixture values, not real processing.
+              -->
+              <div
+                class="fig fig--story"
+                id="figTarget"
+                role="img"
+                aria-label="Illustration of the target file size workflow. A clip named gameplay.mov at 43.5 MB, a target of 25 MB, the Quality preset, an export, and a 24.7 MB result under the target."
+              >
+                <div class="fig__inner" aria-hidden="true">
+                  <span class="fig__tag">Illustration</span>
+                  <div class="fig__file" data-anchor="file">
+                    <span class="fig__fileicon"></span>
+                    <span class="fig__filename">gameplay.mov</span>
+                    <span class="fig__filesize">43.5 MB</span>
+                  </div>
+                  <div class="fig__settings">
+                    <span class="fig__setting">
+                      <span class="fig__label">Target size</span>
+                      <span class="fig__sizefield" data-anchor="field"><span data-target>25</span><span class="fig__unit">MB</span></span>
+                    </span>
+                    <span class="fig__setting">
+                      <span class="fig__label">Quality</span>
+                      <span class="fig__presets">
+                        <span class="fig__preset">Max Quality</span>
+                        <span class="fig__preset is-on" data-anchor="preset" data-preset>Quality</span>
+                        <span class="fig__preset">Fast</span>
+                      </span>
+                    </span>
+                    <span class="fig__go" data-anchor="export" data-export>Export</span>
+                  </div>
+                  <div class="fig__progress"><span data-bar></span></div>
+                  <div class="fig__result" data-result>
+                    <span class="fig__filename">gameplay.mp4</span>
+                    <span class="fig__filesize">24.7 MB</span>
+                    <span class="fig__verdict">✓ Under 25 MB target</span>
+                  </div>
+                  <p class="fig__fine">Simulated preview</p>
+                  <span class="fig__cursor" data-cursor></span>
+                </div>
+              </div>
             </div>
           </figure>
         </div>

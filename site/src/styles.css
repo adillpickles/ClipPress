@@ -493,12 +493,460 @@ a {
   background: #121216;
 }
 
-/* Neutral stand-in until real media lands. Deliberately plain: no invented
-   ClipPress interface, no branding. */
-.shot__placeholder {
+/* Website-native product illustrations. Each .fig fills its frame and is
+   authored in its final state; main.ts adds .fig--js, resets to the initial
+   state, and replays the short sequence on scroll into view. Static by
+   default, so no-JS and reduced-motion visitors see the complete picture. */
+.fig {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: radial-gradient(circle at 28% 18%, rgba(255, 255, 255, 0.05), #141417 72%);
+  color: #d7d7dc;
+  font-size: 13px;
+}
+
+.fig__inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+  padding: 22px 26px;
+}
+
+.fig__tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.75);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.fig__label {
+  flex: none;
+  width: 76px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* ---------- finishing-tools figure ---------- */
+
+.fig__rows {
+  display: grid;
+  gap: 10px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fig__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.fig__field {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.fig__caret {
+  display: none;
+  width: 2px;
+  height: 15px;
+  margin-left: 2px;
+  background: var(--accent);
+  animation: figblink 0.9s step-end infinite;
+}
+
+.fig--js.is-play .fig__caret.is-on {
+  display: inline-block;
+}
+
+@keyframes figblink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+.fig__slider {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 60px;
+  max-width: 220px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.fig__knob {
+  position: absolute;
+  top: 50%;
+  left: 62%;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ink);
+  translate: -50% -50%;
+}
+
+.fig__value {
+  margin-left: auto;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.fig__chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fig__chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.fig__chip b {
+  color: var(--accent);
+}
+
+.fig__keys {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.fig__keys kbd {
+  opacity: 0.45;
+  transition: opacity 0.25s ease, border-color 0.25s ease;
+}
+
+.fig__keys kbd.is-on {
+  opacity: 1;
+  border-color: rgba(59, 179, 189, 0.6);
+}
+
+.fig__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fig__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.fig__status.is-done {
+  color: var(--ink);
+}
+
+.fig__status.is-done .fig__dot {
+  background: #7ee787;
+  box-shadow: 0 0 10px rgba(126, 231, 135, 0.55);
+}
+
+/* Pre-animation states apply only once JS takes over; rows also stagger in
+   through the per-row --d delay when .is-play lands. */
+.fig--js .fig__row {
+  opacity: 0;
+  translate: 0 10px;
+}
+
+.fig--js.is-play .fig__row {
+  opacity: 1;
+  translate: 0 0;
+  transition: opacity 0.45s ease var(--d, 0s), translate 0.45s ease var(--d, 0s);
+}
+
+.fig--js .fig__knob {
+  left: 88%;
+}
+
+.fig--js.is-play .fig__knob.is-set {
+  left: 62%;
+  transition: left 0.6s cubic-bezier(0.3, 0.7, 0.3, 1);
+}
+
+.fig--js .fig__result {
+  opacity: 0;
+  translate: 0 10px;
+}
+
+.fig--js.is-play .fig__result.is-on {
+  opacity: 1;
+  translate: 0 0;
+  transition: opacity 0.5s ease, translate 0.5s ease;
+}
+
+/* ---------- target-size figure ---------- */
+
+.fig--story .fig__inner {
+  gap: 10px;
+}
+
+.fig__file {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 9px 15px 9px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.fig__fileicon {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, rgba(62, 124, 196, 0.5), rgba(62, 124, 196, 0.15));
+  box-shadow: inset 0 0 0 1px rgba(62, 124, 196, 0.45);
+}
+
+.fig__filename {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.fig__filesize {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.fig__settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+}
+
+.fig__setting {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fig__setting .fig__label {
+  width: auto;
+}
+
+.fig__sizefield {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 76px;
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.fig__sizefield [data-target] {
+  display: inline-block;
+  min-width: 2ch;
+}
+
+.fig__unit {
+  color: var(--faint);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+
+.fig__presets {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fig__preset {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  transition: border-color 0.25s ease, background-color 0.25s ease, color 0.25s ease;
+}
+
+.fig__preset.is-on {
+  border-color: rgba(62, 124, 196, 0.7);
+  background: rgba(62, 124, 196, 0.12);
+  color: var(--ink);
+}
+
+.fig__go {
+  padding: 8px 20px;
+  border-radius: 9px;
+  background: #3e7cc4;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+
+.fig__go.is-pressed {
+  transform: scale(0.94);
+  filter: brightness(1.2);
+}
+
+.fig__progress {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+
+.fig__progress span {
+  display: block;
   width: 100%;
   height: 100%;
-  background: #26262b;
+  border-radius: 3px;
+  background: #3e7cc4;
+}
+
+.fig--js .fig__progress span {
+  width: 0%;
+}
+
+.fig--js.is-play .fig__progress span.is-run {
+  width: 100%;
+  transition: width 1.4s linear;
+}
+
+.fig__result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(126, 231, 135, 0.4);
+  border-radius: 10px;
+  background: rgba(126, 231, 135, 0.06);
+}
+
+.fig__verdict {
+  color: #7ee787;
+  font-size: 12.5px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.fig__fine {
+  margin: 0;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.fig__cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.18), 0 2px 10px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  pointer-events: none;
+  translate: -50% -50%;
+  transition: transform 0.7s cubic-bezier(0.3, 0.7, 0.3, 1), opacity 0.3s ease;
+}
+
+.fig__cursor.is-on {
+  opacity: 1;
+}
+
+.fig__cursor.is-click::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+  animation: figping 0.45s ease-out;
+}
+
+@keyframes figping {
+  from {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+
+  to {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+.fig--js .fig__file {
+  opacity: 0;
+  translate: 0 12px;
+}
+
+.fig--js.is-play .fig__file {
+  opacity: 1;
+  translate: 0 0;
+  transition: opacity 0.5s ease, translate 0.5s ease;
 }
 
 .shot__frame > img,
@@ -707,13 +1155,11 @@ kbd {
 
 .checks li {
   position: relative;
-  padding: 14px 0 14px 30px;
-  border-top: 1px solid var(--line);
+  padding: 10px 0 10px 30px;
   line-height: 1.5;
 }
 
 .checks li:first-child {
-  border-top: 0;
   padding-top: 0;
 }
 
@@ -725,7 +1171,7 @@ kbd {
   content: '';
   position: absolute;
   left: 3px;
-  top: 21px;
+  top: 17px;
   width: 10px;
   height: 5px;
   border-left: 1.6px solid var(--accent);
@@ -734,7 +1180,7 @@ kbd {
 }
 
 .checks li:first-child::before {
-  top: 7px;
+  top: 5px;
 }
 
 /* ---------- terminal ---------- */
@@ -1802,6 +2248,45 @@ kbd {
 
   .shot__frame {
     aspect-ratio: 4 / 3;
+  }
+
+  /* Illustrations recompose for the taller frame: tighter padding, rows
+     stack label-over-control, and the story cluster wraps. The story gets
+     a taller frame so nothing scrolls or clips. */
+  .fig__inner {
+    gap: 8px;
+    padding: 38px 14px 14px;
+  }
+
+  .shot__frame:has(.fig--story) {
+    aspect-ratio: auto;
+    min-height: 352px;
+  }
+
+  .fig__row {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .fig__label {
+    width: 100%;
+  }
+
+  .fig__value {
+    margin-left: 0;
+  }
+
+  .fig__file {
+    padding: 7px 11px 7px 9px;
+  }
+
+  .fig__settings {
+    gap: 8px 12px;
+  }
+
+  .fig__result {
+    padding: 8px 10px;
   }
 
   .foot__inner {
