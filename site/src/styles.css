@@ -110,8 +110,8 @@ a {
   display: flex;
   justify-content: center;
   padding: 18px var(--gutter);
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
-  backdrop-filter: saturate(150%) blur(14px);
+  background: color-mix(in srgb, var(--bg) 58%, transparent);
+  backdrop-filter: saturate(120%) blur(7px);
 }
 
 .wordmark {
@@ -216,13 +216,14 @@ a {
 
 .hero__grid {
   position: absolute;
-  inset: -80px 0 auto;
-  height: 820px;
+  inset: 0;
   background-image: linear-gradient(var(--line) 1px, transparent 1px),
     linear-gradient(90deg, var(--line) 1px, transparent 1px);
   background-size: 72px 72px;
   opacity: 0.55;
-  mask-image: radial-gradient(120% 70% at 50% 22%, #000 0%, transparent 72%);
+  /* Aligned exactly to the hero bounds so overflow never clips a hard edge;
+     the fade is centered on the top edge so the grid melts out evenly. */
+  mask-image: radial-gradient(125% 105% at 50% 0%, #000 25%, transparent 78%);
   pointer-events: none;
 }
 
@@ -321,6 +322,8 @@ a {
     #121216 68%
   );
   box-shadow: 0 20px 48px -16px rgba(0, 0, 0, 0.65), inset 0 1px rgba(255, 255, 255, 0.05);
+  /* Composited raster so the 1px border stays crisp through the drift. */
+  backface-visibility: hidden;
   /* Static tilt via the independent `rotate` property so it composes with
      both the drift animation (transform) and the pointer parallax outside. */
   rotate: var(--tilt, 0deg);
@@ -365,7 +368,7 @@ a {
   letter-spacing: 0.04em;
 }
 
-/* Four large tiles pushed toward the edges and scattered by hand: each sits
+/* Six tiles pushed toward the edges and scattered by hand: each sits
    at its own distance, height, size and tilt. Nothing mirrored, no diagonals,
    clear of the centered copy at every width where the tiles appear. */
 .float--a {
@@ -393,15 +396,15 @@ a {
 }
 
 .float--c {
-  --x: 520px;
-  --y: 110px;
+  --x: 545px;
+  --y: 100px;
   --ml: -46px;
   --tint: rgba(255, 255, 255, 0.07);
   --tilt: 8deg;
 }
 
 .float--d {
-  --x: 495px;
+  --x: 520px;
   --y: 300px;
   --ml: -38px;
   --tint: rgba(126, 231, 135, 0.12);
@@ -409,8 +412,8 @@ a {
 }
 
 .float--f {
-  --x: 445px;
-  --y: 455px;
+  --x: 470px;
+  --y: 450px;
   --ml: -38px;
   --tint: rgba(59, 179, 189, 0.14);
   --tilt: -4deg;
@@ -463,11 +466,11 @@ a {
 @keyframes drift {
   0%,
   100% {
-    transform: translateY(-5px);
+    transform: translate3d(0, -5px, 0);
   }
 
   50% {
-    transform: translateY(5px);
+    transform: translate3d(0, 5px, 0);
   }
 }
 
@@ -869,7 +872,9 @@ kbd {
 }
 
 /* Simplified miniature of the real ClipPress window: dark desktop-app frame,
-   toolbar, preview stage, timeline and clips panel. Wide, rounded, quiet. */
+   toolbar, preview stage, timeline and clips panel. Wide, rounded, quiet.
+   The product blue is muted one step here so the mock sits calmly in the
+   page; the app itself is untouched. */
 .appmock {
   position: relative;
   overflow: hidden;
@@ -880,6 +885,15 @@ kbd {
   color: #d7d7dc;
   font-size: 13px;
   text-align: left;
+  /* A scrub surface, not a document: no text selection and no native
+     drag-and-drop targets anywhere inside (inputs opt back into text). */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.appmock input {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .appmock button {
@@ -908,7 +922,7 @@ kbd {
 .appmock__brand svg {
   width: 18px;
   height: 18px;
-  fill: #3b82f6;
+  fill: #3e7cc4;
   stroke: #0e0e11;
   stroke-width: 1.4;
 }
@@ -940,7 +954,7 @@ kbd {
   margin-left: auto;
   padding: 9px 20px;
   border-radius: 999px;
-  background: #3b82f6;
+  background: #3e7cc4;
   color: #fff;
   font-size: 12.5px;
   font-weight: 650;
@@ -990,7 +1004,7 @@ kbd {
   padding: 9px 18px;
   border: 0;
   border-radius: 10px;
-  background: #3b82f6;
+  background: #3e7cc4;
   color: #fff;
   font-size: 13.5px;
   font-weight: 650;
@@ -1000,7 +1014,7 @@ kbd {
 }
 
 .appmock__export:hover {
-  background: #4b8bf7;
+  background: #4c88cf;
 }
 
 .appmock__export svg {
@@ -1041,6 +1055,8 @@ kbd {
   height: 100%;
   object-fit: cover;
   background: #000;
+  /* Never a native drag source mid-scrub (HTML attribute backs this up). */
+  -webkit-user-drag: none;
 }
 
 .appmock__screen video[hidden] {
@@ -1120,20 +1136,37 @@ kbd {
   height: 40px;
   border: 0;
   border-radius: 50%;
-  background: #3b82f6;
+  background: #3e7cc4;
   color: #fff;
   cursor: pointer;
   transition: background-color 0.15s ease;
 }
 
 .appmock__play:hover {
-  background: #4b8bf7;
+  background: #4c88cf;
 }
 
 .appmock__play svg {
   width: 16px;
   height: 16px;
   fill: currentColor;
+}
+
+/* One-time discoverability hint: two soft pulses, then rest. JS removes the
+   class on first contact so it never replays mid-session. */
+.appmock__play.is-nudge {
+  animation: playnudge 1.4s ease-in-out 2;
+}
+
+@keyframes playnudge {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(62, 124, 196, 0);
+  }
+
+  50% {
+    box-shadow: 0 0 0 12px rgba(62, 124, 196, 0.25);
+  }
 }
 
 .appmock__timeline {
@@ -1273,8 +1306,8 @@ kbd {
 }
 
 .appmock__clipcard.is-on {
-  border-color: rgba(59, 130, 246, 0.65);
-  background: rgba(59, 130, 246, 0.07);
+  border-color: rgba(62, 124, 196, 0.65);
+  background: rgba(62, 124, 196, 0.07);
 }
 
 .appmock__clipslist {
@@ -1395,8 +1428,8 @@ kbd {
   margin-top: 12px;
   padding: 9px 12px;
   border-radius: 8px;
-  background: rgba(59, 130, 246, 0.1);
-  color: #8aabf5;
+  background: rgba(62, 124, 196, 0.1);
+  color: #8ea3d6;
   font-size: 12.5px;
   line-height: 1.55;
 }
@@ -1455,8 +1488,8 @@ kbd {
 }
 
 .appmock__card.is-on {
-  border-color: rgba(59, 130, 246, 0.7);
-  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(62, 124, 196, 0.7);
+  background: rgba(62, 124, 196, 0.1);
 }
 
 .appmock__sizerow {
@@ -1526,7 +1559,7 @@ kbd {
   border: 1px solid var(--line-strong);
   border-radius: 50%;
   fill: none;
-  stroke: #8aabf5;
+  stroke: #8ea3d6;
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -1573,7 +1606,7 @@ kbd {
   width: 0%;
   height: 100%;
   border-radius: 3px;
-  background: #3b82f6;
+  background: #3e7cc4;
 }
 
 .appmock__abort {

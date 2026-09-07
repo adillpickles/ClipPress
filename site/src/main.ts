@@ -154,7 +154,11 @@ function initAppMock(): void {
   // A seek already in flight plus the newest request. The timeline UI updates
   // synchronously on every pointer event; only the media element itself is
   // coalesced, via the seeking flag and the seeked handler below.
+  // lastRequested makes the UI authoritative: the media pipeline can resolve
+  // seeks out of order after a scrub burst, so a stale completion must never
+  // rewind the playhead behind what the visitor already sees.
   let pendingSeek: number | null = null;
+  let lastRequested: number | null = null;
 
   const pad = (n: number): string => String(n).padStart(2, '0');
   const fmtTC = (s: number): string => {
@@ -215,6 +219,7 @@ function initAppMock(): void {
 
   function seekNow(v: number): void {
     t = v;
+    lastRequested = v;
     renderFrame();
     if (ui.video.seeking) {
       pendingSeek = v;
@@ -226,6 +231,19 @@ function initAppMock(): void {
     } catch {
       /* metadata pending */
     }
+  }
+
+  // Adopt the media clock only when it matches the newest requested time
+  // (within float tolerance). Anything else is a stale resolution from an
+  // older seek and the on-screen playhead must not move for it.
+  function adoptMediaTime(): void {
+    if (lastRequested === null) return;
+    const ct = ui.video.currentTime;
+    if (!Number.isFinite(ct)) return;
+    if (Math.abs(ct - lastRequested) > 0.12) return;
+    lastRequested = null;
+    t = clampT(ct);
+    renderFrame();
   }
 
   function tick(): void {
@@ -275,6 +293,8 @@ function initAppMock(): void {
       });
     }
     setPlaying(true);
+    // The tick loop owns the playhead from here; drop any seek epoch.
+    lastRequested = null;
     startLoop();
   }
 
@@ -301,15 +321,23 @@ function initAppMock(): void {
   // Timeline pointer: drag a segment handle, or scrub anywhere else. Scrubbing
   // pauses playback and seeks immediately, so the preview follows the pointer
   // while the decoder catches up as fast as it can. Pointer events cover
-  // mouse and touch.
+  // mouse and touch. preventDefault on down stops native drag-and-drop (and
+  // text selection) before it can start, so a wandering pointer never shows
+  // a cancel cursor mid-scrub.
   let drag: 'in' | 'out' | 'head' | null = null;
+  // The timeline box is measured once per gesture instead of on every move:
+  // reading layout after writing styles each move would force a sync layout
+  // per event. The box cannot move mid-gesture (captured pointer, no scroll).
+  let tlRect: DOMRect | null = null;
   function pointToT(clientX: number): number {
-    const r = ui.tl.getBoundingClientRect();
+    const r = tlRect ?? ui.tl.getBoundingClientRect();
     return clampT(((clientX - r.left) / r.width) * CLIP);
   }
   ui.tl.addEventListener('pointerdown', (e: PointerEvent) => {
     if (view !== 'edit') return;
+    e.preventDefault();
     if (playing) pressPause();
+    tlRect = ui.tl.getBoundingClientRect();
     const target = e.target as HTMLElement;
     const onIn = target === ui.handleIn || target.parentElement === ui.handleIn;
     const onOut = target === ui.handleOut || target.parentElement === ui.handleOut;
@@ -353,6 +381,9 @@ function initAppMock(): void {
   ui.tl.addEventListener('pointercancel', () => {
     drag = null;
   });
+  ui.tl.addEventListener('lostpointercapture', () => {
+    drag = null;
+  });
 
   ui.playBtn.addEventListener('click', () => {
     if (view !== 'edit') return;
@@ -384,20 +415,46 @@ function initAppMock(): void {
     markOut();
   });
 
-  // I / O mirror the app shortcuts on the single clip, scoped to the mock.
-  // Inputs opt out, and nothing is bound globally. Escape dismisses the
-  // panel and success card.
-  ui.root.addEventListener('keydown', (e: KeyboardEvent) => {
+  // Keyboard ownership: the mock is a real control surface, but I / O must
+  // never fire before the visitor has touched it, and never while typing in
+  // the export-name input. The first pointer or focus contact engages the
+  // mock; pointing or tabbing away disengages it again.
+  let engaged = false;
+  function dismissNudge(): void {
+    ui.playBtn.classList.remove('is-nudge');
+  }
+  ui.root.addEventListener('pointerdown', () => {
+    engaged = true;
+    dismissNudge();
+  }, true);
+  ui.root.addEventListener('focusin', () => {
+    engaged = true;
+    dismissNudge();
+  });
+  ui.root.addEventListener('focusout', (e: FocusEvent) => {
+    const next = e.relatedTarget as Node | null;
+    if (next && !ui.root.contains(next)) engaged = false;
+  });
+  document.addEventListener('pointerdown', (e: PointerEvent) => {
+    if (!ui.root.contains(e.target as Node)) engaged = false;
+  }, true);
+
+  // I / O mirror the app shortcuts on the single clip. Nothing is bound
+  // globally before engagement; inputs opt out. Escape dismisses the panel
+  // and success card.
+  document.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (!engaged) return;
     if (e.key === 'Escape') {
       if (view === 'panel' || view === 'done') closeOverlays(true);
       return;
     }
     if (view !== 'edit') return;
     const el = e.target as HTMLElement | null;
-    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
     const key = e.key.toLowerCase();
     if (key !== 'i' && key !== 'o') return;
     e.preventDefault();
+    dismissNudge();
     if (key === 'i') markIn();
     else markOut();
   });
@@ -495,10 +552,12 @@ function initAppMock(): void {
     ui.abortBtn.focus();
     const target = Math.min(4000, Math.max(1, Math.floor(Number(ui.sizeInput.value) || 20)));
     ui.sizeInput.value = String(target);
-    // Fake duration follows the selected footage: about half the segment
-    // length, bounded so the demo never drags or flashes by.
+    // Fake duration for size-targeted exports follows the selected footage:
+    // about half the segment length, bounded so the demo never drags or
+    // flashes by. Keep-source-quality is a passthrough-style operation, so
+    // it resolves in a flat ~0.3s regardless of length.
     const totalSecs = segTenths() / 10;
-    const duration = reduceMotion ? 300 : Math.min(3000, Math.max(800, Math.round(totalSecs * 500)));
+    const duration = goal === 'keep' || reduceMotion ? 300 : Math.min(3000, Math.max(800, Math.round(totalSecs * 500)));
     const started = performance.now();
     const step = (now: number): void => {
       const p = Math.min(1, (now - started) / duration);
@@ -539,6 +598,20 @@ function initAppMock(): void {
   ui.video.muted = true;
   ui.video.defaultMuted = true;
 
+  // Native HTML5 drag must never start inside the preview: Chromium will
+  // otherwise grab the video frame mid-scrub and show a cancel cursor.
+  // (CSS user-select/user-drag plus pointerdown prevention back this up.)
+  ui.video.addEventListener('dragstart', (e: Event) => e.preventDefault());
+  ui.root.addEventListener('dragstart', (e: Event) => e.preventDefault());
+
+  // Background tabs do no media or rAF work: pause playback when hidden.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && playing) pressPause();
+  });
+  window.addEventListener('pagehide', () => {
+    if (playing) pressPause();
+  });
+
   // Once metadata loads, the timeline runs on the real media duration with
   // the full source clip selected. The preview starts paused at the
   // beginning: no autoplay, no audio (the clip ships without an audio track
@@ -551,6 +624,7 @@ function initAppMock(): void {
     seg.end = CLIP;
     t = 0;
     pendingSeek = null;
+    lastRequested = null;
     try {
       ui.video.currentTime = 0;
     } catch {
@@ -569,6 +643,7 @@ function initAppMock(): void {
   // A finished seek flushes the newest parked request, if any. While the
   // visitor is dragging, the timeline UI already shows the pointer position,
   // so seeked only tops up the media element and never moves the playhead.
+  // At rest, a completion is adopted only if it matches the newest request.
   ui.video.addEventListener('seeked', () => {
     if (pendingSeek !== null) {
       const next = pendingSeek;
@@ -580,23 +655,18 @@ function initAppMock(): void {
       }
       return;
     }
-    if (!playing && drag === null) {
-      t = clampT(ui.video.currentTime);
-      renderFrame();
-    }
+    if (!playing && drag === null) adoptMediaTime();
   });
 
   ui.video.addEventListener('timeupdate', () => {
-    if (!playing && drag === null) {
-      t = clampT(ui.video.currentTime);
-      renderFrame();
-    }
+    if (!playing && drag === null) adoptMediaTime();
   });
 
   ui.video.addEventListener('ended', () => {
     setPlaying(false);
     stopLoop();
     t = CLIP;
+    lastRequested = null;
     render();
   });
 
@@ -608,10 +678,14 @@ function initAppMock(): void {
     }
     setPlaying(false);
     stopLoop();
+    lastRequested = null;
   });
 
   setPlaying(false);
   render();
+  // One restrained discoverability hint on the Play control: it pulses twice
+  // and then rests. The first intentional contact dismisses it for good.
+  if (!reduceMotion) ui.playBtn.classList.add('is-nudge');
 }
 
 applyRelease();
