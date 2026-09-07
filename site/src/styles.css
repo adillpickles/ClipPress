@@ -563,17 +563,32 @@ a {
 }
 
 .fig__field {
-  display: inline-flex;
-  align-items: center;
+  flex: 1 1 auto;
   min-width: 0;
+  max-width: 260px;
   padding: 6px 12px;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
   color: var(--ink);
+  font-family: inherit;
   font-size: 13px;
   font-weight: 600;
-  white-space: nowrap;
+  caret-color: var(--accent);
+}
+
+/* The field reads as a fixed caption until the intro resolves, then the
+   accent border marks it editable. */
+.fig__field[readonly] {
+  cursor: default;
+}
+
+.fig__field[readonly]:focus {
+  outline: none;
+}
+
+#figTools.is-live .fig__field {
+  border-color: rgba(59, 179, 189, 0.55);
 }
 
 .fig__caret {
@@ -600,25 +615,54 @@ a {
   }
 }
 
-.fig__slider {
-  position: relative;
+.fig__range {
+  -webkit-appearance: none;
+  appearance: none;
   flex: 1 1 auto;
-  min-width: 60px;
-  max-width: 220px;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.12);
+  min-width: 80px;
+  max-width: 230px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
-.fig__knob {
-  position: absolute;
-  top: 50%;
-  left: 62%;
+.fig__range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.fig__range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
   width: 14px;
   height: 14px;
+  margin-top: -5px;
+  border: 0;
   border-radius: 50%;
   background: var(--ink);
-  translate: -50% -50%;
+}
+
+.fig__range::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.fig__range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+.fig__range:disabled {
+  cursor: default;
+  opacity: 0.8;
 }
 
 .fig__value {
@@ -704,15 +748,6 @@ a {
   opacity: 1;
   translate: 0 0;
   transition: opacity 0.45s ease var(--d, 0s), translate 0.45s ease var(--d, 0s);
-}
-
-.fig--js .fig__knob {
-  left: 88%;
-}
-
-.fig--js.is-play .fig__knob.is-set {
-  left: 62%;
-  transition: left 0.6s cubic-bezier(0.3, 0.7, 0.3, 1);
 }
 
 .fig--js .fig__result {
@@ -902,15 +937,19 @@ a {
   top: 0;
   left: 0;
   z-index: 3;
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  background: var(--ink);
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.18), 0 2px 10px rgba(0, 0, 0, 0.6);
+  width: 23px;
+  height: 23px;
   opacity: 0;
   pointer-events: none;
-  translate: -50% -50%;
   transition: transform 0.7s cubic-bezier(0.3, 0.7, 0.3, 1), opacity 0.3s ease;
+}
+
+.fig__cursor svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+  overflow: visible;
 }
 
 .fig__cursor.is-on {
@@ -920,7 +959,10 @@ a {
 .fig__cursor.is-click::after {
   content: '';
   position: absolute;
-  inset: -4px;
+  top: -5px;
+  left: -5px;
+  width: 15px;
+  height: 15px;
   border: 2px solid rgba(255, 255, 255, 0.7);
   border-radius: 50%;
   animation: figping 0.45s ease-out;
@@ -947,6 +989,15 @@ a {
   opacity: 1;
   translate: 0 0;
   transition: opacity 0.5s ease, translate 0.5s ease;
+}
+
+/* One-shot celebration sparks for the target-size result. Particles are
+   placed and animated from JS; the rule only positions them. */
+.fig__spark {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  border-radius: 1px;
 }
 
 .shot__frame > img,
@@ -1064,22 +1115,73 @@ a {
   border-left: 1px solid var(--line);
 }
 
-/* One restrained oversized mark per step. Each sits fully inside its column,
-   vertically centered behind the type: a composed backdrop, never cropped. */
+/* One restrained oversized mark per step. Each anchors low-center in its
+   column and emerges from beneath the copy: a composed backdrop that stays
+   clearly secondary to the text. */
 .step__icon {
   position: absolute;
-  top: 50%;
-  right: 0;
-  bottom: auto;
-  width: 168px;
-  height: 168px;
-  stroke: var(--ink);
+  top: auto;
+  right: auto;
+  bottom: -58px;
+  left: 50%;
+  width: 190px;
+  height: 190px;
+  margin-left: -95px;
   stroke-width: 1.1;
   stroke-linecap: round;
   stroke-linejoin: round;
-  opacity: 0.08;
+  opacity: 0.12;
   pointer-events: none;
-  transform: translateY(-50%);
+}
+
+.step:nth-child(1) .step__icon {
+  stroke: #8ea3d6;
+  animation: stepsnip 7s ease-in-out infinite;
+}
+
+.step:nth-child(2) .step__icon {
+  stroke: var(--accent);
+  animation: stepfocus 6s ease-in-out infinite;
+}
+
+.step:nth-child(3) .step__icon {
+  stroke: #7ee787;
+  animation: steprise 6.5s ease-in-out infinite;
+}
+
+@keyframes stepsnip {
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+
+  50% {
+    transform: rotate(4deg);
+  }
+}
+
+@keyframes stepfocus {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.1;
+  }
+
+  50% {
+    transform: scale(1.045);
+    opacity: 0.17;
+  }
+}
+
+@keyframes steprise {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-8px);
+  }
 }
 
 .step__label,
@@ -2211,7 +2313,9 @@ kbd {
   .step__icon {
     width: 128px;
     height: 128px;
-    opacity: 0.07;
+    margin-left: -64px;
+    bottom: -40px;
+    opacity: 0.1;
   }
 
   .step:first-child {
@@ -2250,16 +2354,24 @@ kbd {
     aspect-ratio: 4 / 3;
   }
 
-  /* Illustrations recompose for the taller frame: tighter padding, rows
-     stack label-over-control, and the story cluster wraps. The story gets
-     a taller frame so nothing scrolls or clips. */
+  /* Illustrations recompose for narrow frames: content flows from the top,
+     rows stack label-over-control, and each figure gets a reserved taller
+     frame so nothing slides under the tag or clips. */
   .fig__inner {
     gap: 8px;
     padding: 38px 14px 14px;
+    justify-content: flex-start;
+  }
+
+  .shot__frame:has(.fig) {
+    aspect-ratio: auto;
+  }
+
+  .shot__frame:has(#figTools) {
+    min-height: 380px;
   }
 
   .shot__frame:has(.fig--story) {
-    aspect-ratio: auto;
     min-height: 352px;
   }
 

@@ -733,29 +733,52 @@ function initFigureStories(): void {
 function initToolsStory(): FigStory | null {
   const root = document.getElementById('figTools');
   if (!root) return null;
-  const typed = root.querySelector<HTMLElement>('[data-typed]');
+  const inner = root.querySelector<HTMLElement>('.fig__inner');
+  const textInput = root.querySelector<HTMLInputElement>('[data-text]');
   const caret = root.querySelector<HTMLElement>('[data-caret]');
-  const knob = root.querySelector<HTMLElement>('[data-knob]');
+  const gainRange = root.querySelector<HTMLInputElement>('[data-gain-range]');
   const gain = root.querySelector<HTMLElement>('[data-gain]');
   const inEl = root.querySelector<HTMLElement>('[data-in]');
   const outEl = root.querySelector<HTMLElement>('[data-out]');
   const status = root.querySelector<HTMLElement>('[data-status]');
   const statusText = root.querySelector<HTMLElement>('[data-statustext]');
-  if (!typed || !caret || !knob || !gain || !inEl || !outEl || !status || !statusText) return null;
+  if (!inner || !textInput || !caret || !gainRange || !gain || !inEl || !outEl || !status || !statusText) return null;
 
   // Strict TS does not carry the early-return narrowing into the closures
   // below, so bind every element once into a non-null bag.
-  const ui = { root, typed, caret, knob, gain, inEl, outEl, status, statusText };
+  const ui = { root, inner, textInput, caret, gainRange, gain, inEl, outEl, status, statusText };
   const keys = [...root.querySelectorAll<HTMLElement>('[data-keys] kbd')];
 
   const FINAL_TEXT = 'Final lap!';
+  // Gain bounds mirror the real app (util/streams.ts): -50 dB reads Mute.
+  const GAIN_MIN = -50;
   let gen = 0;
   let timer = 0;
   let playing = false;
   let done = false;
+  let interactive = false;
 
   function clearTimers(): void {
     window.clearTimeout(timer);
+  }
+
+  function fmtGain(v: number): string {
+    if (v <= GAIN_MIN) return 'Muted';
+    return v > 0 ? `+${v} dB` : `${v} dB`;
+  }
+
+  // The figure is decorative (role=img) until the intro resolves; then the
+  // two controls become real and the inner content joins the a11y tree.
+  function conceal(): void {
+    const active = document.activeElement as HTMLElement | null;
+    if (active && ui.root.contains(active)) active.blur();
+    ui.root.setAttribute('role', 'img');
+    ui.inner.setAttribute('aria-hidden', 'true');
+  }
+
+  function reveal(): void {
+    ui.root.setAttribute('role', 'group');
+    ui.inner.removeAttribute('aria-hidden');
   }
 
   function reset(): void {
@@ -763,12 +786,18 @@ function initToolsStory(): FigStory | null {
     clearTimers();
     playing = false;
     done = false;
+    interactive = false;
+    conceal();
     ui.root.classList.add('fig--js');
-    ui.root.classList.remove('is-play');
-    ui.typed.textContent = '';
+    ui.root.classList.remove('is-play', 'is-live');
+    ui.textInput.value = '';
+    ui.textInput.readOnly = true;
+    ui.textInput.tabIndex = -1;
     ui.caret.classList.remove('is-on');
-    ui.knob.classList.remove('is-set');
-    ui.gain.textContent = '0 dB';
+    ui.gainRange.value = '0';
+    ui.gainRange.disabled = true;
+    ui.gainRange.tabIndex = -1;
+    ui.gain.textContent = fmtGain(0);
     ui.inEl.textContent = '--:--';
     ui.outEl.textContent = '--:--';
     keys.forEach((k) => k.classList.remove('is-on'));
@@ -788,7 +817,7 @@ function initToolsStory(): FigStory | null {
       let i = at;
       const step = (): void => {
         i += 1;
-        ui.typed.textContent = text.slice(0, i);
+        ui.textInput.value = text.slice(0, i);
         if (i < text.length) {
           window.clearTimeout(timer);
           timer = window.setTimeout(step, 55);
@@ -800,20 +829,73 @@ function initToolsStory(): FigStory | null {
     });
   }
 
+  function stepGain(values: number[]): Promise<void> {
+    return new Promise((resolve) => {
+      let i = 0;
+      const step = (): void => {
+        const v = values[i];
+        if (v === undefined) {
+          resolve();
+          return;
+        }
+        i += 1;
+        ui.gainRange.value = String(v);
+        ui.gain.textContent = fmtGain(v);
+        window.clearTimeout(timer);
+        timer = window.setTimeout(step, 170);
+      };
+      step();
+    });
+  }
+
+  // Hands the two controls to the visitor once the staged explanation has
+  // finished. The text field and slider are native inputs, so typing,
+  // dragging, and keyboard operation all behave normally from here on.
+  function enableLive(): void {
+    interactive = true;
+    ui.textInput.readOnly = false;
+    ui.textInput.tabIndex = 0;
+    ui.gainRange.disabled = false;
+    ui.gainRange.tabIndex = 0;
+    ui.root.classList.add('is-live');
+    reveal();
+  }
+
+  // Leaving mid-play snaps to the completed state instead of discarding the
+  // run: a transient visibility blip must never strand a half-played figure,
+  // and a visitor who scrolls past meets the finished story on return.
+  function finish(): void {
+    gen += 1;
+    clearTimers();
+    playing = false;
+    done = true;
+    ui.root.classList.add('fig--js', 'is-play');
+    ui.textInput.value = FINAL_TEXT;
+    ui.caret.classList.remove('is-on');
+    ui.gainRange.value = '-6';
+    ui.gain.textContent = fmtGain(-6);
+    ui.inEl.textContent = '00:03';
+    ui.outEl.textContent = '00:05';
+    keys.forEach((k) => k.classList.add('is-on'));
+    ui.status.classList.add('is-done');
+    ui.statusText.textContent = 'Ready';
+    enableLive();
+  }
+
   async function run(g: number): Promise<void> {
     const live = (): boolean => g === gen;
     ui.root.classList.add('is-play');
     await later(500);
     if (!live()) return;
     ui.caret.classList.add('is-on');
-    await typeText(FINAL_TEXT, ui.typed.textContent.length);
+    await typeText(FINAL_TEXT, ui.textInput.value.length);
     if (!live()) return;
     ui.caret.classList.remove('is-on');
     await later(350);
     if (!live()) return;
-    ui.knob.classList.add('is-set');
-    ui.gain.textContent = '-6 dB';
-    await later(750);
+    await stepGain([-2, -4, -6]);
+    if (!live()) return;
+    await later(350);
     if (!live()) return;
     ui.inEl.textContent = '00:03';
     ui.outEl.textContent = '00:05';
@@ -827,9 +909,17 @@ function initToolsStory(): FigStory | null {
     if (!live()) return;
     ui.status.classList.add('is-done');
     ui.statusText.textContent = 'Ready';
+    enableLive();
     playing = false;
     done = true;
   }
+
+  // Visitor-driven gain changes once live. Programmatic sets during the
+  // staged sequence do not fire input events, so the two paths never fight.
+  ui.gainRange.addEventListener('input', () => {
+    if (!interactive) return;
+    ui.gain.textContent = fmtGain(Number(ui.gainRange.value));
+  });
 
   // Take over from the authored final state immediately; the observer
   // replays the sequence on entry.
@@ -843,8 +933,9 @@ function initToolsStory(): FigStory | null {
       void run(gen);
     },
     reset(): void {
-      // A completed story stays put while visible; leaving re-arms it.
-      if (playing) reset();
+      // Leaving mid-play snaps to complete; leaving once done re-arms the
+      // replay for the next entry.
+      if (playing) finish();
       else if (done) {
         done = false;
         reset();
@@ -870,8 +961,12 @@ function initTargetStory(): FigStory | null {
   if (!root || !inner || !cursor || !targetEl || !preset || !exportBtn || !bar || !result) return null;
 
   const ui = { root, inner, cursor, targetEl, preset, exportBtn, bar, result };
+  // Restrained burst mirroring the app's own shootConfetti: few particles,
+  // short life, no repeat. Same family of colors as the hero mock burst.
+  const SPARK_COLORS = ['#ffffff', '#7ee787', '#79c0ff', '#3bb3bd', '#e8c884'];
   let gen = 0;
   let timer = 0;
+  let sparkTimer = 0;
   let playing = false;
   let done = false;
 
@@ -926,6 +1021,9 @@ function initTargetStory(): FigStory | null {
   function reset(): void {
     gen += 1;
     window.clearTimeout(timer);
+    window.clearTimeout(sparkTimer);
+    ui.bar.style.width = '';
+    ui.inner.querySelectorAll('.fig__spark').forEach((n) => n.remove());
     playing = false;
     done = false;
     ui.root.classList.add('fig--js');
@@ -936,6 +1034,67 @@ function initTargetStory(): FigStory | null {
     ui.bar.classList.remove('is-run');
     ui.result.classList.remove('is-on');
     ui.cursor.classList.remove('is-on', 'is-click');
+  }
+
+  // Leaving mid-play snaps to the completed state (no confetti offscreen).
+  function finish(): void {
+    gen += 1;
+    window.clearTimeout(timer);
+    window.clearTimeout(sparkTimer);
+    ui.inner.querySelectorAll('.fig__spark').forEach((n) => n.remove());
+    playing = false;
+    done = true;
+    ui.root.classList.add('fig--js', 'is-play');
+    ui.targetEl.textContent = '25';
+    ui.preset.classList.add('is-on');
+    ui.exportBtn.classList.add('is-pressed');
+    ui.bar.classList.add('is-run');
+    ui.bar.style.width = '100%';
+    ui.result.classList.add('is-on');
+    ui.cursor.classList.remove('is-on', 'is-click');
+  }
+
+  // One brief fan of sparks from the resolved result card. Each particle
+  // removes itself on finish; the backstop clears stragglers. Never runs
+  // under reduced motion, because the story itself never plays there.
+  function sparkBurst(): void {
+    const r = ui.result.getBoundingClientRect();
+    const fig = ui.inner.getBoundingClientRect();
+    const ox = r.left + r.width / 2 - fig.left;
+    const oy = r.top - fig.top + 8;
+    for (let i = 0; i < 14; i += 1) {
+      const s = document.createElement('i');
+      s.className = 'fig__spark';
+      s.setAttribute('aria-hidden', 'true');
+      const size = 2.5 + Math.random() * 2.5;
+      s.style.left = `${ox.toFixed(1)}px`;
+      s.style.top = `${oy.toFixed(1)}px`;
+      s.style.width = `${size.toFixed(1)}px`;
+      s.style.height = `${size.toFixed(1)}px`;
+      s.style.background = SPARK_COLORS[i % SPARK_COLORS.length] ?? '#ffffff';
+      ui.inner.appendChild(s);
+      const ang = -Math.PI / 2 + (Math.random() - 0.5) * 1.7;
+      const dist = 34 + Math.random() * 54;
+      const dx = Math.cos(ang) * dist;
+      const dy = Math.sin(ang) * dist + 44;
+      const anim = s.animate(
+        [
+          { transform: 'translate(-50%, -50%) rotate(0deg)', opacity: '1' },
+          {
+            transform: `translate(calc(-50% + ${dx.toFixed(0)}px), calc(-50% + ${dy.toFixed(0)}px)) rotate(${(Math.random() * 360).toFixed(0)}deg)`,
+            opacity: '0',
+          },
+        ],
+        { duration: 650 + Math.random() * 350, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'forwards' },
+      );
+      anim.onfinish = (): void => {
+        s.remove();
+      };
+    }
+    window.clearTimeout(sparkTimer);
+    sparkTimer = window.setTimeout(() => {
+      ui.inner.querySelectorAll('.fig__spark').forEach((n) => n.remove());
+    }, 1500);
   }
 
   async function run(g: number): Promise<void> {
@@ -987,6 +1146,7 @@ function initTargetStory(): FigStory | null {
     ui.result.classList.add('is-on');
     await later(650);
     if (!live()) return;
+    sparkBurst();
     ui.cursor.classList.remove('is-on');
     playing = false;
     done = true;
@@ -1004,7 +1164,9 @@ function initTargetStory(): FigStory | null {
       void run(gen);
     },
     reset(): void {
-      if (playing) reset();
+      // Leaving mid-play snaps to complete; leaving once done re-arms the
+      // replay for the next entry.
+      if (playing) finish();
       else if (done) {
         done = false;
         reset();

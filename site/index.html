@@ -413,12 +413,34 @@
                   <span class="fig__tag">Illustration</span>
                   <ul class="fig__rows">
                     <li class="fig__row" style="--d: 0s">
-                      <span class="fig__label">Text</span>
-                      <span class="fig__field"><span data-typed>Final lap!</span><span class="fig__caret" data-caret></span></span>
+                      <span class="fig__label">Add text</span>
+                      <input
+                        class="fig__field fig__text"
+                        data-text
+                        type="text"
+                        value="Final lap!"
+                        maxlength="48"
+                        readonly
+                        tabindex="-1"
+                        autocomplete="off"
+                        spellcheck="false"
+                        aria-label="Sample overlay text"
+                      /><span class="fig__caret" data-caret></span>
                     </li>
                     <li class="fig__row" style="--d: 0.15s">
                       <span class="fig__label">Audio</span>
-                      <span class="fig__slider"><span class="fig__knob" data-knob></span></span>
+                      <input
+                        class="fig__range"
+                        data-gain-range
+                        type="range"
+                        min="-50"
+                        max="50"
+                        step="1"
+                        value="-6"
+                        disabled
+                        tabindex="-1"
+                        aria-label="Sample audio gain in decibels"
+                      />
                       <span class="fig__value" data-gain>-6 dB</span>
                     </li>
                     <li class="fig__row" style="--d: 0.3s">
@@ -525,7 +547,7 @@
                     <span class="fig__verdict">✓ Under 25 MB target</span>
                   </div>
                   <p class="fig__fine">Simulated preview</p>
-                  <span class="fig__cursor" data-cursor></span>
+                  <span class="fig__cursor" data-cursor><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 2.5 21 12l-8.2 1.4L9.5 21.5z" fill="#f4f4f5" stroke="#101014" stroke-width="1.6" stroke-linejoin="round" /></svg></span>
                 </div>
               </div>
             </div>
