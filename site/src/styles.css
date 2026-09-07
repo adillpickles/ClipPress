@@ -296,7 +296,7 @@ a {
   position: absolute;
   top: var(--y);
   left: calc(50% + var(--x));
-  margin-left: -36px;
+  margin-left: var(--ml, -36px);
   /* Parallax offset driven by JS via --px/--py/--rot. The transition is what
      makes the return-to-rest feel smooth; the inner tile keeps its own idle
      float so the two motions compose instead of fighting. */
@@ -327,11 +327,24 @@ a {
   animation: drift 9s ease-in-out infinite;
 }
 
-/* Smaller concept chips vary the scale so the composition isn't six clones. */
-.float__tile--chip {
-  width: 62px;
-  height: 62px;
-  border-radius: 30%;
+/* Large and medium format tiles for the scattered hero composition. */
+.float__tile--lg {
+  width: 92px;
+  height: 92px;
+}
+
+.float__tile--lg .float__glyph {
+  width: 24px;
+  height: 24px;
+}
+
+.float__tile--lg .float__label {
+  font-size: 13px;
+}
+
+.float__tile--md {
+  width: 76px;
+  height: 76px;
 }
 
 .float__glyph {
@@ -352,60 +365,43 @@ a {
   letter-spacing: 0.04em;
 }
 
-/* Scattered by hand, not mirrored: each object sits at its own distance,
-   height and tilt so the hero reads as art-directed rather than diagonal. */
+/* Four large tiles pushed toward the edges and scattered by hand: each sits
+   at its own distance, height, size and tilt. Nothing mirrored, no diagonals,
+   clear of the centered copy at every width where the tiles appear. */
 .float--a {
-  --x: -472px;
-  --y: 54px;
+  --x: -525px;
+  --y: 30px;
+  --ml: -46px;
   --tint: rgba(121, 192, 255, 0.14);
-  --tilt: -8deg;
-}
-
-.float--f {
-  --x: -418px;
-  --y: 172px;
-  --tint: rgba(232, 200, 132, 0.12);
-  --tilt: 6deg;
+  --tilt: -9deg;
 }
 
 .float--b {
-  --x: -338px;
-  --y: 264px;
+  --x: -450px;
+  --y: 445px;
+  --ml: -38px;
   --tint: rgba(210, 168, 255, 0.13);
-  --tilt: 5deg;
+  --tilt: 6deg;
 }
 
 .float--c {
-  --x: 360px;
-  --y: 60px;
+  --x: 530px;
+  --y: 120px;
+  --ml: -46px;
   --tint: rgba(255, 255, 255, 0.07);
-  --tilt: 7deg;
-}
-
-.float--e {
-  --x: 484px;
-  --y: 168px;
-  --tint: rgba(59, 179, 189, 0.14);
-  --tilt: -6deg;
+  --tilt: 8deg;
 }
 
 .float--d {
-  --x: 398px;
-  --y: 290px;
+  --x: 470px;
+  --y: 490px;
+  --ml: -38px;
   --tint: rgba(126, 231, 135, 0.12);
-  --tilt: -5deg;
+  --tilt: -6deg;
 }
 
 .float--a .float__glyph {
   color: #79c0ff;
-}
-
-.float--e .float__glyph {
-  color: var(--accent);
-}
-
-.float--f .float__glyph {
-  color: #e8c884;
 }
 
 .float--b .float__glyph {
@@ -430,14 +426,6 @@ a {
 
 .float--d .float__tile {
   animation-delay: -6.6s;
-}
-
-.float--e .float__tile {
-  animation-delay: -1.1s;
-}
-
-.float--f .float__tile {
-  animation-delay: -5.5s;
 }
 
 @keyframes drift {
@@ -593,21 +581,22 @@ a {
   border-left: 1px solid var(--line);
 }
 
-/* One restrained oversized mark per step. Each bleeds intentionally off the
-   lower corner of its column — a composed backdrop for the type, never boxed. */
+/* One restrained oversized mark per step. Each sits fully inside its column,
+   vertically centered behind the type: a composed backdrop, never cropped. */
 .step__icon {
   position: absolute;
-  top: auto;
-  right: -34px;
-  bottom: -44px;
-  width: 216px;
-  height: 216px;
+  top: 50%;
+  right: 0;
+  bottom: auto;
+  width: 168px;
+  height: 168px;
   stroke: var(--ink);
   stroke-width: 1.1;
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: 0.08;
   pointer-events: none;
+  transform: translateY(-50%);
 }
 
 .step__label,
@@ -833,66 +822,363 @@ kbd {
   }
 }
 
-/* ---------- micro-demo ---------- */
+/* ---------- positioning + app mock ---------- */
 
-/* Deliberately chromeless: the timeline, a size field and an export button in
-   the page's own type and hairlines — no panel, no dashboard, no fake app. */
-.demo {
-  display: grid;
-  gap: 16px;
-  align-content: start;
-  max-width: 100%;
-  font-size: 14px;
+.why {
+  max-width: 680px;
+  margin-bottom: 48px;
 }
 
-.demo__kicker {
+.mockfine {
+  margin-top: 18px;
   color: var(--faint);
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.14em;
+  font-size: 12.5px;
+  text-align: center;
+}
+
+/* Simplified miniature of the real ClipPress window: dark desktop-app frame,
+   toolbar, preview stage, timeline and clips panel. Wide, rounded, quiet. */
+.appmock {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: #0e0e11;
+  box-shadow: 0 40px 90px -40px rgba(0, 0, 0, 0.8), inset 0 1px rgba(255, 255, 255, 0.04);
+  color: #d7d7dc;
+  font-size: 13px;
+  text-align: left;
+}
+
+.appmock button {
+  font-family: inherit;
+}
+
+.appmock__titlebar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.appmock__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.appmock__brand svg {
+  width: 18px;
+  height: 18px;
+  fill: #3b82f6;
+  stroke: #0e0e11;
+  stroke-width: 1.4;
+}
+
+.appmock__menu {
+  display: inline-flex;
+  gap: 16px;
+  color: var(--muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.appmock__winbtns {
+  display: inline-flex;
+  gap: 16px;
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.appmock__winbtns i {
+  font-style: normal;
+}
+
+.appmock__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.appmock__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.appmock__pill svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.appmock__name {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  min-width: 180px;
+  flex: 1 1 220px;
+  padding: 5px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.appmock__namelabel {
+  color: var(--faint);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
-.demo__tl {
+.appmock__name input {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.appmock__name input:focus {
+  outline: none;
+}
+
+.appmock__name:focus-within {
+  border-color: rgba(59, 130, 246, 0.65);
+}
+
+.appmock__modes {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+}
+
+.appmock__modes button {
+  padding: 6px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.appmock__modes button.is-on {
+  background: #3b82f6;
+  color: #fff;
+  cursor: default;
+}
+
+.appmock__modes button[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.appmock__export {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border: 0;
+  border-radius: 10px;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+
+.appmock__export:hover {
+  background: #4b8bf7;
+}
+
+.appmock__export svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+.appmock__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 232px;
+  gap: 12px;
+  padding: 12px 14px 14px;
+}
+
+.appmock__stage {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+}
+
+.appmock__screen {
   position: relative;
-  height: 56px;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+}
+
+.appmock__screen canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.appmock__demotag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.75);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.appmock__transport {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.appmock__tbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.appmock__tbtn:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.appmock__play {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: #3b82f6;
+  color: #fff;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.appmock__play:hover {
+  background: #4b8bf7;
+}
+
+.appmock__play svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.appmock__addtext {
+  position: absolute;
+  right: 0;
+  padding: 7px 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.appmock__timeline {
+  position: relative;
+  height: 48px;
   touch-action: none;
   cursor: pointer;
 }
 
-.demo__track {
+.appmock__tltrack {
   position: absolute;
   left: 0;
   right: 0;
-  top: 25px;
-  height: 6px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.09);
+  top: 11px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
 }
 
-.demo__range {
+.appmock__tlrange {
   position: absolute;
-  top: 25px;
-  height: 6px;
-  border-radius: 3px;
-  background: rgba(59, 179, 189, 0.45);
+  top: 11px;
+  height: 26px;
+  border-radius: 7px;
+  background: rgba(59, 179, 189, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(59, 179, 189, 0.55);
 }
 
-.demo__head {
+.appmock__tlhead {
   position: absolute;
-  top: 12px;
-  bottom: 12px;
+  top: 4px;
+  bottom: 4px;
   width: 2px;
   margin-left: -1px;
   border-radius: 1px;
   background: var(--ink);
-  opacity: 0.85;
 }
 
-.demo__head::after {
+.appmock__tlhead::after {
   content: '';
   position: absolute;
-  top: -4px;
+  top: -3px;
   left: 50%;
   width: 8px;
   height: 8px;
@@ -901,174 +1187,443 @@ kbd {
   background: var(--ink);
 }
 
-.demo__mark {
+.appmock__handle {
   position: absolute;
-  top: 8px;
-  width: 30px;
-  height: 40px;
-  margin-left: -15px;
+  top: 11px;
+  width: 16px;
+  height: 26px;
+  margin-left: -8px;
   padding: 0;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  background: #1a1a1f;
-  color: var(--ink);
-  font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 700;
+  border: 0;
+  background: transparent;
   cursor: ew-resize;
   touch-action: none;
 }
 
-.demo__mark:hover {
-  border-color: rgba(255, 255, 255, 0.32);
+.appmock__handle i {
+  display: block;
+  width: 5px;
+  height: 100%;
+  margin: 0 auto;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.85);
 }
 
-.demo__readout {
+.appmock__tlmeta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 11.5px;
 }
 
-.demo__controls {
+.appmock__hint {
+  color: var(--faint);
+  font-family: var(--sans);
+  font-size: 12px;
+}
+
+.appmock__total strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.appmock__clips {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.appmock__clipshead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.appmock__clipstitle {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.appmock__clipssub {
+  margin-top: 2px;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.appmock__x {
+  color: var(--faint);
+  font-size: 13px;
+}
+
+.appmock__clipcard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.appmock__clipnum {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.appmock__cliptexts {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.appmock__cliprange {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.appmock__clipmeta {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.appmock__clipsfoot {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.appmock__clipsfoot strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+/* Export dialog + progress + success float above the mock window. */
+.appmock__overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(5, 5, 8, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.appmock__overlay[hidden] {
+  display: none;
+}
+
+.appmock__dialog {
+  width: min(680px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 20px 22px 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: #141417;
+  box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.85);
+}
+
+.appmock__dlghead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.appmock__dlghead h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.appmock__dlgclose {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.appmock__dlgclose:hover {
+  color: var(--ink);
+}
+
+.appmock__banner {
+  margin-top: 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.1);
+  color: #8aabf5;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.appmock__group {
+  margin: 16px 0 8px;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.appmock__cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
-.demo__controls kbd {
-  margin-left: 2px;
+.appmock__cards--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.btn--sm {
-  padding: 8px 14px;
-  font-size: 13px;
+.appmock__card {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
-.demo__hint {
-  color: var(--faint);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.demo__sizerow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
-}
-
-.demo__label {
+.appmock__card strong {
+  display: block;
   color: var(--ink);
-  font-weight: 560;
-  letter-spacing: -0.01em;
+  font-size: 13.5px;
+  font-weight: 650;
 }
 
-.demo__mbwrap {
+.appmock__card span {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.appmock__card:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.appmock__card.is-on {
+  border-color: rgba(59, 130, 246, 0.7);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.appmock__sizerow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.appmock__sizewrap {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 13px;
 }
 
-.demo__input {
-  width: 76px;
-  padding: 8px 10px;
+.appmock__sizewrap input {
+  width: 84px;
+  padding: 7px 10px;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: 13px;
   appearance: textfield;
 }
 
-.demo__input::-webkit-outer-spin-button,
-.demo__input::-webkit-inner-spin-button {
+.appmock__sizewrap input::-webkit-outer-spin-button,
+.appmock__sizewrap input::-webkit-inner-spin-button {
   appearance: none;
 }
 
-.demo__input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+.appmock__sizerow.is-off,
+.appmock__cards.is-off {
+  opacity: 0.45;
 }
 
-.demo__mb {
-  color: var(--faint);
-  font-family: var(--mono);
-  font-size: 13px;
+.appmock__dlgfoot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
 }
 
-.demo__presets {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.demo__preset {
-  padding: 7px 13px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-family: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
-}
-
-.demo__preset:hover {
-  color: var(--ink);
-  border-color: rgba(255, 255, 255, 0.28);
-}
-
-.demo__preset.is-on {
-  border-color: rgba(59, 179, 189, 0.6);
-  background: rgba(59, 179, 189, 0.12);
-  color: var(--ink);
-}
-
-.demo__exportrow {
+.appmock__work {
   display: grid;
-  gap: 12px;
-  justify-items: start;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
+  justify-items: center;
+  gap: 8px;
+  width: min(420px, 100%);
+  padding: 28px 28px 24px;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: #141417;
+  box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.85);
+  text-align: center;
 }
 
-.demo__progress {
+.appmock__workicon {
+  width: 40px;
+  height: 40px;
+  padding: 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  fill: none;
+  stroke: #8aabf5;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.appmock__workicon--ok {
+  stroke: #7ee787;
+}
+
+.appmock__workeyebrow {
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.appmock__worktitle {
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.appmock__workmeta {
+  display: flex;
+  justify-content: space-between;
   width: 100%;
-  max-width: 320px;
-  height: 4px;
-  border-radius: 2px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.appmock__workbar {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
   background: rgba(255, 255, 255, 0.09);
   overflow: hidden;
 }
 
-.demo__progress span {
+.appmock__workbar span {
   display: block;
   width: 0%;
   height: 100%;
-  border-radius: 2px;
-  background: var(--accent);
+  border-radius: 3px;
+  background: #3b82f6;
 }
 
-.demo__progress.is-done span {
-  background: #7ee787;
+.appmock__abort {
+  margin-top: 6px;
+  padding: 8px 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
 }
 
-.demo__status {
-  color: var(--muted);
-  font-size: 14px;
+.appmock__abort:hover {
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
-.demo__status.is-done {
-  color: #7ee787;
+.appmock__donesize {
+  color: var(--ink);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
-.demo__fine {
+.appmock__donename {
   color: var(--faint);
-  font-size: 12.5px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.appmock__doneready {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .appmock__main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .appmock__menu {
+    display: none;
+  }
+
+  .appmock__hint {
+    display: none;
+  }
+
+  .appmock__cards,
+  .appmock__cards--3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .appmock__dialog {
+    padding: 16px;
+  }
+
+  .appmock__overlay {
+    padding: 12px;
+  }
 }
 
 /* ---------- footer ---------- */
@@ -1152,10 +1707,8 @@ kbd {
   }
 
   .step__icon {
-    right: -28px;
-    bottom: -34px;
-    width: 152px;
-    height: 152px;
+    width: 128px;
+    height: 128px;
     opacity: 0.07;
   }
 

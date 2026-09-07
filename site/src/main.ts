@@ -1,4 +1,4 @@
-import { RELEASES_URL, previewAssetUrl, previewDownloadHref, releaseMetaLine } from './site.config';
+﻿import { RELEASES_URL, previewAssetUrl, previewDownloadHref, releaseMetaLine } from './site.config';
 
 // Every download link ships pointing at the Releases page so the no-JS path can
 // never 404. When a preview asset is published we swap in the direct asset URL.
@@ -72,29 +72,55 @@ function initFloatParallax(): void {
   });
 }
 
-// Illustrative miniature of the real trim → target size → export workflow.
-// Fully deterministic: it processes no video and makes no network calls. The
-// terms mirror the app's UI (Mark In/Out, Target size, MB, the Quality preset
-// ladder, Export/Exporting). Result always lands just under the chosen target,
-// the way the real size-limited export retries until it fits.
-function initDemo(): void {
-  const root = document.getElementById('demo');
-  const tl = document.getElementById('demoTl');
-  const range = document.getElementById('demoRange');
-  const head = document.getElementById('demoHead');
-  const markIn = document.getElementById('demoIn');
-  const markOut = document.getElementById('demoOut');
-  const readout = document.getElementById('demoReadout');
-  const setIn = document.getElementById('demoSetIn');
-  const setOut = document.getElementById('demoSetOut');
-  const sizeInput = document.getElementById('demoSize') as HTMLInputElement | null;
-  const exportBtn = document.getElementById('demoExport') as HTMLButtonElement | null;
-  const bar = document.getElementById('demoBar');
-  const progress = root?.querySelector('.demo__progress') ?? null;
-  const status = document.getElementById('demoStatus');
+// Simplified interactive miniature of the real ClipPress window. Everything
+// is deterministic and page-local: a procedural canvas frame stands in for
+// the demo clip (no video, no audio, no network), and the export is a fixed
+// fixture. Labels mirror real UI strings (Simple, Export name, Clips,
+// Mark In, Mark Out, Export options, Keep source quality, Target file size,
+// Separate clips, Merge into one clip, Both, Max Quality, Quality, Fast,
+// Exporting, Abort).
+function initAppMock(): void {
+  const root = document.getElementById('appmock');
+  const canvas = document.getElementById('mockCanvas') as HTMLCanvasElement | null;
+  const nameInput = document.getElementById('mockName') as HTMLInputElement | null;
+  const exportBtn = document.getElementById('mockExport') as HTMLButtonElement | null;
+  const playBtn = document.getElementById('mockPlay') as HTMLButtonElement | null;
+  const playIcon = document.getElementById('mockPlayIcon');
+  const inBtn = document.getElementById('mockInBtn');
+  const outBtn = document.getElementById('mockOutBtn');
+  const tl = document.getElementById('mockTl');
+  const range = document.getElementById('mockRange');
+  const head = document.getElementById('mockHead');
+  const handleIn = document.getElementById('mockHandleIn');
+  const handleOut = document.getElementById('mockHandleOut');
+  const tc = document.getElementById('mockTc');
+  const total = document.getElementById('mockTotal');
+  const clipRange = document.getElementById('mockClipRange');
+  const clipMeta = document.getElementById('mockClipMeta');
+  const overlay = document.getElementById('mockOverlay');
+  const dlgTitle = document.getElementById('mockDlgTitle');
+  const dlgClose = document.getElementById('mockDlgClose');
+  const sizeInput = document.getElementById('mockSize') as HTMLInputElement | null;
+  const sizeRow = document.getElementById('mockSizeRow');
+  const presets = document.getElementById('mockPresets');
+  const clipOut = document.getElementById('mockClipOut');
+  const runExport = document.getElementById('mockRunExport') as HTMLButtonElement | null;
+  const progress = document.getElementById('mockProgress');
+  const workBar = document.getElementById('mockWorkBar');
+  const elapsedEl = document.getElementById('mockElapsed');
+  const pctEl = document.getElementById('mockPct');
+  const abortBtn = document.getElementById('mockAbort');
+  const done = document.getElementById('mockDone');
+  const doneSize = document.getElementById('mockDoneSize');
+  const doneName = document.getElementById('mockDoneName');
+  const doneClose = document.getElementById('mockDoneClose');
   if (
-    !root || !tl || !range || !head || !markIn || !markOut || !readout ||
-    !setIn || !setOut || !sizeInput || !exportBtn || !bar || !progress || !status
+    !root || !canvas || !nameInput || !exportBtn || !playBtn || !playIcon ||
+    !inBtn || !outBtn || !tl || !range || !head || !handleIn || !handleOut ||
+    !tc || !total || !clipRange || !clipMeta || !overlay || !dlgTitle ||
+    !dlgClose || !sizeInput || !sizeRow || !presets || !clipOut || !runExport ||
+    !progress || !workBar || !elapsedEl || !pctEl || !abortBtn ||
+    !done || !doneSize || !doneName || !doneClose
   ) {
     return;
   }
@@ -102,82 +128,174 @@ function initDemo(): void {
   // Strict TS does not carry the early-return narrowing above into the
   // closures below, so bind every element once into a non-null bag.
   const ui = {
-    root, tl, range, head, markIn, markOut, readout, setIn, setOut,
-    sizeInput, exportBtn, bar, progress, status,
+    root, canvas, nameInput, exportBtn, playBtn, playIcon, inBtn, outBtn,
+    tl, range, head, handleIn, handleOut, tc, total, clipRange, clipMeta,
+    overlay, dlgTitle, dlgClose, sizeInput, sizeRow, presets, clipOut, runExport,
+    progress, workBar, elapsedEl, pctEl, abortBtn, done, doneSize, doneName, doneClose,
   };
 
-  const CLIP = 30;
-  const IDLE = 'Press Export to run the miniature.';
+  const CLIP = 12;
+  const MIN_GAP = 0.2;
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const exportMs: Record<string, number> = { max: 2000, quality: 1500, fast: 1000 };
+  const ICON_PLAY = '<path d="M4 2.5v11l9-5.5z" />';
+  const ICON_PAUSE = '<path d="M3.5 2.5h3.2v11H3.5zM9.3 2.5h3.2v11H9.3z" />';
 
-  let inT = 8.2;
-  let outT = 21.6;
-  let headT = 0;
-  let preset = 'quality';
-  let state: 'idle' | 'working' | 'done' = 'idle';
+  let t = 0;
+  let start = 1.0;
+  let end = 3.1;
+  let playing = false;
+  let goal: 'keep' | 'target' = 'target';
+  let view: 'edit' | 'panel' | 'work' | 'done' = 'edit';
+  let playRaf = 0;
+  let playLast = 0;
   let workRaf = 0;
-  let sweepRaf = 0;
-  let sweepLast = 0;
 
-  const fmt = (t: number): string => `${t.toFixed(1)}s`;
-  const clampT = (t: number): number => Math.min(CLIP, Math.max(0, Math.round(t * 10) / 10));
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  const fmtTC = (s: number): string => {
+    const ms = Math.floor((s % 1) * 1000);
+    const totalS = Math.floor(s);
+    return `${pad(Math.floor(totalS / 3600))}:${pad(Math.floor((totalS % 3600) / 60))}:${pad(totalS % 60)}.${String(ms).padStart(3, '0')}`;
+  };
+  const fmtRange = (s: number): string => `${pad(Math.floor(s / 60))}:${pad(Math.floor(s % 60))}`;
+  const clampT = (v: number): number => Math.min(CLIP, Math.max(0, Math.round(v * 10) / 10));
+
+  const ctx = ui.canvas.getContext('2d');
+
+  // Procedural demo frame: a neutral slate with grid, drifting sheen and a
+  // timecode. A pure function of t, so scrubbing and playback stay in sync.
+  function drawFrame(): void {
+    if (!ctx) return;
+    const W = 640;
+    const H = 360;
+    const base = ctx.createLinearGradient(0, 0, W, H);
+    base.addColorStop(0, '#191b20');
+    base.addColorStop(0.5, '#23262d');
+    base.addColorStop(1, '#131418');
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, W, H);
+    const bx = (t / CLIP) * (W + 400) - 200;
+    const sheen = ctx.createLinearGradient(bx - 150, 0, bx + 150, H);
+    sheen.addColorStop(0, 'rgba(59, 179, 189, 0)');
+    sheen.addColorStop(0.5, 'rgba(59, 179, 189, 0.10)');
+    sheen.addColorStop(1, 'rgba(59, 179, 189, 0)');
+    ctx.fillStyle = sheen;
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 64; x < W; x += 64) {
+      ctx.moveTo(x + 0.5, 0);
+      ctx.lineTo(x + 0.5, H);
+    }
+    for (let y = 64; y < H; y += 64) {
+      ctx.moveTo(0, y + 0.5);
+      ctx.lineTo(W, y + 0.5);
+    }
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.font = '600 44px ui-monospace, Menlo, Consolas, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(fmtTC(t), W / 2, H / 2 + 4);
+  }
 
   function render(): void {
-    ui.range.style.left = `${(inT / CLIP) * 100}%`;
-    ui.range.style.width = `${((outT - inT) / CLIP) * 100}%`;
-    ui.head.style.left = `${(headT / CLIP) * 100}%`;
-    ui.markIn.style.left = `${(inT / CLIP) * 100}%`;
-    ui.markOut.style.left = `${(outT / CLIP) * 100}%`;
-    ui.readout.textContent = `${fmt(inT)} – ${fmt(outT)} · ${fmt(outT - inT)} selected`;
+    ui.range.style.left = `${(start / CLIP) * 100}%`;
+    ui.range.style.width = `${((end - start) / CLIP) * 100}%`;
+    ui.head.style.left = `${(t / CLIP) * 100}%`;
+    ui.handleIn.style.left = `${(start / CLIP) * 100}%`;
+    ui.handleOut.style.left = `${(end / CLIP) * 100}%`;
+    ui.tc.textContent = fmtTC(t);
+    const dur = end - start;
+    ui.total.textContent = fmtTC(dur);
+    ui.clipRange.textContent = `${fmtRange(start)} - ${fmtRange(end)}`;
+    ui.clipMeta.textContent = `${dur.toFixed(1)} sec · ~${(dur * 5.5).toFixed(1)} MB`;
+    drawFrame();
   }
 
-  function markDirty(): void {
-    if (state !== 'done') return;
-    state = 'idle';
-    ui.bar.style.width = '0%';
-    ui.progress.classList.remove('is-done');
-    ui.status.classList.remove('is-done');
-    ui.status.textContent = IDLE;
+  function setPlaying(p: boolean): void {
+    playing = p;
+    ui.playIcon.innerHTML = playing ? ICON_PAUSE : ICON_PLAY;
+    ui.playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
   }
 
+  function tick(now: number): void {
+    if (playLast === 0) playLast = now;
+    let dt = (now - playLast) / 1000;
+    playLast = now;
+    if (dt > 0.25) dt = 0;
+    t = (t + dt) % CLIP;
+    render();
+    playRaf = requestAnimationFrame(tick);
+  }
+
+  function startLoop(): void {
+    cancelAnimationFrame(playRaf);
+    playLast = 0;
+    playRaf = requestAnimationFrame(tick);
+  }
+
+  function stopLoop(): void {
+    cancelAnimationFrame(playRaf);
+    playRaf = 0;
+    playLast = 0;
+  }
+
+  function show(el: HTMLElement): void {
+    el.hidden = false;
+  }
+
+  function hide(el: HTMLElement): void {
+    el.hidden = true;
+  }
+
+  function openPanel(): void {
+    if (view !== 'edit') return;
+    view = 'panel';
+    setPlaying(false);
+    stopLoop();
+    render();
+    show(ui.overlay);
+    ui.dlgTitle.focus();
+  }
+
+  function closeOverlays(toEdit: boolean): void {
+    cancelAnimationFrame(workRaf);
+    hide(ui.overlay);
+    hide(ui.progress);
+    hide(ui.done);
+    if (toEdit) {
+      view = 'edit';
+      ui.exportBtn.focus();
+    }
+  }
+
+  // Timeline pointer: drag a segment handle, or scrub anywhere else.
+  // Pointer events cover mouse, pen and touch with one path.
+  let drag: 'in' | 'out' | 'head' | null = null;
   function pointToT(clientX: number): number {
     const r = ui.tl.getBoundingClientRect();
     return clampT(((clientX - r.left) / r.width) * CLIP);
   }
-
-  // Playhead sweep keeps the miniature feeling alive. Motion-safe only.
-  function sweep(now: number): void {
-    if (sweepLast === 0) sweepLast = now;
-    headT = (headT + ((now - sweepLast) / 14000) * CLIP) % CLIP;
-    sweepLast = now;
-    render();
-    sweepRaf = requestAnimationFrame(sweep);
-  }
-  if (!reduceMotion) sweepRaf = requestAnimationFrame(sweep);
-
-  // Timeline pointer: drag a marker, or move the playhead anywhere else.
-  // Pointer events cover mouse, pen and touch with one path.
-  let drag: 'in' | 'out' | 'head' | null = null;
   ui.tl.addEventListener('pointerdown', (e: PointerEvent) => {
-    if (state === 'working') return;
+    if (view !== 'edit') return;
     const target = e.target as HTMLElement;
-    drag = target === markIn ? 'in' : target === markOut ? 'out' : 'head';
+    const onIn = target === ui.handleIn || target.parentElement === ui.handleIn;
+    const onOut = target === ui.handleOut || target.parentElement === ui.handleOut;
+    drag = onIn ? 'in' : onOut ? 'out' : 'head';
     ui.tl.setPointerCapture(e.pointerId);
-    const t = pointToT(e.clientX);
-    if (drag === 'in') inT = Math.min(t, outT);
-    else if (drag === 'out') outT = Math.max(t, inT);
-    else headT = t;
-    markDirty();
+    const v = pointToT(e.clientX);
+    if (drag === 'in') start = Math.min(v, end - MIN_GAP);
+    else if (drag === 'out') end = Math.max(v, start + MIN_GAP);
+    else t = v;
     render();
   });
   ui.tl.addEventListener('pointermove', (e: PointerEvent) => {
-    if (!drag || state === 'working') return;
-    const t = pointToT(e.clientX);
-    if (drag === 'in') inT = Math.min(t, outT);
-    else if (drag === 'out') outT = Math.max(t, inT);
-    else headT = t;
-    markDirty();
+    if (!drag || view !== 'edit') return;
+    const v = pointToT(e.clientX);
+    if (drag === 'in') start = Math.min(v, end - MIN_GAP);
+    else if (drag === 'out') end = Math.max(v, start + MIN_GAP);
+    else t = v;
     render();
   });
   ui.tl.addEventListener('pointerup', () => {
@@ -187,89 +305,141 @@ function initDemo(): void {
     drag = null;
   });
 
-  ui.setIn.addEventListener('click', () => {
-    if (state === 'working') return;
-    inT = Math.min(headT, outT);
-    markDirty();
-    render();
-  });
-  ui.setOut.addEventListener('click', () => {
-    if (state === 'working') return;
-    outT = Math.max(headT, inT);
-    markDirty();
-    render();
+  ui.playBtn.addEventListener('click', () => {
+    if (view !== 'edit') return;
+    if (playing) {
+      setPlaying(false);
+      stopLoop();
+    } else {
+      setPlaying(true);
+      startLoop();
+    }
   });
 
-  // I / O keys work while focus is anywhere inside the demo except the
-  // number field, mirroring the app's Mark In (I) / Mark Out (O) shortcuts.
-  // Nothing is bound globally — the rest of the page is unaffected.
+  function markIn(): void {
+    start = Math.min(t, end - MIN_GAP);
+    render();
+  }
+
+  function markOut(): void {
+    end = Math.max(t, start + MIN_GAP);
+    render();
+  }
+
+  ui.inBtn.addEventListener('click', () => {
+    if (view !== 'edit') return;
+    markIn();
+  });
+  ui.outBtn.addEventListener('click', () => {
+    if (view !== 'edit') return;
+    markOut();
+  });
+
+  // I / O mirror the app shortcuts, scoped to the mock. Inputs opt out, and
+  // nothing is bound globally. Escape dismisses the panel and success card.
   ui.root.addEventListener('keydown', (e: KeyboardEvent) => {
-    if (state === 'working') return;
+    if (e.key === 'Escape') {
+      if (view === 'panel' || view === 'done') closeOverlays(true);
+      return;
+    }
+    if (view !== 'edit') return;
     const el = e.target as HTMLElement | null;
     if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
     const key = e.key.toLowerCase();
     if (key !== 'i' && key !== 'o') return;
     e.preventDefault();
-    if (key === 'i') inT = Math.min(headT, outT);
-    else outT = Math.max(headT, inT);
-    markDirty();
-    render();
+    if (key === 'i') markIn();
+    else markOut();
   });
 
-  ui.sizeInput.addEventListener('input', () => {
-    markDirty();
-  });
+  function selectIn(group: HTMLElement, btn: HTMLButtonElement): void {
+    group.querySelectorAll('.appmock__card').forEach((other) => {
+      const on = other === btn;
+      other.classList.toggle('is-on', on);
+      other.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
 
-  ui.root.querySelectorAll<HTMLButtonElement>('.demo__preset').forEach((btn) => {
+  ui.overlay.querySelectorAll<HTMLButtonElement>('[data-goal]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (state === 'working') return;
-      preset = btn.dataset.preset ?? 'quality';
-      ui.root.querySelectorAll('.demo__preset').forEach((other) => {
-        const on = other === btn;
-        other.classList.toggle('is-on', on);
-        other.setAttribute('aria-pressed', on ? 'true' : 'false');
+      goal = btn.dataset.goal === 'keep' ? 'keep' : 'target';
+      selectIn(ui.overlay, btn);
+      const off = goal === 'keep';
+      ui.sizeRow.classList.toggle('is-off', off);
+      ui.presets.classList.toggle('is-off', off);
+      ui.sizeInput.disabled = off;
+      ui.presets.querySelectorAll('button').forEach((p) => {
+        p.disabled = off;
       });
-      markDirty();
     });
   });
 
-  ui.exportBtn.addEventListener('click', () => {
-    if (state === 'working') return;
-    cancelAnimationFrame(workRaf);
-    state = 'working';
-    ui.exportBtn.disabled = true;
-    ui.progress.classList.remove('is-done');
-    ui.status.classList.remove('is-done');
-    ui.status.textContent = 'Exporting…';
-
-    const target = Math.min(4000, Math.max(1, Math.floor(Number(ui.sizeInput.value) || 25)));
-    ui.sizeInput.value = String(target);
-    // Deterministic fixture: always lands just under the target.
-    const result = (target - 0.3).toFixed(1);
-    const duration = reduceMotion ? 250 : (exportMs[preset] ?? 1500);
-    const started = performance.now();
-
-    const tick = (now: number): void => {
-      const p = Math.min(1, (now - started) / duration);
-      ui.bar.style.width = `${Math.round(p * 100)}%`;
-      if (p < 1) {
-        workRaf = requestAnimationFrame(tick);
-        return;
-      }
-      state = 'done';
-      ui.exportBtn.disabled = false;
-      ui.progress.classList.add('is-done');
-      ui.status.classList.add('is-done');
-      ui.status.textContent = `✓ Ready — ${result} MB · shareable MP4`;
-    };
-    workRaf = requestAnimationFrame(tick);
+  ui.presets.querySelectorAll<HTMLButtonElement>('[data-preset]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      selectIn(ui.presets, btn);
+    });
   });
 
+  ui.clipOut.querySelectorAll<HTMLButtonElement>('[data-output]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      selectIn(ui.clipOut, btn);
+    });
+  });
+
+  ui.exportBtn.addEventListener('click', openPanel);
+  ui.dlgClose.addEventListener('click', () => closeOverlays(true));
+
+  ui.runExport.addEventListener('click', () => {
+    if (view !== 'panel') return;
+    view = 'work';
+    hide(ui.overlay);
+    show(ui.progress);
+    ui.abortBtn.focus();
+    const target = Math.min(4000, Math.max(1, Math.floor(Number(ui.sizeInput.value) || 20)));
+    ui.sizeInput.value = String(target);
+    const duration = reduceMotion ? 300 : 2500;
+    const started = performance.now();
+    const step = (now: number): void => {
+      const p = Math.min(1, (now - started) / duration);
+      ui.workBar.style.width = `${(p * 100).toFixed(1)}%`;
+      ui.elapsedEl.textContent = `Elapsed: ${((now - started) / 1000).toFixed(1)} seconds`;
+      ui.pctEl.textContent = `${(p * 100).toFixed(1)}%`;
+      if (p < 1) {
+        workRaf = requestAnimationFrame(step);
+        return;
+      }
+      view = 'done';
+      hide(ui.progress);
+      if (goal === 'target') {
+        ui.doneSize.textContent = `${(target - 0.3).toFixed(1)} MB`;
+      } else {
+        ui.doneSize.textContent = 'Source quality kept';
+      }
+      const raw = ui.nameInput.value.trim() || 'demo-clip';
+      ui.doneName.textContent = `${raw}.mp4`;
+      show(ui.done);
+      ui.doneClose.focus();
+    };
+    workRaf = requestAnimationFrame(step);
+  });
+
+  ui.abortBtn.addEventListener('click', () => {
+    if (view !== 'work') return;
+    cancelAnimationFrame(workRaf);
+    view = 'panel';
+    hide(ui.progress);
+    show(ui.overlay);
+    ui.runExport.focus();
+  });
+
+  ui.doneClose.addEventListener('click', () => closeOverlays(true));
+
+  setPlaying(!reduceMotion);
+  if (playing) startLoop();
   render();
-  void sweepRaf;
 }
 
 applyRelease();
 applyYear();
 initFloatParallax();
-initDemo();
+initAppMock();
