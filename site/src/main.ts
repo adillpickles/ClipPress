@@ -81,7 +81,8 @@ function initFloatParallax(): void {
 // Exporting, Abort).
 function initAppMock(): void {
   const root = document.getElementById('appmock');
-  const canvas = document.getElementById('mockCanvas') as HTMLCanvasElement | null;
+  const video = document.getElementById('mockVideo') as HTMLVideoElement | null;
+  const novideo = document.getElementById('mockNovideo');
   const nameInput = document.getElementById('mockName') as HTMLInputElement | null;
   const exportBtn = document.getElementById('mockExport') as HTMLButtonElement | null;
   const playBtn = document.getElementById('mockPlay') as HTMLButtonElement | null;
@@ -115,7 +116,7 @@ function initAppMock(): void {
   const doneName = document.getElementById('mockDoneName');
   const doneClose = document.getElementById('mockDoneClose');
   if (
-    !root || !canvas || !nameInput || !exportBtn || !playBtn || !playIcon ||
+    !root || !video || !novideo || !nameInput || !exportBtn || !playBtn || !playIcon ||
     !inBtn || !outBtn || !tl || !range || !head || !handleIn || !handleOut ||
     !tc || !total || !clipRange || !clipMeta || !overlay || !dlgTitle ||
     !dlgClose || !sizeInput || !sizeRow || !presets || !clipOut || !runExport ||
@@ -128,13 +129,13 @@ function initAppMock(): void {
   // Strict TS does not carry the early-return narrowing above into the
   // closures below, so bind every element once into a non-null bag.
   const ui = {
-    root, canvas, nameInput, exportBtn, playBtn, playIcon, inBtn, outBtn,
+    root, video, novideo, nameInput, exportBtn, playBtn, playIcon, inBtn, outBtn,
     tl, range, head, handleIn, handleOut, tc, total, clipRange, clipMeta,
     overlay, dlgTitle, dlgClose, sizeInput, sizeRow, presets, clipOut, runExport,
     progress, workBar, elapsedEl, pctEl, abortBtn, done, doneSize, doneName, doneClose,
   };
 
-  const CLIP = 12;
+  let CLIP = 12;
   const MIN_GAP = 0.2;
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const ICON_PLAY = '<path d="M4 2.5v11l9-5.5z" />';
@@ -147,7 +148,6 @@ function initAppMock(): void {
   let goal: 'keep' | 'target' = 'target';
   let view: 'edit' | 'panel' | 'work' | 'done' = 'edit';
   let playRaf = 0;
-  let playLast = 0;
   let workRaf = 0;
 
   const pad = (n: number): string => String(n).padStart(2, '0');
@@ -159,45 +159,79 @@ function initAppMock(): void {
   const fmtRange = (s: number): string => `${pad(Math.floor(s / 60))}:${pad(Math.floor(s % 60))}`;
   const clampT = (v: number): number => Math.min(CLIP, Math.max(0, Math.round(v * 10) / 10));
 
-  const ctx = ui.canvas.getContext('2d');
+  ui.video.muted = true;
+  ui.video.defaultMuted = true;
 
-  // Procedural demo frame: a neutral slate with grid, drifting sheen and a
-  // timecode. A pure function of t, so scrubbing and playback stay in sync.
-  function drawFrame(): void {
-    if (!ctx) return;
-    const W = 640;
-    const H = 360;
-    const base = ctx.createLinearGradient(0, 0, W, H);
-    base.addColorStop(0, '#191b20');
-    base.addColorStop(0.5, '#23262d');
-    base.addColorStop(1, '#131418');
-    ctx.fillStyle = base;
-    ctx.fillRect(0, 0, W, H);
-    const bx = (t / CLIP) * (W + 400) - 200;
-    const sheen = ctx.createLinearGradient(bx - 150, 0, bx + 150, H);
-    sheen.addColorStop(0, 'rgba(59, 179, 189, 0)');
-    sheen.addColorStop(0.5, 'rgba(59, 179, 189, 0.10)');
-    sheen.addColorStop(1, 'rgba(59, 179, 189, 0)');
-    ctx.fillStyle = sheen;
-    ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let x = 64; x < W; x += 64) {
-      ctx.moveTo(x + 0.5, 0);
-      ctx.lineTo(x + 0.5, H);
-    }
-    for (let y = 64; y < H; y += 64) {
-      ctx.moveTo(0, y + 0.5);
-      ctx.lineTo(W, y + 0.5);
-    }
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-    ctx.font = '600 44px ui-monospace, Menlo, Consolas, monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(fmtTC(t), W / 2, H / 2 + 4);
+  function pressPause(): void {
+    ui.video.pause();
+    setPlaying(false);
+    stopLoop();
   }
+
+  function pressPlay(): void {
+    if (t >= CLIP - 0.05) {
+      t = 0;
+      try {
+        ui.video.currentTime = 0;
+      } catch {
+        /* metadata pending */
+      }
+    }
+    const attempt = ui.video.play();
+    if (attempt && typeof attempt.catch === 'function') {
+      attempt.catch(() => {
+        setPlaying(false);
+        stopLoop();
+      });
+    }
+    setPlaying(true);
+    startLoop();
+  }
+
+  // Once metadata loads, the timeline runs on the real media duration with a
+  // deterministic starter selection inside the clip.
+  ui.video.addEventListener('loadedmetadata', () => {
+    const d = ui.video.duration;
+    if (!Number.isFinite(d) || d <= 0) return;
+    CLIP = Math.round(d * 10) / 10;
+    start = Math.max(0.5, Math.round(CLIP * 0.15 * 10) / 10);
+    end = Math.min(CLIP - 0.3, Math.round(CLIP * 0.45 * 10) / 10);
+    if (end - start < MIN_GAP) {
+      start = 0;
+      end = CLIP;
+    }
+    t = 0;
+    try {
+      ui.video.currentTime = 0;
+    } catch {
+      /* not ready */
+    }
+    render();
+  });
+
+  ui.video.addEventListener('timeupdate', () => {
+    if (!playing) {
+      t = clampT(ui.video.currentTime);
+      render();
+    }
+  });
+
+  ui.video.addEventListener('ended', () => {
+    setPlaying(false);
+    stopLoop();
+    t = CLIP;
+    render();
+  });
+
+  // Graceful fallback: neutral slate instead of a broken-video icon.
+  ui.video.addEventListener('error', () => {
+    if (ui.video.readyState === 0) {
+      ui.video.hidden = true;
+      ui.novideo.hidden = false;
+    }
+    setPlaying(false);
+    stopLoop();
+  });
 
   function render(): void {
     ui.range.style.left = `${(start / CLIP) * 100}%`;
@@ -206,11 +240,14 @@ function initAppMock(): void {
     ui.handleIn.style.left = `${(start / CLIP) * 100}%`;
     ui.handleOut.style.left = `${(end / CLIP) * 100}%`;
     ui.tc.textContent = fmtTC(t);
-    const dur = end - start;
-    ui.total.textContent = fmtTC(dur);
+    // Integer tenths keep the duration, total and estimate exact: binary
+    // float dust (2.2999 instead of 2.3) would otherwise leak into the UI.
+    const durTenths = Math.round(end * 10) - Math.round(start * 10);
+    const durMs = durTenths * 100;
+    const durS = Math.floor(durMs / 1000);
+    ui.total.textContent = `${pad(Math.floor(durS / 3600))}:${pad(Math.floor((durS % 3600) / 60))}:${pad(durS % 60)}.${String(durMs % 1000).padStart(3, '0')}`;
     ui.clipRange.textContent = `${fmtRange(start)} - ${fmtRange(end)}`;
-    ui.clipMeta.textContent = `${dur.toFixed(1)} sec · ~${(dur * 5.5).toFixed(1)} MB`;
-    drawFrame();
+    ui.clipMeta.textContent = `${(durTenths / 10).toFixed(1)} sec · ~${(Math.round(durTenths * 5.5) / 10).toFixed(1)} MB`;
   }
 
   function setPlaying(p: boolean): void {
@@ -219,26 +256,20 @@ function initAppMock(): void {
     ui.playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
   }
 
-  function tick(now: number): void {
-    if (playLast === 0) playLast = now;
-    let dt = (now - playLast) / 1000;
-    playLast = now;
-    if (dt > 0.25) dt = 0;
-    t = (t + dt) % CLIP;
+  function tick(): void {
+    if (Number.isFinite(ui.video.currentTime)) t = clampT(ui.video.currentTime);
     render();
-    playRaf = requestAnimationFrame(tick);
+    if (playing) playRaf = requestAnimationFrame(tick);
   }
 
   function startLoop(): void {
     cancelAnimationFrame(playRaf);
-    playLast = 0;
     playRaf = requestAnimationFrame(tick);
   }
 
   function stopLoop(): void {
     cancelAnimationFrame(playRaf);
     playRaf = 0;
-    playLast = 0;
   }
 
   function show(el: HTMLElement): void {
@@ -287,7 +318,14 @@ function initAppMock(): void {
     const v = pointToT(e.clientX);
     if (drag === 'in') start = Math.min(v, end - MIN_GAP);
     else if (drag === 'out') end = Math.max(v, start + MIN_GAP);
-    else t = v;
+    else {
+      t = v;
+      try {
+        ui.video.currentTime = v;
+      } catch {
+        /* metadata pending */
+      }
+    }
     render();
   });
   ui.tl.addEventListener('pointermove', (e: PointerEvent) => {
@@ -295,7 +333,14 @@ function initAppMock(): void {
     const v = pointToT(e.clientX);
     if (drag === 'in') start = Math.min(v, end - MIN_GAP);
     else if (drag === 'out') end = Math.max(v, start + MIN_GAP);
-    else t = v;
+    else {
+      t = v;
+      try {
+        ui.video.currentTime = v;
+      } catch {
+        /* metadata pending */
+      }
+    }
     render();
   });
   ui.tl.addEventListener('pointerup', () => {
@@ -307,13 +352,8 @@ function initAppMock(): void {
 
   ui.playBtn.addEventListener('click', () => {
     if (view !== 'edit') return;
-    if (playing) {
-      setPlaying(false);
-      stopLoop();
-    } else {
-      setPlaying(true);
-      startLoop();
-    }
+    if (playing) pressPause();
+    else pressPlay();
   });
 
   function markIn(): void {
@@ -415,7 +455,7 @@ function initAppMock(): void {
       } else {
         ui.doneSize.textContent = 'Source quality kept';
       }
-      const raw = ui.nameInput.value.trim() || 'demo-clip';
+      const raw = ui.nameInput.value.trim() || 'gaming-clip';
       ui.doneName.textContent = `${raw}.mp4`;
       show(ui.done);
       ui.doneClose.focus();
@@ -434,9 +474,9 @@ function initAppMock(): void {
 
   ui.doneClose.addEventListener('click', () => closeOverlays(true));
 
-  setPlaying(!reduceMotion);
-  if (playing) startLoop();
+  setPlaying(false);
   render();
+  if (!reduceMotion) pressPlay();
 }
 
 applyRelease();

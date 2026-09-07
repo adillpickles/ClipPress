@@ -264,9 +264,12 @@
 
           <!--
             APP MOCK. A simplified, fully interactive miniature of the real
-            ClipPress window based on the application screenshots. It renders a
-            procedural demo frame on canvas, processes no video, makes no
-            network calls and performs no real export. Labels mirror real UI
+            ClipPress window based on the application screenshots. The preview
+            plays a repo-local muted demo clip (site/public/demo) and drives the
+            timeline from the real media duration; if the media cannot load, a
+            neutral slate appears instead. The export is a fixed fixture: it
+            processes no video, makes no network calls and performs no real
+            export. Labels mirror real UI
             strings (Simple, Export name, Clips, Mark In, Mark Out, Add Text,
             Export options, Keep source quality, Target file size, Separate
             clips, Merge into one clip, Both, Max Quality, Quality, Fast,
@@ -289,7 +292,7 @@
               </span>
               <span class="appmock__name">
                 <span class="appmock__namelabel">Export name</span>
-                <input id="mockName" type="text" value="demo-clip" maxlength="60" autocomplete="off" spellcheck="false" aria-label="Export name" />
+                <input id="mockName" type="text" value="gaming-clip" maxlength="60" autocomplete="off" spellcheck="false" aria-label="Export name" />
               </span>
               <span class="appmock__modes" role="group" aria-label="Mode">
                 <button type="button" class="is-on" aria-pressed="true">Simple</button>
@@ -308,7 +311,19 @@
             <div class="appmock__main">
               <div class="appmock__stage">
                 <div class="appmock__screen">
-                  <canvas id="mockCanvas" width="640" height="360"></canvas>
+                  <video
+                    id="mockVideo"
+                    src="./demo/clippress-demo.mp4"
+                    poster="./demo/clippress-demo.jpg"
+                    muted
+                    playsinline
+                    preload="metadata"
+                    disablepictureinpicture
+                    controlslist="nodownload"
+                  ></video>
+                  <div class="appmock__novideo" id="mockNovideo" hidden>
+                    <span>Demo preview unavailable</span>
+                  </div>
                   <span class="appmock__demotag">Demo clip</span>
                 </div>
                 <div class="appmock__transport">
