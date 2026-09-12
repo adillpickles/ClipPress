@@ -591,30 +591,6 @@ a {
   border-color: rgba(59, 179, 189, 0.55);
 }
 
-.fig__caret {
-  display: none;
-  width: 2px;
-  height: 15px;
-  margin-left: 2px;
-  background: var(--accent);
-  animation: figblink 0.9s step-end infinite;
-}
-
-.fig--js.is-play .fig__caret.is-on {
-  display: inline-block;
-}
-
-@keyframes figblink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0;
-  }
-}
-
 .fig__range {
   -webkit-appearance: none;
   appearance: none;
@@ -711,30 +687,39 @@ a {
   border-color: rgba(59, 179, 189, 0.6);
 }
 
+/* Centered success resolution for the finishing-tools figure: a quiet check
+   badge plus status text on the existing green accent. */
 .fig__status {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 9px;
-  margin: 2px 0 0;
+  justify-content: center;
+  gap: 8px;
+  margin: 4px 0 0;
   color: var(--muted);
   font-size: 13px;
   font-weight: 600;
+  text-align: center;
 }
 
-.fig__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--faint);
+.fig__check {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: var(--faint);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.3s ease;
 }
 
 .fig__status.is-done {
   color: var(--ink);
 }
 
-.fig__status.is-done .fig__dot {
-  background: #7ee787;
-  box-shadow: 0 0 10px rgba(126, 231, 135, 0.55);
+.fig__status.is-done .fig__check {
+  stroke: #7ee787;
+  filter: drop-shadow(0 0 6px rgba(126, 231, 135, 0.45));
 }
 
 /* Pre-animation states apply only once JS takes over; rows also stagger in
@@ -1110,23 +1095,23 @@ a {
 
 .step {
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   padding-inline: clamp(20px, 3.4vw, 44px);
   border-left: 1px solid var(--line);
 }
 
-/* One restrained oversized mark per step. Each anchors low-center in its
-   column and emerges from beneath the copy: a composed backdrop that stays
-   clearly secondary to the text. */
+/* One restrained mark per step. Each anchors low-center in its column as a
+   fully composed backdrop that stays clearly secondary to the text. Nothing
+   extends past the column bounds, so no part of any icon is ever chopped. */
 .step__icon {
   position: absolute;
   top: auto;
   right: auto;
-  bottom: -58px;
+  bottom: 0;
   left: 50%;
-  width: 190px;
-  height: 190px;
-  margin-left: -95px;
+  width: 150px;
+  height: 150px;
+  margin-left: -75px;
   stroke-width: 1.1;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -1276,8 +1261,8 @@ kbd {
   top: 17px;
   width: 10px;
   height: 5px;
-  border-left: 1.6px solid var(--accent);
-  border-bottom: 1.6px solid var(--accent);
+  border-left: 1.6px solid #7ee787;
+  border-bottom: 1.6px solid #7ee787;
   transform: rotate(-45deg);
 }
 
@@ -1603,8 +1588,25 @@ kbd {
   height: 100%;
   object-fit: cover;
   background: #000;
+  /* Presentation-only grade so the bright daytime clip sits calmly in the
+     dark page. The underlying video asset is untouched. */
+  filter: saturate(0.88) brightness(0.9) contrast(1.03);
   /* Never a native drag source mid-scrub (HTML attribute backs this up). */
   -webkit-user-drag: none;
+}
+
+.appmock__screen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(9, 9, 11, 0.16),
+    transparent 28%,
+    transparent 72%,
+    rgba(9, 9, 11, 0.2)
+  );
 }
 
 .appmock__screen video[hidden] {
@@ -2311,10 +2313,10 @@ kbd {
   }
 
   .step__icon {
-    width: 128px;
-    height: 128px;
-    margin-left: -64px;
-    bottom: -40px;
+    width: 104px;
+    height: 104px;
+    margin-left: -52px;
+    bottom: 0;
     opacity: 0.1;
   }
 

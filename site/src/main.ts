@@ -615,7 +615,9 @@ function initAppMock(): void {
   // Once metadata loads, the timeline runs on the real media duration with
   // the full source clip selected. The preview starts paused at the
   // beginning: no autoplay, no audio (the clip ships without an audio track
-  // and the element is muted regardless).
+  // and the element is muted regardless). The media element itself is never
+  // seeked here, so the poster frame stays put as the intentional initial
+  // state instead of being replaced by the clip's black first frame.
   function syncFromMetadata(): void {
     const d = ui.video.duration;
     if (!Number.isFinite(d) || d <= 0) return;
@@ -625,11 +627,6 @@ function initAppMock(): void {
     t = 0;
     pendingSeek = null;
     lastRequested = null;
-    try {
-      ui.video.currentTime = 0;
-    } catch {
-      /* not ready */
-    }
     render();
   }
 
@@ -735,18 +732,17 @@ function initToolsStory(): FigStory | null {
   if (!root) return null;
   const inner = root.querySelector<HTMLElement>('.fig__inner');
   const textInput = root.querySelector<HTMLInputElement>('[data-text]');
-  const caret = root.querySelector<HTMLElement>('[data-caret]');
   const gainRange = root.querySelector<HTMLInputElement>('[data-gain-range]');
   const gain = root.querySelector<HTMLElement>('[data-gain]');
   const inEl = root.querySelector<HTMLElement>('[data-in]');
   const outEl = root.querySelector<HTMLElement>('[data-out]');
   const status = root.querySelector<HTMLElement>('[data-status]');
   const statusText = root.querySelector<HTMLElement>('[data-statustext]');
-  if (!inner || !textInput || !caret || !gainRange || !gain || !inEl || !outEl || !status || !statusText) return null;
+  if (!inner || !textInput || !gainRange || !gain || !inEl || !outEl || !status || !statusText) return null;
 
   // Strict TS does not carry the early-return narrowing into the closures
   // below, so bind every element once into a non-null bag.
-  const ui = { root, inner, textInput, caret, gainRange, gain, inEl, outEl, status, statusText };
+  const ui = { root, inner, textInput, gainRange, gain, inEl, outEl, status, statusText };
   const keys = [...root.querySelectorAll<HTMLElement>('[data-keys] kbd')];
 
   const FINAL_TEXT = 'Final lap!';
@@ -793,7 +789,6 @@ function initToolsStory(): FigStory | null {
     ui.textInput.value = '';
     ui.textInput.readOnly = true;
     ui.textInput.tabIndex = -1;
-    ui.caret.classList.remove('is-on');
     ui.gainRange.value = '0';
     ui.gainRange.disabled = true;
     ui.gainRange.tabIndex = -1;
@@ -871,7 +866,6 @@ function initToolsStory(): FigStory | null {
     done = true;
     ui.root.classList.add('fig--js', 'is-play');
     ui.textInput.value = FINAL_TEXT;
-    ui.caret.classList.remove('is-on');
     ui.gainRange.value = '-6';
     ui.gain.textContent = fmtGain(-6);
     ui.inEl.textContent = '00:03';
@@ -887,10 +881,8 @@ function initToolsStory(): FigStory | null {
     ui.root.classList.add('is-play');
     await later(500);
     if (!live()) return;
-    ui.caret.classList.add('is-on');
     await typeText(FINAL_TEXT, ui.textInput.value.length);
     if (!live()) return;
-    ui.caret.classList.remove('is-on');
     await later(350);
     if (!live()) return;
     await stepGain([-2, -4, -6]);
@@ -1054,27 +1046,23 @@ function initTargetStory(): FigStory | null {
     ui.cursor.classList.remove('is-on', 'is-click');
   }
 
-  // One brief fan of sparks from the resolved result card. Each particle
+  // Two restrained bursts from the lower result compartment. Each particle
   // removes itself on finish; the backstop clears stragglers. Never runs
   // under reduced motion, because the story itself never plays there.
-  function sparkBurst(): void {
-    const r = ui.result.getBoundingClientRect();
-    const fig = ui.inner.getBoundingClientRect();
-    const ox = r.left + r.width / 2 - fig.left;
-    const oy = r.top - fig.top + 8;
-    for (let i = 0; i < 14; i += 1) {
+  function burstAt(ox: number, oy: number, count: number, offset: number): void {
+    for (let i = 0; i < count; i += 1) {
       const s = document.createElement('i');
       s.className = 'fig__spark';
       s.setAttribute('aria-hidden', 'true');
-      const size = 2.5 + Math.random() * 2.5;
+      const size = 3 + Math.random() * 3;
       s.style.left = `${ox.toFixed(1)}px`;
       s.style.top = `${oy.toFixed(1)}px`;
       s.style.width = `${size.toFixed(1)}px`;
       s.style.height = `${size.toFixed(1)}px`;
-      s.style.background = SPARK_COLORS[i % SPARK_COLORS.length] ?? '#ffffff';
+      s.style.background = SPARK_COLORS[(i + offset) % SPARK_COLORS.length] ?? '#ffffff';
       ui.inner.appendChild(s);
       const ang = -Math.PI / 2 + (Math.random() - 0.5) * 1.7;
-      const dist = 34 + Math.random() * 54;
+      const dist = 40 + Math.random() * 60;
       const dx = Math.cos(ang) * dist;
       const dy = Math.sin(ang) * dist + 44;
       const anim = s.animate(
@@ -1085,16 +1073,27 @@ function initTargetStory(): FigStory | null {
             opacity: '0',
           },
         ],
-        { duration: 650 + Math.random() * 350, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'forwards' },
+        { duration: 700 + Math.random() * 400, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'forwards' },
       );
       anim.onfinish = (): void => {
         s.remove();
       };
     }
+  }
+
+  function sparkBurst(): void {
+    const r = ui.result.getBoundingClientRect();
+    const fig = ui.inner.getBoundingClientRect();
+    const ox = r.left + r.width / 2 - fig.left;
+    const oy = r.top + r.height * 0.55 - fig.top;
+    burstAt(ox, oy, 18, 0);
     window.clearTimeout(sparkTimer);
     sparkTimer = window.setTimeout(() => {
-      ui.inner.querySelectorAll('.fig__spark').forEach((n) => n.remove());
-    }, 1500);
+      burstAt(ox, oy, 12, 7);
+      sparkTimer = window.setTimeout(() => {
+        ui.inner.querySelectorAll('.fig__spark').forEach((n) => n.remove());
+      }, 1500);
+    }, 220);
   }
 
   async function run(g: number): Promise<void> {
@@ -1147,6 +1146,11 @@ function initTargetStory(): FigStory | null {
     await later(650);
     if (!live()) return;
     sparkBurst();
+    // Park the cursor in the top-right gutter, clear of the result, then
+    // fade it out so the outcome reads unobstructed.
+    moveCursor({ x: Math.max(0, ui.inner.clientWidth - 44), y: 30 });
+    await later(750);
+    if (!live()) return;
     ui.cursor.classList.remove('is-on');
     playing = false;
     done = true;
