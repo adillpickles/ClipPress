@@ -54,8 +54,8 @@ export function previewDownloadHref(): string {
 }
 
 // Short factual line shown under the hero CTA and in the footer download block.
-// Deliberately minimal: platform only. Version, build and signing details live
-// on GitHub Releases, not in the homepage pitch.
+// Deliberately minimal: release stage and platform only. Version, build and
+// signing details live on GitHub Releases, not in the homepage pitch.
 export function releaseMetaLine(): string {
-  return `Currently available for ${PREVIEW.platform}.`;
+  return `ClipPress is in early beta. Currently available for ${PREVIEW.platform}.`;
 }
