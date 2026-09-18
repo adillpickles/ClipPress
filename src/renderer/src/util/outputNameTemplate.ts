@@ -12,6 +12,7 @@ import { getSegmentTags, formatSegNum, getGuaranteedSegments } from '../segments
 import type { FileStats, FormatTimecode, SegmentToExport } from '../types';
 import safeishEval from '../worker/eval';
 import { isUnsafeOutputFileName } from './outputPathSafety';
+import { makeSourceSafeFileNames, type SourceSafeFileNameAdjustment } from './sourcePathProtection';
 import { UserFacingError } from '../../errors';
 import type { FileFfprobeMeta } from '../ffmpeg';
 
@@ -37,6 +38,11 @@ export interface GeneratedOutFileNames {
   problems: {
     error: string | undefined;
     sameAsInputFileNameWarning?: boolean;
+    /**
+     * Names that resolved onto the source file (or onto each other) and were rewritten
+     * so the export cannot destroy an input. Empty on the overwhelmingly common path.
+     */
+    sourceSafetyAdjustments?: SourceSafeFileNameAdjustment[] | undefined;
   },
 }
 
@@ -117,10 +123,11 @@ function getTemplateProblems({ fileNames, filePath, outputDir, safeOutputFileNam
       error = i18n.t('At least one resulting file name contains invalid character(s): {{invalidChars}}', { invalidChars: `"${[...matchingInvalidChars].join('", "')}"` });
       break;
     }
-    if (sameAsInputPath) {
-      error = i18n.t('At least one resulting file name is the same as the input path');
-      break;
-    }
+    // Note: resolving onto the input path is deliberately *not* a fatal error. Falling
+    // back to the default template does not help (for size-limited exports the default
+    // template is itself the shape that collides), and the old behaviour was to warn and
+    // then export onto the source anyway. The name is rewritten instead, by
+    // makeSourceSafeFileNames below, and reported through sourceSafetyAdjustments.
     if (shouldCheckFileEnd && /[\s.]$/.test(fileName)) {
       // Filenames cannot end in a space or dot on windows
       // https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#naming-conventions
@@ -257,7 +264,7 @@ function maybeTruncatePath(fileName: string, truncate: boolean) {
   ].join(pathSep);
 }
 
-async function generateWithFallback({ generate, desiredTemplate, defaultTemplate, safeOutputFileName, filePath, outputDir, maxLabelLength }: {
+async function generateWithFallback({ generate, desiredTemplate, defaultTemplate, safeOutputFileName, filePath, protectedPaths, outputDir, maxLabelLength }: {
   generate: (a: {
     template: string,
     sanitizeName: (name: string) => string,
@@ -267,12 +274,33 @@ async function generateWithFallback({ generate, desiredTemplate, defaultTemplate
   defaultTemplate: string,
   safeOutputFileName: boolean,
   filePath: string,
+  /** Real files on disk the export is reading from, which no output name may resolve onto. */
+  protectedPaths?: readonly (string | undefined)[] | undefined,
   outputDir: string,
   maxLabelLength: number,
 }) {
   // Fields that did not come from the source file's name must be sanitized, because they may contain characters that are not supported by the target operating/file system
   // however we disable this when the user has chosen to (safeOutputFileName === false)
   const sanitizeName = (name: string, safe: boolean) => (safe ? filenamify(name) : name).slice(0, Math.max(0, maxLabelLength));
+
+  /**
+   * Last line of defence before a name becomes a destination path: rewrite anything that
+   * would resolve onto the file being exported. This runs on whichever names actually
+   * win (desired template or fallback), because the fallback is just as capable of
+   * naming the source file as the user's own template is.
+   */
+  const protectSource = (fileNames: string[], problems: GeneratedOutFileNames['problems']) => {
+    const { fileNames: safeFileNames, adjustments } = makeSourceSafeFileNames({
+      fileNames,
+      outputDir,
+      protectedPaths: protectedPaths ?? [filePath],
+      path,
+    });
+    return {
+      fileNames: safeFileNames,
+      problems: adjustments.length > 0 ? { ...problems, sourceSafetyAdjustments: adjustments } : problems,
+    };
+  };
 
   let originalFileNames: string[] | undefined;
   let problems: GeneratedOutFileNames['problems'];
@@ -289,19 +317,28 @@ async function generateWithFallback({ generate, desiredTemplate, defaultTemplate
 
   // Try again with default template if there was an error
   if (problems.error != null && desiredTemplate !== defaultTemplate) {
-    const fileNames = await generate({ template: defaultTemplate, sanitizeName: (name: string) => sanitizeName(name, true), safeOutputFileName: true });
-    return { fileNames, originalFileNames, problems };
+    const fallbackFileNames = await generate({ template: defaultTemplate, sanitizeName: (name: string) => sanitizeName(name, true), safeOutputFileName: true });
+    // The fallback names were previously returned unchecked, so a fallback that was
+    // itself invalid (or that named the source file) went straight through to export.
+    const fallbackProblems = getTemplateProblems({ fileNames: fallbackFileNames, filePath, outputDir, safeOutputFileName: true });
+    const protectedFallback = protectSource(fallbackFileNames, {
+      // Keep reporting why we fell back; surface a fallback problem only if there is one.
+      ...problems,
+      sameAsInputFileNameWarning: problems.sameAsInputFileNameWarning || fallbackProblems.sameAsInputFileNameWarning,
+    });
+    return { ...protectedFallback, originalFileNames };
   }
 
   invariant(originalFileNames != null);
-  return { fileNames: originalFileNames, problems };
+  return protectSource(originalFileNames, problems);
 }
 
-export async function generateCutFileNames({ fileDuration, segmentsToExport: segmentsToExportIn, template: desiredTemplate, fallbackTemplate, formatTimecode, isCustomFormatSelected, fileFormat, sourceFile, outputDir, safeOutputFileName, maxLabelLength, outputFileNameMinZeroPadding, exportCount, currentFileExportCount }: {
+export async function generateCutFileNames({ fileDuration, segmentsToExport: segmentsToExportIn, template: desiredTemplate, fallbackTemplate, protectedPaths, formatTimecode, isCustomFormatSelected, fileFormat, sourceFile, outputDir, safeOutputFileName, maxLabelLength, outputFileNameMinZeroPadding, exportCount, currentFileExportCount }: {
   fileDuration: number | undefined,
   segmentsToExport: SegmentToExport[],
   template: string,
   fallbackTemplate?: string | undefined,
+  protectedPaths?: readonly (string | undefined)[] | undefined,
   formatTimecode: FormatTimecode,
   isCustomFormatSelected: boolean,
   fileFormat: string,
@@ -366,6 +403,7 @@ export async function generateCutFileNames({ fileDuration, segmentsToExport: seg
     desiredTemplate,
     defaultTemplate: fallbackTemplate ?? defaultCutFileTemplate,
     filePath: sourceFile.path,
+    protectedPaths,
     outputDir,
     maxLabelLength,
     safeOutputFileName,
@@ -374,9 +412,10 @@ export async function generateCutFileNames({ fileDuration, segmentsToExport: seg
 
 export type GenerateMergedOutFileNames = (params: GenerateMergedOutFileNamesParams) => Promise<GeneratedOutFileNames>;
 
-export async function generateCutMergedFileNames({ template: desiredTemplate, fallbackTemplate, isCustomFormatSelected, fileFormat, sourceFile, outputDir, safeOutputFileName, maxLabelLength, exportCount, currentFileExportCount, segLabels, epochMs = Date.now() }: {
+export async function generateCutMergedFileNames({ template: desiredTemplate, fallbackTemplate, protectedPaths, isCustomFormatSelected, fileFormat, sourceFile, outputDir, safeOutputFileName, maxLabelLength, exportCount, currentFileExportCount, segLabels, epochMs = Date.now() }: {
   template: string,
   fallbackTemplate?: string | undefined,
+  protectedPaths?: readonly (string | undefined)[] | undefined,
   isCustomFormatSelected: boolean,
   fileFormat: string,
   sourceFile: SourceFile,
@@ -407,15 +446,17 @@ export async function generateCutMergedFileNames({ template: desiredTemplate, fa
     desiredTemplate,
     defaultTemplate: fallbackTemplate ?? defaultCutMergedFileTemplate,
     filePath: sourceFile.path,
+    protectedPaths,
     outputDir,
     maxLabelLength,
     safeOutputFileName,
   });
 }
 
-export async function generateMergedFileNames({ template: desiredTemplate, fallbackTemplate, isCustomFormatSelected, fileFormat, sourceFiles, outputDir, safeOutputFileName, maxLabelLength, exportCount, epochMs }: {
+export async function generateMergedFileNames({ template: desiredTemplate, fallbackTemplate, protectedPaths, isCustomFormatSelected, fileFormat, sourceFiles, outputDir, safeOutputFileName, maxLabelLength, exportCount, epochMs }: {
   template: string,
   fallbackTemplate?: string | undefined,
+  protectedPaths?: readonly (string | undefined)[] | undefined,
   isCustomFormatSelected: boolean,
   fileFormat: string,
   sourceFiles: SourceFile[],
@@ -446,6 +487,7 @@ export async function generateMergedFileNames({ template: desiredTemplate, fallb
     desiredTemplate,
     defaultTemplate: fallbackTemplate ?? defaultCutMergedFileTemplate,
     filePath: firstFile.path,
+    protectedPaths,
     outputDir,
     maxLabelLength,
     safeOutputFileName,

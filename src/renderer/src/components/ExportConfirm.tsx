@@ -283,6 +283,12 @@ function AutoNamePreview({
         )}
       </div>
       <div style={{ marginBottom: simpleMode ? 0 : '.4rem' }}>
+        {/*
+          Deliberately not clickable. This reads as a label showing the name that will be
+          used, and making it a customise trigger meant a click to inspect the name
+          silently switched naming off automatic for good. Customising is the explicit
+          button below.
+        */}
         <HighlightedText
           style={{
             width: '100%',
@@ -294,7 +300,6 @@ function AutoNamePreview({
             textAlign: 'left',
             wordBreak: 'break-word',
           }}
-          onClick={simpleMode ? onCustomize : undefined}
         >
           {previewName ?? t('Generating preview...')}
         </HighlightedText>
@@ -465,6 +470,10 @@ function ExportConfirm({
     setSizeLimitSeparateNamingMode,
     sizeLimitMergedNamingMode,
     setSizeLimitMergedNamingMode,
+    sizeLimitCutFileTemplate,
+    setSizeLimitCutFileTemplate,
+    sizeLimitCutMergedFileTemplate,
+    setSizeLimitCutMergedFileTemplate,
   } = useUserSettings();
 
   const [showAdvancedOverride, setShowAdvancedOverride] = useState<
@@ -1374,19 +1383,21 @@ function ExportConfirm({
   );
 
   const enableSizeLimitedSeparateCustomNaming = useCallback(() => {
-    if (cutFileTemplate == null) setCutFileTemplate(defaultSizeLimitedCutFileTemplate);
+    if (sizeLimitCutFileTemplate == null) setSizeLimitCutFileTemplate(defaultSizeLimitedCutFileTemplate);
     setSizeLimitSeparateNamingMode('custom_template');
-  }, [cutFileTemplate, setCutFileTemplate, setSizeLimitSeparateNamingMode]);
+  }, [sizeLimitCutFileTemplate, setSizeLimitCutFileTemplate, setSizeLimitSeparateNamingMode]);
 
   const enableSizeLimitedMergedCustomNaming = useCallback(() => {
-    if (cutMergedFileTemplate == null) setCutMergedFileTemplate(defaultSizeLimitedCutMergedFileTemplate);
+    if (sizeLimitCutMergedFileTemplate == null) setSizeLimitCutMergedFileTemplate(defaultSizeLimitedCutMergedFileTemplate);
     setSizeLimitMergedNamingMode('custom_template');
   }, [
-    cutMergedFileTemplate,
-    setCutMergedFileTemplate,
+    sizeLimitCutMergedFileTemplate,
+    setSizeLimitCutMergedFileTemplate,
     setSizeLimitMergedNamingMode,
   ]);
 
+  // Only reached from the explicit "Use custom filename" button, so switching the naming
+  // mode here matches what the user asked for. The preview text above is not a trigger.
   const openSeparateNameEditor = useCallback(() => {
     if (isSizeLimited && sizeLimitSeparateNamingMode === 'auto') {
       enableSizeLimitedSeparateCustomNaming();
@@ -1825,10 +1836,10 @@ function ExportConfirm({
                   mode="separate"
                   template={
                     isSizeLimited
-                      ? (cutFileTemplate ?? defaultSizeLimitedCutFileTemplate)
+                      ? (sizeLimitCutFileTemplate ?? defaultSizeLimitedCutFileTemplate)
                       : (cutFileTemplate ?? defaultCutFileTemplate)
                   }
-                  setTemplate={setCutFileTemplate}
+                  setTemplate={isSizeLimited ? setSizeLimitCutFileTemplate : setCutFileTemplate}
                   defaultTemplate={
                     isSizeLimited
                       ? defaultSizeLimitedCutFileTemplate
@@ -1871,12 +1882,12 @@ function ExportConfirm({
                     mode="merge-segments"
                     template={
                       isSizeLimited
-                        ? (cutMergedFileTemplate
+                        ? (sizeLimitCutMergedFileTemplate
                           ?? defaultSizeLimitedCutMergedFileTemplate)
                         : (cutMergedFileTemplate
                           ?? defaultCutMergedFileTemplate)
                     }
-                    setTemplate={setCutMergedFileTemplate}
+                    setTemplate={isSizeLimited ? setSizeLimitCutMergedFileTemplate : setCutMergedFileTemplate}
                     defaultTemplate={
                       isSizeLimited
                         ? defaultSizeLimitedCutMergedFileTemplate
@@ -2371,11 +2382,11 @@ function ExportConfirm({
                                 mode="separate"
                                 template={
                                 isSizeLimited
-                                  ? (cutFileTemplate
+                                  ? (sizeLimitCutFileTemplate
                                     ?? defaultSizeLimitedCutFileTemplate)
                                   : (cutFileTemplate ?? defaultCutFileTemplate)
                               }
-                                setTemplate={setCutFileTemplate}
+                                setTemplate={isSizeLimited ? setSizeLimitCutFileTemplate : setCutFileTemplate}
                                 defaultTemplate={
                                 isSizeLimited
                                   ? defaultSizeLimitedCutFileTemplate
@@ -2416,12 +2427,12 @@ function ExportConfirm({
                                 mode="merge-segments"
                                 template={
                                 isSizeLimited
-                                  ? (cutMergedFileTemplate
+                                  ? (sizeLimitCutMergedFileTemplate
                                     ?? defaultSizeLimitedCutMergedFileTemplate)
                                   : (cutMergedFileTemplate
                                     ?? defaultCutMergedFileTemplate)
                               }
-                                setTemplate={setCutMergedFileTemplate}
+                                setTemplate={isSizeLimited ? setSizeLimitCutMergedFileTemplate : setCutMergedFileTemplate}
                                 defaultTemplate={
                                 isSizeLimited
                                   ? defaultSizeLimitedCutMergedFileTemplate

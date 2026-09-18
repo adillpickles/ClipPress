@@ -154,6 +154,7 @@ import {
   unlinkWithRetry,
 } from './util';
 import getSwal, { errorToast, showPlaybackFailedMessage } from './swal';
+import { assertOutPathsNotSource, isSourcePath, makeSafeOutFileNames } from './util/sourceProtection';
 import { adjustRate } from './util/rate-calculator';
 import { resetSegmentHistory } from './util/segmentHistory';
 import { askExtractFramesAsImages } from './dialogs/extractFrames';
@@ -448,6 +449,8 @@ function App() {
     sizeLimitAdvancedH264NvencPreset,
     sizeLimitSeparateNamingMode,
     sizeLimitMergedNamingMode,
+    sizeLimitCutFileTemplate,
+    sizeLimitCutMergedFileTemplate,
   } = allUserSettings.settings;
   const {
     setCaptureFormat,
@@ -588,8 +591,10 @@ function App() {
 
   const cutFileTemplateOrDefault = cutFileTemplate ?? defaultCutFileTemplate;
   const cutMergedFileTemplateOrDefault = cutMergedFileTemplate ?? defaultCutMergedFileTemplate;
-  const sizeLimitedCutFileTemplateOrDefault = cutFileTemplate ?? defaultSizeLimitedCutFileTemplate;
-  const sizeLimitedCutMergedFileTemplateOrDefault = cutMergedFileTemplate ?? defaultSizeLimitedCutMergedFileTemplate;
+  // Deliberately not cutFileTemplate: the lossless and size-limited templates are
+  // separate settings, so editing one mode's name never rewrites the other's.
+  const sizeLimitedCutFileTemplateOrDefault = sizeLimitCutFileTemplate ?? defaultSizeLimitedCutFileTemplate;
+  const sizeLimitedCutMergedFileTemplateOrDefault = sizeLimitCutMergedFileTemplate ?? defaultSizeLimitedCutMergedFileTemplate;
   const mergedFileTemplateOrDefault = mergedFileTemplate ?? defaultMergedFileTemplate;
 
   useEffect(() => {
@@ -759,6 +764,16 @@ function App() {
     const { dir, ext } = parsePath(filePath);
     return pathJoin(dir, `${exportBaseName ?? parsePath(filePath).name}${ext}`);
   }, [exportBaseName, filePath]);
+
+  /**
+   * Files the running export reads from, and which therefore may never be a destination.
+   * `exportNamingSourcePath` tracks the editable clip name rather than the file on disk,
+   * so both spellings have to be protected.
+   */
+  const exportProtectedPaths = useMemo(
+    () => [filePath, exportNamingSourcePath],
+    [exportNamingSourcePath, filePath],
+  );
 
   const activeSubtitle = useMemo(
     () => (activeSubtitleStreamIndex != null
@@ -2015,6 +2030,9 @@ function App() {
         isCustomFormatSelected: isFormatForced ? true : isCustomFormatSelected,
         fileFormat: outputFormat,
         sourceFile: { path: exportNamingSourcePath, ...mainFileMeta },
+        // The naming source path follows the (renameable) clip name, so it is not
+        // necessarily the file on disk. Both must be off limits as destinations.
+        protectedPaths: [filePath, exportNamingSourcePath],
         outputDir,
         safeOutputFileName,
         maxLabelLength,
@@ -2069,6 +2087,7 @@ function App() {
         isCustomFormatSelected: isFormatForced ? true : isCustomFormatSelected,
         fileFormat: outputFormat,
         sourceFile: { path: exportNamingSourcePath },
+        protectedPaths: [filePath, exportNamingSourcePath],
         outputDir,
         safeOutputFileName,
         maxLabelLength,
@@ -2703,7 +2722,14 @@ function App() {
         }
 
         reservedFileNames.add(targetFileName);
-        if (targetPath != null && targetPath !== candidate.currentPath) {
+        // This pass renames a finished export to its final, size-stamped name, and is
+        // allowed to delete whatever occupies that name first. Skip the rename entirely
+        // rather than let that deletion land on a file the export read from.
+        const targetIsSourceFile = isSourcePath(targetPath, exportProtectedPaths);
+        if (targetIsSourceFile) {
+          console.warn('Skipping final rename that would target a source file', targetPath);
+        }
+        if (!targetIsSourceFile && targetPath != null && targetPath !== candidate.currentPath) {
           try {
             const targetExists = await mainApi.pathExists(targetPath);
             if (targetExists && enableOverwriteOutput) {
@@ -2737,6 +2763,7 @@ function App() {
     [
       customOutDir,
       enableOverwriteOutput,
+      exportProtectedPaths,
       filePath,
       getSizeLimitedSeparateSuffixLabelForSegment,
       safeOutputFileName,
@@ -2900,6 +2927,49 @@ function App() {
     [],
   );
 
+  /**
+   * Turns generated file names into destination paths, repairing any that would land on
+   * the source file and then asserting the result.
+   *
+   * Every export path funnels through here, so "we never write over the file we are
+   * reading" holds regardless of which naming scheme produced the names, and a bug in one
+   * naming scheme cannot reach the filesystem.
+   */
+  const resolveSafeOutPaths = useCallback(
+    (fileNames: readonly string[], warnings: Set<string>) => {
+      invariant(filePath != null && outputDir != null);
+
+      const { fileNames: safeFileNames, adjustments } = makeSafeOutFileNames({
+        fileNames,
+        outputDir,
+        protectedPaths: exportProtectedPaths,
+      });
+
+      if (adjustments.length > 0) {
+        warnings.add(
+          i18n.t('To protect your original file, ClipPress saved the export as "{{fileName}}" instead.', {
+            fileName: adjustments[0]!.to,
+          }),
+        );
+      }
+
+      const outPaths = safeFileNames.map((fileName) => {
+        const outPath = getOutPath({ customOutDir, filePath, fileName });
+        invariant(outPath != null);
+        return outPath;
+      });
+
+      assertOutPathsNotSource({
+        outPaths,
+        protectedPaths: exportProtectedPaths,
+        message: i18n.t('ClipPress will not export onto the file it is reading from. Choose a different output name or folder.'),
+      });
+
+      return { fileNames: safeFileNames, outPaths };
+    },
+    [customOutDir, exportProtectedPaths, filePath, outputDir],
+  );
+
   const onExportConfirm = useCallback(async () => {
     invariant(filePath != null && outputDir != null);
     emitEvent({ eventName: 'export-start', path: filePath });
@@ -3003,7 +3073,7 @@ function App() {
         };
 
         if (shouldProduceSeparateOutputs) {
-          const cutFileNames = useAutoSeparateNaming
+          const generatedCutFileNames = useAutoSeparateNaming
             ? buildSizeLimitedInternalFileNames(
               sizeLimitedSegmentsForExport.map((segment, index) => ({
                 suffixLabel: getSizeLimitedSeparateSuffixLabelForSegment(
@@ -3023,13 +3093,13 @@ function App() {
               return generated.fileNames;
             })();
 
+          const { outPaths: cutOutPaths } = resolveSafeOutPaths(generatedCutFileNames, warnings);
+
           for (const [
             index,
             segment,
           ] of sizeLimitedSegmentsForExport.entries()) {
-            const fileName = cutFileNames[index];
-            invariant(fileName != null);
-            const outPath = getOutPath({ customOutDir, filePath, fileName });
+            const outPath = cutOutPaths[index];
             invariant(outPath != null);
             updateWorkingState({
               text: i18n.t('Exporting'),
@@ -3096,7 +3166,7 @@ function App() {
             }),
           });
 
-          const [mergedFileName] = useAutoMergedNaming
+          const generatedMergedFileNames = useAutoMergedNaming
             ? buildSizeLimitedInternalFileNames([
               {
                 suffixLabel: getSizeLimitedMergedSuffixLabel({
@@ -3114,12 +3184,9 @@ function App() {
               }
               return fileNames;
             })();
-          invariant(mergedFileName != null);
-          mergedOutFilePath = getOutPath({
-            customOutDir,
-            filePath,
-            fileName: mergedFileName,
-          });
+
+          const { outPaths: mergedOutPaths } = resolveSafeOutPaths(generatedMergedFileNames, warnings);
+          [mergedOutFilePath] = mergedOutPaths;
           invariant(mergedOutFilePath != null);
 
           const mergedResult = await exportSizeLimitedMerge({
@@ -3711,6 +3778,7 @@ function App() {
     preserveMetadataOnMerge,
     preserveMovData,
     prefersReducedMotion,
+    resolveSafeOutPaths,
     setWorking,
     segmentsOrInverse.selected,
     segmentsToChapters,

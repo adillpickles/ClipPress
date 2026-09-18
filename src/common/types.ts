@@ -147,6 +147,13 @@ export interface Config {
   sizeLimitAdvancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
   sizeLimitSeparateNamingMode: SizeLimitNamingMode,
   sizeLimitMergedNamingMode: SizeLimitNamingMode,
+  /**
+   * Size-limited exports keep their own name templates. They used to share
+   * `outSegTemplate`/`mergedFileTemplate` with lossless exports, which meant customising
+   * the name in one mode silently rewrote the other mode's template.
+   */
+  sizeLimitCutFileTemplate: string | undefined,
+  sizeLimitCutMergedFileTemplate: string | undefined,
 }
 
 export interface Waveform {

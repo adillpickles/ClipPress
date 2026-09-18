@@ -6,6 +6,7 @@ import invariant from 'tiny-invariant';
 import i18n from 'i18next';
 
 import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists } from '../util';
+import { assertOutPathsNotSource } from '../util/sourceProtection';
 import { isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, getDuration, createChaptersFromSegments, readFileFfprobeMeta, getExperimentalArgs, getVideoTimescaleArgs, logStdoutStderr, runFfmpegConcat, RefuseOverwriteError, runFfmpeg } from '../ffmpeg';
 import { defaultAudioGainDb, getMapStreamsArgs, getStreamIdsToCopy, isMutedAudioGain, isNeutralAudioGain } from '../util/streams';
 import { needsSmartCut, getCodecParams } from '../smartcut';
@@ -211,6 +212,19 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   appendFfmpegCommandLog: (args: string[]) => void,
   ffmpegHwaccel: FfmpegHwAccel,
 }) {
+  /**
+   * ffmpeg is invoked with `-y`, so an output path that resolves to the input would
+   * truncate the file mid-read. The naming layer already refuses to produce such a path;
+   * this sits directly on the write calls so no future caller can route around it.
+   */
+  const assertOutPathIsNotSource = useCallback((outPath: string) => {
+    assertOutPathsNotSource({
+      outPaths: [outPath],
+      protectedPaths: [filePath],
+      message: i18n.t('ClipPress will not export onto the file it is reading from. Choose a different output name or folder.'),
+    });
+  }, [filePath]);
+
   const shouldSkipExistingFile = useCallback(async (path: string) => {
     const fileExists = await mainApi.pathExists(path);
 
@@ -690,6 +704,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
         return await pMap(segments, async ({ start, end }, index) => {
           const finalOutPath = join(outputDir, cutFileNames[index]!);
+          assertOutPathIsNotSource(finalOutPath);
           if (await shouldSkipExistingFile(finalOutPath)) {
             onSingleProgress(index, 1);
             return { path: finalOutPath, created: false };
@@ -781,7 +796,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     } finally {
       if (chaptersPath != null) await tryDeleteFiles([chaptersPath]);
     }
-  }, [appendFfmpegCommandLog, filePath, getOutputPlaybackRateArgs, outputPlaybackRate, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, filePath, getOutputPlaybackRateArgs, outputPlaybackRate, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   // inspired by https://gist.github.com/fernandoherreradelasheras/5eca67f4200f1a7cc8281747da08496e
   const cutEncodeSmartPart = useCallback(async ({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate, videoTimebase, allFilesMeta, copyFileStreams, videoStreamIndex, paramsByStreamId, ffmpegExperimental, hasBFrames }: {
@@ -908,6 +923,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       const onConcatProgress = (progress: number) => onSingleProgress(i, (1 + progress) / 2);
 
       const finalOutPath = join(outputDir, cutFileNames[i]!);
+      assertOutPathIsNotSource(finalOutPath);
 
       if (await shouldSkipExistingFile(finalOutPath)) {
         onSingleProgress(i, 1);
@@ -1032,7 +1048,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     } finally {
       if (chaptersPath) await tryDeleteFiles([chaptersPath]);
     }
-  }, [shouldSkipExistingFile, isEncoding, filePath, lossyMode, losslessCutSingle, cutEncodeSmartPart, encCustomBitrate, concatFiles]);
+  }, [shouldSkipExistingFile, assertOutPathIsNotSource, isEncoding, filePath, lossyMode, losslessCutSingle, cutEncodeSmartPart, encCustomBitrate, concatFiles]);
 
   const concatCutSegments = useCallback(async ({ customOutDir, outFormat, segmentPaths, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapterNames, preserveMetadataOnMerge, mergedOutFilePath }: {
     customOutDir: string | undefined,
@@ -1047,6 +1063,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     mergedOutFilePath: string,
   }) => {
     const outDir = getOutDir(customOutDir, filePath);
+    assertOutPathIsNotSource(mergedOutFilePath);
 
     if (await shouldSkipExistingFile(mergedOutFilePath)) {
       onProgress(1);
@@ -1061,7 +1078,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     const { streams } = await readFileFfprobeMeta(metadataFromPath);
     await concatFiles({ paths: segmentPaths, outDir, outPath: mergedOutFilePath, metadataFromPath, outFormat, includeAllStreams: true, streams, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge });
     onProgress(1);
-  }, [concatFiles, filePath, shouldSkipExistingFile]);
+  }, [assertOutPathIsNotSource, concatFiles, filePath, shouldSkipExistingFile]);
 
   // This is just used to load something into the player with correct duration,
   // so that the user can seek and then we render frames using ffmpeg & MediaSource

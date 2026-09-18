@@ -22,6 +22,7 @@ import type { SizeLimitedVideoTransformProfile } from './sizeLimitedResolution';
 import { isMutedAudioGain, isNeutralAudioGain } from './util/streams';
 import { assertFileExists, readFileSize, renameWithRetry, transferTimestamps, unlinkWithRetry } from './util';
 import { UserFacingError } from '../errors';
+import { isSameFile } from './util/sourceProtection';
 import { getRotatedVideoDimensions, renderTextOverlayPng } from './textOverlays';
 
 const { access, constants: { W_OK }, mkdir, writeFile } = window.require('fs/promises');
@@ -124,6 +125,49 @@ async function deleteIfExists(path: string | undefined) {
   if (path == null) return;
   if (!(await pathExists(path))) return;
   await unlinkWithRetry(path).catch(() => undefined);
+}
+
+/**
+ * Every export reads from exactly one file, and nothing in this module may delete or
+ * replace it. The naming layers upstream already refuse to produce such a destination;
+ * this is the innermost check, sitting directly on top of the calls that unlink and
+ * rename, so a future caller cannot reintroduce the failure mode by constructing an
+ * `outPath` some other way.
+ */
+function assertOutPathIsNotSource({ outPath, filePath }: { outPath: string, filePath: string }) {
+  if (isSameFile(outPath, filePath)) {
+    throw new UserFacingError('ClipPress will not export onto the file it is reading from. Choose a different output name or folder.');
+  }
+}
+
+/**
+ * Moves the finished encode into place.
+ *
+ * The encode itself is complete and usable by this point, so a failure here is a
+ * post-processing problem, not an export failure: we keep the encoded file where it is
+ * and report the problem, rather than throwing away a good file and telling the user the
+ * export failed.
+ */
+async function finalizeEncodedOutput({ result, outPath, filePath }: {
+  result: SizeLimitedExecutionResult,
+  outPath: string,
+  filePath: string,
+}): Promise<{ result: SizeLimitedExecutionResult, postProcessingWarning?: string | undefined }> {
+  if (result.path === outPath) return { result };
+
+  assertOutPathIsNotSource({ outPath, filePath });
+
+  try {
+    await deleteIfExists(outPath);
+    await renameWithRetry(result.path, outPath);
+    return { result: { ...result, path: outPath } };
+  } catch (err) {
+    console.warn('Failed to move the finished export into place', result.path, outPath, err);
+    return {
+      result,
+      postProcessingWarning: 'The export finished, but ClipPress could not give it the final file name. The file was kept under a temporary name.',
+    };
+  }
 }
 
 async function deletePassArtifacts(basePath: string | undefined) {
@@ -729,6 +773,7 @@ export async function exportSizeLimitedSegment({
   overlayVideoHeight?: number | undefined,
 }) {
   await assertFileExists(filePath);
+  assertOutPathIsNotSource({ outPath, filePath });
   await ensureOutputDir(outPath);
 
   const plannedDuration = (segment.end - segment.start) / outputPlaybackRate;
@@ -901,14 +946,11 @@ export async function exportSizeLimitedSegment({
     await Promise.all(preparedOverlayAssets.map((asset) => deleteIfExists(asset.imagePath)));
   }
 
-  if (result.path !== outPath) {
-    await deleteIfExists(outPath);
-    await renameWithRetry(result.path, outPath);
-  }
+  const { result: finalResult, postProcessingWarning } = await finalizeEncodedOutput({ result, outPath, filePath });
 
   await transferTimestamps({
     inPath: filePath,
-    outPath,
+    outPath: finalResult.path,
     cutFrom: segment.start,
     cutTo: segment.end,
     duration: sourceDuration,
@@ -917,7 +959,7 @@ export async function exportSizeLimitedSegment({
   });
 
   onProgress(1);
-  return { ...result, path: outPath };
+  return { ...finalResult, postProcessingWarning };
 }
 
 export async function exportSizeLimitedMerge({
@@ -986,6 +1028,7 @@ export async function exportSizeLimitedMerge({
   overlayVideoHeight?: number | undefined,
 }) {
   await assertFileExists(filePath);
+  assertOutPathIsNotSource({ outPath, filePath });
   await ensureOutputDir(outPath);
 
   const totalSourceDuration = segments.reduce((sum, segment) => sum + (segment.end - segment.start), 0);
@@ -1155,20 +1198,17 @@ export async function exportSizeLimitedMerge({
     await Promise.all(preparedOverlayAssets.map((asset) => deleteIfExists(asset.imagePath)));
   }
 
-  if (result.path !== outPath) {
-    await deleteIfExists(outPath);
-    await renameWithRetry(result.path, outPath);
-  }
+  const { result: finalResult, postProcessingWarning } = await finalizeEncodedOutput({ result, outPath, filePath });
 
   const mergedDuration = segments.reduce((sum, segment) => sum + (segment.end - segment.start), 0);
   await transferTimestamps({
     inPath: filePath,
-    outPath,
+    outPath: finalResult.path,
     duration: mergedDuration,
     treatInputFileModifiedTimeAsStart,
     treatOutputFileModifiedTimeAsStart,
   });
 
   onProgress(1);
-  return { ...result, path: outPath };
+  return { ...finalResult, postProcessingWarning };
 }

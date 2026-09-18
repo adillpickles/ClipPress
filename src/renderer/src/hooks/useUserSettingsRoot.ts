@@ -232,6 +232,10 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ sizeLimitSeparateNamingMode }), [sizeLimitSeparateNamingMode]);
   const [sizeLimitMergedNamingMode, setSizeLimitMergedNamingMode] = useState(safeGetConfigInitial('sizeLimitMergedNamingMode'));
   useEffect(() => safeSetConfig({ sizeLimitMergedNamingMode }), [sizeLimitMergedNamingMode]);
+  const [sizeLimitCutFileTemplate, setSizeLimitCutFileTemplate] = useState(safeGetConfigInitial('sizeLimitCutFileTemplate'));
+  useEffect(() => safeSetConfig({ sizeLimitCutFileTemplate }), [sizeLimitCutFileTemplate]);
+  const [sizeLimitCutMergedFileTemplate, setSizeLimitCutMergedFileTemplate] = useState(safeGetConfigInitial('sizeLimitCutMergedFileTemplate'));
+  useEffect(() => safeSetConfig({ sizeLimitCutMergedFileTemplate }), [sizeLimitCutMergedFileTemplate]);
 
 
   const resetKeyBindings = useCallback(() => {
@@ -369,6 +373,8 @@ export default function useUserSettingsRoot() {
     sizeLimitAdvancedH264NvencPreset,
     sizeLimitSeparateNamingMode,
     sizeLimitMergedNamingMode,
+    sizeLimitCutFileTemplate,
+    sizeLimitCutMergedFileTemplate,
   };
 
   return {
@@ -470,6 +476,8 @@ export default function useUserSettingsRoot() {
     setSizeLimitAdvancedH264NvencPreset,
     setSizeLimitSeparateNamingMode,
     setSizeLimitMergedNamingMode,
+    setSizeLimitCutFileTemplate,
+    setSizeLimitCutMergedFileTemplate,
   };
 }
 

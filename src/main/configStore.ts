@@ -192,6 +192,8 @@ const defaults: Config = {
   sizeLimitAdvancedH264NvencPreset: 'p4',
   sizeLimitSeparateNamingMode: 'auto',
   sizeLimitMergedNamingMode: 'auto',
+  sizeLimitCutFileTemplate: undefined,
+  sizeLimitCutMergedFileTemplate: undefined,
 };
 
 const configFileName = 'config.json'; // note: this is also hard-coded inside electron-store

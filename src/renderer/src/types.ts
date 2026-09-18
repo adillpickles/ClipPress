@@ -289,6 +289,12 @@ export interface SizeLimitedExecutionResult {
   metTarget: boolean,
   created: boolean,
   strategy: SizeLimitedResolvedStrategy,
+  /**
+   * Set when the encode succeeded but a step after it (renaming the file into place)
+   * did not. The file at `path` is complete and usable; only its name or location is
+   * not what was asked for. Never set for a failed encode, which throws instead.
+   */
+  postProcessingWarning?: string | undefined,
 }
 
 export interface Thumbnail {
