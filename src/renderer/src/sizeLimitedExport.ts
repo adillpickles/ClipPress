@@ -337,7 +337,7 @@ function getCommonEncodeArgs({
   sourceFps,
   outputPlaybackRate,
   audioGainDb,
-  relaxQualityCap,
+  qualityCapOffset,
 }: {
   strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
@@ -351,7 +351,7 @@ function getCommonEncodeArgs({
   sourceFps: number | undefined,
   outputPlaybackRate: number,
   audioGainDb?: number | undefined,
-  relaxQualityCap?: boolean | undefined,
+  qualityCapOffset?: number | undefined,
 }) {
   const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
   return [
@@ -361,7 +361,7 @@ function getCommonEncodeArgs({
     '-dn',
     '-ignore_unknown',
     '-map', videoInputLabel,
-    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: false, videoProfile, sourceFps, outputPlaybackRate, relaxQualityCap }),
+    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: false, videoProfile, sourceFps, outputPlaybackRate, qualityCapOffset }),
     ...(videoFilter != null ? ['-vf', videoFilter] : []),
     ...getRotationArgs(rotation),
     ...getAudioArgs({ audioInputLabel, audioBitrate, audioGainDb }),
@@ -387,7 +387,7 @@ function getTwoPassEncodeArgs({
   sourceFps,
   outputPlaybackRate,
   audioGainDb,
-  relaxQualityCap,
+  qualityCapOffset,
 }: {
   strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
@@ -403,7 +403,7 @@ function getTwoPassEncodeArgs({
   sourceFps: number | undefined,
   outputPlaybackRate: number,
   audioGainDb?: number | undefined,
-  relaxQualityCap?: boolean | undefined,
+  qualityCapOffset?: number | undefined,
 }) {
   const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
   return [
@@ -413,7 +413,7 @@ function getTwoPassEncodeArgs({
     '-dn',
     '-ignore_unknown',
     '-map', videoInputLabel,
-    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: true, videoProfile, sourceFps, outputPlaybackRate, relaxQualityCap }),
+    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: true, videoProfile, sourceFps, outputPlaybackRate, qualityCapOffset }),
     ...(videoFilter != null ? ['-vf', videoFilter] : []),
     '-pass', String(passNumber),
     '-passlogfile', passlogFile,
@@ -922,7 +922,7 @@ export async function exportSizeLimitedSegment({
               sourceFps,
               outputPlaybackRate,
               audioGainDb,
-              relaxQualityCap: attempt.relaxQualityCap,
+              qualityCapOffset: attempt.qualityCapOffset,
             }),
           ];
 
@@ -946,7 +946,7 @@ export async function exportSizeLimitedSegment({
               sourceFps,
               outputPlaybackRate,
               audioGainDb,
-              relaxQualityCap: attempt.relaxQualityCap,
+              qualityCapOffset: attempt.qualityCapOffset,
             }),
           ];
 
@@ -973,7 +973,7 @@ export async function exportSizeLimitedSegment({
             sourceFps,
             outputPlaybackRate,
             audioGainDb,
-            relaxQualityCap: attempt.relaxQualityCap,
+            qualityCapOffset: attempt.qualityCapOffset,
           }),
         ];
 
@@ -1177,7 +1177,7 @@ export async function exportSizeLimitedMerge({
               sourceFps,
               outputPlaybackRate,
               audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
-              relaxQualityCap: attempt.relaxQualityCap,
+              qualityCapOffset: attempt.qualityCapOffset,
             }),
           ];
 
@@ -1201,7 +1201,7 @@ export async function exportSizeLimitedMerge({
               sourceFps,
               outputPlaybackRate,
               audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
-              relaxQualityCap: attempt.relaxQualityCap,
+              qualityCapOffset: attempt.qualityCapOffset,
             }),
           ];
 
@@ -1228,7 +1228,7 @@ export async function exportSizeLimitedMerge({
             sourceFps,
             outputPlaybackRate,
             audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
-            relaxQualityCap: attempt.relaxQualityCap,
+            qualityCapOffset: attempt.qualityCapOffset,
           }),
         ];
 

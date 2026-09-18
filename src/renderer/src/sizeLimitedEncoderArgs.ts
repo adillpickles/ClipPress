@@ -46,22 +46,21 @@ function getMaxQualityKeyintFrames({
  * content far below the requested file size. On a top-up attempt we lower the number
  * (higher quality) so the encoder can actually use the budget it was given.
  */
-const relaxedQualityCapOffset = 8;
 const minNvencCq = 10;
 
-function resolveNvencCq({ baseCq, relaxQualityCap }: { baseCq: number, relaxQualityCap: boolean }) {
-  if (!relaxQualityCap) return String(baseCq);
-  return String(Math.max(minNvencCq, baseCq - relaxedQualityCapOffset));
+function resolveNvencCq({ baseCq, qualityCapOffset }: { baseCq: number, qualityCapOffset: number | undefined }) {
+  if (qualityCapOffset == null || qualityCapOffset <= 0) return String(baseCq);
+  return String(Math.max(minNvencCq, baseCq - qualityCapOffset));
 }
 
-export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoProfile, sourceFps, outputPlaybackRate, relaxQualityCap = false }: {
+export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoProfile, sourceFps, outputPlaybackRate, qualityCapOffset }: {
   strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
   twoPass: boolean,
   videoProfile: SizeLimitedVideoTransformProfile,
   sourceFps: number | undefined,
   outputPlaybackRate: number,
-  relaxQualityCap?: boolean | undefined,
+  qualityCapOffset?: number | undefined,
 }) {
   switch (strategy.encoder) {
     case 'libsvtav1': {
@@ -90,7 +89,7 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoPro
         '-tune', isMaxQuality ? 'uhq' : 'hq',
         '-rc', 'vbr',
         ...(!twoPass && !isFast ? ['-multipass', 'qres'] : []),
-        '-cq', resolveNvencCq({ baseCq: isMaxQuality ? 26 : (isFast ? 33 : 28), relaxQualityCap }),
+        '-cq', resolveNvencCq({ baseCq: isMaxQuality ? 26 : (isFast ? 33 : 28), qualityCapOffset }),
         '-rc-lookahead', isMaxQuality ? '32' : (isFast ? '4' : '20'),
         '-spatial-aq', '1',
         '-temporal-aq', isFast ? '0' : '1',

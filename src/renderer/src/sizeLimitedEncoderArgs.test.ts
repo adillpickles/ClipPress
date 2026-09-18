@@ -126,7 +126,7 @@ describe('getResolvedVideoArgs', () => {
 describe('getResolvedVideoArgs with a relaxed quality cap', () => {
   const videoProfile = { outputFps: undefined, scale: undefined } as never;
 
-  const av1NvencArgs = (relaxQualityCap: boolean, preset: 'quality' | 'max_quality' | 'fast' = 'quality') => {
+  const av1NvencArgs = (qualityCapOffset: number | undefined, preset: 'quality' | 'max_quality' | 'fast' = 'quality') => {
     const strategy = resolveSizeLimitedStrategy({
       controlMode: 'advanced',
       preset,
@@ -142,28 +142,28 @@ describe('getResolvedVideoArgs with a relaxed quality cap', () => {
       videoProfile,
       sourceFps: 60,
       outputPlaybackRate: 1,
-      relaxQualityCap,
+      qualityCapOffset,
     });
   };
 
   it('lowers the NVENC AV1 quality cap so the encoder can spend the budget', () => {
     // -cq is a quality ceiling in VBR mode, so on easy content it, not the bitrate,
     // decides the file size. A top-up has to move it or nothing changes.
-    const baseline = getArgValue(av1NvencArgs(false), '-cq');
-    const relaxed = getArgValue(av1NvencArgs(true), '-cq');
+    const baseline = getArgValue(av1NvencArgs(undefined), '-cq');
+    const relaxed = getArgValue(av1NvencArgs(14), '-cq');
 
     expect(Number(relaxed)).toBeLessThan(Number(baseline));
   });
 
   it('never drops the cap below a sane floor', () => {
     for (const preset of ['quality', 'max_quality', 'fast'] as const) {
-      expect(Number(getArgValue(av1NvencArgs(true, preset), '-cq'))).toBeGreaterThanOrEqual(10);
+      expect(Number(getArgValue(av1NvencArgs(14, preset), '-cq'))).toBeGreaterThanOrEqual(10);
     }
   });
 
   it('leaves everything except the cap alone', () => {
-    const baseline = av1NvencArgs(false);
-    const relaxed = av1NvencArgs(true);
+    const baseline = av1NvencArgs(undefined);
+    const relaxed = av1NvencArgs(14);
 
     expect(relaxed).toHaveLength(baseline.length);
     const cqIndex = baseline.indexOf('-cq');
@@ -171,7 +171,7 @@ describe('getResolvedVideoArgs with a relaxed quality cap', () => {
   });
 
   it('still bounds the peak bitrate, so the cap cannot be blown past', () => {
-    const relaxed = av1NvencArgs(true);
+    const relaxed = av1NvencArgs(14);
     expect(getArgValue(relaxed, '-maxrate')).toBeDefined();
     expect(getArgValue(relaxed, '-bufsize')).toBeDefined();
   });
@@ -185,16 +185,16 @@ describe('getResolvedVideoArgs with a relaxed quality cap', () => {
       ...defaultStrategyArgs,
       capabilities: fullCapabilities,
     });
-    const args = (relaxQualityCap: boolean) => getResolvedVideoArgs({
+    const args = (qualityCapOffset: number | undefined) => getResolvedVideoArgs({
       strategy,
       videoBitrate: 4_000_000,
       twoPass: false,
       videoProfile,
       sourceFps: 60,
       outputPlaybackRate: 1,
-      relaxQualityCap,
+      qualityCapOffset,
     });
 
-    expect(args(true)).toEqual(args(false));
+    expect(args(14)).toEqual(args(undefined));
   });
 });

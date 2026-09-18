@@ -256,13 +256,19 @@ export interface SizeLimitedRetryStep {
   videoBitrate: number,
   audioBitrate: number,
   /**
-   * Set on a top-up attempt after a large undershoot. The NVENC encoders are driven with
-   * both a bitrate window and a `-cq` quality cap, and on easy content (screen capture,
-   * static footage) the quality cap binds long before the bitrate does, so the result
-   * lands far below the requested size. Raising the bitrate alone changes nothing; the
-   * cap has to move with it.
+   * How far to relax the encoder's quality cap on this attempt, in `-cq` points.
+   *
+   * Set only on a top-up attempt after a large undershoot. The NVENC encoders are driven
+   * with both a bitrate window and a `-cq` quality cap, and on easy content (screen
+   * capture, static footage) the quality cap binds long before the bitrate does, so the
+   * result lands far below the requested size. Raising the bitrate alone changes nothing;
+   * the cap has to move with it.
+   *
+   * Scaled to the size of the gap: relaxing the cap has a much larger effect on output
+   * size than the bitrate does, so a fixed relaxation overshoots a near miss while
+   * barely denting a big one.
    */
-  relaxQualityCap?: boolean | undefined,
+  qualityCapOffset?: number | undefined,
 }
 
 export interface SizeLimitedProgressMetadata {

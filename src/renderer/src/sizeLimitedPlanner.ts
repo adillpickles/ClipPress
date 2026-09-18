@@ -327,6 +327,28 @@ const undershootRetryThresholdFactor = 0.75;
 /** How much a single top-up attempt may raise the bitrate. Keeps one pass from overshooting wildly. */
 const maxUndershootGrowthFactor = 2.5;
 
+/**
+ * How far to relax the encoder's quality cap, chosen from how much bigger the output
+ * needs to get.
+ *
+ * Measured against real encodes: relaxing the cap moves the output size far more than
+ * the bitrate does, so one fixed relaxation cannot serve both ends. A near miss needs a
+ * nudge, while content that came in at a tenth of the budget needs the cap well out of
+ * the way. Overshooting is safe (the earlier result is kept) but costs the user an
+ * encode, so the aim is to land under the cap on the first try.
+ */
+const undershootQualityCapOffsets = [
+  { minGrowthFactor: 3, offset: 14 },
+  { minGrowthFactor: 2, offset: 10 },
+  { minGrowthFactor: 1.5, offset: 6 },
+  { minGrowthFactor: 1, offset: 3 },
+] as const;
+
+function getUndershootQualityCapOffset(growthFactor: number) {
+  return undershootQualityCapOffsets.find((step) => growthFactor >= step.minGrowthFactor)?.offset
+    ?? undershootQualityCapOffsets.at(-1)!.offset;
+}
+
 export function targetSizeMbToBytes(targetSizeMb: number) {
   return Math.max(1, Math.floor(targetSizeMb * bytesPerMb));
 }
@@ -357,12 +379,12 @@ function getPreferredAudioBitrate({ hasAudio, totalBitrate, profile }: {
   return Math.max(audioBitrate, 0);
 }
 
-function buildRetryStep({ attemptNumber, totalBitrate, hasAudio, strategyId, relaxQualityCap }: {
+function buildRetryStep({ attemptNumber, totalBitrate, hasAudio, strategyId, qualityCapOffset }: {
   attemptNumber: number,
   totalBitrate: number,
   hasAudio: boolean,
   strategyId: SizeLimitedStrategyId,
-  relaxQualityCap?: boolean | undefined,
+  qualityCapOffset?: number | undefined,
 }) {
   const profile = getStrategyProfile(strategyId);
   const audioBitrate = getPreferredAudioBitrate({ hasAudio, totalBitrate, profile });
@@ -372,7 +394,7 @@ function buildRetryStep({ attemptNumber, totalBitrate, hasAudio, strategyId, rel
     totalBitrate,
     audioBitrate,
     videoBitrate: Math.max(totalBitrate - audioBitrate, profile.minVideoBitrate),
-    ...(relaxQualityCap ? { relaxQualityCap } : {}),
+    ...(qualityCapOffset != null ? { qualityCapOffset } : {}),
   } satisfies SizeLimitedRetryStep;
 }
 
@@ -516,15 +538,15 @@ export function getNextSizeLimitedUndershootStep({ plan, previousAttempt, previo
   if (previousAttempt.attemptNumber >= plan.maxAttempts) return undefined;
   // One top-up only: if the relaxed attempt still undershot, the content simply does not
   // need the bits and encoding again would just cost the user time.
-  if (previousAttempt.relaxQualityCap) return undefined;
+  if (previousAttempt.qualityCapOffset != null) return undefined;
   if (previousOutputSize <= 0) return undefined;
 
-  const growthFactor = Math.min(
-    plan.targetZoneMaxBytes / previousOutputSize,
-    maxUndershootGrowthFactor,
-  );
-  if (growthFactor <= 1) return undefined;
+  // How much bigger the output needs to get to reach the top of the target zone. Used
+  // both to raise the bitrate and to size the quality-cap relaxation.
+  const neededGrowthFactor = plan.targetZoneMaxBytes / previousOutputSize;
+  if (neededGrowthFactor <= 1) return undefined;
 
+  const growthFactor = Math.min(neededGrowthFactor, maxUndershootGrowthFactor);
   const nextTotalBitrate = Math.floor(previousAttempt.totalBitrate * growthFactor);
   if (nextTotalBitrate <= previousAttempt.totalBitrate) return undefined;
 
@@ -533,7 +555,7 @@ export function getNextSizeLimitedUndershootStep({ plan, previousAttempt, previo
     totalBitrate: nextTotalBitrate,
     hasAudio: plan.hasAudio,
     strategyId: plan.strategyId,
-    relaxQualityCap: true,
+    qualityCapOffset: getUndershootQualityCapOffset(neededGrowthFactor),
   });
 }
 

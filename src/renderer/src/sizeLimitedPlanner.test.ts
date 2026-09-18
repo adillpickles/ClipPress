@@ -469,7 +469,7 @@ describe('getNextSizeLimitedUndershootStep', () => {
     expect(next!.attemptNumber).toBe(2);
     expect(next!.totalBitrate).toBeGreaterThan(plan.initialAttempt.totalBitrate);
     // Raising the bitrate alone does nothing while the encoder's quality cap binds.
-    expect(next!.relaxQualityCap).toBe(true);
+    expect(next!.qualityCapOffset).toBeGreaterThan(0);
   });
 
   it('aims at the top of the target zone rather than overshooting the cap', () => {
@@ -547,5 +547,53 @@ describe('getNextSizeLimitedUndershootStep', () => {
       previousOutputSize: 11 * bytesPerMb,
     });
     expect(next!.audioBitrate).toBe(0);
+  });
+});
+
+describe('undershoot quality cap relaxation', () => {
+  const makePlan = (targetSizeMb: number) => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'quality',
+      advancedEncoder: 'av1_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: allCapabilities,
+    });
+    return planSizeLimitedEncode({ targetSizeMb, duration: 60, hasAudio: true, strategy });
+  };
+
+  const offsetFor = (targetSizeMb: number, previousMb: number) => {
+    const plan = makePlan(targetSizeMb);
+    return getNextSizeLimitedUndershootStep({
+      plan,
+      previousAttempt: plan.initialAttempt,
+      previousOutputSize: previousMb * bytesPerMb,
+    })?.qualityCapOffset;
+  };
+
+  it('relaxes the cap harder the further under the target the result landed', () => {
+    // Measured against real NVENC encodes: moving the cap changes output size far more
+    // than the bitrate does, so a near miss and a 10x miss cannot share one relaxation.
+    const nearMiss = offsetFor(20, 14);
+    const bigMiss = offsetFor(20, 2);
+
+    expect(nearMiss).toBeGreaterThan(0);
+    expect(bigMiss).toBeGreaterThan(nearMiss!);
+  });
+
+  it('uses a gentle relaxation when only a little headroom is left', () => {
+    // 14 of 20 MB needs about 1.4x, which the bitrate increase mostly covers on its own.
+    expect(offsetFor(20, 14)).toBe(3);
+  });
+
+  it('uses the strongest relaxation when the result is a small fraction of the target', () => {
+    expect(offsetFor(23, 2)).toBe(14);
+  });
+
+  it('increases monotonically as the gap widens', () => {
+    const offsets = [15, 12, 9, 4, 1].map((mb) => offsetFor(20, mb)!);
+    const sorted = [...offsets].sort((a, b) => a - b);
+    expect(offsets).toEqual(sorted);
   });
 });
