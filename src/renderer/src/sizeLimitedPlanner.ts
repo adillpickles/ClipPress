@@ -316,6 +316,17 @@ function getTargetingProfile(strategy: SizeLimitedResolvedStrategy, budgetProfil
   };
 }
 
+/**
+ * A result below this fraction of the requested size left enough quality on the table to
+ * justify a second, higher-bitrate encode. Set well below the planner's own first-attempt
+ * target (0.9-0.95), so the ordinary "landed just under the cap" case never pays for an
+ * extra pass; only a real miss does.
+ */
+const undershootRetryThresholdFactor = 0.75;
+
+/** How much a single top-up attempt may raise the bitrate. Keeps one pass from overshooting wildly. */
+const maxUndershootGrowthFactor = 2.5;
+
 export function targetSizeMbToBytes(targetSizeMb: number) {
   return Math.max(1, Math.floor(targetSizeMb * bytesPerMb));
 }
@@ -346,11 +357,12 @@ function getPreferredAudioBitrate({ hasAudio, totalBitrate, profile }: {
   return Math.max(audioBitrate, 0);
 }
 
-function buildRetryStep({ attemptNumber, totalBitrate, hasAudio, strategyId }: {
+function buildRetryStep({ attemptNumber, totalBitrate, hasAudio, strategyId, relaxQualityCap }: {
   attemptNumber: number,
   totalBitrate: number,
   hasAudio: boolean,
   strategyId: SizeLimitedStrategyId,
+  relaxQualityCap?: boolean | undefined,
 }) {
   const profile = getStrategyProfile(strategyId);
   const audioBitrate = getPreferredAudioBitrate({ hasAudio, totalBitrate, profile });
@@ -360,6 +372,7 @@ function buildRetryStep({ attemptNumber, totalBitrate, hasAudio, strategyId }: {
     totalBitrate,
     audioBitrate,
     videoBitrate: Math.max(totalBitrate - audioBitrate, profile.minVideoBitrate),
+    ...(relaxQualityCap ? { relaxQualityCap } : {}),
   } satisfies SizeLimitedRetryStep;
 }
 
@@ -469,6 +482,7 @@ export function planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strate
     retryMinFactor: targetingProfile.retryMinFactor,
     retryMaxFactor: targetingProfile.retryMaxFactor,
     minTotalBitrate,
+    undershootRetryBelowBytes: Math.floor(hardTargetBytes * undershootRetryThresholdFactor),
     initialAttempt: buildRetryStep({
       attemptNumber: 1,
       totalBitrate: baseTotalBitrate,
@@ -476,6 +490,51 @@ export function planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strate
       strategyId: strategy.plannerProfileId,
     }),
   } satisfies SizeLimitedPlan;
+}
+
+/**
+ * Plans one more attempt after a result came in far under the requested size.
+ *
+ * The planner budgets a modest safety margin, but the encoders can undershoot it badly:
+ * NVENC is driven with a `-cq` quality cap alongside the bitrate window, and on easy
+ * content (screen recordings, mostly static footage) that cap is what binds, so a 23 MB
+ * request can produce an 11 MB file. That is wasted quality, not a win, so we spend one
+ * extra pass aiming at the top of the target zone with the quality cap relaxed.
+ *
+ * Returns undefined when there is nothing worth trying, which is the common case: a
+ * result already close to the cap, no attempts left, or a previous top-up that did not
+ * help. The caller keeps the largest result that stayed under the cap, so a top-up can
+ * only improve the outcome, never break the limit.
+ */
+export function getNextSizeLimitedUndershootStep({ plan, previousAttempt, previousOutputSize }: {
+  plan: SizeLimitedPlan,
+  previousAttempt: SizeLimitedRetryStep,
+  previousOutputSize: number,
+}) {
+  // Only worth a second encode if a meaningful share of the budget went unused.
+  if (previousOutputSize > plan.undershootRetryBelowBytes) return undefined;
+  if (previousAttempt.attemptNumber >= plan.maxAttempts) return undefined;
+  // One top-up only: if the relaxed attempt still undershot, the content simply does not
+  // need the bits and encoding again would just cost the user time.
+  if (previousAttempt.relaxQualityCap) return undefined;
+  if (previousOutputSize <= 0) return undefined;
+
+  const growthFactor = Math.min(
+    plan.targetZoneMaxBytes / previousOutputSize,
+    maxUndershootGrowthFactor,
+  );
+  if (growthFactor <= 1) return undefined;
+
+  const nextTotalBitrate = Math.floor(previousAttempt.totalBitrate * growthFactor);
+  if (nextTotalBitrate <= previousAttempt.totalBitrate) return undefined;
+
+  return buildRetryStep({
+    attemptNumber: previousAttempt.attemptNumber + 1,
+    totalBitrate: nextTotalBitrate,
+    hasAudio: plan.hasAudio,
+    strategyId: plan.strategyId,
+    relaxQualityCap: true,
+  });
 }
 
 export function getNextSizeLimitedRetryStep({ plan, previousAttempt, previousOutputSize }: {

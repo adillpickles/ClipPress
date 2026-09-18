@@ -40,13 +40,28 @@ function getMaxQualityKeyintFrames({
   return Math.max(1, Math.round(resolvedFps * maxQualityGopSeconds));
 }
 
-export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoProfile, sourceFps, outputPlaybackRate }: {
+/**
+ * NVENC in VBR mode treats `-cq` as a quality ceiling: it will not spend more bits than
+ * that quality needs, even when the bitrate window allows it. That is what keeps easy
+ * content far below the requested file size. On a top-up attempt we lower the number
+ * (higher quality) so the encoder can actually use the budget it was given.
+ */
+const relaxedQualityCapOffset = 8;
+const minNvencCq = 10;
+
+function resolveNvencCq({ baseCq, relaxQualityCap }: { baseCq: number, relaxQualityCap: boolean }) {
+  if (!relaxQualityCap) return String(baseCq);
+  return String(Math.max(minNvencCq, baseCq - relaxedQualityCapOffset));
+}
+
+export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoProfile, sourceFps, outputPlaybackRate, relaxQualityCap = false }: {
   strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
   twoPass: boolean,
   videoProfile: SizeLimitedVideoTransformProfile,
   sourceFps: number | undefined,
   outputPlaybackRate: number,
+  relaxQualityCap?: boolean | undefined,
 }) {
   switch (strategy.encoder) {
     case 'libsvtav1': {
@@ -75,7 +90,7 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoPro
         '-tune', isMaxQuality ? 'uhq' : 'hq',
         '-rc', 'vbr',
         ...(!twoPass && !isFast ? ['-multipass', 'qres'] : []),
-        '-cq', isMaxQuality ? '26' : (isFast ? '33' : '28'),
+        '-cq', resolveNvencCq({ baseCq: isMaxQuality ? 26 : (isFast ? 33 : 28), relaxQualityCap }),
         '-rc-lookahead', isMaxQuality ? '32' : (isFast ? '4' : '20'),
         '-spatial-aq', '1',
         '-temporal-aq', isFast ? '0' : '1',

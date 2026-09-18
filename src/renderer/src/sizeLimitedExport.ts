@@ -14,7 +14,7 @@ import mainApi from './mainApi';
 import { getResolvedVideoArgs, toKbitrateArg } from './sizeLimitedEncoderArgs';
 import { finalizeSizeLimitedExecutionResult } from './sizeLimitedExecutionPolicy';
 import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile, sizeLimitedSwsFlags } from './sizeLimitedResolution';
-import { getNextSizeLimitedRetryStep, planSizeLimitedEncode } from './sizeLimitedPlanner';
+import { getNextSizeLimitedRetryStep, getNextSizeLimitedUndershootStep, planSizeLimitedEncode } from './sizeLimitedPlanner';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import { buildConcatSegmentInputArgs, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
 import type { OverlayClip, SegmentToExport, SizeLimitedEncoderCapabilities, SizeLimitedExecutionResult, SizeLimitedProgressMetadata, SizeLimitedResolvedStrategy, SizeLimitedRetryStep } from './types';
@@ -337,6 +337,7 @@ function getCommonEncodeArgs({
   sourceFps,
   outputPlaybackRate,
   audioGainDb,
+  relaxQualityCap,
 }: {
   strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
@@ -350,6 +351,7 @@ function getCommonEncodeArgs({
   sourceFps: number | undefined,
   outputPlaybackRate: number,
   audioGainDb?: number | undefined,
+  relaxQualityCap?: boolean | undefined,
 }) {
   const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
   return [
@@ -359,7 +361,7 @@ function getCommonEncodeArgs({
     '-dn',
     '-ignore_unknown',
     '-map', videoInputLabel,
-    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: false, videoProfile, sourceFps, outputPlaybackRate }),
+    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: false, videoProfile, sourceFps, outputPlaybackRate, relaxQualityCap }),
     ...(videoFilter != null ? ['-vf', videoFilter] : []),
     ...getRotationArgs(rotation),
     ...getAudioArgs({ audioInputLabel, audioBitrate, audioGainDb }),
@@ -385,6 +387,7 @@ function getTwoPassEncodeArgs({
   sourceFps,
   outputPlaybackRate,
   audioGainDb,
+  relaxQualityCap,
 }: {
   strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
@@ -400,6 +403,7 @@ function getTwoPassEncodeArgs({
   sourceFps: number | undefined,
   outputPlaybackRate: number,
   audioGainDb?: number | undefined,
+  relaxQualityCap?: boolean | undefined,
 }) {
   const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
   return [
@@ -409,7 +413,7 @@ function getTwoPassEncodeArgs({
     '-dn',
     '-ignore_unknown',
     '-map', videoInputLabel,
-    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: true, videoProfile, sourceFps, outputPlaybackRate }),
+    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: true, videoProfile, sourceFps, outputPlaybackRate, relaxQualityCap }),
     ...(videoFilter != null ? ['-vf', videoFilter] : []),
     '-pass', String(passNumber),
     '-passlogfile', passlogFile,
@@ -558,7 +562,15 @@ async function executeWithRetries({
   buildAttempt: (attempt: SizeLimitedRetryStep) => Promise<AttemptFiles>,
   onProgress: (progress: number, metadata?: SizeLimitedProgressMetadata) => void,
 }) {
-  let bestResult: SizeLimitedExecutionResult | undefined;
+  // Two candidates are tracked rather than one "best so far".
+  //
+  // `bestUnderCap` is the *largest* result that stayed within the limit, because among
+  // results that all respect the cap the biggest one used the budget best and therefore
+  // looks best. `smallestOverCap` is only kept so that, if nothing ever fit, the failure
+  // can report how close we got. Keeping them apart is what lets an undershoot top-up run
+  // without ever being able to return a file over the limit.
+  let bestUnderCap: SizeLimitedExecutionResult | undefined;
+  let smallestOverCap: SizeLimitedExecutionResult | undefined;
   let currentAttempt: SizeLimitedRetryStep | undefined = plan.initialAttempt;
 
   while (currentAttempt != null) {
@@ -613,36 +625,64 @@ async function executeWithRetries({
       } satisfies SizeLimitedExecutionResult;
 
       if (metTarget) {
-        if (bestResult && bestResult.path !== candidate.path) await deleteIfExists(bestResult.path);
-        return candidate;
-      }
+        // Keep whichever under-cap result filled more of the budget.
+        if (bestUnderCap == null || candidate.size > bestUnderCap.size) {
+          if (bestUnderCap != null && bestUnderCap.path !== candidate.path) await deleteIfExists(bestUnderCap.path);
+          bestUnderCap = candidate;
+        } else {
+          await deleteIfExists(candidate.path);
+        }
 
-      if (bestResult == null || candidate.size < bestResult.size) {
-        if (bestResult && bestResult.path !== candidate.path) await deleteIfExists(bestResult.path);
-        bestResult = candidate;
+        currentAttempt = getNextSizeLimitedUndershootStep({
+          plan,
+          previousAttempt: currentAttempt,
+          previousOutputSize: size,
+        });
       } else {
-        await deleteIfExists(candidate.path);
-      }
+        if (smallestOverCap == null || candidate.size < smallestOverCap.size) {
+          if (smallestOverCap != null && smallestOverCap.path !== candidate.path) await deleteIfExists(smallestOverCap.path);
+          smallestOverCap = candidate;
+        } else {
+          await deleteIfExists(candidate.path);
+        }
 
-      currentAttempt = getNextSizeLimitedRetryStep({
-        plan,
-        previousAttempt: currentAttempt,
-        previousOutputSize: size,
-      });
+        // A top-up that overshot has already given us a good under-cap result to fall
+        // back on, so stop rather than spending more passes shrinking it again.
+        currentAttempt = bestUnderCap != null ? undefined : getNextSizeLimitedRetryStep({
+          plan,
+          previousAttempt: currentAttempt,
+          previousOutputSize: size,
+        });
+      }
     } catch (error) {
       await deleteIfExists(attemptFiles.outPath);
-      throw error;
+      // A later attempt only ever tries to improve on a result that already fits. If it
+      // fails, the export has not failed: keep the good file rather than reporting an
+      // error the user cannot act on.
+      if (bestUnderCap != null) {
+        console.warn('A size-limited top-up attempt failed; keeping the earlier result that met the target', error);
+        currentAttempt = undefined;
+      } else {
+        throw error;
+      }
     } finally {
       await deleteIfExists(attemptFiles.pass1OutPath);
       await deletePassArtifacts(attemptFiles.passlogFile);
     }
   }
 
-  if (bestResult != null && !bestResult.metTarget) {
-    await deleteIfExists(bestResult.path);
+  if (bestUnderCap != null) {
+    // An over-cap attempt may still be on disk from a top-up that went too far.
+    if (smallestOverCap != null && smallestOverCap.path !== bestUnderCap.path) {
+      await deleteIfExists(smallestOverCap.path);
+    }
+    return bestUnderCap;
   }
 
-  return finalizeSizeLimitedExecutionResult(bestResult);
+  // Nothing fitted. The over-cap file must not be left behind pretending to be an export.
+  if (smallestOverCap != null) await deleteIfExists(smallestOverCap.path);
+
+  return finalizeSizeLimitedExecutionResult(smallestOverCap);
 }
 
 function makeAttemptPath(outPath: string, attemptNumber: number) {
@@ -882,6 +922,7 @@ export async function exportSizeLimitedSegment({
               sourceFps,
               outputPlaybackRate,
               audioGainDb,
+              relaxQualityCap: attempt.relaxQualityCap,
             }),
           ];
 
@@ -905,6 +946,7 @@ export async function exportSizeLimitedSegment({
               sourceFps,
               outputPlaybackRate,
               audioGainDb,
+              relaxQualityCap: attempt.relaxQualityCap,
             }),
           ];
 
@@ -931,6 +973,7 @@ export async function exportSizeLimitedSegment({
             sourceFps,
             outputPlaybackRate,
             audioGainDb,
+            relaxQualityCap: attempt.relaxQualityCap,
           }),
         ];
 
@@ -1134,6 +1177,7 @@ export async function exportSizeLimitedMerge({
               sourceFps,
               outputPlaybackRate,
               audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
+              relaxQualityCap: attempt.relaxQualityCap,
             }),
           ];
 
@@ -1157,6 +1201,7 @@ export async function exportSizeLimitedMerge({
               sourceFps,
               outputPlaybackRate,
               audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
+              relaxQualityCap: attempt.relaxQualityCap,
             }),
           ];
 
@@ -1183,6 +1228,7 @@ export async function exportSizeLimitedMerge({
             sourceFps,
             outputPlaybackRate,
             audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
+            relaxQualityCap: attempt.relaxQualityCap,
           }),
         ];
 

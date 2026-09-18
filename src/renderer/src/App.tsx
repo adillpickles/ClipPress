@@ -2814,6 +2814,12 @@ function App() {
       const createdResults = results.filter((result) => result.created);
       const skippedCount = results.length - createdResults.length;
 
+      // The encode succeeded for these; only a step after it went wrong. Reported as a
+      // warning on a successful export rather than failing the whole export.
+      for (const result of results) {
+        if (result.postProcessingWarning != null) warnings.add(i18n.t(result.postProcessingWarning));
+      }
+
       if (skippedCount > 0) {
         notices.add(
           i18n.t(

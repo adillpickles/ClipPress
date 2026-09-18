@@ -85,6 +85,63 @@ describe('createWriteFileAtomically', () => {
     await expect(writeFileAtomically(target, 'x')).rejects.toThrow(/ENOENT/);
   });
 
+  it('retries a rename that fails with a transient error', async () => {
+    const target = join(dir, 'project.llc');
+    await writeFile(target, 'previous good project');
+
+    let attempts = 0;
+    const writeFileAtomically = createWriteFileAtomically({
+      ...realFs,
+      rename: async (from, to) => {
+        attempts += 1;
+        // Windows returns EPERM while another handle briefly holds the destination.
+        if (attempts < 3) throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' });
+        await rename(from, to);
+      },
+    }, { delay: async () => undefined });
+
+    await writeFileAtomically(target, 'next project');
+
+    expect(attempts).toBe(3);
+    expect(await readFile(target, 'utf8')).toBe('next project');
+    expect(await readdir(dir)).toEqual(['project.llc']);
+  });
+
+  it('gives up after the configured attempts and keeps the original', async () => {
+    const target = join(dir, 'project.llc');
+    await writeFile(target, 'previous good project');
+
+    let attempts = 0;
+    const writeFileAtomically = createWriteFileAtomically({
+      ...realFs,
+      rename: async () => {
+        attempts += 1;
+        throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' });
+      },
+    }, { renameAttempts: 3, delay: async () => undefined });
+
+    await expect(writeFileAtomically(target, 'next project')).rejects.toThrow(/not permitted/);
+    expect(attempts).toBe(3);
+    expect(await readFile(target, 'utf8')).toBe('previous good project');
+    expect(await readdir(dir)).toEqual(['project.llc']);
+  });
+
+  it('does not retry an error that will never succeed', async () => {
+    const target = join(dir, 'project.llc');
+
+    let attempts = 0;
+    const writeFileAtomically = createWriteFileAtomically({
+      ...realFs,
+      rename: async () => {
+        attempts += 1;
+        throw Object.assign(new Error('no such file'), { code: 'ENOENT' });
+      },
+    }, { delay: async () => undefined });
+
+    await expect(writeFileAtomically(target, 'x')).rejects.toThrow(/no such file/);
+    expect(attempts).toBe(1);
+  });
+
   it('uses a unique temp file per call so concurrent saves do not collide', async () => {
     const tempPaths: string[] = [];
     const writeFileAtomically = createWriteFileAtomically({

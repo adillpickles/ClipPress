@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getNextSizeLimitedRetryStep, bytesPerMb, planSizeLimitedEncode, targetSizeMbToBytes } from './sizeLimitedPlanner';
+import { getNextSizeLimitedRetryStep, getNextSizeLimitedUndershootStep, bytesPerMb, planSizeLimitedEncode, targetSizeMbToBytes } from './sizeLimitedPlanner';
 import { resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 
 const allCapabilities = { h264Nvenc: true, av1Nvenc: true, libx264: true, libsvtav1: true } as const;
@@ -421,5 +421,131 @@ describe('getNextSizeLimitedRetryStep', () => {
     expect(fallbackPlan.firstAttemptTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.93));
     expect(fallbackPlan.retryTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.9));
     expect(fallbackPlan.maxAttempts).toBe(4);
+  });
+});
+
+describe('getNextSizeLimitedUndershootStep', () => {
+  const makePlan = ({ targetSizeMb = 20, duration = 60, hasAudio = true, preset = 'quality' as const } = {}) => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset,
+      advancedEncoder: 'av1_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: allCapabilities,
+    });
+    return planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strategy });
+  };
+
+  it('records the threshold below which a top-up is worthwhile', () => {
+    const plan = makePlan({ targetSizeMb: 20 });
+    expect(plan.undershootRetryBelowBytes).toBe(Math.floor(20 * bytesPerMb * 0.75));
+    // Must sit below the planner's own first-attempt aim, or ordinary results would
+    // trigger a pointless second encode.
+    expect(plan.undershootRetryBelowBytes).toBeLessThan(plan.firstAttemptTargetBytes);
+  });
+
+  it('does not retry a result that already used most of the budget', () => {
+    const plan = makePlan({ targetSizeMb: 20 });
+    // 18 MB of a 20 MB cap: the margin is the intended safety margin, not a miss.
+    const next = getNextSizeLimitedUndershootStep({
+      plan,
+      previousAttempt: plan.initialAttempt,
+      previousOutputSize: 18 * bytesPerMb,
+    });
+    expect(next).toBeUndefined();
+  });
+
+  it('plans a higher-bitrate top-up after a large undershoot', () => {
+    const plan = makePlan({ targetSizeMb: 23 });
+    // The reported real-world case: 23 MB requested, 11 MB delivered.
+    const next = getNextSizeLimitedUndershootStep({
+      plan,
+      previousAttempt: plan.initialAttempt,
+      previousOutputSize: 11 * bytesPerMb,
+    });
+
+    expect(next).toBeDefined();
+    expect(next!.attemptNumber).toBe(2);
+    expect(next!.totalBitrate).toBeGreaterThan(plan.initialAttempt.totalBitrate);
+    // Raising the bitrate alone does nothing while the encoder's quality cap binds.
+    expect(next!.relaxQualityCap).toBe(true);
+  });
+
+  it('aims at the top of the target zone rather than overshooting the cap', () => {
+    const plan = makePlan({ targetSizeMb: 20 });
+    const previousOutputSize = 10 * bytesPerMb;
+    const next = getNextSizeLimitedUndershootStep({ plan, previousAttempt: plan.initialAttempt, previousOutputSize });
+
+    const expectedGrowth = plan.targetZoneMaxBytes / previousOutputSize;
+    expect(next!.totalBitrate).toBe(Math.floor(plan.initialAttempt.totalBitrate * expectedGrowth));
+    // The zone max is under the hard cap, so the aim point itself cannot exceed the limit.
+    expect(plan.targetZoneMaxBytes).toBeLessThanOrEqual(plan.hardTargetBytes);
+  });
+
+  it('caps how far a single top-up may grow the bitrate', () => {
+    const plan = makePlan({ targetSizeMb: 100 });
+    // A tiny result would otherwise imply a 50x jump straight past the cap.
+    const next = getNextSizeLimitedUndershootStep({
+      plan,
+      previousAttempt: plan.initialAttempt,
+      previousOutputSize: 2 * bytesPerMb,
+    });
+    expect(next!.totalBitrate).toBe(Math.floor(plan.initialAttempt.totalBitrate * 2.5));
+  });
+
+  it('tops up only once, so a stubborn encode does not loop', () => {
+    const plan = makePlan({ targetSizeMb: 23 });
+    const first = getNextSizeLimitedUndershootStep({
+      plan,
+      previousAttempt: plan.initialAttempt,
+      previousOutputSize: 11 * bytesPerMb,
+    });
+    const second = getNextSizeLimitedUndershootStep({
+      plan,
+      previousAttempt: first!,
+      previousOutputSize: 12 * bytesPerMb,
+    });
+    expect(second).toBeUndefined();
+  });
+
+  it('stops when the attempt budget is spent', () => {
+    const plan = makePlan({ targetSizeMb: 23 });
+    const next = getNextSizeLimitedUndershootStep({
+      plan,
+      previousAttempt: { ...plan.initialAttempt, attemptNumber: plan.maxAttempts },
+      previousOutputSize: 5 * bytesPerMb,
+    });
+    expect(next).toBeUndefined();
+  });
+
+  it('never divides by an empty result', () => {
+    const plan = makePlan({ targetSizeMb: 20 });
+    expect(getNextSizeLimitedUndershootStep({
+      plan,
+      previousAttempt: plan.initialAttempt,
+      previousOutputSize: 0,
+    })).toBeUndefined();
+  });
+
+  it('keeps the audio budget consistent with the raised total', () => {
+    const plan = makePlan({ targetSizeMb: 23 });
+    const next = getNextSizeLimitedUndershootStep({
+      plan,
+      previousAttempt: plan.initialAttempt,
+      previousOutputSize: 11 * bytesPerMb,
+    });
+    expect(next!.videoBitrate + next!.audioBitrate).toBe(next!.totalBitrate);
+    expect(next!.audioBitrate).toBeGreaterThan(0);
+  });
+
+  it('leaves audio out when the source has none', () => {
+    const plan = makePlan({ targetSizeMb: 23, hasAudio: false });
+    const next = getNextSizeLimitedUndershootStep({
+      plan,
+      previousAttempt: plan.initialAttempt,
+      previousOutputSize: 11 * bytesPerMb,
+    });
+    expect(next!.audioBitrate).toBe(0);
   });
 });
