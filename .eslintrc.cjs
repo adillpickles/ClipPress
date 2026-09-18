@@ -43,5 +43,16 @@ module.exports = {
         'no-console': 0,
       },
     },
+    {
+      // Test files import the test runner, which is correctly a devDependency.
+      // The renderer override above already allows this; main-process tests need it too.
+      files: ['./src/**/*.test.{js,cjs,mjs,jsx,ts,tsx,mts}'],
+      rules: {
+        'import/no-extraneous-dependencies': ['error', {
+          devDependencies: true,
+          optionalDependencies: false,
+        }],
+      },
+    },
   ],
 };

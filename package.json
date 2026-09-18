@@ -2,8 +2,8 @@
   "name": "clippress",
   "productName": "ClipPress",
   "description": "Fast clip editor for turning long recordings into clean, shareable clips",
-  "copyright": "Copyright © 2021 ${author}",
-  "version": "3.68.1",
+  "copyright": "Copyright © 2025 Adil Ahmed. Based on LosslessCut, © Mikael Finstad. GPL-2.0-only.",
+  "version": "0.1.0-beta.3",
   "main": "./out/main/index.js",
   "homepage": "./",
   "type": "module",
@@ -22,13 +22,12 @@
     "lint": "eslint --ext .js,.ts,.jsx,.tsx,.mjs,.mts .",
     "check": "yarn tsc && yarn lint && yarn test run && yarn build && yarn check-licenses && yarn scan-i18n && yarn dedupe --check && yarn generate-docs",
     "pack-mac": "yarn build && electron-builder --mac dmg",
-    "pack-mas-dev": "yarn build && electron-builder --mac mas-dev -c.mas.provisioningProfile=LosslessCut_Dev.provisionprofile -c.mas.identity='Mikael Finstad (JH4PH8B3C8)'",
     "pack-win": "yarn build && electron-builder --win portable --x64",
     "postinstall": "electron-builder install-app-deps",
-    "version": "node script/postversion.ts && git add no.mifi.losslesscut.appdata.xml",
+    "version": "node script/postversion.ts && git add com.clippress.app.appdata.xml",
     "pack-linux": "yarn build && electron-builder --linux",
     "scan-i18n": "i18next-cli -c i18next.config.scan.ts extract",
-    "generate-icon": "mkdirp icon-build build-resources/appx && node script/generateIcon.ts",
+    "generate-icon": "mkdirp icon-build && node script/generateIcon.ts",
     "generate-licenses": "yarn licenses generate-disclaimer -R > licenses.txt && echo '\n\nffmpeg is licensed under GPL v2+:\n\nhttp://www.gnu.org/licenses/old-licenses/gpl-2.0.html' >> licenses.txt",
     "generate-docs": "node script/generateDocs.ts",
     "check-licenses": "node script/checkLicenses.ts",
@@ -36,9 +35,9 @@
     "benchmark-size-limited": "node script/benchmarkSizeLimited.ts"
   },
   "author": {
-    "name": "Mikael Finstad",
-    "email": "finstaden@gmail.com",
-    "url": "https://mifi.no/"
+    "name": "Adil Ahmed",
+    "email": "adila2777@gmail.com",
+    "url": "https://github.com/adillpickles/ClipPress"
   },
   "repository": {
     "type": "git",
@@ -166,12 +165,13 @@
       "buildResources": "build-resources"
     },
     "files": [
-      "out/**/*"
+      "out/**/*",
+      "!out/**/*.map"
     ],
     "asar": {
       "smartUnpack": false
     },
-    "appId": "no.mifi.losslesscut",
+    "appId": "com.clippress.app",
     "artifactName": "${productName}-${os}-${arch}.${ext}",
     "extraResources": [
       {
@@ -182,13 +182,9 @@
     "mac": {
       "hardenedRuntime": true,
       "notarize": true,
-      "appId": "no.mifi.losslesscut-mac",
+      "appId": "com.clippress.app-mac",
       "category": "public.app-category.productivity",
       "target": [
-        {
-          "target": "mas",
-          "arch": "universal"
-        },
         {
           "target": "dmg",
           "arch": [
@@ -304,18 +300,6 @@
         }
       ]
     },
-    "mas": {
-      "artifactName": "${productName}-${os}-${arch}-DONT-USE-THIS-FILE.${ext}",
-      "hardenedRuntime": false,
-      "notarize": false,
-      "entitlements": "entitlements.mas.plist",
-      "entitlementsInherit": "entitlements.mas.inherit.plist",
-      "provisioningProfile": "LosslessCut_Mac_App_Store_provisioning_profile.provisionprofile",
-      "binaries": [
-        "Contents/Resources/ffmpeg",
-        "Contents/Resources/ffprobe"
-      ]
-    },
     "win": {
       "target": [
         {
@@ -427,13 +411,6 @@
           "role": "Viewer"
         }
       ]
-    },
-    "appx": {
-      "artifactName": "${productName}-${os}-${arch}-DONT-USE-THIS-FILE.${ext}",
-      "applicationId": "LosslessCut",
-      "identityName": "57275mifi.no.LosslessCut",
-      "publisher": "CN=2C479316-22A8-4D63-BC38-F0FB9AB0B974",
-      "publisherDisplayName": "mifi.no"
     },
     "linux": {
       "executableName": "clippress",

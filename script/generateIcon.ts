@@ -15,11 +15,9 @@ const srcIcon = 'src/renderer/src/icon.svg';
 // Linux:
 await svg2png(srcIcon, './icon-build/app-512.png', 512, 512);
 
-// Windows Store
-await svg2png(srcIcon, './build-resources/appx/StoreLogo.png', 50, 50);
-await svg2png(srcIcon, './build-resources/appx/Square150x150Logo.png', 300, 300);
-await svg2png(srcIcon, './build-resources/appx/Square44x44Logo.png', 44, 44);
-await svg2png(srcIcon, './build-resources/appx/Wide310x150Logo.png', 620, 300);
+// Note: the Windows Store (appx) logos are not generated any more. That target was
+// removed along with the upstream project's store identity, which ClipPress cannot
+// publish under.
 
 // MacOS:
 // https://github.com/mifi/lossless-cut/issues/1820

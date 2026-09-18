@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop">
-  <id>no.mifi.losslesscut</id>
-  <developer id="no.mifi">
-    <name>Mikael Finstad</name>
+  <id>com.clippress.app</id>
+  <developer id="com.clippress">
+    <name>Adil Ahmed</name>
   </developer>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-2.0</project_license>
@@ -11,7 +11,7 @@
   <description>
     <p>Fast open-source clip editor for turning long recordings into clean, shareable clips. Open media, mark the in and out points, optionally adjust clip details, then export a shareable result. ClipPress is built on top of LosslessCut and uses ffmpeg for media processing.</p>
   </description>
-  <launchable type="desktop-id">no.mifi.losslesscut.desktop</launchable>
+  <launchable type="desktop-id">com.clippress.app.desktop</launchable>
   <screenshots>
     <screenshot type="default">
       <image>https://raw.githubusercontent.com/mifi/lossless-cut/master/main_screenshot.jpg</image>

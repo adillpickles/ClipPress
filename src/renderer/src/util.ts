@@ -298,7 +298,7 @@ export const isAbortedError = (err: unknown) => (
 
 export const getStdioString = (stdio: string | Uint8Array) => (stdio instanceof Uint8Array ? Buffer.from(stdio).toString('utf8') : stdio);
 
-// A bit hacky but it works, unless someone has a file called "No space left on device" ( ÃÂ¡Ã‚Â° ÃÅ“ÃŠâ€“ ÃÂ¡Ã‚Â°)
+// A bit hacky but it works, unless someone has a file called "No space left on device" ( ͡° ͜ʖ ͡°)
 export const isOutOfSpaceError = (err: InvariantExecaError) => (
   err.exitCode !== 0
   && !!getStdioString(err.stderr)?.includes('No space left on device')
@@ -428,8 +428,8 @@ export const allModifiers = new Set([...shiftModifiers, ...controlModifiers, ...
 
 
 export function getMetaKeyName() {
-  if (isMac) return i18n.t('Ã¢Å’Ëœ Cmd');
-  if (isWindows) return i18n.t('Ã¢Å Å¾ Win');
+  if (isMac) return i18n.t('⌘ Cmd');
+  if (isWindows) return i18n.t('⊞ Win');
   return i18n.t('Meta');
 }
 

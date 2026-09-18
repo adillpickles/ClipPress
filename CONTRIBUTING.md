@@ -33,34 +33,19 @@ For Windows, you may have to install [7z](https://www.7-zip.org/download.html), 
 yarn dev
 ```
 
-## `mas-dev` (Mac App Store) local build
+## Store builds (Mac App Store / Microsoft Store)
 
-This will sign using the development provisioning profile:
+ClipPress does not build store packages. The inherited `mas` and `appx`
+electron-builder configuration identified the app with the upstream LosslessCut
+project's store identity (its Microsoft Store identity name and publisher, and an
+Apple provisioning profile belonging to its author), which ClipPress cannot and
+should not publish under, so that configuration has been removed.
 
-```bash
-yarn pack-mas-dev
-```
+The `isMasBuild` checks in the code are left in place: they are harmless, and
+removing them would be a large change for no benefit.
 
-MAS builds have some restrictions, see `isMasBuild` variable in code. In particular, any file cannot be read without the user's consent.
-
-NOTE: when MAS (dev) build, Application Support will instead be located here (legacy LosslessCut identifier retained for compatibility):
-```
-~/Library/Containers/no.mifi.losslesscut-mac/Data/Library/Application Support
-```
-
-### Starting over fresh
-
-```bash
-rm -rf ~/Library/Containers/no.mifi.losslesscut-mac
-```
-
-## Windows Store notes
-
-Windows store version is built as a Desktop Bridge app (with `runFullTrust` capability). This means the app has access to essentially everything the user has access to, and even `internetClient` is redundant.
-
-- https://learn.microsoft.com/en-us/windows/uwp/packaging/app-capability-declarations
-- https://learn.microsoft.com/en-us/archive/blogs/appconsult/a-simpler-and-faster-way-to-publish-your-desktop-bridge-applications-on-the-microsoft-store
-- https://stackoverflow.com/a/52921641/6519037
+Re-adding a store target would mean registering ClipPress's own publisher
+identity first. Do not copy identifiers from upstream.
 
 ## Releasing
 
@@ -121,9 +106,8 @@ If translation sync is still being handled through the inherited Weblate workflo
 How to check the value:
 
 ```bash
-yarn pack-mas-dev
-# Note: package identifiers currently retain legacy LosslessCut IDs (no.mifi.losslesscut) for storage/update continuity:
-cat dist/mas-dev-arm64/ClipPress.app/Contents/Info.plist
+yarn pack-mac
+cat dist/mac-arm64/ClipPress.app/Contents/Info.plist
 ```
 
 ```xml

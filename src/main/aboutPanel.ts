@@ -12,10 +12,16 @@ import isStoreBuild from './isStoreBuild.js';
 export function getAboutPanelOptions() {
   const appVersion = app.getVersion();
 
+  // Note: the upstream copyright line is required, not decorative. ClipPress is a
+  // GPL-2.0 fork of LosslessCut, so the original author's notice stays visible
+  // alongside ClipPress's own.
   const aboutPanelLines = [
     t('Fast, lightweight desktop video clipping with built-in size-limited export for shareable clips.'),
     '',
-    `${t('Copyright')} Ã‚Â© 2016-${copyrightYear} Mikael Finstad Ã¢ÂÂ¤Ã¯Â¸Â Ã°Å¸â€¡Â³Ã°Å¸â€¡Â´`,
+    `${t('Copyright')} © 2025-${copyrightYear} Adil Ahmed`,
+    `${t('Based on LosslessCut')} — ${t('Copyright')} © 2016-${copyrightYear} Mikael Finstad ❤️ 🇳🇴`,
+    '',
+    t('Licensed under GPL-2.0-only. Media processing by ffmpeg.'),
   ];
 
   const aboutPanelOptions: AboutPanelOptionsOptions = {

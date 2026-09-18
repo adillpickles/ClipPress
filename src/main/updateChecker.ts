@@ -1,41 +1,44 @@
 // eslint-disable-next-line import/no-extraneous-dependencies
 import electron from 'electron';
-import semver from 'semver';
 import { Octokit } from '@octokit/core';
 
 import logger from './logger.js';
+import { selectNewerRelease } from './updateChannel.js';
 
 
 const { app } = electron;
 
 const octokit = new Octokit();
 
+const owner = 'adillpickles';
+const repo = 'ClipPress';
+// Enough to cover the preview channel without paging; releases are listed newest first.
+const releasesToInspect = 30;
+
 
 // eslint-disable-next-line import/prefer-default-export
 export async function checkNewVersion() {
   try {
-    // From API: https://developer.github.com/v3/repos/releases/#get-the-latest-release
-    // View the latest published full release for the repository.
-    // Draft releases and prereleases are not returned by this endpoint.
+    const currentVersion = app.getVersion();
 
-    const { data } = await octokit.request('GET /repos/{owner}/{repo}/releases/latest', {
-      owner: 'adillpickles',
-      repo: 'ClipPress',
+    // Note: deliberately not `GET /releases/latest`. That endpoint skips drafts and
+    // prereleases, and ClipPress publishes a preview channel, so with only beta releases
+    // published it returns 404 and the check silently never worked.
+    const { data } = await octokit.request('GET /repos/{owner}/{repo}/releases', {
+      owner,
+      repo,
+      per_page: releasesToInspect,
       headers: {
         'X-GitHub-Api-Version': '2022-11-28',
       },
     });
 
-    const newestVersion = data.tag_name.replace(/^v?/, '');
-
-    const currentVersion = app.getVersion();
-    // const currentVersion = '3.17.2';
+    const newestVersion = selectNewerRelease({ currentVersion, releases: data });
 
     logger.info('Current version', currentVersion);
-    logger.info('Newest version', newestVersion);
+    logger.info('Newest applicable version', newestVersion ?? '(none)');
 
-    if (semver.lt(currentVersion, newestVersion)) return newestVersion;
-    return undefined;
+    return newestVersion;
   } catch (err) {
     logger.error('Failed to check github version', err instanceof Error ? err.message : String(err));
     return undefined;

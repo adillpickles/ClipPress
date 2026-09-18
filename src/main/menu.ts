@@ -468,7 +468,7 @@ export default ({ app, mainWindow, newVersion, isStoreBuild }: {
           click() { electron.shell.openExternal(featureRequestUrl); },
         },
         ...(!isStoreBuild ? [{
-          label: esc(`${t('Donate')} Ã¢ÂÂ¤Ã¯Â¸Â`),
+          label: esc(`${t('Donate')} ❤️`),
           click() { electron.shell.openExternal(thanksUrl); },
         }] : []),
         { type: 'separator' },

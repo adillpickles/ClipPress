@@ -914,7 +914,7 @@ function ExportConfirm({
   const onSizeLimitedAdvancedPresetHelpPress = useCallback(() => {
     showHelpText({
       text: t(
-        'Advanced mode exposes the encoderâ€™s real preset ladder. Lower SVT-AV1 numbers and higher NVENC or x264 preset levels usually trade more time for more compression efficiency.',
+        'Advanced mode exposes the encoder’s real preset ladder. Lower SVT-AV1 numbers and higher NVENC or x264 preset levels usually trade more time for more compression efficiency.',
       ),
     });
   }, [showHelpText, t]);
