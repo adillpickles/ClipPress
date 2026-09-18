@@ -2,7 +2,7 @@ import type { MouseEventHandler, ReactNode } from 'react';
 import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import invariant from 'tiny-invariant';
-import { FaCheckCircle, FaInfoCircle } from 'react-icons/fa';
+import { FaCheckCircle, FaExclamationTriangle, FaInfoCircle } from 'react-icons/fa';
 
 import * as Dialog from './Dialog';
 import * as AlertDialog from './AlertDialog';
@@ -26,6 +26,48 @@ export interface SizeLimitedFinishedSummary {
   skippedCount: number,
   largestCreatedSizeLabel?: string | undefined,
   singleCreatedSizeLabel?: string | undefined,
+}
+
+/**
+ * Secondary export information, collapsed by default.
+ *
+ * A successful export should read as one line and a file name. The codec strategy, the
+ * retry notes and the "we kept one video and one audio track" explanations are all true
+ * and worth keeping, but they are reference material, not the result. Warnings still
+ * announce themselves in the headline and open this section automatically, so nothing
+ * that needs acting on is hidden.
+ */
+function ExportDetails({ items, defaultOpen, label }: {
+  items: ReactNode,
+  defaultOpen: boolean,
+  label: string,
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div style={{ marginTop: '1em' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        style={{
+          background: 'none',
+          border: 'none',
+          padding: 0,
+          cursor: 'pointer',
+          color: 'inherit',
+          opacity: 0.75,
+          font: 'inherit',
+          fontSize: '.85em',
+        }}
+      >
+        {open ? '▾' : '▸'}
+        {' '}
+        {label}
+      </button>
+
+      {open && <UnorderedList>{items}</UnorderedList>}
+    </div>
+  );
 }
 
 export type ShowGenericDialog = (dialog: GenericDialogParams) => void;
@@ -213,42 +255,65 @@ export function useDialog() {
   }) => {
     const hasWarnings = warnings.length > 0;
     const wroteNewFiles = summary.createdCount > 0;
+    const fileName = filePath.split(/[/\\]/).pop() ?? filePath;
 
-    const summaryText = (() => {
+    const sizeText = (() => {
       if (!wroteNewFiles) return undefined;
 
-      if (summary.createdCount === 1 && summary.singleCreatedSizeLabel != null) {
-        return t('Requested limit: {{target}}. Result: {{actual}}, under target.', {
-          target: summary.requestedLimitLabel,
-          actual: summary.singleCreatedSizeLabel,
-        });
-      }
+      const actual = summary.createdCount === 1
+        ? summary.singleCreatedSizeLabel
+        : summary.largestCreatedSizeLabel;
+      if (actual == null) return t('Limit {{target}}', { target: summary.requestedLimitLabel });
 
-      if (summary.largestCreatedSizeLabel != null) {
-        return t('Requested limit: {{target}} per file. Largest new file: {{actual}}.', {
+      return summary.createdCount === 1
+        ? t('{{actual}} of {{target}} limit', { actual, target: summary.requestedLimitLabel })
+        : t('{{count}} files, largest {{actual}} of {{target}} limit', {
+          count: summary.createdCount,
+          actual,
           target: summary.requestedLimitLabel,
-          actual: summary.largestCreatedSizeLabel,
         });
-      }
-
-      return t('Requested limit: {{target}}.', { target: summary.requestedLimitLabel });
     })();
+
+    const detailItems = (warnings.length > 0 || notices.length > 0) && (
+      <>
+        <Warnings warnings={warnings} />
+        <Notices notices={notices} />
+      </>
+    );
 
     await openExportFinishedDialog({
       filePath,
-      title: wroteNewFiles ? (hasWarnings ? t('Export warning') : t('Success!')) : t('Export result'),
-      width: '52em',
+      title: wroteNewFiles
+        ? (hasWarnings ? t('Export finished with warnings') : t('Export successful'))
+        : t('Nothing was exported'),
+      width: '34em',
       children: (
-        <UnorderedList>
-          <ListItem icon={<FaCheckCircle />} iconColor={hasWarnings ? warningColor : saveColor} style={{ fontWeight: 'bold' }}>
-            {wroteNewFiles
-              ? (hasWarnings ? t('Size-limited export finished with warning(s)', { count: warnings.length }) : t('Size-limited export is done!'))
-              : t('No new files were written')}
-          </ListItem>
-          {summaryText != null && <ListItem icon={<FaInfoCircle />}>{summaryText}</ListItem>}
-          <Warnings warnings={warnings} />
-          <Notices notices={notices} />
-        </UnorderedList>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '.5em' }}>
+            <span style={{ color: hasWarnings ? warningColor : saveColor, marginTop: '.15em' }}>
+              {hasWarnings ? <FaExclamationTriangle /> : <FaCheckCircle />}
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 'bold', wordBreak: 'break-word' }}>
+                {wroteNewFiles ? fileName : t('No new files were written')}
+              </div>
+              {sizeText != null && (
+                <div style={{ opacity: 0.75, fontSize: '.9em', marginTop: '.15em' }}>{sizeText}</div>
+              )}
+            </div>
+          </div>
+
+          {detailItems && (
+            <ExportDetails
+              items={detailItems}
+              // A warning is something to act on, so it is shown straight away.
+              defaultOpen={hasWarnings}
+              label={hasWarnings
+                ? t('Details ({{count}} warnings)', { count: warnings.length })
+                : t('Details')}
+            />
+          )}
+        </div>
       ),
     });
   }, [openExportFinishedDialog, t]);
