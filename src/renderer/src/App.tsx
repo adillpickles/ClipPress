@@ -455,14 +455,10 @@ function App() {
   const {
     setCaptureFormat,
     setCustomOutDir,
-    setCutFileTemplate,
-    setCutMergedFileTemplate,
     setKeyframeCut,
     setPlaybackVolume,
     setExportConfirmEnabled,
     setSimpleMode,
-    setSizeLimitSeparateNamingMode,
-    setSizeLimitMergedNamingMode,
     setOutFormatLocked,
     setSafeOutputFileName,
     setKeyBindings,
@@ -3824,14 +3820,11 @@ function App() {
     if (!exportConfirmEnabled || exportConfirmOpen) {
       await onExportConfirm();
     } else {
-      if (simpleMode) {
-        setCutFileTemplate(undefined);
-        setCutMergedFileTemplate(undefined);
-        if (isSizeLimitedExport) {
-          setSizeLimitSeparateNamingMode('custom_template');
-          setSizeLimitMergedNamingMode('custom_template');
-        }
-      }
+      // Note: opening the export sheet must not touch the user's naming settings.
+      // Simple mode used to clear both name templates and force naming to
+      // "custom_template" on every open, which discarded the saved choice each time and,
+      // because the size-limited default template resolves to the source file's own name,
+      // pointed the export straight at the file being exported.
       setExportConfirmOpen(true);
       setStreamsSelectorShown(false);
     }
@@ -3839,13 +3832,7 @@ function App() {
     exportConfirmEnabled,
     exportConfirmOpen,
     filePath,
-    isSizeLimitedExport,
     onExportConfirm,
-    setCutFileTemplate,
-    setCutMergedFileTemplate,
-    setSizeLimitMergedNamingMode,
-    setSizeLimitSeparateNamingMode,
-    simpleMode,
   ]);
 
   const captureSnapshot = useCallback(async () => {

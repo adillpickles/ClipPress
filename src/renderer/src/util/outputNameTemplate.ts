@@ -166,8 +166,12 @@ export const defaultCutFileTemplate = '${FILENAME}-${CUT_FROM}-${CUT_TO}${SEG_SU
 export const defaultCutMergedFileTemplate = '${FILENAME}-cut-merged-${EPOCH_MS}${EXT}';
 // eslint-disable-next-line no-template-curly-in-string
 export const defaultMergedFileTemplate = '${FILENAME}-merged-${EPOCH_MS}${EXT}';
+// Carries a "-clip" marker so it cannot resolve to the source file's own name. The
+// previous default was '${FILENAME}${SEG_SUFFIX}${EXT}', which for a single unnamed
+// segment is exactly the input name, and size-limited exports write MP4 next to the
+// source by default, so the destination became the source.
 // eslint-disable-next-line no-template-curly-in-string
-export const defaultSizeLimitedCutFileTemplate = '${FILENAME}${SEG_SUFFIX}${EXT}';
+export const defaultSizeLimitedCutFileTemplate = '${FILENAME}-clip${SEG_SUFFIX}${EXT}';
 // eslint-disable-next-line no-template-curly-in-string
 export const defaultSizeLimitedCutMergedFileTemplate = '${FILENAME}-merged${EXT}';
 
