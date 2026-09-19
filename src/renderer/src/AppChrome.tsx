@@ -1,8 +1,9 @@
 import { memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FiCopy, FiMinus, FiScissors, FiSquare, FiX } from 'react-icons/fi';
+import { FiCopy, FiMinus, FiSquare, FiX } from 'react-icons/fi';
 import type { MenuItem } from 'electron';
 
+import ClipPressMark from './components/ClipPressMark';
 import styles from './AppChrome.module.css';
 
 const remote = window.require('@electron/remote');
@@ -78,7 +79,7 @@ function AppChrome() {
       <div className={styles['left']}>
         <div className={styles['brand']}>
           <div className={styles['brandMark']}>
-            <FiScissors />
+            <ClipPressMark />
           </div>
           <span className={styles['brandText']}>ClipPress</span>
         </div>
