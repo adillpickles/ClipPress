@@ -3,9 +3,38 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, parse, resolve } from 'node:path';
 import { execa } from 'execa';
 
-const bytesPerMb = 1024 * 1024;
-const constrainedH264MaxRateFactor = 1.05;
-const constrainedH264BufferFactor = 1.5;
+import {
+  getSizeLimitedCommonEncodeArgs,
+  getSizeLimitedSwsFlagsArgs,
+  getSizeLimitedTwoPassEncodeArgs,
+} from '../src/renderer/src/sizeLimitedFfmpegArgs.ts';
+import {
+  bytesPerMb,
+  getNextSizeLimitedRetryStep,
+  getNextSizeLimitedUndershootStep,
+  planSizeLimitedEncode,
+} from '../src/renderer/src/sizeLimitedPlanner.ts';
+import { resolveSizeLimitedVideoProfile } from '../src/renderer/src/sizeLimitedResolution.ts';
+import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from '../src/renderer/src/sizeLimitedStrategy.ts';
+import type {
+  SizeLimitedEncoderCapabilities,
+  SizeLimitedResolvedStrategy,
+  SizeLimitedRetryStep,
+} from '../src/renderer/src/sizeLimitedTypes.ts';
+import type {
+  SizeLimitSimpleFps,
+  SizeLimitSimpleResolution,
+} from '../src/common/types.ts';
+
+/**
+ * Measures what the shipped size-limited export actually produces.
+ *
+ * Everything that decides a number here — which encoder is chosen, the byte budget, the
+ * bitrate split, the ffmpeg arguments, the retry and the undershoot top-up — comes from
+ * the same modules the app runs. This script only supplies the inputs (ffprobe, the
+ * requested cap) and reports the outcome. Anything it reimplemented would be a result
+ * about code we do not ship.
+ */
 
 class HelpRequestedError extends Error {
   constructor() {
@@ -14,15 +43,17 @@ class HelpRequestedError extends Error {
   }
 }
 
-function toKbitrateArg(bitrate: number) {
-  return `${Math.max(1, Math.floor(bitrate / 1000))}k`;
-}
-
 function printUsage() {
   console.log('Usage: node script/benchmarkSizeLimited.ts --input clip.mp4 --target-mb 8 --target-mb 10 [--output-dir benchmark-output] [--transform-matrix] [--scale-height 720] [--fps 30]');
 }
 
-type BenchmarkProfileId =
+/**
+ * The configurations to measure, named the way the app names them.
+ *
+ * Only the user-facing choice is stored: which encoder ends up running, and with what
+ * settings, is `resolveSizeLimitedStrategy`'s job — the same call the export makes.
+ */
+type BenchmarkCaseId =
   | 'simple_max_quality'
   | 'simple_quality'
   | 'simple_fast'
@@ -30,225 +61,133 @@ type BenchmarkProfileId =
   | 'advanced_h264_cpu_two_pass'
   | 'advanced_h264_nvenc_two_pass';
 
-type CapabilityName = 'h264_nvenc' | 'av1_nvenc' | 'libx264' | 'libsvtav1';
-
-interface BenchmarkProfile {
-  id: BenchmarkProfileId,
+interface BenchmarkCase {
+  id: BenchmarkCaseId,
   description: string,
-  encoder: CapabilityName,
-  mode: 'single_pass' | 'two_pass',
-  firstAttemptTargetFactor: number,
-  overheadRatio: number,
-  preferredAudioBitrate: number,
-  minAudioBitrate: number,
-  maxAudioShare: number,
-  tinyTargetAudioShare: number,
-  tinyTargetThreshold: number,
-  minVideoBitrate: number,
-  buildVideoArgs: (videoBitrate: number) => string[],
+  request: Parameters<typeof resolveSizeLimitedStrategy>[0] extends infer T
+    ? Omit<Extract<T, object>, 'capabilities'>
+    : never,
 }
 
-interface BenchmarkPlan {
-  hardTargetBytes: number,
-  targetZoneMinBytes: number,
-  targetZoneMaxBytes: number,
-  firstAttemptTargetBytes: number,
-  totalBitrate: number,
-  videoBitrate: number,
-  audioBitrate: number,
-  duration: number,
-}
+/**
+ * The advanced-mode knobs, which the resolver always takes but only reads in advanced
+ * mode. The simple cases below still pass them because that is the same shape the app's
+ * settings hand over; they have no effect on a simple preset.
+ */
+const defaultAdvancedPresets = {
+  advancedEncoder: 'av1_cpu',
+  advancedAv1CpuPreset: 5,
+  advancedAv1NvencPreset: 'p6',
+  advancedH264CpuPreset: 'slow',
+  advancedH264NvencPreset: 'p4',
+} as const;
+
+const benchmarkCases: BenchmarkCase[] = [
+  {
+    id: 'simple_max_quality',
+    description: 'Simple / Max Quality',
+    request: {
+      controlMode: 'simple',
+      preset: 'max_quality',
+      advancedTwoPass: true,
+      ...defaultAdvancedPresets,
+    },
+  },
+  {
+    id: 'simple_quality',
+    description: 'Simple / Quality',
+    request: {
+      controlMode: 'simple',
+      preset: 'quality',
+      advancedTwoPass: false,
+      ...defaultAdvancedPresets,
+    },
+  },
+  {
+    id: 'simple_fast',
+    description: 'Simple / Fast',
+    request: {
+      controlMode: 'simple',
+      preset: 'fast',
+      advancedTwoPass: false,
+      ...defaultAdvancedPresets,
+    },
+  },
+  {
+    id: 'advanced_av1_nvenc_two_pass',
+    description: 'Advanced / AV1 NVENC 2-pass',
+    request: {
+      controlMode: 'advanced',
+      preset: 'quality',
+      advancedTwoPass: true,
+      ...defaultAdvancedPresets,
+      advancedEncoder: 'av1_nvenc',
+    },
+  },
+  {
+    id: 'advanced_h264_cpu_two_pass',
+    description: 'Advanced / H.264 CPU 2-pass',
+    request: {
+      controlMode: 'advanced',
+      preset: 'quality',
+      advancedTwoPass: true,
+      ...defaultAdvancedPresets,
+      advancedEncoder: 'h264_cpu',
+    },
+  },
+  {
+    id: 'advanced_h264_nvenc_two_pass',
+    description: 'Advanced / H.264 NVENC 2-pass',
+    request: {
+      controlMode: 'advanced',
+      preset: 'quality',
+      advancedTwoPass: true,
+      ...defaultAdvancedPresets,
+      advancedEncoder: 'h264_nvenc',
+    },
+  },
+];
 
 interface TransformVariant {
   id: 'source_source' | 'scale_only' | 'fps_only' | 'scale_and_fps',
   description: string,
-  filter?: string | undefined,
+  resolution: SizeLimitSimpleResolution,
+  fps: SizeLimitSimpleFps,
+}
+
+interface AttemptRecord {
+  attemptNumber: number,
+  reason: 'initial' | 'over_target_retry' | 'undershoot_topup',
+  videoBitrate: number,
+  audioBitrate: number,
+  qualityCapOffset: number | undefined,
+  outputBytes: number,
+  elapsedMs: number,
 }
 
 interface BenchmarkResult {
   input: string,
   targetMb: number,
-  profile: BenchmarkProfileId,
+  case: BenchmarkCaseId,
+  strategyId: SizeLimitedResolvedStrategy['id'],
+  encoder: SizeLimitedResolvedStrategy['encoder'],
   transform: TransformVariant['id'],
   output: string,
   elapsedMs: number,
   outputBytes: number,
-  plannedFinalBytes: number,
+  hardTargetBytes: number,
+  firstAttemptTargetBytes: number,
+  targetUtilization: number,
   metTarget: boolean,
+  attempts: AttemptRecord[],
   duration: number,
   videoBitrate: number,
   audioBitrate: number,
-  filter?: string | undefined,
+  outputWidth: number | undefined,
+  outputHeight: number | undefined,
+  outputFps: number | undefined,
   ssimAll?: number | undefined,
 }
-
-const profiles: BenchmarkProfile[] = [
-  {
-    id: 'simple_max_quality',
-    description: 'Simple Max Quality: SVT-AV1 preset 5, 2-pass',
-    encoder: 'libsvtav1',
-    mode: 'two_pass',
-    firstAttemptTargetFactor: 0.95,
-    overheadRatio: 0.017,
-    preferredAudioBitrate: 64_000,
-    minAudioBitrate: 24_000,
-    maxAudioShare: 0.15,
-    tinyTargetAudioShare: 0.08,
-    tinyTargetThreshold: 650_000,
-    minVideoBitrate: 80_000,
-    buildVideoArgs: (videoBitrate) => [
-      '-c:v', 'libsvtav1',
-      '-preset', '5',
-      '-pix_fmt', 'yuv420p',
-      '-b:v', toKbitrateArg(videoBitrate),
-      '-svtav1-params', 'tune=0:keyint=600',
-    ],
-  },
-  {
-    id: 'simple_quality',
-    description: 'Simple Quality: AV1 NVENC p6 single-pass',
-    encoder: 'av1_nvenc',
-    mode: 'single_pass',
-    firstAttemptTargetFactor: 0.93,
-    overheadRatio: 0.018,
-    preferredAudioBitrate: 64_000,
-    minAudioBitrate: 24_000,
-    maxAudioShare: 0.16,
-    tinyTargetAudioShare: 0.08,
-    tinyTargetThreshold: 700_000,
-    minVideoBitrate: 90_000,
-    buildVideoArgs: (videoBitrate) => [
-      '-c:v', 'av1_nvenc',
-      '-preset', 'p6',
-      '-tune', 'hq',
-      '-rc', 'vbr',
-      '-multipass', 'qres',
-      '-cq', '28',
-      '-rc-lookahead', '20',
-      '-spatial-aq', '1',
-      '-temporal-aq', '1',
-      '-aq-strength', '8',
-      '-b_ref_mode', 'middle',
-      '-pix_fmt', 'yuv420p',
-      '-b:v', toKbitrateArg(videoBitrate),
-      '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 1.05))),
-      '-bufsize', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 1.5))),
-    ],
-  },
-  {
-    id: 'simple_fast',
-    description: 'Simple Fast: AV1 NVENC p2 single-pass',
-    encoder: 'av1_nvenc',
-    mode: 'single_pass',
-    firstAttemptTargetFactor: 0.9,
-    overheadRatio: 0.018,
-    preferredAudioBitrate: 64_000,
-    minAudioBitrate: 24_000,
-    maxAudioShare: 0.16,
-    tinyTargetAudioShare: 0.08,
-    tinyTargetThreshold: 700_000,
-    minVideoBitrate: 90_000,
-    buildVideoArgs: (videoBitrate) => [
-      '-c:v', 'av1_nvenc',
-      '-preset', 'p2',
-      '-tune', 'hq',
-      '-rc', 'vbr',
-      '-cq', '33',
-      '-rc-lookahead', '4',
-      '-spatial-aq', '1',
-      '-temporal-aq', '0',
-      '-aq-strength', '4',
-      '-pix_fmt', 'yuv420p',
-      '-b:v', toKbitrateArg(videoBitrate),
-      '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 1.05))),
-      '-bufsize', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 1.5))),
-    ],
-  },
-  {
-    id: 'advanced_av1_nvenc_two_pass',
-    description: 'Advanced AV1 NVENC 2-pass',
-    encoder: 'av1_nvenc',
-    mode: 'two_pass',
-    firstAttemptTargetFactor: 0.95,
-    overheadRatio: 0.018,
-    preferredAudioBitrate: 64_000,
-    minAudioBitrate: 24_000,
-    maxAudioShare: 0.16,
-    tinyTargetAudioShare: 0.08,
-    tinyTargetThreshold: 700_000,
-    minVideoBitrate: 90_000,
-    buildVideoArgs: (videoBitrate) => [
-      '-c:v', 'av1_nvenc',
-      '-preset', 'p6',
-      '-tune', 'hq',
-      '-rc', 'vbr',
-      '-cq', '28',
-      '-rc-lookahead', '20',
-      '-spatial-aq', '1',
-      '-temporal-aq', '1',
-      '-aq-strength', '8',
-      '-b_ref_mode', 'middle',
-      '-pix_fmt', 'yuv420p',
-      '-b:v', toKbitrateArg(videoBitrate),
-      '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 1.1))),
-      '-bufsize', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * 2))),
-    ],
-  },
-  {
-    id: 'advanced_h264_cpu_two_pass',
-    description: 'Advanced H.264 CPU 2-pass',
-    encoder: 'libx264',
-    mode: 'two_pass',
-    firstAttemptTargetFactor: 0.93,
-    overheadRatio: 0.022,
-    preferredAudioBitrate: 64_000,
-    minAudioBitrate: 24_000,
-    maxAudioShare: 0.16,
-    tinyTargetAudioShare: 0.09,
-    tinyTargetThreshold: 780_000,
-    minVideoBitrate: 105_000,
-    buildVideoArgs: (videoBitrate) => [
-      '-c:v', 'libx264',
-      '-preset', 'slow',
-      '-pix_fmt', 'yuv420p',
-      '-x264-params', 'aq-mode=3:aq-strength=0.9:deblock=-1,-1:rc-lookahead=40:me=umh:subme=8:ref=4',
-      '-b:v', toKbitrateArg(videoBitrate),
-      '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * constrainedH264MaxRateFactor))),
-      '-bufsize', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * constrainedH264BufferFactor))),
-    ],
-  },
-  {
-    id: 'advanced_h264_nvenc_two_pass',
-    description: 'Advanced H.264 NVENC 2-pass',
-    encoder: 'h264_nvenc',
-    mode: 'two_pass',
-    firstAttemptTargetFactor: 0.93,
-    overheadRatio: 0.022,
-    preferredAudioBitrate: 72_000,
-    minAudioBitrate: 24_000,
-    maxAudioShare: 0.18,
-    tinyTargetAudioShare: 0.1,
-    tinyTargetThreshold: 900_000,
-    minVideoBitrate: 140_000,
-    buildVideoArgs: (videoBitrate) => [
-      '-c:v', 'h264_nvenc',
-      '-preset', 'p4',
-      '-tune', 'hq',
-      '-profile:v', 'high',
-      '-rc', 'vbr_hq',
-      '-rc-lookahead', '20',
-      '-spatial-aq', '1',
-      '-temporal-aq', '1',
-      '-aq-strength', '8',
-      '-strict_gop', '1',
-      '-b_ref_mode', 'middle',
-      '-pix_fmt', 'yuv420p',
-      '-b:v', toKbitrateArg(videoBitrate),
-      '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * constrainedH264MaxRateFactor))),
-      '-bufsize', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * constrainedH264BufferFactor))),
-    ],
-  },
-];
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -318,45 +257,42 @@ function parseArgs() {
   return { inputs, targetMb, outputDir, transformMatrix, scaleHeight, fps };
 }
 
-function buildTransformVariants({
-  transformMatrix,
-  scaleHeight,
-  fps,
-}: {
+/**
+ * Maps the CLI's scale/fps knobs onto the app's own resolution and fps settings, so the
+ * transform matrix exercises `resolveSizeLimitedVideoProfile` rather than hand-written
+ * filter strings.
+ */
+function toSimpleResolution(scaleHeight: number): SizeLimitSimpleResolution {
+  if (scaleHeight >= 1440) return '1440p';
+  if (scaleHeight >= 1080) return '1080p';
+  return '720p';
+}
+
+function buildTransformVariants({ transformMatrix, scaleHeight, fps }: {
   transformMatrix: boolean,
   scaleHeight: number,
   fps: number,
-}) {
-  if (!transformMatrix) {
-    return [{
-      id: 'source_source',
-      description: 'Source resolution / source fps',
-      filter: undefined,
-    }] satisfies TransformVariant[];
-  }
+}): TransformVariant[] {
+  const scaled = toSimpleResolution(scaleHeight);
+  const lowFps: SizeLimitSimpleFps = '30fps';
+
+  const sourceOnly: TransformVariant = {
+    id: 'source_source',
+    description: 'Source resolution / source fps',
+    resolution: 'source',
+    fps: 'source',
+  };
+
+  if (!transformMatrix) return [sourceOnly];
+
+  if (fps !== 30) console.log(`Note: the app's simple fps control only offers "source" or 30 fps, so --fps ${fps} is measured as 30.`);
 
   return [
-    {
-      id: 'source_source',
-      description: 'Source resolution / source fps',
-      filter: undefined,
-    },
-    {
-      id: 'scale_only',
-      description: `Scale only (${scaleHeight}p)`,
-      filter: `scale=-2:${scaleHeight}:flags=lanczos+accurate_rnd`,
-    },
-    {
-      id: 'fps_only',
-      description: `FPS only (${fps} fps)`,
-      filter: `fps=${fps}`,
-    },
-    {
-      id: 'scale_and_fps',
-      description: `Scale + FPS (${scaleHeight}p / ${fps} fps)`,
-      filter: `fps=${fps},scale=-2:${scaleHeight}:flags=lanczos+accurate_rnd`,
-    },
-  ] satisfies TransformVariant[];
+    sourceOnly,
+    { id: 'scale_only', description: `Scale only (${scaled})`, resolution: scaled, fps: 'source' },
+    { id: 'fps_only', description: 'FPS only (30 fps)', resolution: 'source', fps: lowFps },
+    { id: 'scale_and_fps', description: `Scale + FPS (${scaled} / 30 fps)`, resolution: scaled, fps: lowFps },
+  ];
 }
 
 function getBundledFfPath(binary: 'ffmpeg' | 'ffprobe') {
@@ -380,14 +316,6 @@ async function runProcess(binaryPath: string, args: string[]) {
   return execa(binaryPath, args, { all: true });
 }
 
-async function getAvailableEncoders(ffmpegPath: string) {
-  const { all } = await runProcess(ffmpegPath, ['-hide_banner', '-encoders']);
-  const lines = (all ?? '').split(/\r?\n/u);
-  return new Set(lines
-    .map((line) => line.match(/^[\sA-Z.]+\s+([a-z0-9_]+)\s+/iu)?.[1]?.toLowerCase())
-    .filter((value): value is string => value != null));
-}
-
 async function probeEncoder(ffmpegPath: string, encoder: 'h264_nvenc' | 'av1_nvenc') {
   try {
     await runProcess(ffmpegPath, [
@@ -406,14 +334,27 @@ async function probeEncoder(ffmpegPath: string, encoder: 'h264_nvenc' | 'av1_nve
   }
 }
 
-async function getCapabilities(ffmpegPath: string) {
-  const encoders = await getAvailableEncoders(ffmpegPath);
+/** Capability detection mirrors the app: parse `-encoders`, then actually initialize NVENC. */
+async function getCapabilities(ffmpegPath: string): Promise<SizeLimitedEncoderCapabilities> {
+  const { all } = await runProcess(ffmpegPath, ['-hide_banner', '-encoders']);
+  const encoders = parseFfmpegEncoderNames(all ?? '');
   return {
     libx264: encoders.has('libx264'),
     libsvtav1: encoders.has('libsvtav1'),
-    h264_nvenc: encoders.has('h264_nvenc') ? await probeEncoder(ffmpegPath, 'h264_nvenc') : false,
-    av1_nvenc: encoders.has('av1_nvenc') ? await probeEncoder(ffmpegPath, 'av1_nvenc') : false,
+    h264Nvenc: encoders.has('h264_nvenc') ? await probeEncoder(ffmpegPath, 'h264_nvenc') : false,
+    av1Nvenc: encoders.has('av1_nvenc') ? await probeEncoder(ffmpegPath, 'av1_nvenc') : false,
   };
+}
+
+const capabilityByEncoder = {
+  libx264: 'libx264',
+  libsvtav1: 'libsvtav1',
+  h264_nvenc: 'h264Nvenc',
+  av1_nvenc: 'av1Nvenc',
+} as const satisfies Record<SizeLimitedResolvedStrategy['encoder'], keyof SizeLimitedEncoderCapabilities>;
+
+function isCaseRunnable(strategy: SizeLimitedResolvedStrategy, capabilities: SizeLimitedEncoderCapabilities) {
+  return capabilities[capabilityByEncoder[strategy.encoder]];
 }
 
 async function readProbe(ffprobePath: string, input: string) {
@@ -427,144 +368,37 @@ async function readProbe(ffprobePath: string, input: string) {
 
   const parsed = JSON.parse(stdout) as {
     format?: { duration?: string | undefined },
-    streams?: { codec_type?: string | undefined }[] | undefined,
+    streams?: {
+      codec_type?: string | undefined,
+      width?: number | undefined,
+      height?: number | undefined,
+      avg_frame_rate?: string | undefined,
+    }[] | undefined,
   };
 
-  const duration = Number(parsed.format?.duration ?? 0);
-  return {
-    duration,
-    hasAudio: (parsed.streams ?? []).some((stream) => stream.codec_type === 'audio'),
+  const streams = parsed.streams ?? [];
+  const videoStream = streams.find((stream) => stream.codec_type === 'video');
+
+  const parseFps = (value: string | undefined) => {
+    const [num, den] = (value ?? '').split('/').map(Number);
+    if (num == null || !Number.isFinite(num) || num <= 0) return undefined;
+    if (den == null || !Number.isFinite(den) || den <= 0) return undefined;
+    return num / den;
   };
-}
-
-function planProfile({ targetMb, duration, hasAudio, profile }: {
-  targetMb: number,
-  duration: number,
-  hasAudio: boolean,
-  profile: BenchmarkProfile,
-}): BenchmarkPlan {
-  const hardTargetBytes = Math.max(1, Math.floor(targetMb * bytesPerMb));
-  const overheadBytes = Math.max(24 * 1024, Math.floor(hardTargetBytes * profile.overheadRatio));
-  const safeDuration = Math.max(duration, 0.5);
-  const targetZoneMinBytes = Math.floor(hardTargetBytes * 0.95);
-  const targetZoneMaxBytes = Math.floor(hardTargetBytes * 0.98);
-  const firstAttemptTargetBytes = Math.max(Math.floor(hardTargetBytes * profile.firstAttemptTargetFactor), 24 * 1024);
-  const availableBytes = Math.max(firstAttemptTargetBytes - overheadBytes, 24 * 1024);
-  const totalBitrate = Math.max(Math.floor((availableBytes * 8) / safeDuration), profile.minVideoBitrate + (hasAudio ? profile.minAudioBitrate : 0));
-
-  if (!hasAudio) {
-    return {
-      hardTargetBytes,
-      targetZoneMinBytes,
-      targetZoneMaxBytes,
-      firstAttemptTargetBytes,
-      totalBitrate,
-      videoBitrate: totalBitrate,
-      audioBitrate: 0,
-      duration: safeDuration,
-    };
-  }
-
-  const audioShare = totalBitrate <= profile.tinyTargetThreshold ? profile.tinyTargetAudioShare : profile.maxAudioShare;
-  let audioBitrate = Math.min(profile.preferredAudioBitrate, Math.max(profile.minAudioBitrate, Math.floor(totalBitrate * audioShare)));
-  if (totalBitrate - audioBitrate < profile.minVideoBitrate) {
-    audioBitrate = Math.max(profile.minAudioBitrate, totalBitrate - profile.minVideoBitrate);
-  }
 
   return {
-    hardTargetBytes,
-    targetZoneMinBytes,
-    targetZoneMaxBytes,
-    firstAttemptTargetBytes,
-    totalBitrate,
-    videoBitrate: Math.max(totalBitrate - audioBitrate, profile.minVideoBitrate),
-    audioBitrate,
-    duration: safeDuration,
+    duration: Number(parsed.format?.duration ?? 0),
+    hasAudio: streams.some((stream) => stream.codec_type === 'audio'),
+    width: videoStream?.width,
+    height: videoStream?.height,
+    fps: parseFps(videoStream?.avg_frame_rate),
   };
 }
 
-function getAudioArgs(hasAudio: boolean, audioBitrate: number) {
-  if (!hasAudio) return ['-an'];
-  return ['-c:a', 'aac', '-b:a', toKbitrateArg(audioBitrate), '-ac', '2'];
-}
+type Probe = Awaited<ReturnType<typeof readProbe>>;
 
-function buildSinglePassArgs({ input, output, hasAudio, plan, profile, filter }: {
-  input: string,
-  output: string,
-  hasAudio: boolean,
-  plan: BenchmarkPlan,
-  profile: BenchmarkProfile,
-  filter?: string | undefined,
-}) {
-  return [
-    '-hide_banner',
-    '-i', input,
-    '-map_metadata', '-1',
-    '-map_chapters', '-1',
-    '-sn',
-    '-dn',
-    '-ignore_unknown',
-    '-map', '0:v:0',
-    ...(hasAudio ? ['-map', '0:a:0'] : []),
-    ...(filter != null ? ['-vf', filter] : []),
-    ...profile.buildVideoArgs(plan.videoBitrate),
-    ...getAudioArgs(hasAudio, plan.audioBitrate),
-    '-movflags', '+faststart',
-    '-f', 'mp4',
-    '-y', output,
-  ];
-}
-
-function buildTwoPassArgs({ input, output, passlogFile, pass1Output, hasAudio, plan, profile, filter }: {
-  input: string,
-  output: string,
-  passlogFile: string,
-  pass1Output: string,
-  hasAudio: boolean,
-  plan: BenchmarkPlan,
-  profile: BenchmarkProfile,
-  filter?: string | undefined,
-}) {
-  const sharedVideoArgs = profile.buildVideoArgs(plan.videoBitrate);
-  const pass1Args = [
-    '-hide_banner',
-    '-i', input,
-    '-map_metadata', '-1',
-    '-map_chapters', '-1',
-    '-sn',
-    '-dn',
-    '-ignore_unknown',
-    '-map', '0:v:0',
-    ...(filter != null ? ['-vf', filter] : []),
-    ...sharedVideoArgs,
-    '-pass', '1',
-    '-passlogfile', passlogFile,
-    '-an',
-    '-f', 'mp4',
-    '-y', pass1Output,
-  ];
-
-  const pass2Args = [
-    '-hide_banner',
-    '-i', input,
-    '-map_metadata', '-1',
-    '-map_chapters', '-1',
-    '-sn',
-    '-dn',
-    '-ignore_unknown',
-    '-map', '0:v:0',
-    ...(hasAudio ? ['-map', '0:a:0'] : []),
-    ...(filter != null ? ['-vf', filter] : []),
-    ...sharedVideoArgs,
-    '-pass', '2',
-    '-passlogfile', passlogFile,
-    ...getAudioArgs(hasAudio, plan.audioBitrate),
-    '-movflags', '+faststart',
-    '-f', 'mp4',
-    '-y', output,
-  ];
-
-  return { pass1Args, pass2Args };
+async function fileSize(path: string) {
+  return (await stat(path)).size;
 }
 
 async function runSsim(ffmpegPath: string, source: string, encoded: string) {
@@ -586,80 +420,169 @@ async function runSsim(ffmpegPath: string, source: string, encoded: string) {
   }
 }
 
-async function runProfile({
-  ffmpegPath,
-  input,
-  outputDir,
-  targetMb,
-  probe,
-  profile,
-  transform,
-}: {
+/**
+ * Runs one attempt with exactly the arguments the app would use for it.
+ *
+ * The app encodes the selected segment; the benchmark encodes the whole input, so the
+ * only difference from a real export is the absence of `-ss`/`-t` input trimming.
+ */
+async function runAttempt({ ffmpegPath, input, output, tempDir, attempt, strategy, probe, transform }: {
+  ffmpegPath: string,
+  input: string,
+  output: string,
+  tempDir: string,
+  attempt: SizeLimitedRetryStep,
+  strategy: SizeLimitedResolvedStrategy,
+  probe: Probe,
+  transform: TransformVariant,
+}) {
+  const videoProfile = resolveSizeLimitedVideoProfile({
+    resolution: transform.resolution,
+    fps: transform.fps,
+    sourceWidth: probe.width,
+    sourceHeight: probe.height,
+    rotation: undefined,
+    sourceFps: probe.fps,
+    plannedVideoBitrate: attempt.videoBitrate,
+  });
+
+  const shared = {
+    strategy,
+    videoBitrate: attempt.videoBitrate,
+    audioBitrate: attempt.audioBitrate,
+    videoInputLabel: '0:v:0',
+    audioInputLabel: probe.hasAudio ? '0:a:0' : undefined,
+    videoProfile,
+    // The benchmark never enables the app's experimental flag; it is an escape hatch for
+    // awkward inputs, not part of what we are measuring.
+    experimentalArgs: [],
+    rotation: undefined,
+    sourceFps: probe.fps,
+    outputPlaybackRate: 1,
+    ...(attempt.qualityCapOffset != null ? { qualityCapOffset: attempt.qualityCapOffset } : {}),
+  };
+
+  const inputArgs = ['-hide_banner', ...getSizeLimitedSwsFlagsArgs(), '-i', input];
+  const startedAt = Date.now();
+
+  if (strategy.executionMode === 'ffmpeg_two_pass') {
+    const passlogFile = join(tempDir, `${strategy.id}-${attempt.attemptNumber}.passlog`);
+    const pass1Output = join(tempDir, `${strategy.id}-${attempt.attemptNumber}.pass1.mp4`);
+
+    await runProcess(ffmpegPath, [
+      ...inputArgs,
+      ...getSizeLimitedTwoPassEncodeArgs({ ...shared, passlogFile, outPath: pass1Output, passNumber: 1 }),
+    ]);
+    await runProcess(ffmpegPath, [
+      ...inputArgs,
+      ...getSizeLimitedTwoPassEncodeArgs({ ...shared, passlogFile, outPath: output, passNumber: 2 }),
+    ]);
+  } else {
+    await runProcess(ffmpegPath, [
+      ...inputArgs,
+      ...getSizeLimitedCommonEncodeArgs({ ...shared, outPath: output }),
+    ]);
+  }
+
+  return {
+    elapsedMs: Date.now() - startedAt,
+    outputBytes: await fileSize(output),
+    videoProfile,
+  };
+}
+
+async function runCase({ ffmpegPath, input, outputDir, targetMb, probe, benchmarkCase, strategy, transform }: {
   ffmpegPath: string,
   input: string,
   outputDir: string,
   targetMb: number,
-  probe: Awaited<ReturnType<typeof readProbe>>,
-  profile: BenchmarkProfile,
+  probe: Probe,
+  benchmarkCase: BenchmarkCase,
+  strategy: SizeLimitedResolvedStrategy,
   transform: TransformVariant,
-}) {
+}): Promise<BenchmarkResult> {
   const stem = parse(input).name;
-  const output = join(outputDir, `${stem}.${profile.id}.${transform.id}.${targetMb}mb.mp4`);
-  const plan = planProfile({ targetMb, duration: probe.duration, hasAudio: probe.hasAudio, profile });
-  const startedAt = Date.now();
+  const output = join(outputDir, `${stem}.${benchmarkCase.id}.${transform.id}.${targetMb}mb.mp4`);
 
-  if (profile.mode === 'single_pass') {
-    await runProcess(ffmpegPath, buildSinglePassArgs({
-      input,
-      output,
-      hasAudio: probe.hasAudio,
-      plan,
-      profile,
-      filter: transform.filter,
-    }));
-  } else {
-    const tempDir = await mkdtemp(join(tmpdir(), 'clippress-bench-'));
-    const passlogFile = join(tempDir, `${profile.id}.passlog`);
-    const pass1Output = join(tempDir, `${profile.id}.pass1.mp4`);
+  const plan = planSizeLimitedEncode({
+    targetSizeMb: targetMb,
+    duration: probe.duration,
+    hasAudio: probe.hasAudio,
+    strategy,
+  });
 
-    try {
-      const { pass1Args, pass2Args } = buildTwoPassArgs({
-        input,
-        output,
-        passlogFile,
-        pass1Output,
-        hasAudio: probe.hasAudio,
-        plan,
-        profile,
-        filter: transform.filter,
+  const tempDir = await mkdtemp(join(tmpdir(), 'clippress-bench-'));
+  const attempts: AttemptRecord[] = [];
+  let attempt: SizeLimitedRetryStep | undefined = plan.initialAttempt;
+  let reason: AttemptRecord['reason'] = 'initial';
+  let lastVideoProfile: ReturnType<typeof resolveSizeLimitedVideoProfile> | undefined;
+
+  try {
+    while (attempt != null) {
+      const { elapsedMs, outputBytes, videoProfile } = await runAttempt({
+        ffmpegPath, input, output, tempDir, attempt, strategy, probe, transform,
       });
-      await runProcess(ffmpegPath, pass1Args);
-      await runProcess(ffmpegPath, pass2Args);
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
+      lastVideoProfile = videoProfile;
+
+      attempts.push({
+        attemptNumber: attempt.attemptNumber,
+        reason,
+        videoBitrate: attempt.videoBitrate,
+        audioBitrate: attempt.audioBitrate,
+        qualityCapOffset: attempt.qualityCapOffset,
+        outputBytes,
+        elapsedMs,
+      });
+
+      // Same order the export uses: shrink first if the result broke the cap, otherwise
+      // consider one top-up if it came in far under.
+      const retryStep: SizeLimitedRetryStep | undefined = getNextSizeLimitedRetryStep({ plan, previousAttempt: attempt, previousOutputSize: outputBytes });
+      const undershootStep: SizeLimitedRetryStep | undefined = retryStep == null
+        ? getNextSizeLimitedUndershootStep({ plan, previousAttempt: attempt, previousOutputSize: outputBytes })
+        : undefined;
+
+      if (retryStep != null) reason = 'over_target_retry';
+      else if (undershootStep != null) reason = 'undershoot_topup';
+
+      attempt = retryStep ?? undershootStep;
     }
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
   }
 
-  const elapsedMs = Date.now() - startedAt;
-  const outputBytes = (await stat(output)).size;
+  // The export keeps the largest result that stayed under the cap, so an undershoot
+  // top-up that overshoots is discarded rather than shipped. Mirror that here.
+  const underCap = attempts.filter((record) => record.outputBytes <= plan.hardTargetBytes);
+  const best = [...(underCap.length > 0 ? underCap : attempts)].sort((a, b) => b.outputBytes - a.outputBytes)[0];
+  if (best == null) throw new Error('No attempt was run');
+  const bestStep = best.attemptNumber === plan.initialAttempt.attemptNumber ? plan.initialAttempt : undefined;
+
+  const outputBytes = await fileSize(output);
   const ssimAll = await runSsim(ffmpegPath, input, output);
 
   return {
     input,
     targetMb,
-    profile: profile.id,
+    case: benchmarkCase.id,
+    strategyId: strategy.id,
+    encoder: strategy.encoder,
     transform: transform.id,
     output,
-    elapsedMs,
+    elapsedMs: attempts.reduce((total, record) => total + record.elapsedMs, 0),
     outputBytes,
-    plannedFinalBytes: plan.firstAttemptTargetBytes,
+    hardTargetBytes: plan.hardTargetBytes,
+    firstAttemptTargetBytes: plan.firstAttemptTargetBytes,
+    targetUtilization: outputBytes / plan.hardTargetBytes,
     metTarget: outputBytes <= plan.hardTargetBytes,
-    duration: probe.duration,
-    videoBitrate: plan.videoBitrate,
-    audioBitrate: plan.audioBitrate,
-    filter: transform.filter,
+    attempts,
+    duration: plan.duration,
+    videoBitrate: best.videoBitrate ?? bestStep?.videoBitrate ?? 0,
+    audioBitrate: best.audioBitrate,
+    outputWidth: lastVideoProfile?.outputWidth,
+    outputHeight: lastVideoProfile?.outputHeight,
+    outputFps: lastVideoProfile?.outputFps,
     ssimAll,
-  } satisfies BenchmarkResult;
+  };
 }
 
 async function main() {
@@ -670,9 +593,10 @@ async function main() {
 
   const capabilities = await getCapabilities(ffmpegPath);
   const transforms = buildTransformVariants({ transformMatrix, scaleHeight, fps });
-  const profilesToRun = transformMatrix
-    ? profiles.filter((profile) => ['simple_max_quality', 'simple_quality', 'simple_fast', 'advanced_h264_nvenc_two_pass'].includes(profile.id))
-    : profiles;
+  const casesToRun = transformMatrix
+    ? benchmarkCases.filter((benchmarkCase) => ['simple_max_quality', 'simple_quality', 'simple_fast', 'advanced_h264_nvenc_two_pass'].includes(benchmarkCase.id))
+    : benchmarkCases;
+
   console.log('Detected capabilities:', capabilities);
   if (transformMatrix) console.log('Transform matrix:', transforms.map((transform) => `${transform.id} (${transform.description})`).join(', '));
 
@@ -680,25 +604,27 @@ async function main() {
 
   for (const input of inputs) {
     const probe = await readProbe(ffprobePath, input);
-    console.log(`\nInput: ${basename(input)} (${probe.duration.toFixed(2)}s, audio=${probe.hasAudio})`);
+    console.log(`\nInput: ${basename(input)} (${probe.duration.toFixed(2)}s, ${probe.width}x${probe.height}, audio=${probe.hasAudio})`);
 
     for (const target of targetMb) {
       for (const transform of transforms) {
-        for (const profile of profilesToRun) {
-          if (!capabilities[profile.encoder]) {
-            console.log(`Skipping ${profile.id} (${transform.id}) for ${basename(input)} at ${target} MB because ${profile.encoder} is unavailable.`);
+        for (const benchmarkCase of casesToRun) {
+          const strategy = resolveSizeLimitedStrategy({ ...benchmarkCase.request, capabilities });
+
+          if (!isCaseRunnable(strategy, capabilities)) {
+            console.log(`Skipping ${benchmarkCase.id} (${transform.id}) for ${basename(input)} at ${target} MB because ${strategy.encoder} is unavailable.`);
           } else {
-            console.log(`Running ${profile.id} (${transform.id}) for ${basename(input)} at ${target} MB`);
-            const result = await runProfile({
+            console.log(`Running ${benchmarkCase.id} -> ${strategy.id} (${transform.id}) for ${basename(input)} at ${target} MB`);
+            results.push(await runCase({
               ffmpegPath,
               input,
               outputDir,
               targetMb: target,
               probe,
-              profile,
+              benchmarkCase,
+              strategy,
               transform,
-            });
-            results.push(result);
+            }));
           }
         }
       }
@@ -706,16 +632,18 @@ async function main() {
   }
 
   const summaryPath = join(outputDir, 'summary.json');
-  await writeFile(summaryPath, JSON.stringify(results, null, 2));
+  await writeFile(summaryPath, JSON.stringify({ capabilities, results }, null, 2));
 
   console.table(results.map((result) => ({
     input: basename(result.input),
     targetMb: result.targetMb,
-    profile: result.profile,
+    case: result.case,
+    strategy: result.strategyId,
     transform: result.transform,
-    plannedMb: Number((result.plannedFinalBytes / bytesPerMb).toFixed(2)),
     sizeMb: Number((result.outputBytes / bytesPerMb).toFixed(2)),
+    ofTarget: `${(result.targetUtilization * 100).toFixed(1)}%`,
     metTarget: result.metTarget,
+    attempts: result.attempts.length,
     elapsedSeconds: Number((result.elapsedMs / 1000).toFixed(2)),
     ssimAll: result.ssimAll != null ? Number(result.ssimAll.toFixed(4)) : 'n/a',
   })));
@@ -724,9 +652,26 @@ async function main() {
   const lines = [
     '# ClipPress Size-Limited Benchmark',
     '',
-    '| Input | Target MB | Planned MB | Profile | Transform | Output MB | Met Target | Elapsed s | SSIM All |',
-    '| --- | ---: | ---: | --- | --- | ---: | :---: | ---: | ---: |',
-    ...results.map((result) => `| ${basename(result.input)} | ${result.targetMb} | ${(result.plannedFinalBytes / bytesPerMb).toFixed(2)} | ${result.profile} | ${result.transform} | ${(result.outputBytes / bytesPerMb).toFixed(2)} | ${result.metTarget ? 'yes' : 'no'} | ${(result.elapsedMs / 1000).toFixed(2)} | ${result.ssimAll != null ? result.ssimAll.toFixed(4) : 'n/a'} |`),
+    'Produced by `yarn benchmark-size-limited`, which drives the same planner, strategy',
+    'resolution and ffmpeg arguments the app uses.',
+    '',
+    '| Input | Target MB | Case | Strategy | Transform | Output MB | % of target | Met target | Attempts | Elapsed s | SSIM All |',
+    '| --- | ---: | --- | --- | --- | ---: | ---: | :---: | ---: | ---: | ---: |',
+    ...results.map((result) => [
+      '',
+      basename(result.input),
+      String(result.targetMb),
+      result.case,
+      result.strategyId,
+      result.transform,
+      (result.outputBytes / bytesPerMb).toFixed(2),
+      `${(result.targetUtilization * 100).toFixed(1)}%`,
+      result.metTarget ? 'yes' : 'no',
+      String(result.attempts.length),
+      (result.elapsedMs / 1000).toFixed(2),
+      result.ssimAll != null ? result.ssimAll.toFixed(4) : 'n/a',
+      '',
+    ].join(' | ')),
     '',
   ];
   await writeFile(markdownPath, lines.join('\n'));

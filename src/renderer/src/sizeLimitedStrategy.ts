@@ -6,7 +6,7 @@ import type {
   SizeLimitControlMode,
   SizeLimitPreset,
 } from '../../common/types.js';
-import type { SizeLimitedEncoderCapabilities, SizeLimitedResolvedStrategy } from './types';
+import type { SizeLimitedEncoderCapabilities, SizeLimitedResolvedStrategy } from './sizeLimitedTypes';
 
 const nvencPresetValues = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'] as const satisfies readonly SizeLimitAdvancedNvencPreset[];
 const h264CpuPresetValues = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'] as const satisfies readonly SizeLimitAdvancedH264CpuPreset[];

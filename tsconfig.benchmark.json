@@ -1,22 +1,20 @@
 {
+  // The benchmark runs under Node but drives the renderer's size-limited planner, so it
+  // is checked in its own project: Node's globals and lib, with the renderer's module
+  // resolution so the shared modules type-check exactly as they do in the app.
   "extends": ["@tsconfig/strictest", "@tsconfig/node22/tsconfig.json"],
   "compilerOptions": {
     "noEmit": true,
 
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+
     // https://nodejs.org/api/typescript.html
     "allowImportingTsExtensions": true,
-    "rewriteRelativeImportExtensions": true,
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
   },
   "include": [
-    "electron.vite.config.ts",
-    "i18next.config*.ts",
-    "script/**/*",
-  ],
-  "exclude": [
-    // Checked by tsconfig.benchmark.json instead: it drives the renderer's size-limited
-    // planner and so needs the renderer's module resolution.
     "script/benchmarkSizeLimited.ts",
   ],
 }

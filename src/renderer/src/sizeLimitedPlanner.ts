@@ -1,4 +1,4 @@
-import type { SizeLimitedPlan, SizeLimitedResolvedStrategy, SizeLimitedRetryStep, SizeLimitedStrategyId } from './types';
+import type { SizeLimitedPlan, SizeLimitedResolvedStrategy, SizeLimitedRetryStep, SizeLimitedStrategyId } from './sizeLimitedTypes';
 
 export const bytesPerMb = 1024 * 1024;
 

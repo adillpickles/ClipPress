@@ -11,9 +11,13 @@ import type {
 } from '../../common/types.js';
 import { getExperimentalArgs, logStdoutStderr, runFfmpeg, runFfmpegWithProgress } from './ffmpeg';
 import mainApi from './mainApi';
-import { getResolvedVideoArgs, toKbitrateArg } from './sizeLimitedEncoderArgs';
 import { finalizeSizeLimitedExecutionResult } from './sizeLimitedExecutionPolicy';
-import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile, sizeLimitedSwsFlags } from './sizeLimitedResolution';
+import {
+  getSizeLimitedCommonEncodeArgs,
+  getSizeLimitedSwsFlagsArgs,
+  getSizeLimitedTwoPassEncodeArgs,
+} from './sizeLimitedFfmpegArgs';
+import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile } from './sizeLimitedResolution';
 import { getNextSizeLimitedRetryStep, getNextSizeLimitedUndershootStep, planSizeLimitedEncode } from './sizeLimitedPlanner';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import { buildConcatSegmentInputArgs, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
@@ -183,14 +187,6 @@ async function deletePassArtifacts(basePath: string | undefined) {
   await Promise.all(artifacts.map((artifact) => deleteIfExists(artifact)));
 }
 
-function getRotationArgs(rotation: number | undefined) {
-  return rotation !== undefined ? ['-display_rotation:v:0', String(360 - rotation)] : [];
-}
-
-function getSwsFlagsArgs() {
-  return ['-sws_flags', sizeLimitedSwsFlags];
-}
-
 interface PreparedTextOverlayAsset {
   imagePath: string;
   x: number;
@@ -309,121 +305,6 @@ function getMergedOverlayAssets({
   });
 
   return mergedAssets;
-}
-
-function getAudioArgs({ audioInputLabel, audioBitrate, audioGainDb }: {
-  audioInputLabel: string | undefined,
-  audioBitrate: number,
-  audioGainDb?: number | undefined,
-}) {
-  if (audioInputLabel == null) return ['-an'];
-  return [
-    '-map', audioInputLabel,
-    ...(audioGainDb != null && Math.abs(audioGainDb) >= 0.01 ? ['-filter:a', isMutedAudioGain(audioGainDb) ? 'volume=0' : `volume=${audioGainDb.toFixed(2)}dB`] : []),
-    '-c:a', 'aac', '-b:a', toKbitrateArg(audioBitrate), '-ac', '2',
-  ];
-}
-
-function getCommonEncodeArgs({
-  strategy,
-  videoBitrate,
-  audioBitrate,
-  videoInputLabel,
-  audioInputLabel,
-  videoProfile,
-  ffmpegExperimental,
-  rotation,
-  outPath,
-  sourceFps,
-  outputPlaybackRate,
-  audioGainDb,
-  qualityCapOffset,
-}: {
-  strategy: SizeLimitedResolvedStrategy,
-  videoBitrate: number,
-  audioBitrate: number,
-  videoInputLabel: string,
-  audioInputLabel: string | undefined,
-  videoProfile: SizeLimitedVideoTransformProfile,
-  ffmpegExperimental: boolean,
-  rotation: number | undefined,
-  outPath: string,
-  sourceFps: number | undefined,
-  outputPlaybackRate: number,
-  audioGainDb?: number | undefined,
-  qualityCapOffset?: number | undefined,
-}) {
-  const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
-  return [
-    '-map_metadata', '-1',
-    '-map_chapters', '-1',
-    '-sn',
-    '-dn',
-    '-ignore_unknown',
-    '-map', videoInputLabel,
-    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: false, videoProfile, sourceFps, outputPlaybackRate, qualityCapOffset }),
-    ...(videoFilter != null ? ['-vf', videoFilter] : []),
-    ...getRotationArgs(rotation),
-    ...getAudioArgs({ audioInputLabel, audioBitrate, audioGainDb }),
-    '-movflags', '+faststart',
-    ...getExperimentalArgs(ffmpegExperimental),
-    '-f', 'mp4',
-    '-y', outPath,
-  ];
-}
-
-function getTwoPassEncodeArgs({
-  strategy,
-  videoBitrate,
-  audioBitrate,
-  videoInputLabel,
-  audioInputLabel,
-  videoProfile,
-  ffmpegExperimental,
-  rotation,
-  passlogFile,
-  outPath,
-  passNumber,
-  sourceFps,
-  outputPlaybackRate,
-  audioGainDb,
-  qualityCapOffset,
-}: {
-  strategy: SizeLimitedResolvedStrategy,
-  videoBitrate: number,
-  audioBitrate: number,
-  videoInputLabel: string,
-  audioInputLabel: string | undefined,
-  videoProfile: SizeLimitedVideoTransformProfile,
-  ffmpegExperimental: boolean,
-  rotation: number | undefined,
-  passlogFile: string,
-  outPath: string,
-  passNumber: 1 | 2,
-  sourceFps: number | undefined,
-  outputPlaybackRate: number,
-  audioGainDb?: number | undefined,
-  qualityCapOffset?: number | undefined,
-}) {
-  const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
-  return [
-    '-map_metadata', '-1',
-    '-map_chapters', '-1',
-    '-sn',
-    '-dn',
-    '-ignore_unknown',
-    '-map', videoInputLabel,
-    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: true, videoProfile, sourceFps, outputPlaybackRate, qualityCapOffset }),
-    ...(videoFilter != null ? ['-vf', videoFilter] : []),
-    '-pass', String(passNumber),
-    '-passlogfile', passlogFile,
-    ...getRotationArgs(rotation),
-    ...(passNumber === 1 ? ['-an'] : getAudioArgs({ audioInputLabel, audioBitrate, audioGainDb })),
-    ...(passNumber === 2 ? ['-movflags', '+faststart'] : []),
-    ...getExperimentalArgs(ffmpegExperimental),
-    '-f', 'mp4',
-    '-y', outPath,
-  ];
 }
 
 function getSegmentInputArgs({ filePath, segment, outputPlaybackRate }: {
@@ -904,17 +785,17 @@ export async function exportSizeLimitedSegment({
           const pass1OutPath = makePass1Path(outPath, attempt.attemptNumber);
           const pass1Args = [
             '-hide_banner',
-            ...getSwsFlagsArgs(),
+            ...getSizeLimitedSwsFlagsArgs(),
             ...commonArgs,
             ...outputTrimArgs,
-            ...getTwoPassEncodeArgs({
+            ...getSizeLimitedTwoPassEncodeArgs({
               strategy,
               videoBitrate: attempt.videoBitrate,
               audioBitrate: attempt.audioBitrate,
               videoInputLabel,
               audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
               videoProfile: effectiveVideoProfile,
-              ffmpegExperimental,
+              experimentalArgs: getExperimentalArgs(ffmpegExperimental),
               rotation,
               passlogFile,
               outPath: pass1OutPath,
@@ -928,17 +809,17 @@ export async function exportSizeLimitedSegment({
 
           const pass2Args = [
             '-hide_banner',
-            ...getSwsFlagsArgs(),
+            ...getSizeLimitedSwsFlagsArgs(),
             ...commonArgs,
             ...outputTrimArgs,
-            ...getTwoPassEncodeArgs({
+            ...getSizeLimitedTwoPassEncodeArgs({
               strategy,
               videoBitrate: attempt.videoBitrate,
               audioBitrate: attempt.audioBitrate,
               videoInputLabel,
               audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
               videoProfile: effectiveVideoProfile,
-              ffmpegExperimental,
+              experimentalArgs: getExperimentalArgs(ffmpegExperimental),
               rotation,
               passlogFile,
               outPath: attemptOutPath,
@@ -957,17 +838,17 @@ export async function exportSizeLimitedSegment({
 
         const ffmpegArgs = [
           '-hide_banner',
-          ...getSwsFlagsArgs(),
+          ...getSizeLimitedSwsFlagsArgs(),
           ...commonArgs,
           ...outputTrimArgs,
-          ...getCommonEncodeArgs({
+          ...getSizeLimitedCommonEncodeArgs({
             strategy,
             videoBitrate: attempt.videoBitrate,
             audioBitrate: attempt.audioBitrate,
             videoInputLabel,
             audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
             videoProfile: effectiveVideoProfile,
-            ffmpegExperimental,
+            experimentalArgs: getExperimentalArgs(ffmpegExperimental),
             rotation,
             outPath: attemptOutPath,
             sourceFps,
@@ -1159,17 +1040,17 @@ export async function exportSizeLimitedMerge({
           const pass1OutPath = makePass1Path(outPath, attempt.attemptNumber);
           const pass1Args = [
             '-hide_banner',
-            ...getSwsFlagsArgs(),
+            ...getSizeLimitedSwsFlagsArgs(),
             ...commonArgs,
             ...outputTrimArgs,
-            ...getTwoPassEncodeArgs({
+            ...getSizeLimitedTwoPassEncodeArgs({
               strategy,
               videoBitrate: attempt.videoBitrate,
               audioBitrate: attempt.audioBitrate,
               videoInputLabel: '[v]',
               audioInputLabel: audioStream != null ? '[a]' : undefined,
               videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
-              ffmpegExperimental,
+              experimentalArgs: getExperimentalArgs(ffmpegExperimental),
               rotation,
               passlogFile,
               outPath: pass1OutPath,
@@ -1183,17 +1064,17 @@ export async function exportSizeLimitedMerge({
 
           const pass2Args = [
             '-hide_banner',
-            ...getSwsFlagsArgs(),
+            ...getSizeLimitedSwsFlagsArgs(),
             ...commonArgs,
             ...outputTrimArgs,
-            ...getTwoPassEncodeArgs({
+            ...getSizeLimitedTwoPassEncodeArgs({
               strategy,
               videoBitrate: attempt.videoBitrate,
               audioBitrate: attempt.audioBitrate,
               videoInputLabel: '[v]',
               audioInputLabel: audioStream != null ? '[a]' : undefined,
               videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
-              ffmpegExperimental,
+              experimentalArgs: getExperimentalArgs(ffmpegExperimental),
               rotation,
               passlogFile,
               outPath: attemptOutPath,
@@ -1212,17 +1093,17 @@ export async function exportSizeLimitedMerge({
 
         const ffmpegArgs = [
           '-hide_banner',
-          ...getSwsFlagsArgs(),
+          ...getSizeLimitedSwsFlagsArgs(),
           ...commonArgs,
           ...outputTrimArgs,
-          ...getCommonEncodeArgs({
+          ...getSizeLimitedCommonEncodeArgs({
             strategy,
             videoBitrate: attempt.videoBitrate,
             audioBitrate: attempt.audioBitrate,
             videoInputLabel: '[v]',
             audioInputLabel: audioStream != null ? '[a]' : undefined,
             videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
-            ffmpegExperimental,
+            experimentalArgs: getExperimentalArgs(ffmpegExperimental),
             rotation,
             outPath: attemptOutPath,
             sourceFps,

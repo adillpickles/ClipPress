@@ -1,5 +1,5 @@
 import type { SizeLimitedVideoTransformProfile } from './sizeLimitedResolution';
-import type { SizeLimitedResolvedStrategy } from './types';
+import type { SizeLimitedResolvedStrategy } from './sizeLimitedTypes';
 
 const fastCpuX264Params = 'aq-mode=3:aq-strength=0.8:deblock=-1,-1:rc-lookahead=20:me=hex:subme=6';
 const qualityCpuX264Params = 'aq-mode=3:aq-strength=0.85:deblock=-1,-1:rc-lookahead=28:me=umh:subme=7:ref=3';
