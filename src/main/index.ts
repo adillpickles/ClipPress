@@ -317,6 +317,32 @@ function safeRequestSingleInstanceLock(additionalData: Record<string, unknown>) 
 // Call this immediately, to make sure we don't miss it (race condition)
 const readyPromise = app.whenReady();
 
+/**
+ * Tells the user their settings were lost, and where the old file went.
+ *
+ * Losing every preference is the kind of thing someone will otherwise put down to the
+ * app being flaky. Shown once per start, and only when there was actually something
+ * unreadable on disk. The copy is offered rather than opened, because the file is broken
+ * and there is nothing useful to do with it except keep it.
+ */
+function reportPreservedCorruptConfig() {
+  const preserved = configStore.getPreservedCorruptConfig();
+  if (preserved == null) return;
+
+  const showOldFileButton = 0;
+  const response = electron.dialog.showMessageBoxSync({
+    type: 'warning',
+    buttons: [i18n.t('Show the old file'), i18n.t('Close')],
+    defaultId: 1,
+    cancelId: 1,
+    title: i18n.t('Settings could not be read'),
+    message: i18n.t('Your settings file could not be read, so ClipPress started with its default settings.'),
+    detail: i18n.t('The unreadable file was kept at:\n{{backupPath}}', { backupPath: preserved.backupPath }),
+  });
+
+  if (response === showOldFileButton) shell.showItemInFolder(preserved.backupPath);
+}
+
 async function init() {
   try {
     logger.info('ClipPress version', app.getVersion(), { isDev });
@@ -439,6 +465,9 @@ async function init() {
     createWindow();
     // will also updateMenu and set about panel options
     await changeLanguage(language);
+
+    // Only after changeLanguage, so this is not the one message shown in English.
+    reportPreservedCorruptConfig();
 
     const enableUpdateCheck = configStore.get('enableUpdateCheck');
 

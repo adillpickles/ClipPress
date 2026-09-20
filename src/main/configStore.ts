@@ -3,10 +3,11 @@ import Store from 'electron-store';
 import electron from 'electron';
 import { join, dirname } from 'node:path';
 import assert from 'node:assert';
-import { copyFile } from 'node:fs/promises';
+import { copyFile, readFile } from 'node:fs/promises';
 
 import type { KeyBinding, Config } from '../common/types.js';
 import logger from './logger.js';
+import { getConfigFileState, getCorruptConfigBackupPath } from './configFileRecovery.js';
 import { isWindows, pathExists } from './util.js';
 import { fallbackLng } from './i18nCommon.js';
 
@@ -252,7 +253,16 @@ async function tryCreateStore({ customStoragePath }: { customStoragePath: string
 
 let customStoragePath: string | undefined;
 
-export const getConfigPath = () => customStoragePath ?? join(app.getPath('userData'), configFileName); // custom path, or default used by electron-store
+/**
+ * The config file itself, in whichever directory electron-store was pointed at.
+ *
+ * `customStoragePath` is a directory — electron-store is given it as `cwd` and writes
+ * `config.json` inside it — so the file name has to be joined on in both cases. It used
+ * to be appended only for the default location, which left the portable build (always a
+ * neighbour config dir on Windows) handing a directory to `copyFile` and to the
+ * "show config file" menu item.
+ */
+export const getConfigPath = () => join(customStoragePath ?? app.getPath('userData'), configFileName);
 
 async function tryBackupConfigFile(oldConfigVersion: number, appVersion: string) {
   try {
@@ -265,9 +275,48 @@ async function tryBackupConfigFile(oldConfigVersion: number, appVersion: string)
   }
 }
 
+export interface PreservedCorruptConfig {
+  configPath: string,
+  backupPath: string,
+}
+
+let preservedCorruptConfig: PreservedCorruptConfig | undefined;
+
+/** Set when startup found an unreadable config file and kept a copy of it. */
+export const getPreservedCorruptConfig = () => preservedCorruptConfig;
+
+/**
+ * Takes a copy of a config file we cannot read, before electron-store throws it away.
+ *
+ * electron-store's `clearInvalidConfig` default means a config file that does not parse
+ * is silently replaced by an empty one, and the next `set()` writes over it for good. We
+ * cannot recover the settings automatically — we do not know what was in there — but we
+ * can make sure the file itself still exists and say so.
+ */
+async function preserveUnreadableConfigFile() {
+  const configPath = getConfigPath();
+
+  try {
+    const content = await readFile(configPath, 'utf8');
+    if (getConfigFileState(content) !== 'unreadable') return;
+
+    const backupPath = getCorruptConfigBackupPath({ configPath, now: new Date() });
+    await copyFile(configPath, backupPath);
+    preservedCorruptConfig = { configPath, backupPath };
+    logger.error(`Config file could not be read; kept a copy at ${backupPath} and starting from defaults`);
+  } catch (err) {
+    // A missing config file is the normal first run. Anything else (no permission, a
+    // directory in its place) is for the store itself to fail on and report properly.
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return;
+    logger.error('Failed to check the config file before loading it', err);
+  }
+}
+
 export async function init({ customConfigDir }: { customConfigDir: string | undefined }) {
   customStoragePath = customConfigDir ?? await lookForNeighbourConfigFile();
   if (customStoragePath) logger.info('customStoragePath', customStoragePath);
+
+  await preserveUnreadableConfigFile();
 
   await tryCreateStore({ customStoragePath });
 
