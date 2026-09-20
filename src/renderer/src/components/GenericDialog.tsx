@@ -16,6 +16,12 @@ import { saveColor, warningColor } from '../colors';
 
 export interface GenericDialogParams {
   isAlert?: boolean;
+  /**
+   * Marks the dialogs that merely report a finished export. They carry no pending
+   * decision, so opening new media is allowed to dismiss them; anything else on screen is
+   * waiting for an answer and must not be closed behind the user's back.
+   */
+  kind?: 'exportResult';
   render: () => React.ReactNode;
   onClose?: () => void;
 }
@@ -68,6 +74,56 @@ function ExportDetails({ items, defaultOpen, label }: {
       {open && <UnorderedList>{items}</UnorderedList>}
     </div>
   );
+}
+
+/**
+ * The body every "export finished" dialog uses.
+ *
+ * One line saying what was produced, one line of context, and everything else folded
+ * away. The inherited dialogs put the standing advice ("test the output", "see the Help
+ * menu") at the same level as the result, which made a routine success read like a
+ * report to work through.
+ */
+function ExportResultBody({ hasWarnings, headline, subtitle, details, warningCount }: {
+  hasWarnings: boolean,
+  headline: ReactNode,
+  subtitle?: ReactNode,
+  details?: ReactNode,
+  warningCount: number,
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '.5em' }}>
+        <span style={{ color: hasWarnings ? warningColor : saveColor, marginTop: '.15em' }}>
+          {hasWarnings ? <FaExclamationTriangle /> : <FaCheckCircle />}
+        </span>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 'bold', wordBreak: 'break-word' }}>{headline}</div>
+          {subtitle != null && (
+            <div style={{ opacity: 0.75, fontSize: '.9em', marginTop: '.15em' }}>{subtitle}</div>
+          )}
+        </div>
+      </div>
+
+      {details != null && (
+        <ExportDetails
+          items={details}
+          // A warning is something to act on, so it is shown straight away.
+          defaultOpen={hasWarnings}
+          label={hasWarnings
+            ? t('Details ({{count}} warnings)', { count: warningCount })
+            : t('Details')}
+        />
+      )}
+    </div>
+  );
+}
+
+/** The file name to show as the result, without the directory it landed in. */
+function getResultFileName(filePath: string) {
+  return filePath.split(/[/\\]/).pop() ?? filePath;
 }
 
 export type ShowGenericDialog = (dialog: GenericDialogParams) => void;
@@ -184,6 +240,18 @@ export function useDialog() {
     });
   }), [showGenericDialog, t]);
 
+  /**
+   * Dismisses a finished-export dialog, if that is what is currently open.
+   *
+   * Opening new media is an explicit move on to the next thing, so the previous result
+   * should not stay parked over it. Deliberately narrow: a dialog that is waiting for an
+   * answer (cleanup choices, a confirmation) keeps its turn.
+   */
+  const closeExportResultDialog = useCallback(() => {
+    if (genericDialogRef.current?.kind !== 'exportResult') return;
+    closeGenericDialog();
+  }, [closeGenericDialog]);
+
   const openExportFinishedDialog = useCallback(async ({ filePath, children, width, title }: {
     filePath: string,
     children: ReactNode,
@@ -218,6 +286,7 @@ export function useDialog() {
       }
 
       showGenericDialog({
+        kind: 'exportResult',
         render: () => <ExportFinishedDialog />,
         onClose: () => resolve(false),
       });
@@ -228,21 +297,34 @@ export function useDialog() {
     }
   }, [showGenericDialog, t]);
 
-  const openCutFinishedDialog = useCallback(async ({ filePath, warnings, notices }: { filePath: string, warnings: string[], notices: string[] }) => {
+  const openCutFinishedDialog = useCallback(async ({ filePath, warnings, notices, fileCount = 1 }: {
+    filePath: string,
+    warnings: string[],
+    notices: string[],
+    fileCount?: number | undefined,
+  }) => {
     const hasWarnings = warnings.length > 0;
 
-    // https://github.com/mifi/lossless-cut/issues/2048
     await openExportFinishedDialog({
       filePath,
-      width: '60em',
+      title: hasWarnings ? t('Export finished with warnings') : t('Export successful'),
+      width: '34em',
       children: (
-        <UnorderedList>
-          <ListItem icon={<FaCheckCircle />} iconColor={hasWarnings ? warningColor : saveColor} style={{ fontWeight: 'bold' }}>{hasWarnings ? t('Export finished with warning(s)', { count: warnings.length }) : t('Export is done!')}</ListItem>
-          <Warnings warnings={warnings} />
-          <ListItem icon={<FaInfoCircle />}>{t('Please test the output file in your desired player/editor before you delete the source file.')}</ListItem>
-          <OutputIncorrectSeeHelpMenu />
-          <Notices notices={notices} />
-        </UnorderedList>
+        <ExportResultBody
+          hasWarnings={hasWarnings}
+          warningCount={warnings.length}
+          headline={getResultFileName(filePath)}
+          subtitle={fileCount > 1 ? t('{{count}} files exported', { count: fileCount }) : undefined}
+          details={(
+            <>
+              <Warnings warnings={warnings} />
+              <Notices notices={notices} />
+              {/* https://github.com/mifi/lossless-cut/issues/2048 */}
+              <ListItem icon={<FaInfoCircle />}>{t('Please test the output file in your desired player/editor before you delete the source file.')}</ListItem>
+              <OutputIncorrectSeeHelpMenu />
+            </>
+          )}
+        />
       ),
     });
   }, [openExportFinishedDialog, t]);
@@ -255,7 +337,7 @@ export function useDialog() {
   }) => {
     const hasWarnings = warnings.length > 0;
     const wroteNewFiles = summary.createdCount > 0;
-    const fileName = filePath.split(/[/\\]/).pop() ?? filePath;
+    const fileName = getResultFileName(filePath);
 
     const sizeText = (() => {
       if (!wroteNewFiles) return undefined;
@@ -274,12 +356,14 @@ export function useDialog() {
         });
     })();
 
-    const detailItems = (warnings.length > 0 || notices.length > 0) && (
-      <>
-        <Warnings warnings={warnings} />
-        <Notices notices={notices} />
-      </>
-    );
+    const detailItems = (warnings.length > 0 || notices.length > 0)
+      ? (
+        <>
+          <Warnings warnings={warnings} />
+          <Notices notices={notices} />
+        </>
+      )
+      : undefined;
 
     await openExportFinishedDialog({
       filePath,
@@ -288,50 +372,44 @@ export function useDialog() {
         : t('Nothing was exported'),
       width: '34em',
       children: (
-        <div>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '.5em' }}>
-            <span style={{ color: hasWarnings ? warningColor : saveColor, marginTop: '.15em' }}>
-              {hasWarnings ? <FaExclamationTriangle /> : <FaCheckCircle />}
-            </span>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 'bold', wordBreak: 'break-word' }}>
-                {wroteNewFiles ? fileName : t('No new files were written')}
-              </div>
-              {sizeText != null && (
-                <div style={{ opacity: 0.75, fontSize: '.9em', marginTop: '.15em' }}>{sizeText}</div>
-              )}
-            </div>
-          </div>
-
-          {detailItems && (
-            <ExportDetails
-              items={detailItems}
-              // A warning is something to act on, so it is shown straight away.
-              defaultOpen={hasWarnings}
-              label={hasWarnings
-                ? t('Details ({{count}} warnings)', { count: warnings.length })
-                : t('Details')}
-            />
-          )}
-        </div>
+        <ExportResultBody
+          hasWarnings={hasWarnings}
+          warningCount={warnings.length}
+          headline={wroteNewFiles ? fileName : t('No new files were written')}
+          subtitle={sizeText}
+          details={detailItems}
+        />
       ),
     });
   }, [openExportFinishedDialog, t]);
 
-  const openConcatFinishedDialog = useCallback(async ({ filePath, warnings, notices }: { filePath: string, warnings: string[], notices: string[] }) => {
+  const openConcatFinishedDialog = useCallback(async ({ filePath, warnings, notices, sourceCount }: {
+    filePath: string,
+    warnings: string[],
+    notices: string[],
+    sourceCount?: number | undefined,
+  }) => {
     const hasWarnings = warnings.length > 0;
 
     await openExportFinishedDialog({
       filePath,
-      width: '60em',
+      title: hasWarnings ? t('Merge finished with warnings') : t('Merge successful'),
+      width: '34em',
       children: (
-        <UnorderedList>
-          <ListItem icon={<FaCheckCircle />} iconColor={hasWarnings ? 'warning' : 'success'} style={{ fontWeight: 'bold' }}>{hasWarnings ? t('Files merged with warning(s)', { count: warnings.length }) : t('Files merged!')}</ListItem>
-          <Warnings warnings={warnings} />
-          <ListItem icon={<FaInfoCircle />}>{t('Please test the output files in your desired player/editor before you delete the source files.')}</ListItem>
-          <OutputIncorrectSeeHelpMenu />
-          <Notices notices={notices} />
-        </UnorderedList>
+        <ExportResultBody
+          hasWarnings={hasWarnings}
+          warningCount={warnings.length}
+          headline={getResultFileName(filePath)}
+          subtitle={sourceCount != null && sourceCount > 1 ? t('Merged from {{count}} files', { count: sourceCount }) : undefined}
+          details={(
+            <>
+              <Warnings warnings={warnings} />
+              <Notices notices={notices} />
+              <ListItem icon={<FaInfoCircle />}>{t('Please test the output files in your desired player/editor before you delete the source files.')}</ListItem>
+              <OutputIncorrectSeeHelpMenu />
+            </>
+          )}
+        />
       ),
     });
   }, [openExportFinishedDialog, t]);
@@ -423,6 +501,7 @@ export function useDialog() {
   return {
     genericDialog,
     closeGenericDialog,
+    closeExportResultDialog,
     showGenericDialog,
     confirmDialog,
     openExportFinishedDialog,

@@ -63,7 +63,7 @@ import Working from './components/Working';
 import OutputFormatSelect from './components/OutputFormatSelect';
 import * as Dialog from './components/Dialog';
 
-import { runStartupCheck } from './mifi';
+import runStartupCheck from './startupCheck';
 import { darkModeTransition } from './colors';
 import {
   exportSizeLimitedMerge,
@@ -154,7 +154,8 @@ import {
   unlinkWithRetry,
 } from './util';
 import getSwal, { errorToast, showPlaybackFailedMessage } from './swal';
-import { assertOutPathsNotSource, isSourcePath, makeSafeOutFileNames } from './util/sourceProtection';
+import { assertOutPathsNotSource, getMergeProtectedPaths, isSourcePath, makeSafeOutFileNames } from './util/sourceProtection';
+import type { SourceSafeFileNameAdjustment } from './util/sourceProtection';
 import { adjustRate } from './util/rate-calculator';
 import { resetSegmentHistory } from './util/segmentHistory';
 import { askExtractFramesAsImages } from './dialogs/extractFrames';
@@ -286,6 +287,26 @@ hevcPlaybackSupportedPromise.catch((err) => console.error(err));
 
 function emitEvent(appEvent: AppEvent) {
   electron.ipcRenderer.send('appEvent', appEvent satisfies AppEvent);
+}
+
+/**
+ * Says out loud that an output name was rewritten to keep it off a source file.
+ *
+ * The rewrite is a successful outcome, not a failure, so it goes in with the notices
+ * rather than the warnings — but the user asked for one file name and got another, and
+ * silently handing back a different file is how someone ends up unable to find it.
+ */
+function addSourceSafetyNotice(
+  adjustments: readonly SourceSafeFileNameAdjustment[] | undefined,
+  notices: Set<string>,
+) {
+  const [first] = adjustments ?? [];
+  if (first == null) return;
+  notices.add(
+    i18n.t('Output name adjusted to avoid replacing the source file. Saved as "{{fileName}}".', {
+      fileName: first.to,
+    }),
+  );
 }
 
 function App() {
@@ -481,6 +502,7 @@ function App() {
     showGenericDialog,
     genericDialog,
     closeGenericDialog,
+    closeExportResultDialog,
     confirmDialog,
     openExportFinishedDialog,
     openCutFinishedDialog,
@@ -2124,12 +2146,18 @@ function App() {
   const generateMergedFileNames = useCallback(
     async (params: GenerateMergedOutFileNamesParams) => generateMergedFileNamesRaw({
       ...params,
+      // A merge reads every file in the batch, and the file open in the editor is being
+      // read too, so none of them may be named as the destination.
+      protectedPaths: getMergeProtectedPaths({
+        sourcePaths: params.sourceFiles.map((sourceFile) => sourceFile.path),
+        alsoProtect: [filePath],
+      }),
       isCustomFormatSelected,
       safeOutputFileName,
       maxLabelLength,
       exportCount,
     }),
-    [exportCount, isCustomFormatSelected, maxLabelLength, safeOutputFileName],
+    [exportCount, filePath, isCustomFormatSelected, maxLabelLength, safeOutputFileName],
   );
 
   const userConcatFiles = useCallback(
@@ -2181,6 +2209,7 @@ function App() {
           warnings.add(problems.error);
           warnings.add(t('Fell back to default output file name'));
         }
+        addSourceSafetyNotice(problems.sourceSafetyAdjustments, notices);
 
         const outDir = getOutDir(customOutDir, firstPath);
 
@@ -2190,6 +2219,15 @@ function App() {
           customOutDir,
           filePath: firstPath,
           fileName,
+        });
+
+        // The names were generated when the concat dialog opened; the batch list, the
+        // output directory or the template may have changed since. Re-check against every
+        // file this merge reads before anything is written or deleted.
+        assertOutPathsNotSource({
+          outPaths: [outPath],
+          protectedPaths: getMergeProtectedPaths({ sourcePaths: paths, alsoProtect: [filePath] }),
+          message: i18n.t('ClipPress will not merge onto one of the files it is reading from. Choose a different output name or folder.'),
         });
 
         let chaptersFromSegments: Awaited<
@@ -2259,6 +2297,7 @@ function App() {
             filePath: outPath,
             notices: [...notices],
             warnings: [...warnings],
+            sourceCount: paths.length,
           });
         }
       } catch (err) {
@@ -2306,6 +2345,7 @@ function App() {
       workingRef,
       ensureWritableOutDir,
       customOutDir,
+      filePath,
       setWorking,
       segmentsToChapters,
       concatFiles,
@@ -2938,7 +2978,7 @@ function App() {
    * naming scheme cannot reach the filesystem.
    */
   const resolveSafeOutPaths = useCallback(
-    (fileNames: readonly string[], warnings: Set<string>) => {
+    (fileNames: readonly string[], notices: Set<string>) => {
       invariant(filePath != null && outputDir != null);
 
       const { fileNames: safeFileNames, adjustments } = makeSafeOutFileNames({
@@ -2947,13 +2987,7 @@ function App() {
         protectedPaths: exportProtectedPaths,
       });
 
-      if (adjustments.length > 0) {
-        warnings.add(
-          i18n.t('To protect your original file, ClipPress saved the export as "{{fileName}}" instead.', {
-            fileName: adjustments[0]!.to,
-          }),
-        );
-      }
+      addSourceSafetyNotice(adjustments, notices);
 
       const outPaths = safeFileNames.map((fileName) => {
         const outPath = getOutPath({ customOutDir, filePath, fileName });
@@ -3095,7 +3129,7 @@ function App() {
               return generated.fileNames;
             })();
 
-          const { outPaths: cutOutPaths } = resolveSafeOutPaths(generatedCutFileNames, warnings);
+          const { outPaths: cutOutPaths } = resolveSafeOutPaths(generatedCutFileNames, notices);
 
           for (const [
             index,
@@ -3187,7 +3221,7 @@ function App() {
               return fileNames;
             })();
 
-          const { outPaths: mergedOutPaths } = resolveSafeOutPaths(generatedMergedFileNames, warnings);
+          const { outPaths: mergedOutPaths } = resolveSafeOutPaths(generatedMergedFileNames, notices);
           [mergedOutFilePath] = mergedOutPaths;
           invariant(mergedOutFilePath != null);
 
@@ -3333,6 +3367,7 @@ function App() {
         if (willMerge && autoDeleteMergedSegments) {
           const generated = await generateCutFileNames(defaultCutFileTemplate);
           cutFileNames = generated.fileNames;
+          addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
         } else {
           const generated = await generateCutFileNames(
             cutFileTemplateOrDefault,
@@ -3342,6 +3377,7 @@ function App() {
             warnings.add(generated.problems.error);
             warnings.add(t('Fell back to default output file name'));
           }
+          addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
         }
 
         const outFiles = await cutMultipleWithTextOverlays({
@@ -3384,6 +3420,7 @@ function App() {
             warnings.add(problems.error);
             warnings.add(t('Fell back to default output file name'));
           }
+          addSourceSafetyNotice(problems.sourceSafetyAdjustments, notices);
 
           const [fileName] = fileNames;
           invariant(fileName != null);
@@ -3465,6 +3502,7 @@ function App() {
             filePath: revealPath,
             warnings: [...warnings],
             notices: [...notices],
+            fileCount: exportedPaths.length,
           });
         }
 
@@ -3499,6 +3537,7 @@ function App() {
       if (willMerge && autoDeleteMergedSegments) {
         const generated = await generateCutFileNames(defaultCutFileTemplate);
         cutFileNames = generated.fileNames;
+        addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
       } else {
         const generated = await generateCutFileNames(cutFileTemplateOrDefault);
         cutFileNames = generated.fileNames;
@@ -3510,6 +3549,7 @@ function App() {
           warnings.add(generated.problems.error);
           warnings.add(t('Fell back to default output file name'));
         }
+        addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
       }
 
       // throw (() => { const err = new Error('test'); err.code = 'ENOENT'; return err; })();
@@ -3565,6 +3605,7 @@ function App() {
           warnings.add(problems.error);
           warnings.add(t('Fell back to default output file name'));
         }
+        addSourceSafetyNotice(problems.sourceSafetyAdjustments, notices);
 
         const [fileName] = fileNames;
         invariant(fileName != null);
@@ -3671,6 +3712,7 @@ function App() {
           filePath: revealPath,
           warnings: [...warnings],
           notices: [...notices],
+          fileCount: exportedPaths.length,
         });
       }
 
@@ -4539,6 +4581,7 @@ function App() {
     async (path: string) => {
       if (workingRef.current) return;
       if (filePath === path) return;
+      closeExportResultDialog();
       setWorking({ text: i18n.t('Loading file') });
       try {
         await withErrorHandling(async () => {
@@ -4548,7 +4591,7 @@ function App() {
         setWorking(undefined);
       }
     },
-    [workingRef, filePath, setWorking, withErrorHandling, userOpenSingleFile],
+    [workingRef, filePath, closeExportResultDialog, setWorking, withErrorHandling, userOpenSingleFile],
   );
 
   const batchFileJump = useCallback(
@@ -4853,6 +4896,11 @@ function App() {
         let newFilePaths = newFilePathsIn;
         if (!newFilePaths || newFilePaths.length === 0) return;
 
+        // The user has moved on to the next clip, so the previous export's result dialog
+        // should not stay parked over the new one. Only that dialog is dismissed; a
+        // dialog still waiting for an answer keeps the screen.
+        closeExportResultDialog();
+
         console.log('userOpenFiles');
         console.log(newFilePaths.join('\n'));
 
@@ -5011,6 +5059,7 @@ function App() {
       batchFiles.length,
       enableAskForFileOpenAction,
       checkFileOpened,
+      closeExportResultDialog,
       loadEdlFile,
       userOpenSingleFile,
       addStreamSourceFile,
