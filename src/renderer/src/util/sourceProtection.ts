@@ -1,6 +1,7 @@
 import type { PlatformPath } from 'node:path';
 
 import {
+  findProtectedSourceCollision,
   isProtectedSourcePath,
   isSameFilePath,
   makeSourceSafeFileNames,
@@ -8,6 +9,7 @@ import {
 import { UserFacingError } from '../../errors';
 
 export type { SourceSafeFileNameAdjustment } from './sourcePathProtection';
+export { getMergeProtectedPaths } from './sourcePathProtection';
 
 const path: PlatformPath = window.require('path');
 
@@ -44,7 +46,7 @@ export function assertOutPathsNotSource({ outPaths, protectedPaths, message }: {
   protectedPaths: readonly (string | undefined)[],
   message: string,
 }) {
-  const offending = outPaths.find((outPath) => isSourcePath(outPath, protectedPaths));
+  const offending = findProtectedSourceCollision({ outPaths, protectedPaths, path });
   if (offending != null) {
     console.error('Refusing to export onto a source file', offending, protectedPaths);
     throw new UserFacingError(message);

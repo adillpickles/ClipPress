@@ -12,7 +12,7 @@ import { getSegmentTags, formatSegNum, getGuaranteedSegments } from '../segments
 import type { FileStats, FormatTimecode, SegmentToExport } from '../types';
 import safeishEval from '../worker/eval';
 import { isUnsafeOutputFileName } from './outputPathSafety';
-import { makeSourceSafeFileNames, type SourceSafeFileNameAdjustment } from './sourcePathProtection';
+import { getMergeProtectedPaths, makeSourceSafeFileNames, type SourceSafeFileNameAdjustment } from './sourcePathProtection';
 import { UserFacingError } from '../../errors';
 import type { FileFfprobeMeta } from '../ffmpeg';
 
@@ -457,6 +457,14 @@ export async function generateCutMergedFileNames({ template: desiredTemplate, fa
   });
 }
 
+/**
+ * Names the single file a batch merge writes.
+ *
+ * Unlike the cut paths there is no one "input file" here: the merge reads every entry in
+ * `sourceFiles`, so all of them are protected by default. Only the first one reaches the
+ * template (as `${FILENAME}`), which is exactly why a template such as
+ * `${FILES[1].name}` could otherwise name — and the concat then overwrite — source 2.
+ */
 export async function generateMergedFileNames({ template: desiredTemplate, fallbackTemplate, protectedPaths, isCustomFormatSelected, fileFormat, sourceFiles, outputDir, safeOutputFileName, maxLabelLength, exportCount, epochMs }: {
   template: string,
   fallbackTemplate?: string | undefined,
@@ -491,7 +499,7 @@ export async function generateMergedFileNames({ template: desiredTemplate, fallb
     desiredTemplate,
     defaultTemplate: fallbackTemplate ?? defaultCutMergedFileTemplate,
     filePath: firstFile.path,
-    protectedPaths,
+    protectedPaths: protectedPaths ?? getMergeProtectedPaths({ sourcePaths: sourceFiles.map((file) => file.path) }),
     outputDir,
     maxLabelLength,
     safeOutputFileName,

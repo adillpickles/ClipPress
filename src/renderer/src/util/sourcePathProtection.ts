@@ -161,3 +161,41 @@ export function makeSourceSafeFileNames({ fileNames, outputDir, protectedPaths, 
 
   return { fileNames: safeFileNames, adjustments };
 }
+
+/**
+ * The first output path that would land on a file the operation is reading from.
+ *
+ * Split out from the renderer-side assertion so the last-line-of-defence check can be
+ * unit tested for both path flavours without a `window`.
+ */
+export function findProtectedSourceCollision({ outPaths, protectedPaths, path, caseInsensitive }: {
+  outPaths: readonly (string | undefined)[],
+  protectedPaths: readonly (string | undefined)[],
+  path: ComparePathApi,
+  caseInsensitive?: boolean | undefined,
+}) {
+  return outPaths.find((outPath) => isProtectedSourcePath({
+    candidate: outPath,
+    protectedPaths,
+    path,
+    caseInsensitive,
+  }));
+}
+
+/**
+ * Every path a merge reads from, and which therefore may never be its destination.
+ *
+ * A merge consumes *all* of its inputs, but the name templates only ever see the first
+ * one (it is what `${FILENAME}` expands to). Protecting just that first input is what
+ * allowed a custom merged-name template to resolve onto source 2, 3, ... and have the
+ * concat overwrite it. `alsoProtect` carries paths that are being read for other reasons,
+ * such as the file currently open in the editor.
+ */
+export function getMergeProtectedPaths({ sourcePaths, alsoProtect = [] }: {
+  sourcePaths: readonly (string | undefined)[],
+  alsoProtect?: readonly (string | undefined)[] | undefined,
+}) {
+  const candidates = [...sourcePaths, ...alsoProtect]
+    .filter((candidate): candidate is string => candidate != null && candidate.length > 0);
+  return [...new Set(candidates)];
+}

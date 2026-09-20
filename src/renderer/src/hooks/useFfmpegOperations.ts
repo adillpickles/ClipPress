@@ -213,14 +213,17 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   ffmpegHwaccel: FfmpegHwAccel,
 }) {
   /**
-   * ffmpeg is invoked with `-y`, so an output path that resolves to the input would
-   * truncate the file mid-read. The naming layer already refuses to produce such a path;
-   * this sits directly on the write calls so no future caller can route around it.
+   * ffmpeg is invoked with `-y`, so an output path that resolves to one of its inputs
+   * would truncate that file mid-read. The naming layer already refuses to produce such a
+   * path; this sits directly on the write calls so no future caller can route around it.
+   *
+   * `alsoProtect` carries the inputs of the operation itself — a merge reads files that
+   * have nothing to do with `filePath`, so the loaded file alone is not the whole story.
    */
-  const assertOutPathIsNotSource = useCallback((outPath: string) => {
+  const assertOutPathIsNotSource = useCallback((outPath: string, alsoProtect: readonly (string | undefined)[] = []) => {
     assertOutPathsNotSource({
       outPaths: [outPath],
-      protectedPaths: [filePath],
+      protectedPaths: [filePath, ...alsoProtect],
       message: i18n.t('ClipPress will not export onto the file it is reading from. Choose a different output name or folder.'),
     });
   }, [filePath]);
@@ -260,6 +263,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     preserveMetadataOnMerge: boolean,
     videoTimebase?: number | undefined,
   }) => {
+    // Innermost guard for every merge: batch concat, auto-concat of exported segments and
+    // the size-limited merge all end up here, and only here is the full input list known.
+    assertOutPathIsNotSource(outPath, paths);
+
     if (await shouldSkipExistingFile(outPath)) {
       onProgress(1);
       return { haveExcludedStreams: false };
@@ -370,7 +377,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     } finally {
       if (chaptersPath) await tryDeleteFiles([chaptersPath]);
     }
-  }, [appendLastCommandsLog, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+  }, [appendLastCommandsLog, assertOutPathIsNotSource, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   const losslessCutSingle = useCallback(async ({
     keyframeCut: ssBeforeInput, avoidNegativeTs, copyFileStreams, cutFrom, cutTo, chaptersPath, onProgress, outPath,

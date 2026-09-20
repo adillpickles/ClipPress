@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addFileNameMarker,
+  findProtectedSourceCollision,
+  getMergeProtectedPaths,
   isProtectedSourcePath,
   isSameFilePath,
   makeSourceSafeFileName,
@@ -153,5 +155,104 @@ describe('makeSourceSafeFileNames', () => {
     const result = run(['source.mp4']);
     const outPath = win32.join(outputDir, result.fileNames[0]!);
     expect(isProtectedSourcePath({ candidate: outPath, protectedPaths, path: win32 })).toBe(false);
+  });
+});
+
+describe('getMergeProtectedPaths', () => {
+  const sources = [
+    String.raw`C:\videos\one.mp4`,
+    String.raw`C:\videos\two.mp4`,
+    String.raw`C:\videos\three.mp4`,
+  ];
+
+  it('protects every input of the merge, not just the first', () => {
+    expect(getMergeProtectedPaths({ sourcePaths: sources })).toEqual(sources);
+  });
+
+  it('adds the separately-read paths the caller names', () => {
+    expect(getMergeProtectedPaths({ sourcePaths: sources, alsoProtect: [String.raw`C:\videos\open.mp4`] }))
+      .toEqual([...sources, String.raw`C:\videos\open.mp4`]);
+  });
+
+  it('drops missing entries and repeats', () => {
+    expect(getMergeProtectedPaths({
+      sourcePaths: [sources[0]!, undefined, sources[1]!, ''],
+      alsoProtect: [sources[0], undefined],
+    })).toEqual([sources[0], sources[1]]);
+  });
+});
+
+describe('a merge may not overwrite any of its inputs', () => {
+  // The batch merge reads every file in the list, but only the first one reaches the
+  // name template (as ${FILENAME}), so protecting just that one left a custom merged-name
+  // template free to resolve onto source 2, 3, ... and have the concat truncate it.
+  const outputDir = String.raw`C:\videos`;
+  const sources = [
+    String.raw`C:\videos\first.mp4`,
+    String.raw`C:\videos\middle.mp4`,
+    String.raw`C:\videos\last.mp4`,
+  ];
+  const protectedPaths = getMergeProtectedPaths({ sourcePaths: sources });
+
+  it.each([
+    ['first', 'first.mp4'],
+    ['middle', 'middle.mp4'],
+    ['last', 'last.mp4'],
+  ])('rewrites a merged name that lands on the %s source', (_position, fileName) => {
+    const { fileNames, adjustments } = makeSourceSafeFileNames({
+      fileNames: [fileName],
+      outputDir,
+      protectedPaths,
+      path: win32,
+    });
+
+    expect(fileNames[0]).not.toBe(fileName);
+    expect(adjustments).toEqual([{ from: fileName, to: fileNames[0]! }]);
+    expect(findProtectedSourceCollision({
+      outPaths: [win32.join(outputDir, fileNames[0]!)],
+      protectedPaths,
+      path: win32,
+    })).toBeUndefined();
+  });
+
+  it('still catches a differently-cased spelling of a later source on windows', () => {
+    const { fileNames } = makeSourceSafeFileNames({
+      fileNames: ['MIDDLE.MP4'],
+      outputDir,
+      protectedPaths,
+      path: win32,
+    });
+    expect(fileNames[0]).toBe('MIDDLE (clip).MP4');
+  });
+
+  it('leaves a genuinely new merged name alone', () => {
+    const { fileNames, adjustments } = makeSourceSafeFileNames({
+      fileNames: ['first-merged-123.mp4'],
+      outputDir,
+      protectedPaths,
+      path: win32,
+    });
+    expect(fileNames).toEqual(['first-merged-123.mp4']);
+    expect(adjustments).toEqual([]);
+  });
+});
+
+describe('findProtectedSourceCollision', () => {
+  const protectedPaths = ['/videos/a.mp4', '/videos/b.mp4'];
+
+  it('returns the offending path so the caller can report it', () => {
+    expect(findProtectedSourceCollision({
+      outPaths: ['/videos/out.mp4', '/videos/./b.mp4'],
+      protectedPaths,
+      path: posix,
+    })).toBe('/videos/./b.mp4');
+  });
+
+  it('returns undefined when nothing collides', () => {
+    expect(findProtectedSourceCollision({
+      outPaths: ['/videos/out.mp4', undefined],
+      protectedPaths,
+      path: posix,
+    })).toBeUndefined();
   });
 });
