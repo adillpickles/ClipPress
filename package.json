@@ -21,18 +21,19 @@
     "test": "vitest",
     "lint": "eslint --ext .js,.ts,.jsx,.tsx,.mjs,.mts .",
     "check": "yarn tsc && yarn lint && yarn test run && yarn build && yarn check-licenses && yarn scan-i18n && yarn dedupe --check && yarn generate-docs",
-    "pack-mac": "yarn build && electron-builder --mac dmg",
-    "pack-win": "yarn build && electron-builder --win portable --x64",
+    "pack-mac": "yarn build && electron-builder --mac dmg && yarn check-package",
+    "pack-win": "yarn build && electron-builder --win portable --x64 && yarn check-package",
     "postinstall": "electron-builder install-app-deps",
     "version": "node script/postversion.ts && git add com.clippress.app.appdata.xml",
-    "pack-linux": "yarn build && electron-builder --linux",
+    "pack-linux": "yarn build && electron-builder --linux && yarn check-package",
     "scan-i18n": "i18next-cli -c i18next.config.scan.ts extract",
     "generate-icon": "mkdirp icon-build && node script/generateIcon.ts",
     "generate-licenses": "yarn licenses generate-disclaimer -R > licenses.txt && echo '\n\nffmpeg is licensed under GPL v2+:\n\nhttp://www.gnu.org/licenses/old-licenses/gpl-2.0.html' >> licenses.txt",
     "generate-docs": "node script/generateDocs.ts",
     "check-licenses": "node script/checkLicenses.ts",
     "upload-artifacts": "node script/uploadArtifacts.ts",
-    "benchmark-size-limited": "node script/benchmarkSizeLimited.ts"
+    "benchmark-size-limited": "node script/benchmarkSizeLimited.ts",
+    "check-package": "node script/checkPackagedApp.ts"
   },
   "author": {
     "name": "Adil Ahmed",
@@ -166,7 +167,9 @@
     },
     "files": [
       "out/**/*",
-      "!out/**/*.map"
+      "!out/**/*.map",
+      "!node_modules/electron/**/*",
+      "!node_modules/typescript/**/*"
     ],
     "asar": {
       "smartUnpack": false
