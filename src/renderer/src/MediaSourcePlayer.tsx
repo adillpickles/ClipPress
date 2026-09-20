@@ -154,7 +154,7 @@ async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, 
     }
   };
 
-  sourceBuffer.addEventListener('error', (err) => console.error('sourceBuffer error, check DevTools â–¶ More Tools â–¶ Media', err));
+  sourceBuffer.addEventListener('error', (err) => console.error('sourceBuffer error, check DevTools > More Tools > Media', err));
 
   const handleCanPlay = () => {
     console.log('canplay');
