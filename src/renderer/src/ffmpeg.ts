@@ -8,10 +8,11 @@ import invariant from 'tiny-invariant';
 import z from 'zod';
 
 import { pcmAudioCodecs, isMov } from './util/streams';
-import { isExecaError } from './util';
+import { getStdioString, isExecaError, readFileSize } from './util';
 import { isDurationValid } from './segments';
 import type { FFprobeChapter, FFprobeFormat, FFprobeProbeResult, FFprobeStream } from '../../common/ffprobe';
 import { parseSrt, parseSrtToSegments } from './edlFormats';
+import { classifyFfprobeFailure, getFfprobeFailureDetail } from './util/ffprobeFailure';
 import { UnsupportedFileError, UserFacingError } from '../errors';
 import mainApi from './mainApi';
 
@@ -342,6 +343,37 @@ export async function getDefaultOutFormat({ filePath, fileMeta: { format } }: { 
   return mapInputToOutputFormat(assumedFormat);
 }
 
+/**
+ * What to tell the user about a file ffprobe refused.
+ *
+ * Names the file, says what we think went wrong, and quotes ffprobe's own last line so
+ * there is something concrete to search for or report. No conversion is offered: ffprobe
+ * failing means ffmpeg could not read the file at all, and every conversion ClipPress
+ * can do runs through the same ffmpeg.
+ */
+async function describeUnreadableFile({ filePath, err }: { filePath: string, err: unknown }) {
+  const fileName = filePath.split(/[/\\]/).pop() ?? filePath;
+  const stderr = isExecaError(err) ? getStdioString(err.stderr) : undefined;
+
+  const fileSize = await readFileSize(filePath).catch(() => undefined);
+  const detail = getFfprobeFailureDetail({ stderr, filePath });
+
+  const reason = {
+    missing: i18n.t('The file is no longer at that location. It may have been moved, renamed or deleted.'),
+    noPermission: i18n.t('The file could not be read. It may be open in another program, or you may not have permission to read it.'),
+    empty: i18n.t('The file is empty. A recording or download that was interrupted can leave a file with no contents.'),
+    notMedia: i18n.t('No audio or video could be found in this file. It may be damaged, or not a media file at all.'),
+    unknown: i18n.t('ClipPress could not read this file.'),
+  }[classifyFfprobeFailure({ stderr, fileSize })];
+
+  return [
+    fileName,
+    '',
+    reason,
+    ...(detail != null ? ['', i18n.t('ffprobe: {{detail}}', { detail })] : []),
+  ].join('\n');
+}
+
 export async function readFileFfprobeMeta(filePath: string) {
   try {
     const { stdout } = await runFfprobe([
@@ -370,7 +402,7 @@ export async function readFileFfprobeMeta(filePath: string) {
     return { format, streams, chapters };
   } catch (err) {
     if (isExecaError(err) && err.code == null && err.exitCode != null) {
-      throw new UnsupportedFileError('Unsupported file', { cause: err });
+      throw new UnsupportedFileError(await describeUnreadableFile({ filePath, err }), { cause: err });
     }
     throw err;
   }
