@@ -17,7 +17,7 @@ import useContextMenu from './hooks/useContextMenu';
 import useUserSettings from './hooks/useUserSettings';
 import { saveColor, controlsBackground, primaryTextColor, darkModeTransition } from './colors';
 import { useSegColors } from './contexts';
-import { getSegmentTags } from './segments';
+import { getSegmentsTotalDuration, getSegmentTags } from './segments';
 import TagEditor from './components/TagEditor';
 import type { ContextMenuTemplate, DefiniteSegmentBase, FormatTimecode, GetFrameCount, InverseCutSegment, SegmentBase, SegmentColorIndex, SegmentTags, StateSegment } from './types';
 import type { UseSegments } from './hooks/useSegments';
@@ -355,6 +355,7 @@ const Segment = memo(({
 
 function SegmentList({
   width,
+  fileDuration,
   formatTimecode,
   cutSegments,
   inverseCutSegments,
@@ -396,6 +397,7 @@ function SegmentList({
   getSegEstimatedSize,
 }: {
   width: number,
+  fileDuration: number | undefined,
   formatTimecode: FormatTimecode,
   cutSegments: StateSegment[],
   inverseCutSegments: InverseCutSegment[],
@@ -447,7 +449,10 @@ function SegmentList({
   const segAtCursorColor = useMemo(() => getButtonColor(firstSegmentAtCursor), [getButtonColor, firstSegmentAtCursor]);
   const nextSegmentColor = useMemo(() => getButtonColor({ segColorIndex: nextSegColorIndex }, false), [getButtonColor, nextSegColorIndex]);
 
-  const segmentsTotal = useMemo(() => selectedSegments.reduce((acc, seg) => (seg.end == null ? 0 : seg.end - seg.start) + acc, 0), [selectedSegments]);
+  const segmentsTotal = useMemo(() => getSegmentsTotalDuration(
+    selectedSegments.length > 0 ? selectedSegments : cutSegments.filter((segment) => segment.initial),
+    fileDuration,
+  ), [selectedSegments, cutSegments, fileDuration]);
 
   const segmentsOrInverse: (InverseCutSegment | StateSegment)[] = invertCutSegments ? inverseCutSegments : cutSegments;
 

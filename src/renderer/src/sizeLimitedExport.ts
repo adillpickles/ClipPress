@@ -9,7 +9,7 @@ import type {
   SizeLimitSimpleFps,
   SizeLimitSimpleResolution,
 } from '../../common/types.js';
-import { getExperimentalArgs, logStdoutStderr, runFfmpeg, runFfmpegWithProgress } from './ffmpeg';
+import { getExperimentalArgs, getFfmpegPath, logStdoutStderr, runFfmpeg, runFfmpegWithProgress } from './ffmpeg';
 import mainApi from './mainApi';
 import { finalizeSizeLimitedExecutionResult } from './sizeLimitedExecutionPolicy';
 import {
@@ -18,25 +18,24 @@ import {
   getSizeLimitedTwoPassEncodeArgs,
 } from './sizeLimitedFfmpegArgs';
 import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile } from './sizeLimitedResolution';
-import { getNextSizeLimitedRetryStep, getNextSizeLimitedUndershootStep, planSizeLimitedEncode } from './sizeLimitedPlanner';
+import { getNextSizeLimitedAttempt, planSizeLimitedEncode } from './sizeLimitedPlanner';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import { buildConcatSegmentInputArgs, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
 import type { OverlayClip, SegmentToExport, SizeLimitedEncoderCapabilities, SizeLimitedExecutionResult, SizeLimitedProgressMetadata, SizeLimitedResolvedStrategy, SizeLimitedRetryStep } from './types';
 import type { SizeLimitedVideoTransformProfile } from './sizeLimitedResolution';
 import { isMutedAudioGain, isNeutralAudioGain } from './util/streams';
-import { assertFileExists, readFileSize, renameWithRetry, transferTimestamps, unlinkWithRetry } from './util';
+import { assertFileExists, readFileSize, moveExportWithRetry, transferTimestamps, unlinkWithRetry } from './util';
 import { UserFacingError } from '../errors';
-import { isSameFile } from './util/sourceProtection';
+import { assertOutPathsNotSource } from './util/sourceProtection';
 import { getRotatedVideoDimensions, renderTextOverlayPng } from './textOverlays';
+import createAsyncCache from './util/asyncCache';
 
-const { access, constants: { W_OK }, mkdir, writeFile } = window.require('fs/promises');
+const { access, constants: { W_OK }, mkdir, mkdtemp, rmdir, stat, writeFile } = window.require('fs/promises');
 const { dirname, join } = window.require('path');
 
 const retryTempSuffix = 'clippress-size-limit';
 const nvencProbeSource = 'color=c=black:s=640x360:r=30:d=0.2';
 const nvencProbeFrames = '3';
-
-let encoderCapabilitiesPromise: Promise<SizeLimitedEncoderCapabilities> | undefined;
 
 function decodeProcessOutput({ stdout, stderr }: { stdout: Uint8Array, stderr: Uint8Array }) {
   return `${new TextDecoder().decode(stdout)}\n${new TextDecoder().decode(stderr)}`;
@@ -63,26 +62,21 @@ async function probeNvencEncoder(encoder: 'h264_nvenc' | 'av1_nvenc') {
   }
 }
 
-export async function getSizeLimitedEncoderCapabilities() {
-  if (encoderCapabilitiesPromise == null) {
-    encoderCapabilitiesPromise = (async () => {
-      try {
-        const result = await runFfmpeg(['-hide_banner', '-encoders'], undefined, { logCli: false });
-        const output = decodeProcessOutput(result);
-        const encoders = parseFfmpegEncoderNames(output);
-        const libx264 = encoders.has('libx264');
-        const libsvtav1 = encoders.has('libsvtav1');
-        const h264Nvenc = encoders.has('h264_nvenc') ? await probeNvencEncoder('h264_nvenc') : false;
-        const av1Nvenc = encoders.has('av1_nvenc') ? await probeNvencEncoder('av1_nvenc') : false;
-        return { h264Nvenc, av1Nvenc, libx264, libsvtav1 };
-      } catch (error) {
-        console.warn('Failed to detect size-limited encoder capabilities, falling back to CPU encoders when available', error);
-        return { h264Nvenc: false, av1Nvenc: false, libx264: true, libsvtav1: false };
-      }
-    })();
-  }
+const readEncoderCapabilities = createAsyncCache(async (): Promise<SizeLimitedEncoderCapabilities> => {
+  const result = await runFfmpeg(['-hide_banner', '-encoders'], undefined, { logCli: false });
+  const encoders = parseFfmpegEncoderNames(decodeProcessOutput(result));
+  const [h264Nvenc, av1Nvenc] = await Promise.all([
+    encoders.has('h264_nvenc') ? probeNvencEncoder('h264_nvenc') : false,
+    encoders.has('av1_nvenc') ? probeNvencEncoder('av1_nvenc') : false,
+  ]);
+  return { h264Nvenc, av1Nvenc, libx264: encoders.has('libx264'), libsvtav1: encoders.has('libsvtav1') };
+}, 5 * 60 * 1000); // GPU availability can change without the executable changing.
 
-  return encoderCapabilitiesPromise;
+export async function getSizeLimitedEncoderCapabilities() {
+  const path = getFfmpegPath();
+  const { size, mtimeMs } = await stat(path);
+  // External FFmpeg can be selected or replaced while the application is running.
+  return readEncoderCapabilities(`${path}:${size}:${mtimeMs}`);
 }
 
 function assertStrategySupported({ strategy, capabilities }: {
@@ -138,10 +132,8 @@ async function deleteIfExists(path: string | undefined) {
  * rename, so a future caller cannot reintroduce the failure mode by constructing an
  * `outPath` some other way.
  */
-function assertOutPathIsNotSource({ outPath, filePath }: { outPath: string, filePath: string }) {
-  if (isSameFile(outPath, filePath)) {
-    throw new UserFacingError('ClipPress will not export onto the file it is reading from. Choose a different output name or folder.');
-  }
+async function assertOutPathIsNotSource({ outPath, filePath }: { outPath: string, filePath: string }) {
+  await assertOutPathsNotSource({ outPaths: [outPath], protectedPaths: [filePath], message: 'ClipPress will not export onto the file it is reading from. Choose a different output name or folder.' });
 }
 
 /**
@@ -152,18 +144,18 @@ function assertOutPathIsNotSource({ outPath, filePath }: { outPath: string, file
  * and report the problem, rather than throwing away a good file and telling the user the
  * export failed.
  */
-async function finalizeEncodedOutput({ result, outPath, filePath }: {
+async function finalizeEncodedOutput({ result, outPath, filePath, enableOverwriteOutput }: {
   result: SizeLimitedExecutionResult,
   outPath: string,
   filePath: string,
+  enableOverwriteOutput: boolean,
 }): Promise<{ result: SizeLimitedExecutionResult, postProcessingWarning?: string | undefined }> {
   if (result.path === outPath) return { result };
 
-  assertOutPathIsNotSource({ outPath, filePath });
-
   try {
-    await deleteIfExists(outPath);
-    await renameWithRetry(result.path, outPath);
+    await assertOutPathIsNotSource({ outPath, filePath });
+    await moveExportWithRetry(result.path, outPath, enableOverwriteOutput);
+    await rmdir(dirname(result.path)).catch(() => undefined);
     return { result: { ...result, path: outPath } };
   } catch (err) {
     console.warn('Failed to move the finished export into place', result.path, outPath, err);
@@ -216,7 +208,7 @@ async function prepareTextOverlayAssets({
     const height = Math.max(8, Math.round(rotatedVideoDimensions.height * overlayClip.box.height));
     const imageData = await renderTextOverlayPng({ text: overlayClip.text, width, height });
     const imagePath = join(outputDir, `clippress-size-limit-text-overlay-${Date.now()}-${index}.png`);
-    await writeFile(imagePath, imageData);
+    await writeFile(imagePath, imageData, { flag: 'wx' });
     assets.push({
       imagePath,
       x: Math.max(0, Math.round(rotatedVideoDimensions.width * overlayClip.box.x)),
@@ -432,7 +424,7 @@ interface AttemptFiles {
   pass1OutPath?: string | undefined,
 }
 
-async function executeWithRetries({
+async function executeAttempts({
   plan,
   strategy,
   buildAttempt,
@@ -440,7 +432,7 @@ async function executeWithRetries({
 }: {
   plan: ReturnType<typeof planSizeLimitedEncode>,
   strategy: SizeLimitedResolvedStrategy,
-  buildAttempt: (attempt: SizeLimitedRetryStep) => Promise<AttemptFiles>,
+  buildAttempt: (attempt: SizeLimitedRetryStep, tempPath?: string) => Promise<AttemptFiles>,
   onProgress: (progress: number, metadata?: SizeLimitedProgressMetadata) => void,
 }) {
   // Two candidates are tracked rather than one "best so far".
@@ -514,7 +506,8 @@ async function executeWithRetries({
           await deleteIfExists(candidate.path);
         }
 
-        currentAttempt = getNextSizeLimitedUndershootStep({
+        currentAttempt = getNextSizeLimitedAttempt({
+          hasUnderCapResult: true,
           plan,
           previousAttempt: currentAttempt,
           previousOutputSize: size,
@@ -529,7 +522,8 @@ async function executeWithRetries({
 
         // A top-up that overshot has already given us a good under-cap result to fall
         // back on, so stop rather than spending more passes shrinking it again.
-        currentAttempt = bestUnderCap != null ? undefined : getNextSizeLimitedRetryStep({
+        currentAttempt = getNextSizeLimitedAttempt({
+          hasUnderCapResult: bestUnderCap != null,
           plan,
           previousAttempt: currentAttempt,
           previousOutputSize: size,
@@ -564,6 +558,16 @@ async function executeWithRetries({
   if (smallestOverCap != null) await deleteIfExists(smallestOverCap.path);
 
   return finalizeSizeLimitedExecutionResult(smallestOverCap);
+}
+
+async function executeWithRetries(args: Parameters<typeof executeAttempts>[0] & { outPath: string }) {
+  const tempDir = await mkdtemp(join(dirname(args.outPath), '.clippress-'));
+  try {
+    return await executeAttempts({ ...args, buildAttempt: (attempt) => args.buildAttempt(attempt, join(tempDir, 'export')) });
+  } finally {
+    // Never recursively remove this directory: it may hold the only successful encode.
+    await rmdir(tempDir).catch(() => undefined);
+  }
 }
 
 function makeAttemptPath(outPath: string, attemptNumber: number) {
@@ -694,7 +698,7 @@ export async function exportSizeLimitedSegment({
   overlayVideoHeight?: number | undefined,
 }) {
   await assertFileExists(filePath);
-  assertOutPathIsNotSource({ outPath, filePath });
+  await assertOutPathIsNotSource({ outPath, filePath });
   await ensureOutputDir(outPath);
 
   const plannedDuration = (segment.end - segment.start) / outputPlaybackRate;
@@ -743,10 +747,11 @@ export async function exportSizeLimitedSegment({
   let result: SizeLimitedExecutionResult;
   try {
     result = await executeWithRetries({
+      outPath,
       plan,
       strategy,
-      buildAttempt: async (attempt) => {
-        const attemptOutPath = makeAttemptPath(outPath, attempt.attemptNumber);
+      buildAttempt: async (attempt, tempPath = outPath) => {
+        const attemptOutPath = makeAttemptPath(tempPath, attempt.attemptNumber);
         const inputArgs = getSegmentInputArgs({ filePath, segment, outputPlaybackRate });
         const outputTrimArgs = ['-t', (segment.end - segment.start).toFixed(5)];
         const videoProfile = resolveSizeLimitedVideoProfile({
@@ -781,8 +786,8 @@ export async function exportSizeLimitedSegment({
         const videoInputLabel = overlayFilter?.videoInputLabel ?? `0:${videoStream.index}`;
 
         if (strategy.executionMode === 'ffmpeg_two_pass') {
-          const passlogFile = makePasslogPath(outPath, attempt.attemptNumber);
-          const pass1OutPath = makePass1Path(outPath, attempt.attemptNumber);
+          const passlogFile = makePasslogPath(tempPath, attempt.attemptNumber);
+          const pass1OutPath = makePass1Path(tempPath, attempt.attemptNumber);
           const pass1Args = [
             '-hide_banner',
             ...getSizeLimitedSwsFlagsArgs(),
@@ -870,7 +875,7 @@ export async function exportSizeLimitedSegment({
     await Promise.all(preparedOverlayAssets.map((asset) => deleteIfExists(asset.imagePath)));
   }
 
-  const { result: finalResult, postProcessingWarning } = await finalizeEncodedOutput({ result, outPath, filePath });
+  const { result: finalResult, postProcessingWarning } = await finalizeEncodedOutput({ result, outPath, filePath, enableOverwriteOutput });
 
   await transferTimestamps({
     inPath: filePath,
@@ -952,7 +957,7 @@ export async function exportSizeLimitedMerge({
   overlayVideoHeight?: number | undefined,
 }) {
   await assertFileExists(filePath);
-  assertOutPathIsNotSource({ outPath, filePath });
+  await assertOutPathIsNotSource({ outPath, filePath });
   await ensureOutputDir(outPath);
 
   const totalSourceDuration = segments.reduce((sum, segment) => sum + (segment.end - segment.start), 0);
@@ -1002,10 +1007,11 @@ export async function exportSizeLimitedMerge({
   let result: SizeLimitedExecutionResult;
   try {
     result = await executeWithRetries({
+      outPath,
       plan,
       strategy,
-      buildAttempt: async (attempt) => {
-        const attemptOutPath = makeAttemptPath(outPath, attempt.attemptNumber);
+      buildAttempt: async (attempt, tempPath = outPath) => {
+        const attemptOutPath = makeAttemptPath(tempPath, attempt.attemptNumber);
         const inputArgs = getMergeInputArgs({ filePath, segments, outputPlaybackRate });
         const overlayInputArgs = preparedOverlayAssets.flatMap(({ imagePath }) => ['-loop', '1', '-i', imagePath]);
         const outputTrimArgs = ['-t', plannedDuration.toFixed(5)];
@@ -1036,8 +1042,8 @@ export async function exportSizeLimitedMerge({
         ];
 
         if (strategy.executionMode === 'ffmpeg_two_pass') {
-          const passlogFile = makePasslogPath(outPath, attempt.attemptNumber);
-          const pass1OutPath = makePass1Path(outPath, attempt.attemptNumber);
+          const passlogFile = makePasslogPath(tempPath, attempt.attemptNumber);
+          const pass1OutPath = makePass1Path(tempPath, attempt.attemptNumber);
           const pass1Args = [
             '-hide_banner',
             ...getSizeLimitedSwsFlagsArgs(),
@@ -1125,7 +1131,7 @@ export async function exportSizeLimitedMerge({
     await Promise.all(preparedOverlayAssets.map((asset) => deleteIfExists(asset.imagePath)));
   }
 
-  const { result: finalResult, postProcessingWarning } = await finalizeEncodedOutput({ result, outPath, filePath });
+  const { result: finalResult, postProcessingWarning } = await finalizeEncodedOutput({ result, outPath, filePath, enableOverwriteOutput });
 
   const mergedDuration = segments.reduce((sum, segment) => sum + (segment.end - segment.start), 0);
   await transferTimestamps({

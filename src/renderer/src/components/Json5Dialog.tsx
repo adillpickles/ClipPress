@@ -1,10 +1,12 @@
-import SyntaxHighlighter from 'react-syntax-highlighter';
+import { Light as SyntaxHighlighter } from 'react-syntax-highlighter';
+import javascript from 'react-syntax-highlighter/dist/esm/languages/hljs/javascript';
 import { tomorrow as lightSyntaxStyle, tomorrowNight as darkSyntaxStyle } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 import JSON5 from 'json5';
 
 import * as Dialog from './Dialog';
 import useUserSettings from '../hooks/useUserSettings';
 
+SyntaxHighlighter.registerLanguage('javascript', javascript);
 
 export default function Json5Dialog({ title, json, children }: {
   title: string;

@@ -9,6 +9,9 @@ export default defineConfig({
       // For the main process and preload, the best practice is to externalize dependencies and only bundle our own code.
       target: 'node22.18',
       sourcemap: true,
+      rollupOptions: {
+        external: ['electron-devtools-installer'],
+      },
     },
   },
   preload: {

@@ -1,13 +1,14 @@
 import type { MouseEventHandler, ReactNode } from 'react';
-import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import invariant from 'tiny-invariant';
+import prettyBytes from 'pretty-bytes';
 import { FaCheckCircle, FaExclamationTriangle, FaInfoCircle } from 'react-icons/fa';
 
 import * as Dialog from './Dialog';
 import * as AlertDialog from './AlertDialog';
 import { DialogButton } from './Button';
-import { showItemInFolder } from '../util';
+import { readFileSize, showItemInFolder } from '../util';
 import type { CleanupChoice, CleanupChoicesType } from '../dialogs';
 import { ListItem, Notices, OutputIncorrectSeeHelpMenu, UnorderedList, Warnings } from '../dialogs';
 import Checkbox from './Checkbox';
@@ -84,14 +85,26 @@ function ExportDetails({ items, defaultOpen, label }: {
  * menu") at the same level as the result, which made a routine success read like a
  * report to work through.
  */
-function ExportResultBody({ hasWarnings, headline, subtitle, details, warningCount }: {
+function ExportResultBody({ hasWarnings, headline, subtitle, details, warningCount, sizeFilePath }: {
   hasWarnings: boolean,
   headline: ReactNode,
   subtitle?: ReactNode,
   details?: ReactNode,
   warningCount: number,
+  sizeFilePath?: string | undefined,
 }) {
   const { t } = useTranslation();
+  const [measuredFile, setMeasuredFile] = useState<{ path: string, size: number }>();
+  const size = measuredFile?.path === sizeFilePath ? measuredFile?.size : undefined;
+  useEffect(() => {
+    let active = true;
+    if (sizeFilePath != null) {
+      readFileSize(sizeFilePath).then((value) => {
+        if (active) setMeasuredFile({ path: sizeFilePath, size: value });
+      }).catch((error) => console.warn('Unable to read exported file size', error));
+    }
+    return () => { active = false; };
+  }, [sizeFilePath]);
 
   return (
     <div>
@@ -101,6 +114,7 @@ function ExportResultBody({ hasWarnings, headline, subtitle, details, warningCou
         </span>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 'bold', wordBreak: 'break-word' }}>{headline}</div>
+          {size != null && <div style={{ opacity: 0.75, fontSize: '.9em', marginTop: '.15em' }}>{prettyBytes(size)}</div>}
           {subtitle != null && (
             <div style={{ opacity: 0.75, fontSize: '.9em', marginTop: '.15em' }}>{subtitle}</div>
           )}
@@ -307,13 +321,14 @@ export function useDialog() {
 
     await openExportFinishedDialog({
       filePath,
-      title: hasWarnings ? t('Export finished with warnings') : t('Export successful'),
+      title: fileCount === 0 ? t('Nothing was exported') : (hasWarnings ? t('Export finished with warnings') : t('Export successful')),
       width: '34em',
       children: (
         <ExportResultBody
           hasWarnings={hasWarnings}
           warningCount={warnings.length}
-          headline={getResultFileName(filePath)}
+          headline={fileCount === 0 ? t('No new files were written') : getResultFileName(filePath)}
+          sizeFilePath={fileCount === 1 ? filePath : undefined}
           subtitle={fileCount > 1 ? t('{{count}} files exported', { count: fileCount }) : undefined}
           details={(
             <>
@@ -383,24 +398,26 @@ export function useDialog() {
     });
   }, [openExportFinishedDialog, t]);
 
-  const openConcatFinishedDialog = useCallback(async ({ filePath, warnings, notices, sourceCount }: {
+  const openConcatFinishedDialog = useCallback(async ({ filePath, warnings, notices, sourceCount, created = true }: {
     filePath: string,
     warnings: string[],
     notices: string[],
     sourceCount?: number | undefined,
+    created?: boolean | undefined,
   }) => {
     const hasWarnings = warnings.length > 0;
 
     await openExportFinishedDialog({
       filePath,
-      title: hasWarnings ? t('Merge finished with warnings') : t('Merge successful'),
+      title: !created ? t('Nothing was exported') : (hasWarnings ? t('Merge finished with warnings') : t('Merge successful')),
       width: '34em',
       children: (
         <ExportResultBody
           hasWarnings={hasWarnings}
           warningCount={warnings.length}
-          headline={getResultFileName(filePath)}
-          subtitle={sourceCount != null && sourceCount > 1 ? t('Merged from {{count}} files', { count: sourceCount }) : undefined}
+          headline={created ? getResultFileName(filePath) : t('No new files were written')}
+          sizeFilePath={created ? filePath : undefined}
+          subtitle={created && sourceCount != null && sourceCount > 1 ? t('Merged from {{count}} files', { count: sourceCount }) : undefined}
           details={(
             <>
               <Warnings warnings={warnings} />

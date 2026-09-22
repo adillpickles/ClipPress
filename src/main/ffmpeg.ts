@@ -1,6 +1,6 @@
 import { join } from 'node:path';
+import { stat } from 'node:fs/promises';
 import readline from 'node:readline';
-import stringToStream from 'string-to-stream';
 import type { Options as ExecaOptions, ResultPromise } from 'execa';
 import { execa } from 'execa';
 import assert from 'node:assert';
@@ -16,6 +16,7 @@ import logger from './logger.js';
 import { parseFfmpegProgressLine } from './progress.js';
 import { getHwaccelArgs, parseFfprobeDuration } from '../common/util.js';
 import { getFfmpegJpegQuality } from './ffmpegUtil.js';
+import findSourceFileCollision from '../common/sourceFileIdentity.js';
 
 
 // cannot use process.kill: https://github.com/sindresorhus/execa/issues/1177
@@ -100,11 +101,6 @@ function handleProgress(
 }
 
 function getExecaOptions<T extends ExecaOptions>({ env, cancelSignal, ...rest }: T) {
-  // This is a ugly hack to please execa which expects cancelSignal to be a prototype of AbortSignal
-  // however this gets lost during @electron/remote passing
-  // https://github.com/sindresorhus/execa/blob/c8cff27a47b6e6f1cfbfec2bf7fa9dcd08cefed1/lib/terminate/cancel.js#L5
-  if (cancelSignal != null) Object.setPrototypeOf(cancelSignal, new AbortController().signal);
-
   const execaOptions: Pick<ExecaOptions, 'env'> = {
     ...(cancelSignal != null && { cancelSignal }),
     ...rest,
@@ -133,6 +129,12 @@ function runFfmpegProcess(args: readonly string[], customExecaOptions?: ExecaOpt
   if (logCli) logger.info(getFfCommandLine('ffmpeg', args));
 
   const abortController = new AbortController();
+  const callerSignal = customExecaOptions?.cancelSignal;
+  const abort = () => abortController.abort();
+  // A renderer signal arrives as a remote proxy. Forward it into a native main-process
+  // signal so both per-task cancellation and the global Abort button work.
+  callerSignal?.addEventListener('abort', abort, { once: true });
+  if (callerSignal?.aborted) abort();
   const process = execa(ffmpegPath, args, getExecaBufferOptions({ ...customExecaOptions, cancelSignal: abortController.signal }));
 
   const wrapped = { process, abortController };
@@ -145,6 +147,7 @@ function runFfmpegProcess(args: readonly string[], customExecaOptions?: ExecaOpt
       // ignored here
     } finally {
       runningFfmpegs.delete(wrapped);
+      callerSignal?.removeEventListener('abort', abort);
     }
   })();
   return process;
@@ -161,7 +164,7 @@ export async function runFfmpegConcat({ ffmpegArgs, concatTxt, totalDuration, on
   handleProgress(process, totalDuration, onProgress);
 
   assert(process.stdin != null);
-  stringToStream(concatTxt).pipe(process.stdin);
+  process.stdin.end(concatTxt);
 
   return process;
 }
@@ -192,7 +195,7 @@ export async function runFfprobe(args: readonly string[], { timeout = isDev ? 10
   }
 }
 
-export async function renderWaveformPng({ filePath, start, duration, resample, color, streamIndex, timeout }: {
+export async function renderWaveformPng({ filePath, start, duration, resample, color, streamIndex, timeout, signal }: {
   filePath: string,
   start?: number,
   duration?: number,
@@ -200,6 +203,7 @@ export async function renderWaveformPng({ filePath, start, duration, resample, c
   color: string,
   streamIndex: number,
   timeout?: number,
+  signal?: AbortSignal,
 }): Promise<Waveform> {
   const args1 = [
     '-hide_banner',
@@ -237,13 +241,14 @@ export async function renderWaveformPng({ filePath, start, duration, resample, c
   let ps1: ResultPromise<{ encoding: 'buffer' }> | undefined;
   let ps2: ResultPromise<{ encoding: 'buffer' }> | undefined;
   try {
-    ps1 = runFfmpegProcess(args1, { buffer: false, ...(timeout != null && { timeout }) }, { logCli: false });
-    ps2 = runFfmpegProcess(args2, timeout != null ? { timeout } : undefined, { logCli: false });
+    const options = { ...(timeout != null && { timeout }), ...(signal != null && { cancelSignal: signal }) };
+    ps1 = runFfmpegProcess(args1, { buffer: false, ...options }, { logCli: false });
+    ps2 = runFfmpegProcess(args2, options, { logCli: false });
     assert(ps1.stdout != null);
     assert(ps2.stdin != null);
     ps1.stdout.pipe(ps2.stdin);
 
-    const { stdout } = await ps2;
+    const [, { stdout }] = await Promise.all([ps1, ps2]);
 
     return {
       buffer: Buffer.from(stdout),
@@ -547,6 +552,8 @@ export async function captureFrameToFile({ timestamp, videoPath, outPath, qualit
   outPath: string,
   quality: number,
 }) {
+  const collision = await findSourceFileCollision({ outPaths: [outPath], protectedPaths: [videoPath], stat: (path) => stat(path, { bigint: true }) });
+  if (collision != null) throw new Error('ClipPress will not save a frame onto its source file.');
   const args = [
     ...getCaptureFrameArgs({ timestamp, videoPath, quality }),
     '-y', outPath,

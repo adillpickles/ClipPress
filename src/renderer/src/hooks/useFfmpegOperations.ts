@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { nanoid } from 'nanoid';
 import flatMap from 'lodash/flatMap';
 import sum from 'lodash/sum';
 import pMap from 'p-map';
@@ -35,13 +36,13 @@ export class OutputNotWritableError extends Error {
 async function writeChaptersFfmetadata(outDir: string, chapters: Chapter[] | undefined) {
   if (!chapters || chapters.length === 0) return undefined;
 
-  const path = join(outDir, `ffmetadata-${Date.now()}.txt`);
+  const path = join(outDir, `ffmetadata-${nanoid()}.txt`);
 
   const ffmetadata = chapters.map(({ start, end, name }) => (
     `[CHAPTER]\nTIMEBASE=1/1000\nSTART=${Math.floor(start * 1000)}\nEND=${Math.floor(end * 1000)}\ntitle=${name || ''}`
   )).join('\n\n');
   console.log('Writing chapters', ffmetadata);
-  await writeFile(path, ffmetadata);
+  await writeFile(path, ffmetadata, { flag: 'wx' });
   return path;
 }
 
@@ -142,7 +143,7 @@ async function prepareTextOverlayAssets({
     const height = Math.max(8, Math.round(rotatedVideoDimensions.height * overlayClip.box.height));
     const imageData = await renderTextOverlayPng({ text: overlayClip.text, width, height });
     const imagePath = join(outputDir, `clippress-text-overlay-${Date.now()}-${index}.png`);
-    await writeFile(imagePath, imageData);
+    await writeFile(imagePath, imageData, { flag: 'wx' });
     return {
       overlayId: overlayClip.overlayId,
       imagePath,
@@ -220,8 +221,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
    * `alsoProtect` carries the inputs of the operation itself — a merge reads files that
    * have nothing to do with `filePath`, so the loaded file alone is not the whole story.
    */
-  const assertOutPathIsNotSource = useCallback((outPath: string, alsoProtect: readonly (string | undefined)[] = []) => {
-    assertOutPathsNotSource({
+  const assertOutPathIsNotSource = useCallback(async (outPath: string, alsoProtect: readonly (string | undefined)[] = []) => {
+    await assertOutPathsNotSource({
       outPaths: [outPath],
       protectedPaths: [filePath, ...alsoProtect],
       message: i18n.t('ClipPress will not export onto the file it is reading from. Choose a different output name or folder.'),
@@ -265,11 +266,11 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   }) => {
     // Innermost guard for every merge: batch concat, auto-concat of exported segments and
     // the size-limited merge all end up here, and only here is the full input list known.
-    assertOutPathIsNotSource(outPath, paths);
+    await assertOutPathIsNotSource(outPath, [...paths, metadataFromPath]);
 
     if (await shouldSkipExistingFile(outPath)) {
       onProgress(1);
-      return { haveExcludedStreams: false };
+      return { haveExcludedStreams: false, created: false };
     }
 
     console.log('Merging files', { paths }, 'to', outPath);
@@ -373,7 +374,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       await transferTimestamps({ inPath: metadataFromPath, outPath, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, duration: totalDuration });
       onProgress(1);
 
-      return { haveExcludedStreams: excludedStreamIds.length > 0 };
+      return { haveExcludedStreams: excludedStreamIds.length > 0, created: true };
     } finally {
       if (chaptersPath) await tryDeleteFiles([chaptersPath]);
     }
@@ -407,6 +408,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     detectedFps?: number,
   }) => {
     const frameDuration = getFrameDuration(detectedFps);
+    await assertOutPathIsNotSource(outPath, copyFileStreams.map((source) => source.path));
 
     const cuttingStart = isCuttingStart(cutFrom);
     const cutFromWithAdjustment = cutFrom + cutFromAdjustmentFrames * frameDuration;
@@ -577,7 +579,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     logStdoutStderr(result);
 
     await transferTimestamps({ inPath: filePath, outPath, cutFrom, cutTo, treatInputFileModifiedTimeAsStart, duration: isDurationValid(fileDuration) ? fileDuration : undefined, treatOutputFileModifiedTimeAsStart });
-  }, [appendFfmpegCommandLog, cutFromAdjustmentFrames, cutToAdjustmentFrames, filePath, getOutputPlaybackRateArgs, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, cutFromAdjustmentFrames, cutToAdjustmentFrames, filePath, getOutputPlaybackRateArgs, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   const cutMultipleWithTextOverlays = useCallback(async ({
     outputDir,
@@ -711,7 +713,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
         return await pMap(segments, async ({ start, end }, index) => {
           const finalOutPath = join(outputDir, cutFileNames[index]!);
-          assertOutPathIsNotSource(finalOutPath);
+          await assertOutPathIsNotSource(finalOutPath);
           if (await shouldSkipExistingFile(finalOutPath)) {
             onSingleProgress(index, 1);
             return { path: finalOutPath, created: false };
@@ -823,6 +825,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   }) => {
     invariant(filePath != null);
 
+    await assertOutPathIsNotSource(outPath, copyFileStreams.map((source) => source.path));
+
     function getVideoArgs({ streamIndex, outputIndex }: { path: string, streamIndex: number, outputIndex: number }) {
       if (streamIndex !== videoStreamIndex) return undefined;
 
@@ -876,7 +880,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
     appendFfmpegCommandLog(ffmpegArgs);
     await runFfmpeg(ffmpegArgs);
-  }, [appendFfmpegCommandLog, filePath]);
+  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, filePath]);
 
   const cutMultiple = useCallback(async ({
     outputDir, customOutDir, segments: segmentsIn, cutFileNames, fileDuration, rotation, detectedFps, onProgress: onTotalProgress, keyframeCut, copyFileStreams, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, customTagsByFile, paramsByStreamId, chapters,
@@ -930,7 +934,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       const onConcatProgress = (progress: number) => onSingleProgress(i, (1 + progress) / 2);
 
       const finalOutPath = join(outputDir, cutFileNames[i]!);
-      assertOutPathIsNotSource(finalOutPath);
+      await assertOutPathIsNotSource(finalOutPath, copyFileStreams.map((source) => source.path));
 
       if (await shouldSkipExistingFile(finalOutPath)) {
         onSingleProgress(i, 1);
@@ -1012,7 +1016,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       }
 
       const losslessPartOutPath = segmentNeedsSmartCut
-        ? getSuffixedOutPath({ customOutDir, filePath, nameSuffix: `smartcut-segment-copy-${i}${ext}` })
+        ? getSuffixedOutPath({ customOutDir, filePath, nameSuffix: `smartcut-segment-copy-${nanoid()}-${i}${ext}` })
         : finalOutPath;
 
       // for smart cut we need to use keyframe cut here, and no avoid_negative_ts
@@ -1028,7 +1032,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
       // We need to concat
 
-      const smartCutEncodedPartOutPath = getSuffixedOutPath({ customOutDir, filePath, nameSuffix: `smartcut-segment-encode-${i}${ext}` });
+      const smartCutEncodedPartOutPath = getSuffixedOutPath({ customOutDir, filePath, nameSuffix: `smartcut-segment-encode-${nanoid()}-${i}${ext}` });
       const smartCutSegmentsToConcat = [smartCutEncodedPartOutPath, losslessPartOutPath];
 
       try {
@@ -1070,11 +1074,11 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     mergedOutFilePath: string,
   }) => {
     const outDir = getOutDir(customOutDir, filePath);
-    assertOutPathIsNotSource(mergedOutFilePath);
+    await assertOutPathIsNotSource(mergedOutFilePath, segmentPaths);
 
     if (await shouldSkipExistingFile(mergedOutFilePath)) {
       onProgress(1);
-      return;
+      return { path: mergedOutFilePath, created: false };
     }
 
     const chapters = await createChaptersFromSegments({ segmentPaths, chapterNames });
@@ -1083,8 +1087,9 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     invariant(metadataFromPath != null);
     // need to re-read streams because may have changed
     const { streams } = await readFileFfprobeMeta(metadataFromPath);
-    await concatFiles({ paths: segmentPaths, outDir, outPath: mergedOutFilePath, metadataFromPath, outFormat, includeAllStreams: true, streams, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge });
+    const { created } = await concatFiles({ paths: segmentPaths, outDir, outPath: mergedOutFilePath, metadataFromPath, outFormat, includeAllStreams: true, streams, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge });
     onProgress(1);
+    return { path: mergedOutFilePath, created };
   }, [assertOutPathIsNotSource, concatFiles, filePath, shouldSkipExistingFile]);
 
   // This is just used to load something into the player with correct duration,
@@ -1095,6 +1100,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     onProgress: (p: number) => void,
   }) => {
     console.log('Making ffmpeg-assisted dummy file', { filePathArg, outPath });
+    await assertOutPathIsNotSource(outPath, [filePathArg]);
 
     const duration = await getDuration(filePathArg);
 
@@ -1113,7 +1119,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     logStdoutStderr(result);
 
     await transferTimestamps({ inPath: filePathArg, outPath, duration, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart });
-  }, [appendFfmpegCommandLog, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   const html5ify = useCallback(async ({ customOutDir, filePath: filePathArg, speed, hasAudio, hasVideo, onProgress }: {
     customOutDir: string | undefined,
@@ -1133,6 +1139,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
     const outPath = getHtml5ifiedPath(customOutDir, filePathArg, speed);
     invariant(outPath != null);
+    await assertOutPathIsNotSource(outPath, [filePathArg]);
 
     let audio: 'hq' | 'lq' | 'copy' | undefined;
     if (hasAudio) {
@@ -1242,7 +1249,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     invariant(outPath != null);
     await transferTimestamps({ inPath: filePathArg, outPath, duration, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart });
     return outPath;
-  }, [appendFfmpegCommandLog, ffmpegHwaccel, html5ifyDummy, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, ffmpegHwaccel, html5ifyDummy, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   // https://stackoverflow.com/questions/34118013/how-to-determine-webm-duration-using-ffprobe
   const fixInvalidDuration = useCallback(async ({ fileFormat, customOutDir, onProgress }: {
@@ -1253,6 +1260,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     invariant(filePath != null);
     const ext = getOutFileExtension({ outFormat: fileFormat, filePath });
     const outPath = getSuffixedOutPath({ customOutDir, filePath, nameSuffix: `reformatted${ext}` });
+    await assertOutPathIsNotSource(outPath);
 
     const ffmpegArgs = [
       '-hide_banner',
@@ -1275,7 +1283,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     await transferTimestamps({ inPath: filePath, outPath, duration: undefined, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart });
 
     return outPath;
-  }, [appendFfmpegCommandLog, filePath, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, filePath, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   function getPreferredCodecFormat(stream: LiteFFprobeStream) {
     const map = {
@@ -1336,6 +1344,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     let streamArgs: string[] = [];
     const outPaths = await pMap(outStreams, async ({ index, codec, type, format: { format, ext } }) => {
       const outPath = getSuffixedOutPath({ customOutDir, filePath, nameSuffix: `stream-${index}-${type}-${codec}.${ext}` });
+      await assertOutPathIsNotSource(outPath);
       if (!enableOverwriteOutput && await mainApi.pathExists(outPath)) throw new RefuseOverwriteError();
 
       streamArgs = [
@@ -1357,7 +1366,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     console.log(new TextDecoder().decode(stdout));
 
     return outPaths;
-  }, [appendFfmpegCommandLog, enableOverwriteOutput, filePath]);
+  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, enableOverwriteOutput, filePath]);
 
   const extractAttachmentStreams = useCallback(async ({ customOutDir, streams }: {
     customOutDir?: string | undefined, streams: FFprobeStream[],
@@ -1372,6 +1381,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       const ext = codec || 'bin';
       const outPath = getSuffixedOutPath({ customOutDir, filePath, nameSuffix: `stream-${index}-${type}-${codec}.${ext}` });
       invariant(outPath != null);
+      await assertOutPathIsNotSource(outPath);
       if (!enableOverwriteOutput && await mainApi.pathExists(outPath)) throw new RefuseOverwriteError();
 
       streamArgs = [
@@ -1400,7 +1410,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       throw err;
     }
     return outPaths;
-  }, [appendFfmpegCommandLog, enableOverwriteOutput, filePath]);
+  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, enableOverwriteOutput, filePath]);
 
   // https://stackoverflow.com/questions/32922226/extract-every-audio-and-subtitles-from-a-video-with-ffmpeg
   const extractStreams = useCallback(async ({ customOutDir, streams }: {

@@ -19,14 +19,21 @@ export type ResponseMessageData = { id: number } & ({
 
 // https://v3.vitejs.dev/guide/features.html#web-workers
 // todo terminate() and recreate in case of error?
-const worker = new Worker();
-worker.addEventListener('error', (err) => {
-  console.error('evalWorker error', err);
-});
+let sharedWorker: Worker | undefined;
+function getWorker() {
+  if (sharedWorker == null) {
+    sharedWorker = new Worker();
+    sharedWorker.addEventListener('error', (err) => {
+      console.error('evalWorker error', err);
+    });
+  }
+  return sharedWorker;
+}
 
 let lastRequestId = 0;
 
 export default async function safeishEval(code: string, context: Record<string, unknown>) {
+  const worker = getWorker();
   return new Promise((resolve, reject) => {
     lastRequestId += 1;
     const id = lastRequestId;

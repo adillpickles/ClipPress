@@ -46,18 +46,6 @@
     linear-gradient(180deg, color-mix(in srgb, var(--gray-2) 94%, transparent), color-mix(in srgb, var(--gray-1) 94%, rgba(0, 0, 0, 0.6)));
 }
 
-.floatingAction {
-  position: fixed;
-  top: 1.55rem;
-  right: 1.7rem;
-  z-index: 2;
-  pointer-events: none;
-}
-
-.floatingAction > * {
-  pointer-events: auto;
-}
-
 .header {
   display: flex;
   align-items: flex-start;
@@ -103,11 +91,6 @@
 }
 
 @media (max-width: 900px) {
-  .floatingAction {
-    top: 1rem;
-    right: 1rem;
-  }
-
   .header {
     flex-direction: column;
   }

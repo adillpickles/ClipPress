@@ -281,6 +281,7 @@ function Settings({
           </Row>
         )}
 
+        {showAdvancedSettings && (
         <Row>
           <KeyCell>
             {t('Keyframe cut mode')}<br />
@@ -302,6 +303,7 @@ function Settings({
             <Switch checked={keyframeCut} onCheckedChange={() => toggleKeyframeCut()} />
           </td>
         </Row>
+        )}
 
         <Row>
           <KeyCell>{t('Cleanup files after export?')}</KeyCell>
@@ -534,11 +536,13 @@ function Settings({
         {showAdvancedSettings && (
           <Row>
             <KeyCell>{t('Import chapters to segments when opening file')}</KeyCell>
-            <Select value={enableImportChapters} onChange={(e) => setEnableImportChapters(e.target.value as EnableImportChapters)}>
-              {Object.entries(getEnableImportChaptersOptions() satisfies Record<EnableImportChapters, string>).map(([key, name]) => (
-                <option key={key} value={key}>{name}</option>
-              ))}
-            </Select>
+            <td>
+              <Select value={enableImportChapters} onChange={(e) => setEnableImportChapters(e.target.value as EnableImportChapters)}>
+                {Object.entries(getEnableImportChaptersOptions() satisfies Record<EnableImportChapters, string>).map(([key, name]) => (
+                  <option key={key} value={key}>{name}</option>
+                ))}
+              </Select>
+            </td>
           </Row>
         )}
 

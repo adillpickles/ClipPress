@@ -300,6 +300,8 @@ async function generateWithFallback({ generate, desiredTemplate, defaultTemplate
       protectedPaths: protectedPaths ?? [filePath],
       path,
     });
+    const finalProblems = getTemplateProblems({ fileNames: safeFileNames, filePath, outputDir, safeOutputFileName });
+    if (finalProblems.error != null) throw new UserFacingError(finalProblems.error);
     return {
       fileNames: safeFileNames,
       problems: adjustments.length > 0 ? { ...problems, sourceSafetyAdjustments: adjustments } : problems,
@@ -325,6 +327,7 @@ async function generateWithFallback({ generate, desiredTemplate, defaultTemplate
     // The fallback names were previously returned unchecked, so a fallback that was
     // itself invalid (or that named the source file) went straight through to export.
     const fallbackProblems = getTemplateProblems({ fileNames: fallbackFileNames, filePath, outputDir, safeOutputFileName: true });
+    if (fallbackProblems.error != null) throw new UserFacingError(fallbackProblems.error);
     const protectedFallback = protectSource(fallbackFileNames, {
       // Keep reporting why we fell back; surface a fallback problem only if there is one.
       ...problems,

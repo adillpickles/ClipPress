@@ -17,8 +17,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import electronUnhandled from 'electron-unhandled';
 import { fileTypeFromFile } from 'file-type/node';
 import type { Asyncify } from 'type-fest';
-// eslint-disable-next-line import/no-extraneous-dependencies
-import { installExtension, REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 import mitt from 'mitt';
 
 import logger from './logger.js';
@@ -27,11 +25,9 @@ import * as configStore from './configStore.js';
 import { isLinux, isWindows, isMac, platform, arch, pathExists } from './util.js';
 import { appName } from './common.js';
 import attachContextMenu from './contextMenu.js';
-import HttpServer from './httpServer.js';
 import isDev from './isDev.js';
 import isStoreBuild from './isStoreBuild.js';
 import { getAboutPanelOptions } from './aboutPanel.js';
-import { checkNewVersion } from './updateChecker.js';
 import * as i18nCommon from './i18nCommon.js';
 import './i18n.js';
 import type { ApiActionRequest } from '../common/types.js';
@@ -103,18 +99,23 @@ ipcMain.on('appEvent', (_e, appEvent: AppEvent) => {
 });
 
 async function onAwaitAppEvent(awaitEventName: string, signal: AbortSignal) {
+  signal.throwIfAborted();
   return new Promise<AppEvent>((resolve, reject) => {
+    const onAbort = () => {
+      // The two callbacks remove each other when either event wins.
+      // eslint-disable-next-line no-use-before-define
+      appEventEmitter.off('appEvent', handler);
+      reject(signal.reason);
+    };
     const handler = (appEvent: AppEvent) => {
       if (appEvent.eventName === awaitEventName) {
         appEventEmitter.off('appEvent', handler);
+        signal.removeEventListener('abort', onAbort);
         resolve(appEvent);
       }
     };
     appEventEmitter.on('appEvent', handler);
-    signal.addEventListener('abort', () => {
-      appEventEmitter.off('appEvent', handler);
-      reject(new Error('Aborted'));
-    });
+    signal.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -137,8 +138,8 @@ function getSavedBounds() {
     }
     // If the saved size is still valid, use it.
     if (bounds.width <= area.width || bounds.height <= area.height) {
-      options.width = bounds.width;
-      options.height = bounds.height;
+      options.width = Math.min(bounds.width, area.width);
+      options.height = Math.min(bounds.height, area.height);
     }
   } else {
     options.width = Math.min(1480, primaryWorkArea.width);
@@ -223,6 +224,8 @@ function createWindow() {
     // in an array if your app supports multi windows, this is the time
     // when you should delete the corresponding element.
     mainWindow = null;
+    apiActionRequests.forEach((resolve) => resolve());
+    apiActionRequests.clear();
   });
 
   // https://stackoverflow.com/questions/39574636/prompt-to-save-quit-before-closing-window/47434365
@@ -422,7 +425,9 @@ async function init() {
     ipcMain.handle('showItemInFolder', (_e, path) => shell.showItemInFolder(path));
 
     ipcMain.on('apiActionResponse', (_e, { id }) => {
-      apiActionRequests.get(id)?.();
+      const resolve = apiActionRequests.get(id);
+      apiActionRequests.delete(id);
+      resolve?.();
     });
 
     logger.info('Waiting for app to become ready');
@@ -448,6 +453,7 @@ async function init() {
     const { httpApi } = argv;
 
     if (httpApi != null) {
+      const { default: HttpServer } = await import('./httpServer.js');
       const port = typeof httpApi === 'number' ? httpApi : 8080;
       const { startHttpServer } = HttpServer({ port, onKeyboardAction: sendApiAction, onAwaitAppEvent });
       await startHttpServer();
@@ -456,8 +462,10 @@ async function init() {
 
 
     if (isDev) {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires,global-require,import/no-extraneous-dependencies
-      installExtension(REACT_DEVELOPER_TOOLS)
+      // Kept external by the build; packaged apps never resolve this development dependency.
+      // eslint-disable-next-line import/no-extraneous-dependencies
+      import('electron-devtools-installer')
+        .then(({ installExtension, REACT_DEVELOPER_TOOLS }) => installExtension(REACT_DEVELOPER_TOOLS))
         .then((extension) => logger.info('Added Extension', extension.name))
         .catch((err: unknown) => logger.error('Failed to add extension', err));
     }
@@ -472,12 +480,15 @@ async function init() {
     const enableUpdateCheck = configStore.get('enableUpdateCheck');
 
     if (!disableNetworking && enableUpdateCheck && !isStoreBuild) {
+      const { checkNewVersion } = await import('./updateChecker.js');
       newVersion = await checkNewVersion();
       // newVersion = '1.2.3';
       if (newVersion) updateMenu();
     }
   } catch (err) {
     logger.error('Failed to initialize', err);
+    electron.dialog.showErrorBox('ClipPress could not start', err instanceof Error ? err.message : String(err));
+    app.quit();
   }
 }
 

@@ -9,6 +9,14 @@ import type { DefiniteSegmentBase, PlaybackMode, SegmentBase, SegmentTags, Segme
 
 export const isDurationValid = (duration?: number): duration is number => duration != null && Number.isFinite(duration) && duration > 0;
 
+/** Only the initial placeholder means the whole file; other open-ended entries are markers. */
+export function getSegmentsTotalDuration(segments: readonly { start: number, end?: number | undefined, initial?: true }[], fileDuration: number | undefined) {
+  return segments.reduce((sum, segment) => {
+    const end = segment.initial ? fileDuration : segment.end;
+    return sum + (end != null ? Math.max(0, end - segment.start) : 0);
+  }, 0);
+}
+
 export const createSegment = (props?: {
   start?: number | undefined,
   end?: number | undefined,

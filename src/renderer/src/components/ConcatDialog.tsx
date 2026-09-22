@@ -56,7 +56,7 @@ function ConcatDialog({ isShown, onHide, paths, mergedFileTemplate, generateMerg
   onOutputFormatUserChange: (newFormat: string) => void,
 }) {
   const { t } = useTranslation();
-  const { preserveMovData, setPreserveMovData, segmentsToChapters, setSegmentsToChapters, preserveMetadataOnMerge, setPreserveMetadataOnMerge, customOutDir, simpleMode, setMergedFileTemplate, outFormatLocked } = useUserSettings();
+  const { preserveMovData, setPreserveMovData, segmentsToChapters, setSegmentsToChapters, preserveMetadataOnMerge, setPreserveMetadataOnMerge, customOutDir, setMergedFileTemplate, outFormatLocked } = useUserSettings();
 
   const [includeAllStreams, setIncludeAllStreams] = useState(false);
   const [allFilesMeta, setAllFilesMeta] = useState<Record<string, { ffprobeMeta: FileFfprobeMeta, stats: FileStats }>>({});
@@ -86,21 +86,6 @@ function ConcatDialog({ isShown, onHide, paths, mergedFileTemplate, generateMerg
       setAllFilesMeta({});
     }
   }, [isShown, setDetectedFileFormat, setFileFormat]);
-
-  useEffect(() => {
-    const abortController = new AbortController();
-
-    (async () => {
-      // in simple mode, set merged file template to a generated name based on first file, so they don't *have to* deal with variables
-      if (isShown && simpleMode && firstPath != null && fileFormat != null) {
-        const generated = await generateFileNames(defaultMergedFileTemplate);
-        if (abortController.signal.aborted) return;
-        setMergedFileTemplate(generated.fileNames[0]);
-      }
-    })().catch(console.error);
-
-    return () => abortController.abort();
-  }, [fileFormat, firstPath, generateFileNames, isShown, setMergedFileTemplate, simpleMode]);
 
   const matchingFilesMeta = useMemo(() => {
     if (paths.length === 0) return undefined;

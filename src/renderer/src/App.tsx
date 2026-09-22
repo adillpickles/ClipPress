@@ -146,17 +146,18 @@ import {
   isMuxNotSupported,
   getDownloadMediaOutPath,
   isAbortedError,
-  renameWithRetry,
+  moveExportWithRetry,
   shootConfetti,
   isMasBuild,
   readFileStats,
   makeSourceFileAccessError,
-  unlinkWithRetry,
 } from './util';
 import getSwal, { errorToast, showPlaybackFailedMessage } from './swal';
 import { assertOutPathsNotSource, getMergeProtectedPaths, isSourcePath, makeSafeOutFileNames } from './util/sourceProtection';
 import type { SourceSafeFileNameAdjustment } from './util/sourceProtection';
 import { adjustRate } from './util/rate-calculator';
+import { getWrittenExportPaths } from './util/exportResults';
+import type { ExportedFile } from './util/exportResults';
 import { resetSegmentHistory } from './util/segmentHistory';
 import { askExtractFramesAsImages } from './dialogs/extractFrames';
 import type { CleanupChoicesType } from './dialogs';
@@ -1612,7 +1613,11 @@ function App() {
     console.log('State reset');
     const video = videoRef.current;
     setCommandedTime(0);
-    if (video != null) video.currentTime = 0;
+    if (video != null) {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    }
     setPlaybackRate(1);
 
     // setWorking();
@@ -2224,7 +2229,7 @@ function App() {
         // The names were generated when the concat dialog opened; the batch list, the
         // output directory or the template may have changed since. Re-check against every
         // file this merge reads before anything is written or deleted.
-        assertOutPathsNotSource({
+        await assertOutPathsNotSource({
           outPaths: [outPath],
           protectedPaths: getMergeProtectedPaths({ sourcePaths: paths, alsoProtect: [filePath] }),
           message: i18n.t('ClipPress will not merge onto one of the files it is reading from. Choose a different output name or folder.'),
@@ -2255,7 +2260,7 @@ function App() {
 
         await maybeMkDeepOutDir({ outputDir: outDir, fileOutPath: outPath });
 
-        const { haveExcludedStreams } = await concatFiles({
+        const { haveExcludedStreams, created } = await concatFiles({
           paths,
           outPath,
           outDir,
@@ -2271,9 +2276,16 @@ function App() {
           chapters: chaptersFromSegments,
         });
 
-        const outputSize = await readFileSize(outPath); // * 1.06; // testing:)
-        const sizeCheckResult = checkFileSizes(inputSize, outputSize);
-        if (sizeCheckResult != null) warnings.add(sizeCheckResult);
+        if (created) {
+          try {
+            const outputSize = await readFileSize(outPath);
+            const sizeCheckResult = checkFileSizes(inputSize, outputSize);
+            if (sizeCheckResult != null) warnings.add(sizeCheckResult);
+          } catch (error) {
+            console.warn('Merge completed but its size could not be read', error);
+            warnings.add(i18n.t('The merge finished, but its final size could not be checked.'));
+          }
+        }
 
         if (clearBatchFilesAfterConcat) closeBatch();
         if (!includeAllStreams && haveExcludedStreams) {
@@ -2283,21 +2295,16 @@ function App() {
             ),
           );
         }
-        if (!enableOverwriteOutput) {
-          warnings.add(
-            i18n.t(
-              'Overwrite output setting is disabled and some files might have been skipped.',
-            ),
-          );
-        }
+        if (!created) notices.add(i18n.t('No new files were written'));
 
         if (!hideAllNotifications) {
-          showOsNotification(i18n.t('Merge finished'));
+          showOsNotification(i18n.t(created ? 'Merge finished' : 'No new files were written'));
           openConcatFinishedDialog({
             filePath: outPath,
             notices: [...notices],
             warnings: [...warnings],
             sourceCount: paths.length,
+            created,
           });
         }
       } catch (err) {
@@ -2354,7 +2361,6 @@ function App() {
       movFastStart,
       preserveMetadataOnMerge,
       closeBatch,
-      enableOverwriteOutput,
       hideAllNotifications,
       t,
       showOsNotification,
@@ -2485,7 +2491,7 @@ function App() {
 
       const parts: string[] = [];
       if (metadata.attemptNumber > 1) {
-        parts.push(i18n.t('Adjusting to fit the size limit'));
+        parts.push(i18n.t('Attempt {{attempt}}/{{maxAttempts}}', { attempt: metadata.attemptNumber, maxAttempts: metadata.maxAttempts }));
       }
       if (metadata.phaseCount > 1) {
         parts.push(
@@ -2715,31 +2721,8 @@ function App() {
       }
 
       for (const candidate of candidates) {
-        let targetFileName = findAvailableSizeLimitedAutoFileName({
-          sourceBaseName: sizeLimitedSourceBaseName,
-          controlMode: sizeLimitControlMode,
-          preset: sizeLimitPreset,
-          safeOutputFileName,
-          item: {
-            sizeLabel: candidate.sizeLabel,
-            suffixLabel: candidate.suffixLabel,
-          },
-          isReserved: (fileName) => reservedFileNames.has(fileName),
-        });
-
-        let targetPath = getOutPath({
-          customOutDir,
-          filePath,
-          fileName: targetFileName,
-        });
-        while (
-          targetPath != null
-          && targetPath !== candidate.currentPath
-          && !enableOverwriteOutput
-          && (await mainApi.pathExists(targetPath))
-        ) {
-          reservedFileNames.add(targetFileName);
-          targetFileName = findAvailableSizeLimitedAutoFileName({
+        try {
+          let targetFileName = findAvailableSizeLimitedAutoFileName({
             sourceBaseName: sizeLimitedSourceBaseName,
             controlMode: sizeLimitControlMode,
             preset: sizeLimitPreset,
@@ -2750,28 +2733,48 @@ function App() {
             },
             isReserved: (fileName) => reservedFileNames.has(fileName),
           });
-          targetPath = getOutPath({
+
+          let targetPath = getOutPath({
             customOutDir,
             filePath,
             fileName: targetFileName,
           });
-        }
+          while (
+            targetPath != null
+          && targetPath !== candidate.currentPath
+          && !enableOverwriteOutput
+          && (await mainApi.pathExists(targetPath))
+          ) {
+            reservedFileNames.add(targetFileName);
+            targetFileName = findAvailableSizeLimitedAutoFileName({
+              sourceBaseName: sizeLimitedSourceBaseName,
+              controlMode: sizeLimitControlMode,
+              preset: sizeLimitPreset,
+              safeOutputFileName,
+              item: {
+                sizeLabel: candidate.sizeLabel,
+                suffixLabel: candidate.suffixLabel,
+              },
+              isReserved: (fileName) => reservedFileNames.has(fileName),
+            });
+            targetPath = getOutPath({
+              customOutDir,
+              filePath,
+              fileName: targetFileName,
+            });
+          }
 
-        reservedFileNames.add(targetFileName);
-        // This pass renames a finished export to its final, size-stamped name, and is
-        // allowed to delete whatever occupies that name first. Skip the rename entirely
-        // rather than let that deletion land on a file the export read from.
-        const targetIsSourceFile = isSourcePath(targetPath, exportProtectedPaths);
-        if (targetIsSourceFile) {
-          console.warn('Skipping final rename that would target a source file', targetPath);
-        }
-        if (!targetIsSourceFile && targetPath != null && targetPath !== candidate.currentPath) {
-          try {
-            const targetExists = await mainApi.pathExists(targetPath);
-            if (targetExists && enableOverwriteOutput) {
-              await unlinkWithRetry(targetPath);
-            }
-            await renameWithRetry(candidate.currentPath, targetPath);
+          reservedFileNames.add(targetFileName);
+          // This pass renames a finished export to its final, size-stamped name, and is
+          // allowed to replace an existing output. Refuse source destinations here too.
+          const targetIsSourceFile = isSourcePath(targetPath, exportProtectedPaths);
+          if (targetIsSourceFile) {
+            console.warn('Skipping final rename that would target a source file', targetPath);
+          }
+          if (!targetIsSourceFile && targetPath != null && targetPath !== candidate.currentPath) {
+            await assertOutPathsNotSource({ outPaths: [targetPath], protectedPaths: exportProtectedPaths, message: i18n.t('Output name would replace a source file') });
+            if (!enableOverwriteOutput && await mainApi.pathExists(targetPath)) throw new Error('Output file already exists');
+            await moveExportWithRetry(candidate.currentPath, targetPath, enableOverwriteOutput);
             const result = updatedResults[candidate.resultIndex];
             if (result != null) {
               updatedResults[candidate.resultIndex] = {
@@ -2779,18 +2782,18 @@ function App() {
                 path: targetPath,
               };
             }
-          } catch (error) {
-            console.warn(
-              'Failed to apply cleaner size-limited file name',
-              candidate.currentPath,
-              error,
-            );
-            renameWarnings.add(
-              i18n.t(
-                "ClipPress kept one exported file's original name because the cleaner final name could not be applied.",
-              ),
-            );
           }
+        } catch (error) {
+          console.warn(
+            'Failed to apply cleaner size-limited file name',
+            candidate.currentPath,
+            error,
+          );
+          renameWarnings.add(
+            i18n.t(
+              "ClipPress kept one exported file's original name because the cleaner final name could not be applied.",
+            ),
+          );
         }
       }
 
@@ -2978,7 +2981,7 @@ function App() {
    * naming scheme cannot reach the filesystem.
    */
   const resolveSafeOutPaths = useCallback(
-    (fileNames: readonly string[], notices: Set<string>) => {
+    async (fileNames: readonly string[], notices: Set<string>) => {
       invariant(filePath != null && outputDir != null);
 
       const { fileNames: safeFileNames, adjustments } = makeSafeOutFileNames({
@@ -2995,7 +2998,7 @@ function App() {
         return outPath;
       });
 
-      assertOutPathsNotSource({
+      await assertOutPathsNotSource({
         outPaths,
         protectedPaths: exportProtectedPaths,
         message: i18n.t('ClipPress will not export onto the file it is reading from. Choose a different output name or folder.'),
@@ -3129,7 +3132,7 @@ function App() {
               return generated.fileNames;
             })();
 
-          const { outPaths: cutOutPaths } = resolveSafeOutPaths(generatedCutFileNames, notices);
+          const { outPaths: cutOutPaths } = await resolveSafeOutPaths(generatedCutFileNames, notices);
 
           for (const [
             index,
@@ -3221,7 +3224,7 @@ function App() {
               return fileNames;
             })();
 
-          const { outPaths: mergedOutPaths } = resolveSafeOutPaths(generatedMergedFileNames, notices);
+          const { outPaths: mergedOutPaths } = await resolveSafeOutPaths(generatedMergedFileNames, notices);
           [mergedOutFilePath] = mergedOutPaths;
           invariant(mergedOutFilePath != null);
 
@@ -3284,28 +3287,31 @@ function App() {
         );
         appendSizeLimitedResultNotices(finalizedResults, notices, warnings);
 
-        if (simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
+        if (firstCreatedResult != null && simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
 
         const revealResult = (willMerge ? finalizedResults.at(-1) : undefined)
           ?? firstCreatedResult
           ?? finalizedResults[0];
         invariant(revealResult != null);
-        const exportedPaths = willMerge
-          ? [revealResult.path]
-          : finalizedResults.map((result) => result.path);
+        const exportedPaths = finalizedResults.filter((result) => result.created).map((result) => result.path);
         const revealPath = revealResult.path;
 
-        if (cleanupChoices.cleanupAfterExport) {
+        if (exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport) {
           const newCleanupChoices = cleanupChoices.askForCleanup
             ? await askForCleanupChoices()
             : cleanupChoices;
-          if (newCleanupChoices) await cleanupFiles(newCleanupChoices);
-        } else if (simpleMode && cleanupChoices.closeFile) {
+          if (newCleanupChoices) {
+            await cleanupFiles(newCleanupChoices).catch((error) => {
+              console.warn('Export completed but cleanup failed', error);
+              warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
+            });
+          }
+        } else if (exportedPaths.length > 0 && simpleMode && cleanupChoices.closeFile) {
           closeCurrentFileAfterExport();
         }
 
         if (!hideAllNotifications) {
-          showOsNotification(i18n.t('Export finished'));
+          showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
           openSizeLimitedFinishedDialog({
             filePath: revealPath,
             warnings: [...warnings],
@@ -3314,8 +3320,8 @@ function App() {
           });
         }
 
-        setExportCount((c) => c + 1);
-        setCurrentFileExportCount((c) => c + 1);
+        setExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
+        setCurrentFileExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
         emitEvent({ eventName: 'export-complete', paths: exportedPaths });
         return;
       }
@@ -3405,6 +3411,7 @@ function App() {
         });
 
         let mergedOutFilePath: string | undefined;
+        let mergedResult: ExportedFile | undefined;
 
         if (willMerge) {
           setProgress(0);
@@ -3426,7 +3433,7 @@ function App() {
           invariant(fileName != null);
           mergedOutFilePath = getOutPath({ customOutDir, filePath, fileName });
 
-          await concatCutSegments({
+          mergedResult = await concatCutSegments({
             customOutDir,
             outFormat: fileFormat,
             segmentPaths: outFiles.map((file) => file.path),
@@ -3440,16 +3447,10 @@ function App() {
           });
 
           const createdOutFiles = outFiles.flatMap((file) => (file.created ? [file.path] : []));
-          if (autoDeleteMergedSegments) await tryDeleteFiles(createdOutFiles);
+          if (autoDeleteMergedSegments && mergedResult.created) await tryDeleteFiles(createdOutFiles);
         }
 
-        if (!enableOverwriteOutput) {
-          warnings.add(
-            i18n.t(
-              'Overwrite output setting is disabled and some files might have been skipped.',
-            ),
-          );
-        }
+        if (outFiles.some((file) => !file.created)) notices.add(i18n.t('Existing outputs were skipped.'));
         if (!exportConfirmEnabled) {
           notices.add(
             i18n.t(
@@ -3479,25 +3480,28 @@ function App() {
           }
         }
 
-        if (simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
+        if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
 
-        const exportedPaths = willMerge && mergedOutFilePath != null
-          ? [mergedOutFilePath]
-          : outFiles.map((file) => file.path);
-        const [revealPath] = exportedPaths;
+        const exportedPaths = getWrittenExportPaths({ files: outFiles, merged: mergedResult, deletedSegments: autoDeleteMergedSegments && mergedResult?.created === true });
+        const revealPath = exportedPaths[0] ?? mergedOutFilePath ?? outFiles[0]?.path;
         invariant(revealPath != null);
 
-        if (cleanupChoices.cleanupAfterExport) {
+        if (exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport) {
           const newCleanupChoices = cleanupChoices.askForCleanup
             ? await askForCleanupChoices()
             : cleanupChoices;
-          if (newCleanupChoices) await cleanupFiles(newCleanupChoices);
-        } else if (simpleMode && cleanupChoices.closeFile) {
+          if (newCleanupChoices) {
+            await cleanupFiles(newCleanupChoices).catch((error) => {
+              console.warn('Export completed but cleanup failed', error);
+              warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
+            });
+          }
+        } else if (exportedPaths.length > 0 && simpleMode && cleanupChoices.closeFile) {
           closeCurrentFileAfterExport();
         }
 
         if (!hideAllNotifications) {
-          showOsNotification(i18n.t('Export finished'));
+          showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
           openCutFinishedDialog({
             filePath: revealPath,
             warnings: [...warnings],
@@ -3506,8 +3510,8 @@ function App() {
           });
         }
 
-        setExportCount((c) => c + 1);
-        setCurrentFileExportCount((c) => c + 1);
+        setExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
+        setCurrentFileExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
         emitEvent({ eventName: 'export-complete', paths: exportedPaths });
         return;
       }
@@ -3580,6 +3584,7 @@ function App() {
       });
 
       let mergedOutFilePath: string | undefined;
+      let mergedResult: ExportedFile | undefined;
 
       if (willMerge) {
         console.log(
@@ -3611,7 +3616,7 @@ function App() {
         invariant(fileName != null);
         mergedOutFilePath = getOutPath({ customOutDir, filePath, fileName });
 
-        await concatCutSegments({
+        mergedResult = await concatCutSegments({
           customOutDir,
           outFormat: fileFormat,
           segmentPaths: outFiles.map((f) => f.path),
@@ -3626,16 +3631,10 @@ function App() {
 
         // don't delete existing files that were not created by losslesscut now (due to overwrite disabled) https://github.com/mifi/lossless-cut/issues/2436
         const createdOutFiles = outFiles.flatMap((f) => (f.created ? [f.path] : []));
-        if (autoDeleteMergedSegments) await tryDeleteFiles(createdOutFiles);
+        if (autoDeleteMergedSegments && mergedResult.created) await tryDeleteFiles(createdOutFiles);
       }
 
-      if (!enableOverwriteOutput) {
-        warnings.add(
-          i18n.t(
-            'Overwrite output setting is disabled and some files might have been skipped.',
-          ),
-        );
-      }
+      if (outFiles.some((file) => !file.created)) notices.add(i18n.t('Existing outputs were skipped.'));
 
       if (!exportConfirmEnabled) {
         notices.add(
@@ -3647,7 +3646,7 @@ function App() {
 
       invariant(mainFileFormat != null);
       // https://github.com/mifi/lossless-cut/issues/329
-      if (isIphoneHevc(mainFileFormat, mainStreams)) {
+      if ((outFiles.some((file) => file.created) || mergedResult?.created) && isIphoneHevc(mainFileFormat, mainStreams)) {
         warnings.add(
           i18n.t(
             'There is a known issue with cutting iPhone HEVC videos. The output file may not work in all players.',
@@ -3656,7 +3655,7 @@ function App() {
       }
 
       // https://github.com/mifi/lossless-cut/issues/280
-      if (!ffmpegExperimental && isProblematicAvc1(fileFormat, mainStreams)) {
+      if ((outFiles.some((file) => file.created) || mergedResult?.created) && !ffmpegExperimental && isProblematicAvc1(fileFormat, mainStreams)) {
         warnings.add(
           i18n.t(
             'There is a known problem with this file type, and the output might not be playable. You can work around this problem by enabling the "Experimental flag" under Settings.',
@@ -3685,29 +3684,32 @@ function App() {
         }
       }
 
-      if (areWeCutting) notices.add(i18n.t('Cutpoints may be inaccurate.'));
+      if (outFiles.some((file) => file.created) && areWeCutting) notices.add(i18n.t('Cutpoints may be inaccurate.'));
 
-      if (simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
+      if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
 
       // Note: this should be after cleanup, so we don't accidentally open two dialogs at the same time, leading to error *and* success dialog simultaneously https://github.com/mifi/lossless-cut/issues/2609
-      const exportedPaths = willMerge && mergedOutFilePath != null
-        ? [mergedOutFilePath]
-        : outFiles.map((f) => f.path);
-      const [revealPath] = exportedPaths;
+      const exportedPaths = getWrittenExportPaths({ files: outFiles, merged: mergedResult, deletedSegments: autoDeleteMergedSegments && mergedResult?.created === true });
+      const revealPath = exportedPaths[0] ?? mergedOutFilePath ?? outFiles[0]?.path;
       invariant(revealPath != null);
 
-      if (cleanupChoices.cleanupAfterExport) {
+      if (exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport) {
         const newCleanupChoices = cleanupChoices.askForCleanup
           ? await askForCleanupChoices()
           : cleanupChoices;
         // only if not canceled
-        if (newCleanupChoices) await cleanupFiles(newCleanupChoices);
-      } else if (simpleMode && cleanupChoices.closeFile) {
+        if (newCleanupChoices) {
+          await cleanupFiles(newCleanupChoices).catch((error) => {
+            console.warn('Export completed but cleanup failed', error);
+            warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
+          });
+        }
+      } else if (exportedPaths.length > 0 && simpleMode && cleanupChoices.closeFile) {
         closeCurrentFileAfterExport();
       }
 
       if (!hideAllNotifications) {
-        showOsNotification(i18n.t('Export finished'));
+        showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
         openCutFinishedDialog({
           filePath: revealPath,
           warnings: [...warnings],
@@ -3716,8 +3718,8 @@ function App() {
         });
       }
 
-      setExportCount((c) => c + 1);
-      setCurrentFileExportCount((c) => c + 1);
+      setExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
+      setCurrentFileExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
 
       emitEvent({ eventName: 'export-complete', paths: exportedPaths });
     } catch (err) {
@@ -6329,6 +6331,7 @@ function App() {
                       toggleSegmentsList={toggleSegmentsList}
                       splitCurrentSegment={splitCurrentSegment}
                       selectedSegments={segmentsOrInverse.selected}
+                      fileDuration={fileDuration}
                       onSelectSingleSegment={selectOnlySegment}
                       onToggleSegmentSelected={toggleSegmentSelected}
                       onDeselectAllSegments={deselectAllSegments}

@@ -50,8 +50,13 @@ export default ({ port, onKeyboardAction, onAwaitAppEvent }: {
     assert(eventName != null);
     const abortController = new AbortController();
     abortController.signal.addEventListener('abort', () => logger.info('await-event aborted', eventName));
-    req.on('close', () => abortController.abort());
-    res.json(await onAwaitAppEvent(eventName, abortController.signal));
+    const onClose = () => abortController.abort();
+    res.on('close', onClose);
+    try {
+      res.json(await onAwaitAppEvent(eventName, abortController.signal));
+    } finally {
+      res.off('close', onClose);
+    }
   }));
 
   const server = http.createServer(app);

@@ -35,7 +35,8 @@ export function selectNewerRelease({ currentVersion, releases }: {
     .filter((release) => !release.draft)
     .filter((release) => acceptPrereleases || !release.prerelease)
     .map((release) => parseReleaseVersion(release.tag_name))
-    .filter((version): version is string => version != null);
+    .filter((version): version is string => version != null)
+    .filter((version) => acceptPrereleases || semver.prerelease(version) == null);
 
   const [newest] = candidates.sort(semver.rcompare);
   if (newest == null) return undefined;

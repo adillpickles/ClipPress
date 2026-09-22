@@ -1,5 +1,5 @@
 import type { ReactEventHandler } from 'react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChromiumHTMLVideoElement, PlaybackMode } from '../types';
 import { showPlaybackFailedMessage } from '../swal';
 
@@ -35,6 +35,12 @@ export default ({ filePath }: { filePath: string | undefined }) => {
   // https://kitchen.vibbio.com/blog/optimizing-html5-video-scrubbing/
   const seekingRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const seekToRef = useRef<number>();
+
+  useEffect(() => () => {
+    clearTimeout(seekingRef.current);
+    seekingRef.current = undefined;
+    seekToRef.current = undefined;
+  }, [filePath]);
 
   const smoothSeek = useCallback((seekTo: number) => {
     const video = videoRef.current;
@@ -109,6 +115,7 @@ export default ({ filePath }: { filePath: string | undefined }) => {
   }, [onPlayingChange]);
 
   const onVideoAbort = useCallback(() => {
+    playingRef.current = false;
     setPlaying(false); // we want to preserve current time https://github.com/mifi/lossless-cut/issues/1674#issuecomment-1658937716
     setPlaybackMode(undefined);
   }, [setPlaybackMode]);

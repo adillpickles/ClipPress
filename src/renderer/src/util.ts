@@ -3,7 +3,6 @@ import pMap from 'p-map';
 import prettyBytes from 'pretty-bytes';
 import sortBy from 'lodash/sortBy';
 import type { Options } from 'p-retry';
-import pRetry from 'p-retry';
 import type { ExecaError } from 'execa';
 import confetti from 'canvas-confetti';
 import invariant from 'tiny-invariant';
@@ -12,9 +11,13 @@ import { ffmpegExtractWindow } from './util/constants';
 import type { EnableImportChapters, Html5ifyMode } from '../../common/types';
 import { UserFacingError } from '../errors';
 import type { FFprobeFormat } from '../../common/ffprobe';
+import fsOperationWithRetry from './util/fsRetry';
+import publishFile from './util/publishFile';
+
+export { default as fsOperationWithRetry } from './util/fsRetry';
 
 const { dirname, parse: parsePath, join, extname, isAbsolute, resolve, basename } = window.require('path');
-const { stat, lstat, readdir, utimes, unlink, rename, open, access, constants: { R_OK, W_OK } } = window.require('fs/promises');
+const { stat, lstat, readdir, utimes, unlink, rename, link, copyFile, open, access, constants: { R_OK, W_OK, COPYFILE_EXCL } } = window.require('fs/promises');
 const { ipcRenderer } = window.require('electron');
 const remote = window.require('@electron/remote');
 const { isWindows, isMac } = remote.require('./index.js');
@@ -116,28 +119,17 @@ export async function getPathReadAccessError(pathIn: string) {
   }
 }
 
-// export const testFailFsOperation = isDev;
-export const testFailFsOperation = false;
-
-// Retry because sometimes write operations fail on windows due to the file being locked for various reasons (often anti-virus) #272 #1797 #1704
-export async function fsOperationWithRetry<T>(operation: () => Promise<T>, { signal, retries = 10, minTimeout = 100, maxTimeout = 2000, ...opts }: Options & { retries?: number | undefined, minTimeout?: number | undefined, maxTimeout?: number | undefined } = {}): Promise<T> {
-  return pRetry<T>(async () => {
-    if (testFailFsOperation && Math.random() > 0.3) throw Object.assign(new Error('test delete failure'), { code: 'EPERM' });
-    return operation();
-  }, {
-    retries,
-    signal,
-    minTimeout,
-    maxTimeout,
-    // mimic fs.rm `maxRetries` https://nodejs.org/api/fs.html#fspromisesrmpath-options
-    shouldRetry: (err) => err instanceof Error && 'code' in err && typeof err.code === 'string' && ['EBUSY', 'EMFILE', 'ENFILE', 'EPERM'].includes(err.code),
-    ...opts,
-  } as Options);
-}
-
 // example error: index-18074aaf.js:166 Failed to delete C:\Users\USERNAME\Desktop\RC\New folder\2023-12-27 21-45-22 (GMT p5)-merged-1703933052361-00.01.04.915-00.01.07.424-seg1.mp4 Error: EPERM: operation not permitted, unlink 'C:\Users\USERNAME\Desktop\RC\New folder\2023-12-27 21-45-22 (GMT p5)-merged-1703933052361-00.01.04.915-00.01.07.424-seg1.mp4'
 export const unlinkWithRetry = async (path: string, options?: Options) => fsOperationWithRetry(async () => unlink(path), { ...options, onFailedAttempt: ({ attemptNumber, error }) => console.warn('Retrying delete', path, attemptNumber, error.message) });
 export const renameWithRetry = async (fromPath: string, toPath: string, options?: Options) => fsOperationWithRetry(async () => rename(fromPath, toPath), { ...options, onFailedAttempt: ({ attemptNumber, error }) => console.warn('Retrying rename', fromPath, toPath, attemptNumber, error.message) });
+export async function moveExportWithRetry(fromPath: string, toPath: string, overwrite: boolean) {
+  await publishFile(fromPath, toPath, overwrite, {
+    rename: renameWithRetry,
+    link: (from, to) => fsOperationWithRetry(() => link(from, to)),
+    copyExclusive: (from, to) => fsOperationWithRetry(() => copyFile(from, to, COPYFILE_EXCL)),
+    unlink: unlinkWithRetry,
+  });
+}
 // example error: index-18074aaf.js:160 Error: EPERM: operation not permitted, utime 'C:\Users\USERNAME\Desktop\RC\New folder\2023-12-27 21-45-22 (GMT p5)-merged-1703933052361-cut-merged-1703933070237.mp4'
 export const utimesWithRetry = async (path: string, atime: number, mtime: number, options?: Options) => fsOperationWithRetry(async () => utimes(path, atime, mtime), { ...options, onFailedAttempt: ({ attemptNumber, error }) => console.warn('Retrying utimes', path, attemptNumber, error.message) });
 

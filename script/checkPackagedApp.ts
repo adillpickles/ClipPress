@@ -22,7 +22,9 @@ const defaultUnpackedDirs: Record<string, string> = {
 
 const [dirArg] = process.argv.slice(2);
 const unpackedDir = resolve(dirArg ?? defaultUnpackedDirs[process.platform] ?? 'dist/win-unpacked');
-const resourcesDir = join(unpackedDir, 'resources');
+const resourcesDir = process.platform === 'darwin'
+  ? join(unpackedDir.endsWith('.app') ? unpackedDir : join(unpackedDir, 'ClipPress.app'), 'Contents', 'Resources')
+  : join(unpackedDir, 'resources');
 
 const manifest = await readAsarManifest(join(resourcesDir, 'app.asar'));
 const resourceFileNames = await readdir(resourcesDir);

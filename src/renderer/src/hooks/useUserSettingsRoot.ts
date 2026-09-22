@@ -15,6 +15,7 @@ const animationSettings = systemPreferences.getAnimationSettings();
 
 export default function useUserSettingsRoot() {
   const firstUpdateRef = useRef(true);
+  const [initialSettings] = useState<Config>(() => JSON.parse(configStore.getSnapshotJson()));
 
   function safeSetConfig<T extends keyof Config>(keyValue: Record<T, Config[T]>) {
     const entry = Object.entries(keyValue)[0]!;
@@ -34,15 +35,7 @@ export default function useUserSettingsRoot() {
   }
 
   function safeGetConfig<T extends keyof Config>(key: T) {
-    const rawVal = configStore.get(key);
-    // NOTE: Need to clone any non-primitive in renderer, or it will become very slow
-    // I think because Electron is proxying objects over the bridge
-    const cloned: typeof rawVal = rawVal === undefined
-      ? undefined
-      // eslint-disable-next-line unicorn/prefer-structured-clone
-      : JSON.parse(JSON.stringify(rawVal));
-
-    return cloned;
+    return initialSettings[key];
   }
 
   // From https://reactjs.org/docs/hooks-reference.html#lazy-initial-state
@@ -240,7 +233,7 @@ export default function useUserSettingsRoot() {
 
   const resetKeyBindings = useCallback(() => {
     configStore.reset('keyBindings');
-    setKeyBindings(safeGetConfig('keyBindings'));
+    setKeyBindings((JSON.parse(configStore.getSnapshotJson()) as Config).keyBindings);
   }, []);
 
   // NOTE! This useEffect must be placed after all usages of firstUpdateRef.current (safeSetConfig)
@@ -282,7 +275,7 @@ export default function useUserSettingsRoot() {
 
   // Note: settings are reported when reporting errors
   // 🚨 Must be JSON-serializable!
-  const settings = {
+  const settings = useMemo(() => ({
     lastAppVersion,
     captureFormat,
     recentCustomOutDirs,
@@ -375,9 +368,102 @@ export default function useUserSettingsRoot() {
     sizeLimitMergedNamingMode,
     sizeLimitCutFileTemplate,
     sizeLimitCutMergedFileTemplate,
-  };
+  }), [
+    lastAppVersion,
+    captureFormat,
+    recentCustomOutDirs,
+    enableCustomOutDir,
+    keyframeCut,
+    preserveMetadata,
+    preserveMetadataOnMerge,
+    preserveMovData,
+    preserveChapters,
+    movFastStart,
+    avoidNegativeTs,
+    autoMerge,
+    timecodeFormat,
+    invertCutSegments,
+    autoExportExtraStreams,
+    askBeforeClose,
+    enableImportChapters,
+    enableAskForFileOpenAction,
+    playbackVolume,
+    autoSaveProjectFile,
+    wheelSensitivity,
+    waveformHeight,
+    invertTimelineScroll,
+    language,
+    ffmpegExperimental,
+    hideNotifications,
+    hideOsNotifications,
+    autoLoadTimecode,
+    autoDeleteMergedSegments,
+    exportConfirmEnabled,
+    segmentsToChapters,
+    simpleMode,
+    cutFileTemplate,
+    cutMergedFileTemplate,
+    mergedFileTemplate,
+    keyboardSeekAccFactor,
+    keyboardNormalSeekSpeed,
+    keyboardSeekSpeed2,
+    keyboardSeekSpeed3,
+    treatInputFileModifiedTimeAsStart,
+    treatOutputFileModifiedTimeAsStart,
+    outFormatLocked,
+    safeOutputFileName,
+    enableAutoHtml5ify,
+    segmentsToChaptersOnly,
+    keyBindings,
+    enableSmartCut,
+    customFfPath,
+    storeProjectInWorkingDir,
+    enableOverwriteOutput,
+    mouseWheelZoomModifierKey,
+    mouseWheelFrameSeekModifierKey,
+    mouseWheelKeyframeSeekModifierKey,
+    segmentMouseModifierKey,
+    captureFrameMethod,
+    captureFrameQuality,
+    captureFrameFileNameFormat,
+    enableNativeHevc,
+    enableUpdateCheck,
+    cleanupChoices,
+    allowMultipleInstances,
+    darkMode,
+    preferStrongColors,
+    outputFileNameMinZeroPadding,
+    cutFromAdjustmentFrames,
+    cutToAdjustmentFrames,
+    storeWindowBounds,
+    waveformMode,
+    thumbnailsEnabled,
+    keyframesEnabled,
+    reducedMotion,
+    ffmpegHwaccel,
+    exportEncodeMode,
+    sizeLimitMb,
+    sizeLimitControlMode,
+    sizeLimitPreset,
+    sizeLimitSimpleResolution,
+    sizeLimitSimpleResolutionTouched,
+    sizeLimitSimpleFps,
+    sizeLimitSimpleFpsTouched,
+    sizeLimitAdvancedResolution,
+    sizeLimitAdvancedFps,
+    sizeLimitAdvancedEncoder,
+    sizeLimitAdvancedTwoPass,
+    sizeLimitAdvancedAv1CpuPreset,
+    sizeLimitAdvancedAv1NvencPreset,
+    sizeLimitAdvancedH264CpuPreset,
+    sizeLimitAdvancedH264NvencPreset,
+    sizeLimitSeparateNamingMode,
+    sizeLimitMergedNamingMode,
+    sizeLimitCutFileTemplate,
+    sizeLimitCutMergedFileTemplate,
+  ]);
 
-  return {
+  return useMemo(() => ({
     settings,
 
     springAnimation,
@@ -478,7 +564,7 @@ export default function useUserSettingsRoot() {
     setSizeLimitMergedNamingMode,
     setSizeLimitCutFileTemplate,
     setSizeLimitCutMergedFileTemplate,
-  };
+  }), [settings, springAnimation, customOutDir, setCustomOutDir, resetKeyBindings, toggleDarkMode, prefersReducedMotion]);
 }
 
 export type UserSettingsRoot = ReturnType<typeof useUserSettingsRoot>;

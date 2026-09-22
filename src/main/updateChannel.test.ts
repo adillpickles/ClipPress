@@ -88,6 +88,9 @@ describe('selectNewerRelease', () => {
   it('handles an empty release list', () => {
     expect(selectNewerRelease({ currentVersion: '0.1.0-beta.1', releases: [] })).toBeUndefined();
   });
+  it('keeps stable users off prerelease tags even if the release flag is missing', () => {
+    expect(selectNewerRelease({ currentVersion: '0.1.0', releases: [{ tag_name: 'v0.2.0-beta.1' }] })).toBeUndefined();
+  });
 
   it('gives up rather than guessing when the running version is not a version', () => {
     expect(selectNewerRelease({ currentVersion: 'dev', releases: [beta3] })).toBeUndefined();

@@ -7,11 +7,13 @@ import {
   makeSourceSafeFileNames,
 } from './sourcePathProtection';
 import { UserFacingError } from '../../errors';
+import findSourceFileCollision from '../../../common/sourceFileIdentity';
 
 export type { SourceSafeFileNameAdjustment } from './sourcePathProtection';
 export { getMergeProtectedPaths } from './sourcePathProtection';
 
 const path: PlatformPath = window.require('path');
+const { stat } = window.require('fs/promises');
 
 /**
  * Renderer-bound wrappers around the pure helpers in `sourcePathProtection`, so callers
@@ -41,12 +43,13 @@ export function makeSafeOutFileNames({ fileNames, outputDir, protectedPaths }: {
  * than silently repairing the name: at this point we no longer know which of the layers
  * above is broken, and continuing risks destroying the user's original file.
  */
-export function assertOutPathsNotSource({ outPaths, protectedPaths, message }: {
+export async function assertOutPathsNotSource({ outPaths, protectedPaths, message }: {
   outPaths: readonly (string | undefined)[],
   protectedPaths: readonly (string | undefined)[],
   message: string,
 }) {
-  const offending = findProtectedSourceCollision({ outPaths, protectedPaths, path });
+  const offending = findProtectedSourceCollision({ outPaths, protectedPaths, path })
+    ?? await findSourceFileCollision({ outPaths, protectedPaths, stat: (filePath) => stat(filePath, { bigint: true }) });
   if (offending != null) {
     console.error('Refusing to export onto a source file', offending, protectedPaths);
     throw new UserFacingError(message);

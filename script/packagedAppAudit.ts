@@ -92,7 +92,7 @@ export const bytesPerMib = 1024 * 1024;
  * actively wrong if it ever did win resolution. `typescript` is a compile-time optional
  * peer of `i18next` that nothing imports at runtime.
  */
-export const disallowedPackagedModules = ['electron', 'typescript'];
+export const disallowedPackagedModules = ['electron', 'typescript', 'electron-devtools-installer', '@electron/get', 'extract-zip', 'node-gyp', 'npmlog'];
 
 /**
  * Generous enough that ordinary dependency growth will not trip it, tight enough that
@@ -147,6 +147,9 @@ export function auditPackagedApp({ manifest, resourceFileNames, platform }: Pack
 
   if (!manifest.entries.some((entry) => entry.path === 'out/main/index.js')) {
     problems.push('app.asar is missing out/main/index.js, so the app has no main process.');
+  }
+  for (const required of ['out/renderer/index.html', 'out/preload/index.cjs', 'LICENSE', 'out/licenses.txt']) {
+    if (!manifest.entries.some((entry) => entry.path === required)) problems.push(`app.asar is missing ${required}.`);
   }
 
   const requiredResources = requiredResourcesByPlatform[platform] ?? [];

@@ -483,33 +483,6 @@ export async function renderThumbnails({ filePath, from, duration, onThumbnail, 
   }, { concurrency: 2 });
 }
 
-export async function extractWaveform({ filePath, outPath }: { filePath: string, outPath: string }) {
-  const numSegs = 10;
-  const duration = 60 * 60;
-  const maxLen = 0.1;
-  const segments = Array.from({ length: numSegs }).fill(undefined).map((_unused, i) => [i * (duration / numSegs), Math.min(duration / numSegs, maxLen)] as const);
-
-  // https://superuser.com/questions/681885/how-can-i-remove-multiple-segments-from-a-video-using-ffmpeg
-  let filter = segments.map(([from, len], i) => `[0:a]atrim=start=${from}:end=${from + len},asetpts=PTS-STARTPTS[a${i}]`).join(';');
-  filter += ';';
-  filter += segments.map((_arr, i) => `[a${i}]`).join('');
-  filter += `concat=n=${segments.length}:v=0:a=1[out]`;
-
-  console.time('ffmpeg');
-  await runFfmpeg([
-    '-i',
-    filePath,
-    '-filter_complex',
-    filter,
-    '-map',
-    '[out]',
-    '-f', 'wav',
-    '-y',
-    outPath,
-  ], undefined, { logCli: false });
-  console.timeEnd('ffmpeg');
-}
-
 export function isIphoneHevc(format: FFprobeFormat, streams: FFprobeStream[]) {
   if (!streams.some((s) => s.codec_name === 'hevc')) return false;
   const makeTag = format.tags && format.tags['com.apple.quicktime.make'];

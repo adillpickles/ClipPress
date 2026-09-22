@@ -219,23 +219,13 @@ table.options {
   box-sizing: border-box;
 }
 
-table.options {
-  width: 100%;
-}
-
-table.options td:first-child {
-  width: 32%;
-}
-
 table.options td:nth-child(2) {
   text-align: right;
-  width: auto;
   min-width: 0;
 }
 
 table.options td:last-child {
   text-align: center;
-  width: 1.7em;
 }
 
 table.options td {
@@ -252,6 +242,7 @@ table.options select,
 table.options input,
 table.options button {
   max-width: 100%;
+  box-sizing: border-box;
 }
 
 table.options td:nth-child(2) > div {

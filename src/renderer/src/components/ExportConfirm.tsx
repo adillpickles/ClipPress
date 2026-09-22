@@ -474,6 +474,7 @@ function ExportConfirm({
     setSizeLimitCutFileTemplate,
     sizeLimitCutMergedFileTemplate,
     setSizeLimitCutMergedFileTemplate,
+    customFfPath,
   } = useUserSettings();
 
   const [showAdvancedOverride, setShowAdvancedOverride] = useState<
@@ -535,7 +536,7 @@ function ExportConfirm({
     return () => {
       cancelled = true;
     };
-  }, [isSizeLimited]);
+  }, [customFfPath, isSizeLimited]);
 
   useEffect(() => {
     if (!isSizeLimited) return;
@@ -1736,23 +1737,7 @@ function ExportConfirm({
               )}
             </section>
           </div>
-        ) : (
-          <section className={styles['sectionCard']}>
-            <div className={styles['sectionHeader']}>
-              <div>
-                <div className={styles['sectionEyebrow']}>
-                  {t('Advanced export')}
-                </div>
-                <div className={styles['sectionTitle']}>
-                  {t('Direct codec, container, and export controls')}
-                </div>
-              </div>
-            </div>
-            <div className={styles['helperText']}>
-              {t('Advanced mode foregrounds direct export controls. Simple presets stay in Simple mode so this view can stay focused on explicit options.')}
-            </div>
-          </section>
-        )}
+        ) : null}
 
         <div className={styles['summaryGrid']}>
           <section
@@ -1928,23 +1913,15 @@ function ExportConfirm({
         </div>
 
         {shouldRenderAdvancedTable && (
-          <>
-            {!simpleMode && (
-              <div className={styles['helperText']} style={{ marginBottom: '.9rem' }}>
-                {t('Advanced mode keeps all export controls available and prioritizes direct format choices over curated presets.')}
-              </div>
-            )}
-            <div className={styles['advancedTableWrap']}>
-              <table className={styles['options']}>
-                <tbody>
-                  <tr>
-                    <td colSpan={2}>
-                      {notices.generic.map((notice) => renderNotice(notice, {}))}
-                    </td>
-                    <td />
-                  </tr>
-
-                  {segmentsOrInverse.selected.length
+          <div className={styles['advancedTableWrap']}>
+            <table className={styles['options']}>
+              <colgroup>
+                <col style={{ width: '32%' }} />
+                <col />
+                <col style={{ width: '1.7em' }} />
+              </colgroup>
+              <tbody>
+                {segmentsOrInverse.selected.length
                   !== segmentsOrInverse.all.length && (
                   <tr>
                     <td colSpan={2}>
@@ -1959,9 +1936,9 @@ function ExportConfirm({
                     </td>
                     <td />
                   </tr>
-                  )}
+                )}
 
-                  {!simpleMode && (
+                {!simpleMode && (
                   <tr>
                     <td>{t('Export type')}</td>
                     <td>
@@ -1984,9 +1961,9 @@ function ExportConfirm({
                       <HelpIcon onClick={onExportEncodeModeHelpPress} />
                     </td>
                   </tr>
-                  )}
+                )}
 
-                  {isSizeLimited && (
+                {isSizeLimited && (
                   <>
                     {!simpleMode && (
                       <tr>
@@ -2283,9 +2260,9 @@ function ExportConfirm({
                       </tr>
                     )}
                   </>
-                  )}
+                )}
 
-                  {!simpleMode && (
+                {!simpleMode && (
                   <tr>
                     <td>
                       {segmentsOrInverse.selected.length > 1
@@ -2309,23 +2286,23 @@ function ExportConfirm({
                       ) ?? <HelpIcon onClick={onExportModeHelpPress} />}
                     </td>
                   </tr>
-                  )}
+                )}
 
-                  <tr>
-                    <td>{t('Output container format:')}</td>
-                    <td>
-                      {isSizeLimited ? (
-                        <HighlightedText>mp4 - MPEG-4 Part 14</HighlightedText>
-                      ) : (
-                        renderOutFmt({ height: '1.8em', maxWidth: 150 })
-                      )}
-                    </td>
-                    <td>
-                      <HelpIcon onClick={onOutFmtHelpPress} />
-                    </td>
-                  </tr>
+                <tr>
+                  <td>{t('Output container format:')}</td>
+                  <td>
+                    {isSizeLimited ? (
+                      <HighlightedText>mp4 - MPEG-4 Part 14</HighlightedText>
+                    ) : (
+                      renderOutFmt({ height: '1.8em', maxWidth: 150 })
+                    )}
+                  </td>
+                  <td>
+                    <HelpIcon onClick={onOutFmtHelpPress} />
+                  </td>
+                </tr>
 
-                  {!simpleMode && (
+                {!simpleMode && (
                   <>
                     <tr>
                       <td>
@@ -2456,24 +2433,24 @@ function ExportConfirm({
                       </tr>
                     )}
                   </>
-                  )}
+                )}
 
-                  <tr>
-                    <td>
-                      {t('Overwrite existing files')}
-                      {renderNotice(notices.specific['overwriteOutput'], {})}
-                    </td>
-                    <td>
-                      <Switch
-                        checked={enableOverwriteOutput}
-                        onCheckedChange={setEnableOverwriteOutput}
-                      />
-                    </td>
-                    <td>
-                      {renderNoticeIcon(
-                        notices.specific['overwriteOutput'],
-                        rightIconStyle,
-                      ) ?? (
+                <tr>
+                  <td>
+                    {t('Overwrite existing files')}
+                    {renderNotice(notices.specific['overwriteOutput'], {})}
+                  </td>
+                  <td>
+                    <Switch
+                      checked={enableOverwriteOutput}
+                      onCheckedChange={setEnableOverwriteOutput}
+                    />
+                  </td>
+                  <td>
+                    {renderNoticeIcon(
+                      notices.specific['overwriteOutput'],
+                      rightIconStyle,
+                    ) ?? (
                       <HelpIcon
                         onClick={() => showHelpText({
                           text: t(
@@ -2481,11 +2458,11 @@ function ExportConfirm({
                           ),
                         })}
                       />
-                      )}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                    )}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
 
               {!isSizeLimited && (
               <>
@@ -2494,6 +2471,11 @@ function ExportConfirm({
                 </h3>
 
                 <table className={styles['options']}>
+                  <colgroup>
+                    <col style={{ width: '32%' }} />
+                    <col />
+                    <col style={{ width: '1.7em' }} />
+                  </colgroup>
                   <tbody>
                     <tr>
                       <td
@@ -2831,8 +2813,7 @@ function ExportConfirm({
                 </table>
               </>
               )}
-            </div>
-          </>
+          </div>
         )}
       </div>
     </ExportSheet>

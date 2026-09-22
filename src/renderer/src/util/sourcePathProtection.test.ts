@@ -237,6 +237,17 @@ describe('a merge may not overwrite any of its inputs', () => {
   });
 });
 
+it('refuses to invent an unchecked name when all candidates are reserved', () => {
+  expect(() => makeSourceSafeFileName({
+    fileName: 'source.mp4', outputDir: '/videos', protectedPaths: ['/videos/source.mp4'], path: posix, isTaken: () => true,
+  })).toThrow('Unable to choose a source-safe output filename');
+});
+
+it('reserves equivalent normalized names within the same export', () => {
+  const result = makeSourceSafeFileNames({ fileNames: ['folder/../clip.mp4', 'clip.mp4'], outputDir: '/videos', protectedPaths: [], path: posix });
+  expect(result.fileNames.map((name) => posix.join('/videos', name))).toEqual(['/videos/clip.mp4', '/videos/clip (clip).mp4']);
+});
+
 describe('findProtectedSourceCollision', () => {
   const protectedPaths = ['/videos/a.mp4', '/videos/b.mp4'];
 

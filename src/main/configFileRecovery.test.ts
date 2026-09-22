@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
-import { getConfigFileState, getCorruptConfigBackupPath } from './configFileRecovery.ts';
+import { getConfigFileState, getCorruptConfigBackupPath, preserveUnreadableConfig, readStoredConfigKeys } from './configFileRecovery.ts';
 
 describe('getConfigFileState', () => {
   it('accepts a settings object', () => {
@@ -38,6 +41,33 @@ describe('getConfigFileState', () => {
     expect(getConfigFileState('42')).toBe('unreadable');
     expect(getConfigFileState('null')).toBe('unreadable');
   });
+});
+
+it.each(['{"truncated":', 'null', '[1,2,3]', '42'])('preserves %s verbatim and allows a clean settings store', async (content) => {
+  const dir = await mkdtemp(join(tmpdir(), 'clippress-config-'));
+  try {
+    const path = join(dir, 'config.json');
+    await writeFile(path, content);
+    const result = await preserveUnreadableConfig(path);
+    expect(result).toBeDefined();
+    await expect(readFile(result!.backupPath, 'utf8')).resolves.toBe(content);
+    await expect(readFile(path)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(preserveUnreadableConfig(path)).resolves.toBeUndefined();
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+it('distinguishes persisted naming choices from missing settings before defaults are applied', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'clippress-config-keys-'));
+  try {
+    const path = join(dir, 'config.json');
+    await expect(readStoredConfigKeys(path)).resolves.toEqual(new Set());
+    await writeFile(path, JSON.stringify({ outSegTemplate: 'my-clip.mp4', sizeLimitSeparateNamingMode: 'auto' }));
+    await expect(readStoredConfigKeys(path)).resolves.toEqual(new Set(['outSegTemplate', 'sizeLimitSeparateNamingMode']));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 describe('getCorruptConfigBackupPath', () => {

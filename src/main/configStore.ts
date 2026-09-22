@@ -3,11 +3,11 @@ import Store from 'electron-store';
 import electron from 'electron';
 import { join, dirname } from 'node:path';
 import assert from 'node:assert';
-import { copyFile, readFile } from 'node:fs/promises';
+import { copyFile } from 'node:fs/promises';
 
 import type { KeyBinding, Config } from '../common/types.js';
 import logger from './logger.js';
-import { getConfigFileState, getCorruptConfigBackupPath } from './configFileRecovery.js';
+import { preserveUnreadableConfig, readStoredConfigKeys } from './configFileRecovery.js';
 import { isWindows, pathExists } from './util.js';
 import { fallbackLng } from './i18nCommon.js';
 
@@ -224,6 +224,9 @@ export function get<T extends keyof Config>(key: T): Config[T] {
   return store.get(key);
 }
 
+/** One disk read and one bridge response, with no remote object proxies in the renderer. */
+export const getSnapshotJson = () => JSON.stringify(store.store);
+
 export function set<T extends keyof Config>(key: T, val: Config[T]) {
   if (val === undefined) store.delete(key);
   else store.set(key, val);
@@ -238,6 +241,7 @@ async function tryCreateStore({ customStoragePath }: { customStoragePath: string
     try {
       store = new Store({
         defaults,
+        clearInvalidConfig: false,
         ...(customStoragePath != null ? { cwd: customStoragePath } : {}),
       });
       return;
@@ -286,7 +290,8 @@ let preservedCorruptConfig: PreservedCorruptConfig | undefined;
 export const getPreservedCorruptConfig = () => preservedCorruptConfig;
 
 /**
- * Takes a copy of a config file we cannot read, before electron-store throws it away.
+ * Preserves unreadable settings before opening the store, which is configured to refuse
+ * invalid JSON instead of silently clearing it.
  *
  * electron-store's `clearInvalidConfig` default means a config file that does not parse
  * is silently replaced by an empty one, and the next `set()` writes over it for good. We
@@ -294,21 +299,9 @@ export const getPreservedCorruptConfig = () => preservedCorruptConfig;
  * can make sure the file itself still exists and say so.
  */
 async function preserveUnreadableConfigFile() {
-  const configPath = getConfigPath();
-
-  try {
-    const content = await readFile(configPath, 'utf8');
-    if (getConfigFileState(content) !== 'unreadable') return;
-
-    const backupPath = getCorruptConfigBackupPath({ configPath, now: new Date() });
-    await copyFile(configPath, backupPath);
-    preservedCorruptConfig = { configPath, backupPath };
-    logger.error(`Config file could not be read; kept a copy at ${backupPath} and starting from defaults`);
-  } catch (err) {
-    // A missing config file is the normal first run. Anything else (no permission, a
-    // directory in its place) is for the store itself to fail on and report properly.
-    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return;
-    logger.error('Failed to check the config file before loading it', err);
+  preservedCorruptConfig = await preserveUnreadableConfig(getConfigPath());
+  if (preservedCorruptConfig != null) {
+    logger.error(`Config file could not be read; kept a copy at ${preservedCorruptConfig.backupPath} and starting from defaults`);
   }
 }
 
@@ -317,6 +310,7 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
   if (customStoragePath) logger.info('customStoragePath', customStoragePath);
 
   await preserveUnreadableConfigFile();
+  const storedKeys = await readStoredConfigKeys(getConfigPath());
 
   await tryCreateStore({ customStoragePath });
 
@@ -342,12 +336,13 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     set('enableCustomOutDir', customOutDir != null);
   }
 
-  const hasSizeLimitControlMode = store.has('sizeLimitControlMode');
-  const hasSizeLimitPreset = store.has('sizeLimitPreset');
-  const hasSizeLimitAdvancedEncoder = store.has('sizeLimitAdvancedEncoder');
-  const hasSizeLimitAdvancedTwoPass = store.has('sizeLimitAdvancedTwoPass');
+  const hasSizeLimitControlMode = storedKeys.has('sizeLimitControlMode');
+  const hasSizeLimitPreset = storedKeys.has('sizeLimitPreset');
+  const hasSizeLimitAdvancedEncoder = storedKeys.has('sizeLimitAdvancedEncoder');
+  const hasSizeLimitAdvancedTwoPass = storedKeys.has('sizeLimitAdvancedTwoPass');
 
-  if (!hasSizeLimitControlMode || !hasSizeLimitPreset || !hasSizeLimitAdvancedEncoder || !hasSizeLimitAdvancedTwoPass) {
+  const hasLegacySizeLimitSettings = storedKeys.has('sizeLimitCodec') || storedKeys.has('sizeLimitQuality');
+  if (hasLegacySizeLimitSettings && (!hasSizeLimitControlMode || !hasSizeLimitPreset || !hasSizeLimitAdvancedEncoder || !hasSizeLimitAdvancedTwoPass)) {
     logger.info('Migrating size-limited export mode settings');
 
     const sizeLimitCodec = store.get('sizeLimitCodec');
@@ -388,8 +383,8 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
   if (!store.has('sizeLimitAdvancedH264CpuPreset')) set('sizeLimitAdvancedH264CpuPreset', defaults.sizeLimitAdvancedH264CpuPreset);
   if (!store.has('sizeLimitAdvancedH264NvencPreset')) set('sizeLimitAdvancedH264NvencPreset', defaults.sizeLimitAdvancedH264NvencPreset);
 
-  const hasSizeLimitSeparateNamingMode = store.has('sizeLimitSeparateNamingMode');
-  const hasSizeLimitMergedNamingMode = store.has('sizeLimitMergedNamingMode');
+  const hasSizeLimitSeparateNamingMode = storedKeys.has('sizeLimitSeparateNamingMode');
+  const hasSizeLimitMergedNamingMode = storedKeys.has('sizeLimitMergedNamingMode');
 
   if (!hasSizeLimitSeparateNamingMode || !hasSizeLimitMergedNamingMode) {
     logger.info('Migrating size-limited export naming mode settings');
@@ -409,6 +404,14 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     if (!hasSizeLimitMergedNamingMode) {
       set('sizeLimitMergedNamingMode', legacyMergedTemplate != null && legacyMergedTemplate !== legacyDefaultCutMergedFileTemplate ? 'custom_template' : 'auto');
     }
+  }
+
+  // Preserve templates saved before size-limited and lossless naming were separated.
+  if (store.get('sizeLimitCutFileTemplate') == null && store.get('sizeLimitSeparateNamingMode') === 'custom_template') {
+    set('sizeLimitCutFileTemplate', store.get('outSegTemplate'));
+  }
+  if (store.get('sizeLimitCutMergedFileTemplate') == null && store.get('sizeLimitMergedNamingMode') === 'custom_template') {
+    set('sizeLimitCutMergedFileTemplate', store.get('mergedFileTemplate'));
   }
 
   // const configVersion: number = store.get('version');

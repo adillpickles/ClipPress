@@ -11,6 +11,7 @@ export function createMediaSourceStream(params: Parameters<typeof createMediaSou
   const abort = () => abortController.abort();
 
   async function attemptCreateProcess({ forceColorspace }: { forceColorspace?: boolean } = {}) {
+    abortController.signal.throwIfAborted();
     const { videoStreamIndex, audioStreamIndexes, seekTo } = params;
 
     logger.info('Starting preview process', { videoStreamIndex, audioStreamIndexes, seekTo });
@@ -53,10 +54,20 @@ export function createMediaSourceStream(params: Parameters<typeof createMediaSou
     logger.info('First chunk received');
 
     const readChunk = async () => new Promise<Buffer | null>((resolve, reject) => {
+      if (abortController.signal.aborted) {
+        firstChunk = undefined;
+        resolve(null);
+        return;
+      }
       if (firstChunk) {
         logger.info('Client read first chunk');
         resolve(firstChunk);
         firstChunk = undefined;
+        return;
+      }
+
+      if (stdout.destroyed || stdout.readableEnded) {
+        resolve(null);
         return;
       }
 

@@ -584,3 +584,14 @@ export function getNextSizeLimitedRetryStep({ plan, previousAttempt, previousOut
     strategyId: plan.strategyId,
   });
 }
+
+/** A failed top-up must fall back to the usable file, without another shrinking encode. */
+export function getNextSizeLimitedAttempt(args: {
+  plan: SizeLimitedPlan,
+  previousAttempt: SizeLimitedRetryStep,
+  previousOutputSize: number,
+  hasUnderCapResult: boolean,
+}) {
+  if (args.previousOutputSize <= args.plan.hardTargetBytes) return getNextSizeLimitedUndershootStep(args);
+  return args.hasUnderCapResult ? undefined : getNextSizeLimitedRetryStep(args);
+}

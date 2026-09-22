@@ -8,7 +8,7 @@ import pMap from 'p-map';
 
 import { formatDuration } from '../util/duration';
 import { parseYouTube } from '../edlFormats';
-import { appPath, isMasBuild, isStoreBuild, isWindows, isWindowsStoreBuild, testFailFsOperation, trashFile, unlinkWithRetry } from '../util';
+import { appPath, isMasBuild, isStoreBuild, isWindows, isWindowsStoreBuild, trashFile, unlinkWithRetry } from '../util';
 import type { ParseTimecode } from '../types';
 import type { FindKeyframeMode } from '../ffmpeg';
 import { dangerColor, primaryColor, warningColor } from '../colors';
@@ -612,7 +612,6 @@ export async function deleteFiles({ paths, deleteIfTrashFails, signal }: { paths
   // eslint-disable-next-line no-restricted-syntax
   for (const path of paths) {
     try {
-      if (testFailFsOperation) throw new Error('test trash failure');
       // eslint-disable-next-line no-await-in-loop
       await trashFile(path);
       signal.throwIfAborted();

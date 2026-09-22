@@ -34,10 +34,6 @@ function ExportSheet({
           className={styles['sheet']}
           transition={{ duration: 0.3, ease: ['easeOut'] }}
         >
-          <div className={styles['floatingAction']}>
-            {renderButton()}
-          </div>
-
           <div className={styles['box']} style={{ width }}>
             <div className={styles['header']}>
               <div>
@@ -48,6 +44,7 @@ function ExportSheet({
               </div>
 
               <div className={styles['headerActions']}>
+                {renderButton()}
                 <CloseButton type="submit" style={{ position: 'static', margin: 0 }} onClick={onClosePress} />
               </div>
             </div>

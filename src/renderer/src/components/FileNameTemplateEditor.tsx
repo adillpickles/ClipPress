@@ -321,6 +321,7 @@ function FileNameTemplateEditor(opts: {
               onClick={handleSampleClick}
               style={{
                 width: '100%',
+                boxSizing: 'border-box',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
@@ -364,7 +365,7 @@ function FileNameTemplateEditor(opts: {
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto auto', alignItems: 'center', marginBottom: '.35rem', gap: '.55rem' }}>
-                <TextInput ref={inputRef} onChange={onTextChange} value={text} autoComplete="off" autoCapitalize="off" autoCorrect="off" style={{ width: '100%', padding: '.72rem .8rem', fontSize: '.96rem', borderRadius: '.9rem' }} />
+                <TextInput ref={inputRef} onChange={onTextChange} value={text} autoComplete="off" autoCapitalize="off" autoCorrect="off" style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '.72rem .8rem', fontSize: '.96rem', borderRadius: '.9rem' }} />
 
                 {generated != null && generated.fileNames.length > 1 && (
                   <Dialog.Root>

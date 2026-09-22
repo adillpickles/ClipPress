@@ -13,6 +13,9 @@ const mainEntry: AsarEntry = { path: 'out/main/index.js', size: 80_000 };
 
 const healthyEntries: AsarEntry[] = [
   mainEntry,
+  { path: 'out/preload/index.cjs', size: 2_000 },
+  { path: 'LICENSE', size: 10_000 },
+  { path: 'out/licenses.txt', size: 100_000 },
   { path: 'out/renderer/index.html', size: 2_000 },
   { path: 'package.json', size: 1_500 },
   { path: 'node_modules/zod/index.js', size: 4_000_000 },
@@ -56,7 +59,7 @@ describe('auditPackagedApp', () => {
     expect(audit(healthyEntries).problems).toEqual([]);
   });
 
-  it.each(['electron', 'typescript'])('rejects the build-time-only package %s', (name) => {
+  it.each(['electron', 'typescript', 'electron-devtools-installer', '@electron/get', 'extract-zip', 'node-gyp', 'npmlog'])('rejects the build-time-only package %s', (name) => {
     const result = audit([...healthyEntries, { path: `node_modules/${name}/index.js`, size: 1_000 }]);
     expect(result.problems).toHaveLength(1);
     expect(result.problems[0]).toContain(name);

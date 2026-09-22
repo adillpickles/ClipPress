@@ -9,18 +9,8 @@ import type mimeTypes from 'mime-types';
 import type i18nextFsBackend from 'i18next-fs-backend';
 import type cueParser from 'cue-parser';
 
-import '@fontsource/open-sans/300.css';
-import '@fontsource/open-sans/300-italic.css';
-import '@fontsource/open-sans/400.css';
-import '@fontsource/open-sans/400-italic.css';
-import '@fontsource/open-sans/500.css';
-import '@fontsource/open-sans/500-italic.css';
-import '@fontsource/open-sans/600.css';
-import '@fontsource/open-sans/600-italic.css';
-import '@fontsource/open-sans/700.css';
-import '@fontsource/open-sans/700-italic.css';
-import '@fontsource/open-sans/800.css';
-import '@fontsource/open-sans/800-italic.css';
+import '@fontsource-variable/open-sans';
+import '@fontsource-variable/open-sans/wght-italic.css';
 
 import type { KeyboardLayoutMap } from './types';
 import App from './App';

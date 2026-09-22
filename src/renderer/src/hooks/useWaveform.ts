@@ -1,15 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import sortBy from 'lodash/sortBy';
 import invariant from 'tiny-invariant';
 
 import { renderWaveformPng, safeCreateBlob } from '../ffmpeg';
 import type { OverviewWaveform, WaveformSlice } from '../types';
 import type { FFprobeStream } from '../../../common/ffprobe';
 
-
 const maxWaveforms = 100;
-// const maxWaveforms = 3; // testing
-
 const color = '#ffffff';
 
 export default ({ filePath, relevantTime, fileDuration, waveformEnabled, audioStream, ffmpegExtractWindow }: {
@@ -22,137 +18,78 @@ export default ({ filePath, relevantTime, fileDuration, waveformEnabled, audioSt
 }) => {
   const [waveforms, setWaveforms] = useState<WaveformSlice[]>([]);
   const [overviewWaveform, setOverviewWaveform] = useState<OverviewWaveform>();
-  const waveformsRef = useRef<WaveformSlice[]>();
-
-  useEffect(() => {
-    waveformsRef.current = waveforms;
-  }, [waveforms]);
-
-  useEffect(() => {
-    waveformsRef.current = [];
-    setWaveforms([]);
-    setOverviewWaveform(undefined);
-  }, [filePath, audioStream, setWaveforms]);
-
+  const cache = useRef<WaveformSlice[]>([]);
+  const overviewRequest = useRef<AbortController>();
+  const streamIndex = audioStream?.index;
   const waveformStartTime = Math.floor(relevantTime / ffmpegExtractWindow) * ffmpegExtractWindow;
 
-  const waveformStartTimeRef = useRef(waveformStartTime);
+  useEffect(() => {
+    setWaveforms([]);
+    setOverviewWaveform(undefined);
+    return () => {
+      overviewRequest.current?.abort();
+      cache.current.forEach((waveform) => {
+        if (waveform.url != null) URL.revokeObjectURL(waveform.url);
+      });
+      cache.current = [];
+    };
+  }, [filePath, streamIndex, ffmpegExtractWindow]);
 
   useEffect(() => {
-    waveformStartTimeRef.current = waveformStartTime;
-  }, [waveformStartTime]);
-
-  useEffect(() => {
-    let aborted = false;
+    if (filePath == null || fileDuration == null || streamIndex == null || !waveformEnabled || ffmpegExtractWindow <= 0) return undefined;
+    const controller = new AbortController();
 
     (async () => {
-      if (!filePath || fileDuration == null || !audioStream || !waveformEnabled) {
-        return;
-      }
+      const times = [waveformStartTime, waveformStartTime + ffmpegExtractWindow, waveformStartTime - ffmpegExtractWindow]
+        .filter((time) => time >= 0 && time < fileDuration);
 
-      while (!aborted) {
-        const times = [
-          waveformStartTimeRef.current,
-          waveformStartTimeRef.current + ffmpegExtractWindow,
-          waveformStartTimeRef.current - ffmpegExtractWindow,
-        ];
-
-        for (const time of times) {
-          const safeExtractDuration = Math.min(time + ffmpegExtractWindow, fileDuration) - time;
-
-          const alreadyHaveWaveformAtTime = (waveformsRef.current ?? []).some((waveform) => waveform.from === time);
-          if (!alreadyHaveWaveformAtTime && time < fileDuration) {
-            try {
-              const promise = renderWaveformPng({ filePath, start: time, duration: safeExtractDuration, color, streamIndex: audioStream.index, timeout: 10000 });
-
-              setWaveforms((currentWaveforms) => {
-                const waveformsByCreatedAt = sortBy(currentWaveforms, 'createdAt');
-                return [
-                  // If too many waveforms, cleanup old
-                  ...(currentWaveforms.length >= maxWaveforms ? waveformsByCreatedAt.slice(1) : waveformsByCreatedAt),
-                  // Add new waveform
-                  {
-                    from: time,
-                    to: time + safeExtractDuration,
-                    duration: safeExtractDuration,
-                    createdAt: new Date(),
-                  },
-                ];
-              });
-
-              const { buffer } = await promise;
-
-              if (aborted) {
-                // remove unfinished waveform
-                setWaveforms((currentWaveforms) => currentWaveforms.filter((w) => w.from !== time));
-                return;
-              }
-
-              setWaveforms((currentWaveforms) => currentWaveforms.map((w) => (
-                w.from === time ? {
-                  ...w,
-                  url: URL.createObjectURL(safeCreateBlob(buffer, { type: 'image/png' })),
-                } : w
-              )));
-            } catch (err) {
-              console.error('Failed to render waveform', err);
-              setWaveforms((currentWaveforms) => currentWaveforms.map((w) => (
-                w.from === time ? {
-                  ...w,
-                  failed: true,
-                } : w
-              )));
-            }
+      for (const time of times) {
+        if (controller.signal.aborted) return;
+        if (!cache.current.some((waveform) => waveform.from === time)) {
+          const duration = Math.min(ffmpegExtractWindow, fileDuration - time);
+          const waveform: WaveformSlice = { from: time, to: time + duration, duration, createdAt: new Date() };
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            const { buffer } = await renderWaveformPng({ filePath, start: time, duration, color, streamIndex, timeout: 10000, signal: controller.signal });
+            if (controller.signal.aborted) return;
+            waveform.url = URL.createObjectURL(safeCreateBlob(buffer, { type: 'image/png' }));
+          } catch (error) {
+            if (controller.signal.aborted) return;
+            console.error('Failed to render waveform', error);
+            waveform.failed = true;
           }
-        }
 
-        // could be problematic if we spawn ffmpeg processes too often, so throttle it
-        await new Promise((r) => setTimeout(r, 100));
+          if (cache.current.length >= maxWaveforms) {
+            const [removed] = cache.current;
+            cache.current = cache.current.slice(1);
+            if (removed?.url != null) URL.revokeObjectURL(removed.url);
+          }
+          cache.current = [...cache.current, waveform];
+          setWaveforms(cache.current);
+        }
       }
     })();
 
-    return () => {
-      aborted = true;
-    };
-  }, [audioStream, ffmpegExtractWindow, fileDuration, filePath, waveformEnabled]);
-
-  const lastWaveformsRef = useRef<WaveformSlice[]>([]);
-  useEffect(() => {
-    const removedWaveforms = lastWaveformsRef.current.filter((wf) => !waveforms.includes(wf));
-    // Cleanup old
-    // if (removedWaveforms.length > 0) console.log('cleanup waveforms', removedWaveforms.length);
-    removedWaveforms.forEach((waveform) => {
-      if (waveform.url != null) {
-        console.log('Cleanup waveform', waveform.from, waveform.to);
-        URL.revokeObjectURL(waveform.url);
-      }
-    });
-    lastWaveformsRef.current = waveforms;
-  }, [waveforms]);
+    return () => controller.abort();
+  }, [streamIndex, ffmpegExtractWindow, fileDuration, filePath, waveformEnabled, waveformStartTime]);
 
   const renderOverviewWaveform = useCallback(async () => {
-    invariant(filePath != null);
-    invariant(audioStream != null);
-
-    // todo allow actual abort
-    const promise = renderWaveformPng({ filePath, color, streamIndex: audioStream.index, resample: 10000 });
-
-    const { buffer } = await promise;
-
-    setOverviewWaveform({
-      createdAt: new Date(),
-      url: URL.createObjectURL(safeCreateBlob(buffer, { type: 'image/png' })),
-    });
-  }, [audioStream, filePath]);
+    invariant(filePath != null && streamIndex != null);
+    overviewRequest.current?.abort();
+    const controller = new AbortController();
+    overviewRequest.current = controller;
+    try {
+      const { buffer } = await renderWaveformPng({ filePath, color, streamIndex, resample: 10000, signal: controller.signal });
+      if (controller.signal.aborted) return;
+      setOverviewWaveform({ createdAt: new Date(), url: URL.createObjectURL(safeCreateBlob(buffer, { type: 'image/png' })) });
+    } catch (error) {
+      if (!controller.signal.aborted) throw error;
+    }
+  }, [streamIndex, filePath]);
 
   useEffect(() => () => {
-    if (overviewWaveform?.url != null) {
-      console.log('Cleanup overview waveform');
-      URL.revokeObjectURL(overviewWaveform.url);
-    }
+    if (overviewWaveform?.url != null) URL.revokeObjectURL(overviewWaveform.url);
   }, [overviewWaveform]);
-
-  useEffect(() => () => setWaveforms([]), [setWaveforms]);
 
   return { overviewWaveform, waveforms, renderOverviewWaveform };
 };

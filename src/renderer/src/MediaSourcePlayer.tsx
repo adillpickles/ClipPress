@@ -30,6 +30,7 @@ async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, 
   onWaiting: () => void,
   ffmpegHwaccel: FfmpegHwAccel,
 }) {
+  signal.throwIfAborted();
   let canPlay = false;
   let bufferEndTime: number | undefined;
   let bufferStartTime = seekTo;
@@ -48,7 +49,8 @@ async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, 
     mediaSourceProcess?.abort();
     if (objectUrl != null) URL.revokeObjectURL(objectUrl);
     slaveVideo.removeAttribute('src');
-  });
+    slaveVideo.load();
+  }, { once: true });
 
   // See chrome://media-internals
 
@@ -94,6 +96,7 @@ async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, 
   mediaSourceProcess = createMediaSourceStream({ path, videoStreamIndex, audioStreamIndexes, audioGainByStreamId, seekTo, size, fps, rotate, ffmpegHwaccel });
   console.log('Waiting for media source process to emit first data...');
   const readChunk = await mediaSourceProcess.promise;
+  if (signal.aborted) return;
   if (readChunk == null) {
     if (signal.aborted) return;
     throw new Error('Media source process did not initialize');
@@ -107,13 +110,30 @@ async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, 
   // eslint-disable-next-line no-param-reassign
   slaveVideo.src = objectUrl;
 
-  await new Promise((resolve) => mediaSource.addEventListener('sourceopen', resolve, { once: true }));
+  const opened = await new Promise<boolean>((resolve) => {
+    const finish = (value: boolean) => {
+      // Both callbacks are installed before either can run.
+      // eslint-disable-next-line no-use-before-define
+      mediaSource.removeEventListener('sourceopen', onOpen);
+      // eslint-disable-next-line no-use-before-define
+      signal.removeEventListener('abort', onAbort);
+      resolve(value);
+    };
+    const onOpen = () => finish(true);
+    const onAbort = () => finish(false);
+    mediaSource.addEventListener('sourceopen', onOpen, { once: true });
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) onAbort();
+  });
+  if (!opened || signal.aborted) return;
   // console.log(mediaSource.readyState); // open
 
   const sourceBuffer = mediaSource.addSourceBuffer(mimeCodec);
   sourceBuffer.timestampOffset = seekTo - getFrameDuration(fps); // subtract 1 frame in order to attempt to avoid this issue: https://github.com/mifi/lossless-cut/issues/2591#issuecomment-3478018458
 
-  signal.addEventListener('abort', () => sourceBuffer.abort());
+  signal.addEventListener('abort', () => {
+    if (mediaSource.readyState === 'open' && mediaSource.sourceBuffers.length > 0) sourceBuffer.abort();
+  }, { once: true });
 
   const getBufferEndTime = () => {
     if (mediaSource.readyState !== 'open') {
@@ -133,6 +153,7 @@ async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, 
   let firstChunkReceived = false;
 
   const processChunk = async () => {
+    if (signal.aborted) return;
     try {
       const chunk = await readChunk();
       if (chunk == null) {
@@ -149,6 +170,7 @@ async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, 
 
       sourceBuffer.appendBuffer(chunk as BufferSource);
     } catch (err) {
+      if (signal.aborted) return;
       console.error('processChunk failed', err);
       processChunkTimeout = setTimeout(processChunk, 1000);
     }
@@ -232,23 +254,25 @@ async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, 
     processChunk();
   });
 
-  interval = setInterval(() => {
-    if (!canPlay) return;
+  if (isDev) {
+    interval = setInterval(() => {
+      if (!canPlay) return;
 
-    if (mediaSource.readyState !== 'open') {
-      console.warn('mediaSource.readyState was not open, but:', mediaSource.readyState);
-      // else we will get: Uncaught DOMException: Failed to execute 'end' on 'TimeRanges': The index provided (0) is greater than or equal to the maximum bound (0).
-      return;
-    }
+      if (mediaSource.readyState !== 'open') {
+        console.warn('mediaSource.readyState was not open, but:', mediaSource.readyState);
+        // else we will get: Uncaught DOMException: Failed to execute 'end' on 'TimeRanges': The index provided (0) is greater than or equal to the maximum bound (0).
+        return;
+      }
 
-    console.log(`bufferStartTime: ${bufferStartTime}, bufferEndTime: ${bufferEndTime}, master time: ${masterVideo.currentTime}, slave time: ${slaveVideo.currentTime} (diff: ${masterVideo.currentTime - slaveVideo.currentTime}), streamTimestamp: ${streamTimestamp}`);
-    // console.log(sourceBuffer.buffered.length, sourceBuffer.buffered.start(0), sourceBuffer.buffered.end(0))
+      console.log(`bufferStartTime: ${bufferStartTime}, bufferEndTime: ${bufferEndTime}, master time: ${masterVideo.currentTime}, slave time: ${slaveVideo.currentTime} (diff: ${masterVideo.currentTime - slaveVideo.currentTime}), streamTimestamp: ${streamTimestamp}`);
+      // console.log(sourceBuffer.buffered.length, sourceBuffer.buffered.start(0), sourceBuffer.buffered.end(0))
 
-    if (sourceBuffer.buffered.length !== 1) {
+      if (sourceBuffer.buffered.length !== 1) {
       // not sure why this would happen or how to handle this
-      console.warn('sourceBuffer.buffered.length was', sourceBuffer.buffered.length);
-    }
-  }, 1000);
+        console.warn('sourceBuffer.buffered.length was', sourceBuffer.buffered.length);
+      }
+    }, 1000);
+  }
 
   // Synchronize state between the two video elements
   interval2 = setInterval(async () => {
@@ -339,11 +363,15 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
     const canvas = canvasRef.current;
     invariant(canvas != null);
 
-    let abortController: AbortController;
-    let startDebounced: () => void;
+    let abortController: AbortController | undefined;
+    let disposed = false;
+    let startDebounced: ReturnType<typeof debounce>;
 
     const start = async () => {
-      abortController = new AbortController();
+      if (disposed) return;
+      abortController?.abort();
+      const controller = new AbortController();
+      abortController = controller;
 
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
@@ -366,7 +394,7 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
         else if (mediaSourceQuality === 1) fps = 15;
 
         await startPlayback({
-          signal: abortController.signal,
+          signal: controller.signal,
           path: filePath,
           slaveVideo: video,
           masterVideo,
@@ -382,7 +410,7 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
             setShowCanvas(false);
           },
           onResetNeeded: () => {
-            abortController.abort();
+            controller.abort();
             startDebounced();
           },
           onWaiting: () => {
@@ -391,7 +419,8 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
           ffmpegHwaccel,
         });
       } catch (err) {
-        console.error('Preview failed', err);
+        if (!controller.signal.aborted) console.error('Preview failed', err);
+        controller.abort();
       }
     };
 
@@ -399,7 +428,11 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
 
     startDebounced();
 
-    return () => abortController.abort();
+    return () => {
+      disposed = true;
+      startDebounced.cancel();
+      abortController?.abort();
+    };
     // Important that we also have eventId in the deps, so that we can restart the preview when the eventId changes
   }, [audioGainByStreamId, audioStreamIndexes, ffmpegHwaccel, filePath, masterVideoRef, mediaSourceQuality, rotate, videoStream]);
 

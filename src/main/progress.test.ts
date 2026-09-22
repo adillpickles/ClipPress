@@ -23,4 +23,7 @@ describe('parseFfmpegProgressLine', () => {
     const str = 'frame=   19 fps=0.0 q=0.0 size=N/A time=N/A bitrate=N/A speed=N/A    ';
     expect(parseFfmpegProgressLine({ line: str, duration: 100 })).toBeUndefined();
   });
+  test.each(['5', '50', '500', '500000'])('parses fractional seconds with %s digits', (fraction) => {
+    expect(parseFfmpegProgressLine({ line: `size=0kB time=00:00:01.${fraction} bitrate=N/A `, duration: 3 })).toBe(0.5);
+  });
 });

@@ -1,5 +1,4 @@
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, mkdtemp, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, parse, resolve } from 'node:path';
 import { execa } from 'execa';
 
@@ -10,8 +9,7 @@ import {
 } from '../src/renderer/src/sizeLimitedFfmpegArgs.ts';
 import {
   bytesPerMb,
-  getNextSizeLimitedRetryStep,
-  getNextSizeLimitedUndershootStep,
+  getNextSizeLimitedAttempt,
   planSizeLimitedEncode,
 } from '../src/renderer/src/sizeLimitedPlanner.ts';
 import { resolveSizeLimitedVideoProfile } from '../src/renderer/src/sizeLimitedResolution.ts';
@@ -502,7 +500,8 @@ async function runCase({ ffmpegPath, input, outputDir, targetMb, probe, benchmar
   transform: TransformVariant,
 }): Promise<BenchmarkResult> {
   const stem = parse(input).name;
-  const output = join(outputDir, `${stem}.${benchmarkCase.id}.${transform.id}.${targetMb}mb.mp4`);
+  const caseDir = await mkdtemp(join(outputDir, `${stem}.${benchmarkCase.id}.${transform.id}.${targetMb}mb-`));
+  const output = join(caseDir, 'export.mp4');
 
   const plan = planSizeLimitedEncode({
     targetSizeMb: targetMb,
@@ -511,20 +510,25 @@ async function runCase({ ffmpegPath, input, outputDir, targetMb, probe, benchmar
     strategy,
   });
 
-  const tempDir = await mkdtemp(join(tmpdir(), 'clippress-bench-'));
+  const tempDir = await mkdtemp(join(caseDir, 'attempts-'));
   const attempts: AttemptRecord[] = [];
   let attempt: SizeLimitedRetryStep | undefined = plan.initialAttempt;
   let reason: AttemptRecord['reason'] = 'initial';
-  let lastVideoProfile: ReturnType<typeof resolveSizeLimitedVideoProfile> | undefined;
+  let best: { record: AttemptRecord, path: string, videoProfile: ReturnType<typeof resolveSizeLimitedVideoProfile> } | undefined;
 
   try {
     while (attempt != null) {
-      const { elapsedMs, outputBytes, videoProfile } = await runAttempt({
-        ffmpegPath, input, output, tempDir, attempt, strategy, probe, transform,
-      });
-      lastVideoProfile = videoProfile;
-
-      attempts.push({
+      const attemptOutput = join(tempDir, `${String(attempt.attemptNumber)}.mp4`);
+      let result: Awaited<ReturnType<typeof runAttempt>>;
+      try {
+        result = await runAttempt({ ffmpegPath, input, output: attemptOutput, tempDir, attempt, strategy, probe, transform });
+      } catch (error) {
+        if (best == null) throw error;
+        console.warn('Top-up failed; retaining the earlier under-cap output', error);
+        break;
+      }
+      const { elapsedMs, outputBytes, videoProfile } = result;
+      const record: AttemptRecord = {
         attemptNumber: attempt.attemptNumber,
         reason,
         videoBitrate: attempt.videoBitrate,
@@ -532,30 +536,22 @@ async function runCase({ ffmpegPath, input, outputDir, targetMb, probe, benchmar
         qualityCapOffset: attempt.qualityCapOffset,
         outputBytes,
         elapsedMs,
+      };
+      attempts.push(record);
+      if (outputBytes <= plan.hardTargetBytes && (best == null || outputBytes > best.record.outputBytes)) {
+        best = { record, path: attemptOutput, videoProfile };
+      }
+      const next: SizeLimitedRetryStep | undefined = getNextSizeLimitedAttempt({
+        plan, previousAttempt: attempt, previousOutputSize: outputBytes, hasUnderCapResult: best != null,
       });
-
-      // Same order the export uses: shrink first if the result broke the cap, otherwise
-      // consider one top-up if it came in far under.
-      const retryStep: SizeLimitedRetryStep | undefined = getNextSizeLimitedRetryStep({ plan, previousAttempt: attempt, previousOutputSize: outputBytes });
-      const undershootStep: SizeLimitedRetryStep | undefined = retryStep == null
-        ? getNextSizeLimitedUndershootStep({ plan, previousAttempt: attempt, previousOutputSize: outputBytes })
-        : undefined;
-
-      if (retryStep != null) reason = 'over_target_retry';
-      else if (undershootStep != null) reason = 'undershoot_topup';
-
-      attempt = retryStep ?? undershootStep;
+      reason = outputBytes > plan.hardTargetBytes ? 'over_target_retry' : 'undershoot_topup';
+      attempt = next;
     }
+    if (best == null) throw new Error('No attempt met the target');
+    await rename(best.path, output);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
-
-  // The export keeps the largest result that stayed under the cap, so an undershoot
-  // top-up that overshoots is discarded rather than shipped. Mirror that here.
-  const underCap = attempts.filter((record) => record.outputBytes <= plan.hardTargetBytes);
-  const best = [...(underCap.length > 0 ? underCap : attempts)].sort((a, b) => b.outputBytes - a.outputBytes)[0];
-  if (best == null) throw new Error('No attempt was run');
-  const bestStep = best.attemptNumber === plan.initialAttempt.attemptNumber ? plan.initialAttempt : undefined;
 
   const outputBytes = await fileSize(output);
   const ssimAll = await runSsim(ffmpegPath, input, output);
@@ -576,11 +572,11 @@ async function runCase({ ffmpegPath, input, outputDir, targetMb, probe, benchmar
     metTarget: outputBytes <= plan.hardTargetBytes,
     attempts,
     duration: plan.duration,
-    videoBitrate: best.videoBitrate ?? bestStep?.videoBitrate ?? 0,
-    audioBitrate: best.audioBitrate,
-    outputWidth: lastVideoProfile?.outputWidth,
-    outputHeight: lastVideoProfile?.outputHeight,
-    outputFps: lastVideoProfile?.outputFps,
+    videoBitrate: best.record.videoBitrate,
+    audioBitrate: best.record.audioBitrate,
+    outputWidth: best.videoProfile.outputWidth,
+    outputHeight: best.videoProfile.outputHeight,
+    outputFps: best.videoProfile.outputFps,
     ssimAll,
   };
 }

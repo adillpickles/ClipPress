@@ -113,8 +113,7 @@ export function makeSourceSafeFileName({ fileName, outputDir, protectedPaths, pa
     if (!conflicts(candidate)) return candidate;
   }
 
-  // Unreachable in practice; a stable fallback beats throwing inside a naming helper.
-  return addFileNameMarker({ fileName, marker: `${marker} ${Date.now()}`, path });
+  throw new Error('Unable to choose a source-safe output filename');
 }
 
 export interface SourceSafeFileNamesResult {
@@ -140,9 +139,7 @@ export function makeSourceSafeFileNames({ fileNames, outputDir, protectedPaths, 
   const chosen = new Set<string>();
   const adjustments: SourceSafeFileNameAdjustment[] = [];
 
-  const key = (fileName: string) => (
-    (caseInsensitive ?? path.sep === windowsSeparator) ? fileName.toLowerCase() : fileName
-  );
+  const key = (fileName: string) => normalizeComparablePath({ filePath: path.join(outputDir, fileName), path, caseInsensitive });
 
   const safeFileNames = fileNames.map((fileName) => {
     const safeFileName = makeSourceSafeFileName({

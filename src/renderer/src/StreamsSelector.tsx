@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction, CSSProperties, ReactNode, ChangeEventHandler, DragEventHandler } from 'react';
-import { memo, useState, useMemo, useCallback } from 'react';
+import { lazy, Suspense, memo, useState, useMemo, useCallback } from 'react';
 
 import { FaImage, FaPaperclip, FaVideo, FaVideoSlash, FaFileImport, FaVolumeUp, FaVolumeMute, FaBan, FaFileExport, FaBook, FaInfoCircle, FaFilter, FaEye, FaEdit, FaTrash, FaSortNumericDown, FaSortNumericUp, FaHamburger, FaMap, FaLanguage } from 'react-icons/fa';
 import { GoFileBinary } from 'react-icons/go';
@@ -28,9 +28,10 @@ import type { CustomTagsByFile, FilesMeta, FormatTimecode, ParamsByStreamId, Str
 import Button, { DialogButton } from './components/Button';
 import styles from './StreamsSelector.module.css';
 import Json5Dialog from './components/Json5Dialog';
-import GpsMap from './components/GpsMap';
 import TextInput from './components/TextInput';
 import Switch from './components/Switch';
+
+const GpsMap = lazy(() => import('./components/GpsMap'));
 
 
 const dispositionOptions = ['default', 'dub', 'original', 'comment', 'lyrics', 'karaoke', 'forced', 'hearing_impaired', 'visual_impaired', 'clean_effects', 'attached_pic', 'captions', 'descriptions', 'dependent', 'metadata'];
@@ -417,7 +418,9 @@ const Stream = memo(({ filePath, stream, onToggle, toggleCopyStreamIds, copyStre
                         <Trans>GPS track</Trans>
                       </Dialog.Title>
 
-                      <GpsMap filePath={filePath} streamIndex={stream.index} />
+                      <Suspense fallback={<div>{t('Loading...')}</div>}>
+                        <GpsMap filePath={filePath} streamIndex={stream.index} />
+                      </Suspense>
                     </Dialog.Content>
                   </Dialog.Portal>
                 </Dialog.Root>

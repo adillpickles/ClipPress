@@ -1,3 +1,15 @@
+import { constants, copyFile, readFile, unlink } from 'node:fs/promises';
+
+/** Read persisted keys before electron-store fills in defaults and writes them back. */
+export async function readStoredConfigKeys(configPath: string): Promise<Set<string>> {
+  try {
+    return new Set(Object.keys(JSON.parse(await readFile(configPath, 'utf8')) as object));
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return new Set();
+    throw error;
+  }
+}
+
 /**
  * Deciding what to do with a config file we cannot read.
  *
@@ -7,8 +19,8 @@
  * from. A config file can end up truncated for ordinary reasons — a power cut or a hard
  * kill while it was being written — so this is not a hypothetical.
  *
- * Pure so the decision and the naming can be tested without a filesystem; the copying
- * itself lives in `configStore`.
+ * The classification and backup naming are pure; preservation below uses exclusive
+ * copying and refuses to reset settings if the backup cannot be written.
  */
 
 export type ConfigFileState =
@@ -45,4 +57,26 @@ export function getConfigFileState(content: string): ConfigFileState {
 export function getCorruptConfigBackupPath({ configPath, now }: { configPath: string, now: Date }) {
   const stamp = now.toISOString().replaceAll(/[:.]/gu, '-');
   return `${configPath}.corrupt-${stamp}`;
+}
+
+/** A failed backup must stop initialization before the store can replace the only copy. */
+export async function preserveUnreadableConfig(configPath: string) {
+  let content: string;
+  try {
+    content = await readFile(configPath, 'utf8');
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
+    throw error;
+  }
+  const state = getConfigFileState(content);
+  if (state === 'ok') return undefined;
+  if (state === 'empty') {
+    await unlink(configPath);
+    return undefined;
+  }
+  const backupPath = getCorruptConfigBackupPath({ configPath, now: new Date() });
+  await copyFile(configPath, backupPath, constants.COPYFILE_EXCL);
+  // Valid JSON with an invalid top-level type is not cleared by electron-store itself.
+  await unlink(configPath);
+  return { configPath, backupPath };
 }

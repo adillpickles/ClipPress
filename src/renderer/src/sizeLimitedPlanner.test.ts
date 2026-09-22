@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getNextSizeLimitedRetryStep, getNextSizeLimitedUndershootStep, bytesPerMb, planSizeLimitedEncode, targetSizeMbToBytes } from './sizeLimitedPlanner';
+import { getNextSizeLimitedAttempt, getNextSizeLimitedRetryStep, getNextSizeLimitedUndershootStep, bytesPerMb, planSizeLimitedEncode, targetSizeMbToBytes } from './sizeLimitedPlanner';
 import { resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 
 const allCapabilities = { h264Nvenc: true, av1Nvenc: true, libx264: true, libsvtav1: true } as const;
@@ -18,6 +18,13 @@ describe('targetSizeMbToBytes', () => {
 });
 
 describe('planSizeLimitedEncode', () => {
+  it('stops after an over-cap top-up when a usable earlier attempt exists', () => {
+    const strategy = resolveSizeLimitedStrategy({ controlMode: 'simple', preset: 'max_quality', advancedEncoder: 'av1_cpu', advancedTwoPass: true, ...defaultStrategyArgs, capabilities: allCapabilities });
+    const plan = planSizeLimitedEncode({ targetSizeMb: 10, duration: 30, hasAudio: true, strategy });
+    const args = { plan, previousAttempt: plan.initialAttempt, previousOutputSize: plan.hardTargetBytes * 1.05 };
+    expect(getNextSizeLimitedAttempt({ ...args, hasUnderCapResult: false })).toBeDefined();
+    expect(getNextSizeLimitedAttempt({ ...args, hasUnderCapResult: true })).toBeUndefined();
+  });
   it('creates an initial bounded retry plan', () => {
     const strategy = resolveSizeLimitedStrategy({
       controlMode: 'simple',
