@@ -16,6 +16,7 @@
   <url type="bugtracker">https://github.com/adillpickles/ClipPress/issues</url>
   <url type="donation">https://ko-fi.com/adillpickles</url>
   <releases>
+    <release version="0.1.0-beta.4" date="2026-09-22"/>
     <release version="0.1.0-beta.3" date="2026-09-05"/>
     <release version="0.1.0-beta.2" date="2026-05-21"/>
     <release version="0.1.0-beta.1" date="2026-04-13"/>

@@ -2,11 +2,11 @@
 
 ## There is no installer
 
-ClipPress is distributed as an extracted app bundle or archive, depending on platform.
+ClipPress preview releases are a single portable executable for Windows 10/11 x64.
 
-- Windows: extract the downloaded `.7z` archive with [7-Zip](https://www.7-zip.org/download.html) and run the executable inside.
-- macOS: mount the `.dmg` and drag the app into `Applications`.
-- Linux: extract the archive or use the packaged build you downloaded.
+- Windows: download `ClipPress-Windows-x64.exe` from the [Releases page](https://github.com/adillpickles/ClipPress/releases) and run it. FFmpeg is included. There is nothing to extract or install.
+- The build is unsigned, so Windows SmartScreen may warn before the first run.
+- No macOS or Linux builds are published for the preview.
 
 If you are building from source instead, see [../CONTRIBUTING.md](../CONTRIBUTING.md).
 
@@ -30,13 +30,13 @@ App settings and keyboard shortcuts are stored in `config.json` inside the app-d
 
 ## Custom `config.json` path
 
-On Windows, if you create a `config.json` file with the contents `{}` next to the current packaged executable (`ClipPress.exe`), ClipPress will read and store settings from that file instead of the default app-data location.
+On Windows, if you create a `config.json` file with the contents `{}` next to the downloaded executable (`ClipPress-Windows-x64.exe`), ClipPress will read and store settings from that file instead of the default app-data location.
 
 You can also specify a custom folder containing `config.json` with the CLI option `--config-dir`. Other temporary files may still be stored in the default app-data location.
 
 ## How to uninstall
 
-Delete the extracted app folder or remove the installed app bundle.
+Delete `ClipPress-Windows-x64.exe`.
 
 If you also want to remove settings, logs, and caches, delete the app-data folders listed above.
 
