@@ -3,7 +3,7 @@ import type { BrowserWindow, MenuItem, MenuItemConstructorOptions } from 'electr
 import electron from 'electron';
 import { t } from 'i18next';
 
-import { homepageUrl, getReleaseUrl, licensesUrl, thanksUrl, usageUrl, faqUrl, troubleshootingUrl, featureRequestUrl } from '../common/constants.js';
+import { homepageUrl, licensesUrl, thanksUrl, usageUrl, faqUrl, troubleshootingUrl, featureRequestUrl } from '../common/constants.js';
 import { logFilePath } from './logger.js';
 import { getConfigPath } from './configStore.js';
 
@@ -14,8 +14,9 @@ const esc = (val: string) => val.replaceAll('&', '&&');
 
 const { Menu } = electron;
 
-export default ({ app, mainWindow, newVersion, isStoreBuild }: {
+export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates }: {
   app: Electron.App, mainWindow: BrowserWindow, newVersion?: string | undefined, isStoreBuild: boolean,
+  onCheckForUpdates: () => void,
 }) => {
   // todo TS mainWindow.webContents.send
   const menu: (MenuItemConstructorOptions | MenuItem)[] = [
@@ -440,6 +441,7 @@ export default ({ app, mainWindow, newVersion, isStoreBuild }: {
           label: esc(t('How to use')),
           click() { electron.shell.openExternal(usageUrl); },
         },
+        ...(!isStoreBuild ? [{ label: esc(t('Check for updates')), click: onCheckForUpdates }] : []),
         {
           label: esc(t('FAQ')),
           click() { electron.shell.openExternal(faqUrl); },
@@ -495,8 +497,8 @@ export default ({ app, mainWindow, newVersion, isStoreBuild }: {
       label: esc(t('New version!')),
       submenu: [
         {
-          label: esc(t('Download {{version}}', { version: newVersion })),
-          click() { electron.shell.openExternal(getReleaseUrl(newVersion)); },
+          label: esc(t('View update {{version}}', { version: newVersion })),
+          click: onCheckForUpdates,
         },
       ],
     });

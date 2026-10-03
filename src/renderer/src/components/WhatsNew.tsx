@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import semver from 'semver';
 import { FaCode, FaFile } from 'react-icons/fa';
 import Markdown from 'react-markdown';
 
@@ -8,6 +7,8 @@ import * as Dialog from './Dialog';
 import useUserSettings from '../hooks/useUserSettings';
 import { appVersion, isMasBuild } from '../util';
 import versionsJson from '../versions.json';
+import { getReleaseNotes } from '../releaseNotes';
+import mainApi from '../mainApi';
 import Button from './Button';
 
 import styles from './WhatsNew.module.css';
@@ -27,14 +28,14 @@ export default function WhatsNew() {
   const [initialLastAppVersion] = useState(lastAppVersion);
 
   useEffect(() => {
-    setLastAppVersion(appVersion);
+    mainApi.acknowledgeAppVersion()
+      .then(() => setLastAppVersion(appVersion))
+      .catch((error: unknown) => console.error('Failed to remember the app version', error));
   }, [setLastAppVersion]);
 
-  const matchingVersions = useMemo(() => versions
-    .filter(({ version }) => semver.gt(version, initialLastAppVersion) && semver.lte(version, appVersion))
-    .sort(({ version: a }, { version: b }) => semver.compare(b, a)), [initialLastAppVersion]);
+  const matchingVersions = useMemo(() => getReleaseNotes(versions, initialLastAppVersion, appVersion), [initialLastAppVersion]);
 
-  if (initialLastAppVersion === appVersion) return null;
+  if (matchingVersions.length === 0) return null;
 
   return (
     <Dialog.Root defaultOpen>

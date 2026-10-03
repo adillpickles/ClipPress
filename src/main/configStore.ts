@@ -159,6 +159,7 @@ const defaults: Config = {
   captureFrameFileNameFormat: 'timestamp',
   enableNativeHevc: true,
   enableUpdateCheck: true,
+  updateMode: 'automatic',
   cleanupChoices: {
     trashTmpFiles: true, askForCleanup: true, closeFile: true, cleanupAfterExport: false,
   },
@@ -221,6 +222,8 @@ async function lookForNeighbourConfigFile() {
 }
 
 let store: Store;
+const updateSettingsEvents = new EventTarget();
+export const onUpdateSettingsChange = (listener: () => void) => updateSettingsEvents.addEventListener('change', listener);
 
 export function get<T extends keyof Config>(key: T): Config[T] {
   return store.get(key);
@@ -232,6 +235,7 @@ export const getSnapshotJson = () => JSON.stringify(store.store);
 export function set<T extends keyof Config>(key: T, val: Config[T]) {
   if (val === undefined) store.delete(key);
   else store.set(key, val);
+  if (key === 'enableUpdateCheck' || key === 'updateMode') updateSettingsEvents.dispatchEvent(new Event('change'));
 }
 
 export function reset<T extends keyof Config>(key: T) {
@@ -315,6 +319,8 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
   const storedKeys = await readStoredConfigKeys(getConfigPath());
 
   await tryCreateStore({ customStoragePath });
+
+  if (!['automatic', 'ask'].includes(store.get('updateMode'))) set('updateMode', defaults.updateMode);
 
   // migrate old configs:
   const enableTransferTimestamps = store.get('enableTransferTimestamps'); // todo remove after a while

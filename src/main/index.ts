@@ -36,6 +36,8 @@ import { isAllowedAppNavigation, isExternallyOpenableUrl } from './navigation.js
 import * as ffmpeg from './ffmpeg.js';
 import * as compatPlayer from './compatPlayer.js';
 import { downloadMediaUrl } from './ffmpeg.js';
+import type UpdateController from './updateController.js';
+import type { UpdateStatus } from '../common/updates.js';
 
 
 electronUnhandled({ showDialog: true, logger: (err) => logger.error('electron-unhandled', err) });
@@ -67,6 +69,41 @@ let askBeforeClose = false;
 let rendererReady = false;
 let newVersion: string | undefined;
 let disableNetworking: boolean;
+let autoUpdatesPromise: Promise<UpdateController> | undefined;
+let updateCheckScheduled = false;
+
+function getAutoUpdates() {
+  autoUpdatesPromise ??= import('./autoUpdates.js').then(({ default: createAutoUpdates }) => createAutoUpdates({
+    offline: !!disableNetworking,
+    storeBuild: isStoreBuild,
+    onChange: (status: UpdateStatus) => {
+      if (mainWindow == null || mainWindow.isDestroyed()) return;
+      mainWindow.webContents.send('update-status', status);
+      if (newVersion !== status.version) {
+        newVersion = status.version;
+        // The updater callback runs after the window and menu have been initialized.
+        // eslint-disable-next-line no-use-before-define
+        updateMenu();
+      }
+    },
+  }));
+  return autoUpdatesPromise;
+}
+
+async function checkForUpdates() {
+  mainWindow?.webContents.send('showUpdates');
+  return (await getAutoUpdates()).check(true);
+}
+
+const getUpdateStatus = async () => (await getAutoUpdates()).getStatus();
+const downloadUpdate = async () => (await getAutoUpdates()).download();
+const approveUpdateInstall = async () => (await getAutoUpdates()).approveInstall();
+
+function acknowledgeAppVersion() {
+  // Write before the renderer updates its state; its initial-save guard must
+  // never swallow the version acknowledgement under React StrictMode.
+  if (configStore.get('lastAppVersion') !== app.getVersion()) configStore.set('lastAppVersion', app.getVersion());
+}
 
 const openFiles = (paths: string[]) => mainWindow!.webContents.send('openFiles', paths);
 
@@ -260,7 +297,7 @@ function createWindow() {
 
 function updateMenu() {
   assert(mainWindow);
-  menu({ app, mainWindow, newVersion, isStoreBuild });
+  menu({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates: () => { checkForUpdates().catch((error: unknown) => logger.warn('Update check failed', error)); } });
 }
 
 async function changeLanguage(language: string | null) {
@@ -398,6 +435,12 @@ async function init() {
     ipcMain.on('renderer-ready', () => {
       rendererReady = true;
       if (filesToOpen.length > 0) openFiles(filesToOpen);
+      if (!updateCheckScheduled && !disableNetworking && !isStoreBuild && !isDev && configStore.get('enableUpdateCheck')) {
+        updateCheckScheduled = true;
+        setTimeout(() => {
+          getAutoUpdates().then((updates) => updates.check()).catch((error: unknown) => logger.warn('Update check failed', error));
+        }, 8000).unref();
+      }
     });
 
     // Mac OS open with ClipPress
@@ -476,15 +519,6 @@ async function init() {
 
     // Only after changeLanguage, so this is not the one message shown in English.
     reportPreservedCorruptConfig();
-
-    const enableUpdateCheck = configStore.get('enableUpdateCheck');
-
-    if (!disableNetworking && enableUpdateCheck && !isStoreBuild) {
-      const { checkNewVersion } = await import('./updateChecker.js');
-      newVersion = await checkNewVersion();
-      // newVersion = '1.2.3';
-      if (newVersion) updateMenu();
-    }
   } catch (err) {
     logger.error('Failed to initialize', err);
     electron.dialog.showErrorBox('ClipPress could not start', err instanceof Error ? err.message : String(err));
@@ -524,6 +558,11 @@ const remoteApi = {
   quitApp,
   setProgressBar,
   sendOsNotification,
+  getUpdateStatus,
+  checkForUpdates,
+  downloadUpdate,
+  approveUpdateInstall,
+  acknowledgeAppVersion,
 };
 
 export type RemoteApi = typeof remoteApi;

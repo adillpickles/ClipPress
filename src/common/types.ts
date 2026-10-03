@@ -112,6 +112,7 @@ export interface Config {
   captureFrameFileNameFormat: 'timestamp' | 'index',
   enableNativeHevc: boolean,
   enableUpdateCheck: boolean,
+  updateMode: 'automatic' | 'ask',
   cleanupChoices: {
     trashTmpFiles: boolean, askForCleanup: boolean, closeFile: boolean, cleanupAfterExport?: boolean | undefined,
   },
