@@ -20,6 +20,7 @@ import type { SizeLimitedResolvedStrategy } from './sizeLimitedTypes';
  * experimental flag is on belongs to the app's settings, not to argument assembly.
  */
 
+/** Input option: place before every video input so autorotation precedes cropping. */
 export function getSizeLimitedRotationArgs(rotation: number | undefined) {
   return rotation !== undefined ? ['-display_rotation:v:0', String(360 - rotation)] : [];
 }
@@ -54,7 +55,6 @@ export function getSizeLimitedCommonEncodeArgs({
   audioInputLabel,
   videoProfile,
   experimentalArgs,
-  rotation,
   outPath,
   sourceFps,
   outputPlaybackRate,
@@ -69,7 +69,6 @@ export function getSizeLimitedCommonEncodeArgs({
   audioInputLabel: string | undefined,
   videoProfile: SizeLimitedVideoTransformProfile,
   experimentalArgs: string[],
-  rotation: number | undefined,
   outPath: string,
   sourceFps: number | undefined,
   outputPlaybackRate: number,
@@ -87,7 +86,6 @@ export function getSizeLimitedCommonEncodeArgs({
     '-map', videoInputLabel,
     ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: false, videoProfile, sourceFps, outputPlaybackRate, qualityCapOffset }),
     ...(videoFilter != null ? ['-vf', videoFilter] : []),
-    ...getSizeLimitedRotationArgs(rotation),
     ...getSizeLimitedAudioArgs({ audioInputLabel, audioBitrate, audioGainDb, audioPlaybackRate }),
     '-movflags', '+faststart',
     ...experimentalArgs,
@@ -104,7 +102,6 @@ export function getSizeLimitedTwoPassEncodeArgs({
   audioInputLabel,
   videoProfile,
   experimentalArgs,
-  rotation,
   passlogFile,
   outPath,
   passNumber,
@@ -121,7 +118,6 @@ export function getSizeLimitedTwoPassEncodeArgs({
   audioInputLabel: string | undefined,
   videoProfile: SizeLimitedVideoTransformProfile,
   experimentalArgs: string[],
-  rotation: number | undefined,
   passlogFile: string,
   outPath: string,
   passNumber: 1 | 2,
@@ -143,7 +139,6 @@ export function getSizeLimitedTwoPassEncodeArgs({
     ...(videoFilter != null ? ['-vf', videoFilter] : []),
     '-pass', String(passNumber),
     '-passlogfile', passlogFile,
-    ...getSizeLimitedRotationArgs(rotation),
     ...(passNumber === 1 ? ['-an'] : getSizeLimitedAudioArgs({ audioInputLabel, audioBitrate, audioGainDb, audioPlaybackRate })),
     ...(passNumber === 2 ? ['-movflags', '+faststart'] : []),
     ...experimentalArgs,

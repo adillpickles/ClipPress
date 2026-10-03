@@ -12,9 +12,24 @@ ClipPress is open-source and ad-free. If it helps you make better clips or saves
 - Simple mode for the default path, Advanced mode for deeper control
 - Text overlays for lightweight callouts and captions
 - Per-track audio gain for practical volume fixes
+- Per-segment speed controls with pitch-preserving audio
+- Per-segment zoom and crop using preview handles
 - Keep-source-quality export and target-file-size export
 - Multi-segment export as separate clips, one merged clip, or both
 - Modern desktop UI with keyboard shortcuts and project save/load
+
+## Speed and zoom/crop
+
+Right-click a timeline segment and choose **Change speed…**, or press `Ctrl+R`
+to show its speed layer. The dialog shows the edited duration; drag the layer's
+slider for quick adjustments.
+
+Select a segment and click **Zoom / Crop**, or use its right-click menu. Drag a
+corner to crop, drag inside the frame to reposition, or use the zoom slider.
+**Reset** restores the full frame and **Done** returns to the cropped preview.
+Each segment keeps its own speed and crop in saved projects and undo history.
+These edits apply to separate and merged exports; target-size exports default to
+20 MB. See [segment editing notes](docs/segment-editing.md) for details.
 
 ## Built on top of LosslessCut
 

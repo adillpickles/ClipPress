@@ -82,7 +82,7 @@ function Marker({
 }
 
 function Segment({
-  seg, segNum, color, isActive, selected, onClick, getTimePercent, formatTimecode, invertCutSegments, onEditSpeed,
+  seg, segNum, color, isActive, selected, onClick, getTimePercent, formatTimecode, invertCutSegments, onEditSpeed, onEditCrop,
 }: {
   seg: Omit<StateSegment, 'end'> & { end: number },
   segNum: number,
@@ -94,6 +94,7 @@ function Segment({
   formatTimecode: FormatTimecode,
   invertCutSegments: boolean,
   onEditSpeed: (index: number) => void,
+  onEditCrop: (index: number) => void,
 }) {
   const { darkMode, prefersReducedMotion, springAnimation } = useUserSettings();
   const { t } = useTranslation();
@@ -182,7 +183,10 @@ function Segment({
         event.stopPropagation();
         onClick();
         const remote = window.require('@electron/remote');
-        remote.Menu.buildFromTemplate([{ label: t('Change speed…'), click: () => onEditSpeed(segNum) }]).popup({ window: remote.getCurrentWindow() });
+        remote.Menu.buildFromTemplate([
+          { label: t('Change speed…'), click: () => onEditSpeed(segNum) },
+          { label: t('Zoom / Crop…'), click: () => onEditCrop(segNum) },
+        ]).popup({ window: remote.getCurrentWindow() });
       }}
       title={title}
     >
@@ -222,7 +226,7 @@ function Segment({
 }
 
 function SegmentOrMarker({
-  seg, fileDurationNonZero, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, onEditSpeed,
+  seg, fileDurationNonZero, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, onEditSpeed, onEditCrop,
 } : {
   seg: StateSegment,
   fileDurationNonZero: number,
@@ -233,6 +237,7 @@ function SegmentOrMarker({
   formatTimecode: FormatTimecode,
   selected: boolean,
   onEditSpeed: (index: number) => void,
+  onEditCrop: (index: number) => void,
 }) {
   const { getSegColor } = useSegColors();
 
@@ -243,7 +248,7 @@ function SegmentOrMarker({
   const onThisSegClick = useCallback(() => onSegClick(segNum), [onSegClick, segNum]);
 
   if (seg.end != null) {
-    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} onEditSpeed={onEditSpeed} />;
+    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} onEditSpeed={onEditSpeed} onEditCrop={onEditCrop} />;
   }
 
   return (

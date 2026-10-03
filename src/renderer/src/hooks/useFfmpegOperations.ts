@@ -14,6 +14,8 @@ import { needsSmartCut, getCodecParams } from '../smartcut';
 import { getGuaranteedSegments, isDurationValid } from '../segments';
 import { getRotatedVideoDimensions, renderTextOverlayPng } from '../textOverlays';
 import { getRelativeSegmentOverlapWindow } from '../exportSegmentMath';
+import { getSegmentCropFilter } from '../segmentCrop';
+import { getSizeLimitedRotationArgs } from '../sizeLimitedFfmpegArgs';
 import { getAudioTempoFilter, getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from '../segmentSpeed';
 import type { FFprobeStream } from '../../../common/ffprobe';
 import type { AvoidNegativeTs, FfmpegHwAccel, Html5ifyMode, PreserveMetadata } from '../../../common/types';
@@ -108,23 +110,6 @@ interface PreparedTextOverlayAsset {
   end: number,
 }
 
-function getOverlayRotationFilters(rotation: number | undefined) {
-  switch ((((rotation ?? 0) % 360) + 360) % 360) {
-    case 90: {
-      return ['transpose=clock'];
-    }
-    case 180: {
-      return ['hflip', 'vflip'];
-    }
-    case 270: {
-      return ['transpose=cclock'];
-    }
-    default: {
-      return [];
-    }
-  }
-}
-
 async function prepareTextOverlayAssets({
   overlayClips,
   outputDir,
@@ -165,7 +150,7 @@ function buildTextOverlayFilterGraph({
   segmentStart,
   segmentEnd,
   outputPlaybackRate,
-  rotation,
+  cropFilter,
 }: {
   videoInputLabel: string,
   imageInputStartIndex: number,
@@ -173,10 +158,10 @@ function buildTextOverlayFilterGraph({
   segmentStart: number,
   segmentEnd: number,
   outputPlaybackRate: number,
-  rotation: number | undefined,
+  cropFilter: string | undefined,
 }) {
   const graph: string[] = [];
-  const baseFilters = [getVideoTimingFilter(outputPlaybackRate), ...getOverlayRotationFilters(rotation)];
+  const baseFilters = [getVideoTimingFilter(outputPlaybackRate), cropFilter].filter(Boolean);
   let currentLabel = '[video0]';
   graph.push(`${videoInputLabel}${baseFilters.length > 0 ? baseFilters.join(',') : 'null'}${currentLabel}`);
 
@@ -725,7 +710,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
           await maybeMkDeepOutDir({ outputDir, fileOutPath: finalOutPath });
 
           const segmentDuration = getSegmentOutputDuration(segment, outputPlaybackRate);
-          const mediaInputArgs = flatMap(copyFileStreamsFiltered, ({ path }) => ['-ss', start.toFixed(5), '-t', (end - start).toFixed(5), '-i', path]);
+          const mediaInputArgs = flatMap(copyFileStreamsFiltered, ({ path }) => ['-ss', start.toFixed(5), '-t', (end - start).toFixed(5), ...getSizeLimitedRotationArgs(rotation), '-i', path]);
 
           const segmentOverlayAssets = preparedOverlayAssets.filter((overlayAsset) => overlayAsset.start < end && overlayAsset.end > start);
           const overlayInputArgs = flatMap(segmentOverlayAssets, ({ imagePath }) => ['-loop', '1', '-i', imagePath]);
@@ -737,7 +722,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
             segmentStart: start,
             segmentEnd: end,
             outputPlaybackRate: segmentRate,
-            rotation,
+            cropFilter: (() => {
+              const dimensions = getRotatedVideoDimensions({ width: videoWidth, height: videoHeight, rotation });
+              return getSegmentCropFilter(segment, dimensions.width, dimensions.height);
+            })(),
           });
 
           const mapStreamsArgs = getMapStreamsArgs({

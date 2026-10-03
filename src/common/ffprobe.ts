@@ -501,7 +501,9 @@ export interface FFprobeStream {
   /**
    * The stream's tags
    */
-  tags?: FFprobeStreamTags
+  tags?: FFprobeStreamTags,
+
+  side_data_list?: { side_data_type: string, rotation?: number }[],
 }
 
 /**

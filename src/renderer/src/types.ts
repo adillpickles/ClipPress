@@ -3,6 +3,8 @@ import { z } from 'zod';
 import type { FFprobeChapter, FFprobeFormat, FFprobeStream } from '../../common/ffprobe';
 import type { FileStream } from './ffmpeg';
 import { minSegmentSpeed, maxSegmentSpeed } from './segmentSpeed';
+import { minCropSize } from './segmentCrop';
+import type { SegmentCrop } from './segmentCrop';
 
 
 export interface ChromiumHTMLVideoElement extends HTMLVideoElement {
@@ -27,6 +29,13 @@ export type SegmentTags = z.infer<typeof segmentTagsSchema>
 
 export type EditingSegmentTags = Record<string, SegmentTags>
 
+export const segmentCropSchema = z.object({
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+  width: z.number().min(minCropSize).max(1),
+  height: z.number().min(minCropSize).max(1),
+}).refine((crop) => crop.x + crop.width <= 1.000001 && crop.y + crop.height <= 1.000001 && Math.abs(crop.width - crop.height) < 0.000001, 'Crop must fit within the source and preserve its aspect ratio');
+
 export const llcProjectSaveableSegmentSchema = z.object({
   start: z.number(),
   end: z.number().optional(),
@@ -34,6 +43,7 @@ export const llcProjectSaveableSegmentSchema = z.object({
   tags: segmentTagsSchema.optional(),
   selected: z.boolean().optional(),
   speed: z.number().min(minSegmentSpeed).max(maxSegmentSpeed).optional(),
+  crop: segmentCropSchema.optional(),
 });
 
 export const streamParamsSchema = z.object({
@@ -112,12 +122,14 @@ export interface SegmentBase {
   end?: number | undefined,
   name?: string | undefined,
   speed?: number | undefined,
+  crop?: SegmentCrop | undefined,
 }
 
 export interface DefiniteSegmentBase {
   start: number,
   end: number,
   speed?: number | undefined,
+  crop?: SegmentCrop | undefined,
 }
 
 export interface SegmentColorIndex {
