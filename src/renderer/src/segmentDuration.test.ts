@@ -9,3 +9,7 @@ it('sums real selections and keeps markers at zero duration', () => {
   expect(getSegmentsTotalDuration([{ start: 4, end: 9 }, { start: 20 }, { start: 30, end: 32 }], 52.2)).toBe(7);
   expect(getSegmentsTotalDuration([{ start: 0, initial: true }], undefined)).toBe(0);
 });
+
+it('sums output time for mixed segment speeds', () => {
+  expect(getSegmentsTotalDuration([{ start: 0, end: 4, speed: 2 }, { start: 10, end: 14, speed: 0.5 }], 20)).toBe(10);
+});

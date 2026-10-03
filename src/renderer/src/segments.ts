@@ -5,15 +5,16 @@ import maxBy from 'lodash/maxBy';
 import invariant from 'tiny-invariant';
 
 import type { DefiniteSegmentBase, PlaybackMode, SegmentBase, SegmentTags, SegmentToExport, StateSegment } from './types';
+import { getSegmentOutputDuration } from './segmentSpeed';
 
 
 export const isDurationValid = (duration?: number): duration is number => duration != null && Number.isFinite(duration) && duration > 0;
 
 /** Only the initial placeholder means the whole file; other open-ended entries are markers. */
-export function getSegmentsTotalDuration(segments: readonly { start: number, end?: number | undefined, initial?: true }[], fileDuration: number | undefined) {
+export function getSegmentsTotalDuration(segments: readonly { start: number, end?: number | undefined, initial?: true, speed?: number | undefined }[], fileDuration: number | undefined) {
   return segments.reduce((sum, segment) => {
     const end = segment.initial ? fileDuration : segment.end;
-    return sum + (end != null ? Math.max(0, end - segment.start) : 0);
+    return sum + (end != null ? getSegmentOutputDuration({ ...segment, end }) : 0);
   }, 0);
 }
 
@@ -23,13 +24,15 @@ export const createSegment = (props?: {
   name?: string | undefined,
   tags?: unknown | undefined,
   initial?: true,
-  selected?: boolean,
+  selected?: boolean | undefined,
+  speed?: number | undefined,
 }): Omit<StateSegment, 'segColorIndex'> => ({
   start: props?.start ?? 0,
   end: props?.end,
   name: props?.name || '',
   segId: nanoid(),
   selected: props?.selected ?? true,
+  ...(props?.speed != null ? { speed: props.speed } : {}),
 
   // `tags` is an optional object (key-value). Values must always be string
   // See https://github.com/mifi/lossless-cut/issues/879
@@ -46,9 +49,9 @@ export const addSegmentColorIndex = (segment: Omit<StateSegment, 'segColorIndex'
 });
 
 export const mapSaveableSegments = (segments: StateSegment[]) => segments.map(({
-  start, end, name, tags, selected,
+  start, end, name, tags, selected, speed,
 }) => ({
-  start, end, name, tags, selected,
+  start, end, name, tags, selected, ...(speed != null ? { speed } : {}),
 }));
 
 // in the past we had non-string tags

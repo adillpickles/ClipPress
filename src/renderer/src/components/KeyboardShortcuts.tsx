@@ -388,6 +388,10 @@ const KeyboardShortcuts = memo(({
         name: t('Duplicate current segment'),
         category: segmentsAndCutpointsCategory,
       },
+      toggleSegmentSpeedControls: {
+        name: t('Toggle segment speed controls'),
+        category: segmentsAndCutpointsCategory,
+      },
       jumpPrevSegment: {
         name: t('Jump to previous segment'),
         category: segmentsAndCutpointsCategory,

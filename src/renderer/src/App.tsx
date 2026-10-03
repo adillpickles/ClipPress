@@ -53,6 +53,8 @@ import Timeline from './Timeline';
 import BottomBar from './BottomBar';
 import ExportConfirm from './components/ExportConfirm';
 import TextOverlayEditor from './components/TextOverlayEditor';
+import SegmentSpeedDialog from './components/SegmentSpeedDialog';
+import { getPreviewSegmentSpeed, getSegmentSpeed, isSegmentSpeedValid } from './segmentSpeed';
 import ValueTuners from './components/ValueTuners';
 import VolumeControl from './components/VolumeControl';
 import PlaybackStreamSelector from './components/PlaybackStreamSelector';
@@ -549,6 +551,7 @@ function App() {
     videoContainerRef,
     playbackRate,
     setPlaybackRate,
+    setSegmentPreviewSpeed,
     outputPlaybackRate,
     setOutputPlaybackRate,
     commandedTime,
@@ -1038,6 +1041,40 @@ function App() {
     simpleMode,
     ffmpegHwaccel,
   });
+
+  const [speedControlsBySegment, setSpeedControlsBySegment] = useState<Record<string, boolean>>({});
+  const [editingSpeedSegmentId, setEditingSpeedSegmentId] = useState<string>();
+  const editingSpeedSegment = cutSegments.find((segment) => segment.segId === editingSpeedSegmentId);
+  const speedControlsVisible = !invertCutSegments && currentCutSeg != null && (speedControlsBySegment[currentCutSeg.segId] ?? getSegmentSpeed(currentCutSeg) !== 1);
+  const hasSegmentSpeedChanges = segmentsOrInverse.selected.some((segment) => getSegmentSpeed(segment) !== 1);
+
+  const changeSegmentSpeed = useCallback((segmentId: string, speed: number) => {
+    if (!isSegmentSpeedValid(speed) || workingRef.current) return;
+    const index = cutSegments.findIndex((segment) => segment.segId === segmentId);
+    if (index === -1 || cutSegments[index]?.end == null) return;
+    if (getSegmentSpeed(cutSegments[index]!) !== speed) updateSegAtIndex(index, { speed });
+    setSpeedControlsBySegment((existing) => ({ ...existing, [segmentId]: true }));
+  }, [cutSegments, updateSegAtIndex, workingRef]);
+
+  const editSegmentSpeed = useCallback((index: number) => {
+    const segment = cutSegments[index];
+    if (segment?.end == null || invertCutSegments || workingRef.current) return;
+    setCurrentSegIndex(index);
+    setSpeedControlsBySegment((existing) => ({ ...existing, [segment.segId]: true }));
+    setEditingSpeedSegmentId(segment.segId);
+  }, [cutSegments, invertCutSegments, setCurrentSegIndex, workingRef]);
+
+  const toggleSegmentSpeedControls = useCallback(() => {
+    if (currentCutSeg?.end == null || invertCutSegments || workingRef.current) return;
+    setSpeedControlsBySegment((existing) => ({ ...existing, [currentCutSeg.segId]: !speedControlsVisible }));
+  }, [currentCutSeg, invertCutSegments, speedControlsVisible, workingRef]);
+
+  const previewSegmentSpeed = invertCutSegments ? 1 : getPreviewSegmentSpeed(cutSegments, currentSegIndexSafe, relevantTime, fileDuration);
+  useEffect(() => setSegmentPreviewSpeed(previewSegmentSpeed), [previewSegmentSpeed, setSegmentPreviewSpeed]);
+  useEffect(() => {
+    setSpeedControlsBySegment({});
+    setEditingSpeedSegmentId(undefined);
+  }, [filePath]);
 
   const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath } = useSegmentsAutoSave({
     autoSaveProjectFile,
@@ -2023,6 +2060,7 @@ function App() {
         originalIndex: currentSegIndexSafe ?? 0,
         name: currentCutSeg?.name,
         tags: currentCutSeg?.tags,
+        speed: currentCutSeg?.speed,
       },
     ];
   }, [
@@ -3030,6 +3068,10 @@ function App() {
     try {
       setWorking({ text: i18n.t('Exporting') });
 
+      if (segmentsToChaptersOnly && hasSegmentSpeedChanges) {
+        throw new UserFacingError(i18n.t('Choose a clip export mode to apply segment speed changes. Chapters-only export keeps the original video.'));
+      }
+
       if (isSizeLimitedExport) {
         const notices = new Set<string>();
         const warnings = new Set<string>();
@@ -3326,7 +3368,10 @@ function App() {
         return;
       }
 
-      if (hasOverlayClips) {
+      if (hasOverlayClips || hasSegmentSpeedChanges) {
+        if (hasSegmentSpeedChanges && !['mp4', 'mov', 'matroska'].includes(fileFormat ?? '')) {
+          throw new UserFacingError(i18n.t('Speed changes require MP4, MOV or MKV output. Choose one of these formats or use size-limited export.'));
+        }
         if (
           activeVideoStream == null
           || activeVideoStream.width == null
@@ -3359,7 +3404,7 @@ function App() {
         const notices = new Set<string>();
         const warnings = new Set<string>();
         notices.add(
-          i18n.t('Text layers require video encoding during export.'),
+          i18n.t('Text layers and speed changes require video encoding during export.'),
         );
         if (hasAdditionalVideoStreamsForTextExport) {
           warnings.add(
@@ -3800,6 +3845,7 @@ function App() {
     handleExportFailed,
     hasAdditionalVideoStreamsForTextExport,
     hasOverlayClips,
+    hasSegmentSpeedChanges,
     haveInvalidSegs,
     hideAllNotifications,
     invertCutSegments,
@@ -5283,6 +5329,7 @@ function App() {
       labelCurrentSegment: () => labelSegment(currentSegIndexSafe),
       addSegment,
       duplicateCurrentSegment,
+      toggleSegmentSpeedControls,
       toggleLastCommands,
       export: () => onExportPress(),
       extractCurrentSegmentFramesAsImages,
@@ -5389,6 +5436,7 @@ function App() {
     addSegment,
     duplicateCurrentSegment,
     toggleLastCommands,
+    toggleSegmentSpeedControls,
     extractCurrentSegmentFramesAsImages,
     extractSelectedSegmentsFramesAsImages,
     reorderSegsByStartTime,
@@ -6072,6 +6120,7 @@ function App() {
                             onPause={onStopPlaying}
                             onAbort={onVideoAbort}
                             onDurationChange={onDurationChange}
+                            onLoadedMetadata={() => setSegmentPreviewSpeed(previewSegmentSpeed)}
                             onTimeUpdate={onTimeUpdate}
                             onError={onVideoError}
                             onClick={onVideoClick}
@@ -6303,6 +6352,10 @@ function App() {
                           onSelectOverlay={setSelectedOverlayId}
                           onUpdateOverlayClip={updateOverlayClip}
                           onDeleteOverlayClip={removeOverlayClip}
+                          speedControlsVisible={speedControlsVisible}
+                          onChangeSegmentSpeed={(speed) => { if (currentCutSeg != null) changeSegmentSpeed(currentCutSeg.segId, speed); }}
+                          onEditSegmentSpeed={editSegmentSpeed}
+                          onHideSpeedControls={toggleSegmentSpeedControls}
                         />
                       </div>
                     </>
@@ -6361,6 +6414,7 @@ function App() {
                       }
                       onEditSegmentTags={onEditSegmentTags}
                       getSegEstimatedSize={getSegEstimatedSize}
+                      onEditSpeed={editSegmentSpeed}
                     />
                   )}
                 </AnimatePresence>
@@ -6593,6 +6647,20 @@ function App() {
                 dialog={genericDialog}
                 onOpenChange={(open) => !open && closeGenericDialog()}
               />
+
+              {editingSpeedSegment != null && (
+                <SegmentSpeedDialog
+                  key={editingSpeedSegment.segId}
+                  segment={editingSpeedSegment}
+                  fileDuration={fileDuration}
+                  formatTimecode={formatTimecode}
+                  onApply={(speed) => {
+                    changeSegmentSpeed(editingSpeedSegment.segId, speed);
+                    setEditingSpeedSegmentId(undefined);
+                  }}
+                  onClose={() => setEditingSpeedSegmentId(undefined)}
+                />
+              )}
 
               <WhatsNew />
 

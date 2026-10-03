@@ -1,4 +1,5 @@
 import type { DefiniteSegmentBase } from './types';
+import { getAudioTempoFilter, getSegmentPlaybackRate, getVideoTimingFilter } from './segmentSpeed';
 
 export function getRelativeSegmentOverlapWindow({
   overlayStart,
@@ -26,16 +27,33 @@ export function getRelativeSegmentOverlapWindow({
 export function buildConcatSegmentInputArgs({
   filePath,
   segments,
-  outputPlaybackRate,
 }: {
   filePath: string,
   segments: DefiniteSegmentBase[],
-  outputPlaybackRate: number,
 }) {
   return segments.flatMap((segment) => [
-    ...(outputPlaybackRate !== 1 ? ['-itsscale', String(1 / outputPlaybackRate)] : []),
     '-ss', segment.start.toFixed(5),
     '-t', (segment.end - segment.start).toFixed(5),
     '-i', filePath,
   ]);
+}
+
+export function buildSegmentConcatFilters({ segments, videoStreamIndex, audioStreamIndex, outputPlaybackRate }: {
+  segments: DefiniteSegmentBase[],
+  videoStreamIndex: number,
+  audioStreamIndex: number | undefined,
+  outputPlaybackRate: number,
+}) {
+  const graph: string[] = [];
+  const labels = segments.map((segment, index) => {
+    const rate = getSegmentPlaybackRate(segment, outputPlaybackRate);
+    const videoLabel = `[segmentv${index}]`;
+    graph.push(`[${index}:${videoStreamIndex}]${getVideoTimingFilter(rate)}${videoLabel}`);
+    if (audioStreamIndex == null) return videoLabel;
+    const audioLabel = `[segmenta${index}]`;
+    const tempo = getAudioTempoFilter(rate);
+    graph.push(`[${index}:${audioStreamIndex}]asetpts=PTS-STARTPTS${tempo ? `,${tempo}` : ''}${audioLabel}`);
+    return `${videoLabel}${audioLabel}`;
+  });
+  return { graph, labels: labels.join('') };
 }

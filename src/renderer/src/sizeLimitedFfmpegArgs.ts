@@ -4,6 +4,7 @@
 import { getResolvedVideoArgs, toKbitrateArg } from './sizeLimitedEncoderArgs.ts';
 import { buildSizeLimitedVideoFilter, sizeLimitedSwsFlags } from './sizeLimitedResolution.ts';
 import { isMutedAudioGain } from './util/audioGain.ts';
+import { getAudioTempoFilter } from './segmentSpeed.ts';
 import type { SizeLimitedVideoTransformProfile } from './sizeLimitedResolution';
 import type { SizeLimitedResolvedStrategy } from './sizeLimitedTypes';
 
@@ -27,15 +28,20 @@ export function getSizeLimitedSwsFlagsArgs() {
   return ['-sws_flags', sizeLimitedSwsFlags];
 }
 
-export function getSizeLimitedAudioArgs({ audioInputLabel, audioBitrate, audioGainDb }: {
+export function getSizeLimitedAudioArgs({ audioInputLabel, audioBitrate, audioGainDb, audioPlaybackRate = 1 }: {
   audioInputLabel: string | undefined,
   audioBitrate: number,
   audioGainDb?: number | undefined,
+  audioPlaybackRate?: number | undefined,
 }) {
   if (audioInputLabel == null) return ['-an'];
+  const filters = [
+    getAudioTempoFilter(audioPlaybackRate),
+    audioGainDb != null && Math.abs(audioGainDb) >= 0.01 ? (isMutedAudioGain(audioGainDb) ? 'volume=0' : `volume=${audioGainDb.toFixed(2)}dB`) : '',
+  ].filter(Boolean);
   return [
     '-map', audioInputLabel,
-    ...(audioGainDb != null && Math.abs(audioGainDb) >= 0.01 ? ['-filter:a', isMutedAudioGain(audioGainDb) ? 'volume=0' : `volume=${audioGainDb.toFixed(2)}dB`] : []),
+    ...(filters.length > 0 ? ['-filter:a', filters.join(',')] : []),
     '-c:a', 'aac', '-b:a', toKbitrateArg(audioBitrate), '-ac', '2',
   ];
 }
@@ -53,6 +59,7 @@ export function getSizeLimitedCommonEncodeArgs({
   sourceFps,
   outputPlaybackRate,
   audioGainDb,
+  audioPlaybackRate,
   qualityCapOffset,
 }: {
   strategy: SizeLimitedResolvedStrategy,
@@ -67,6 +74,7 @@ export function getSizeLimitedCommonEncodeArgs({
   sourceFps: number | undefined,
   outputPlaybackRate: number,
   audioGainDb?: number | undefined,
+  audioPlaybackRate?: number | undefined,
   qualityCapOffset?: number | undefined,
 }) {
   const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
@@ -80,7 +88,7 @@ export function getSizeLimitedCommonEncodeArgs({
     ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: false, videoProfile, sourceFps, outputPlaybackRate, qualityCapOffset }),
     ...(videoFilter != null ? ['-vf', videoFilter] : []),
     ...getSizeLimitedRotationArgs(rotation),
-    ...getSizeLimitedAudioArgs({ audioInputLabel, audioBitrate, audioGainDb }),
+    ...getSizeLimitedAudioArgs({ audioInputLabel, audioBitrate, audioGainDb, audioPlaybackRate }),
     '-movflags', '+faststart',
     ...experimentalArgs,
     '-f', 'mp4',
@@ -103,6 +111,7 @@ export function getSizeLimitedTwoPassEncodeArgs({
   sourceFps,
   outputPlaybackRate,
   audioGainDb,
+  audioPlaybackRate,
   qualityCapOffset,
 }: {
   strategy: SizeLimitedResolvedStrategy,
@@ -119,6 +128,7 @@ export function getSizeLimitedTwoPassEncodeArgs({
   sourceFps: number | undefined,
   outputPlaybackRate: number,
   audioGainDb?: number | undefined,
+  audioPlaybackRate?: number | undefined,
   qualityCapOffset?: number | undefined,
 }) {
   const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
@@ -134,7 +144,7 @@ export function getSizeLimitedTwoPassEncodeArgs({
     '-pass', String(passNumber),
     '-passlogfile', passlogFile,
     ...getSizeLimitedRotationArgs(rotation),
-    ...(passNumber === 1 ? ['-an'] : getSizeLimitedAudioArgs({ audioInputLabel, audioBitrate, audioGainDb })),
+    ...(passNumber === 1 ? ['-an'] : getSizeLimitedAudioArgs({ audioInputLabel, audioBitrate, audioGainDb, audioPlaybackRate })),
     ...(passNumber === 2 ? ['-movflags', '+faststart'] : []),
     ...experimentalArgs,
     '-f', 'mp4',

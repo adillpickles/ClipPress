@@ -21,6 +21,7 @@ import Button from './components/Button';
 import type { UseSegments } from './hooks/useSegments';
 import { keyMap } from './hooks/useTimelineScroll';
 import { minTextOverlayDuration } from './textOverlays';
+import SegmentSpeedControl from './components/SegmentSpeedControl';
 
 const remote = window.require('@electron/remote');
 const { Menu } = remote;
@@ -142,6 +143,10 @@ function Timeline({
   onSelectOverlay,
   onUpdateOverlayClip,
   onDeleteOverlayClip,
+  speedControlsVisible,
+  onChangeSegmentSpeed,
+  onEditSegmentSpeed,
+  onHideSpeedControls,
 } : {
   fileDurationNonZero: number,
   startTimeOffset: number,
@@ -182,6 +187,10 @@ function Timeline({
   onSelectOverlay: (overlayId: string | undefined) => void,
   onUpdateOverlayClip: (overlayId: string, updater: (clip: OverlayClip) => OverlayClip) => void,
   onDeleteOverlayClip: (overlayId: string) => void,
+  speedControlsVisible: boolean,
+  onChangeSegmentSpeed: (speed: number) => void,
+  onEditSegmentSpeed: (index: number) => void,
+  onHideSpeedControls: () => void,
 }) {
   const { t } = useTranslation();
 
@@ -631,6 +640,14 @@ function Timeline({
           </div>
         )}
 
+        {speedControlsVisible && currentCutSeg?.end != null && (
+          <div style={{ height: 28, width: `${zoom * 100}%`, position: 'relative', background: 'var(--gray-2)' }}>
+            <div style={{ position: 'absolute', left: calculateTimelinePercent(currentCutSeg.start), width: calculateTimelinePercent(currentCutSeg.end - currentCutSeg.start), minWidth: 160, bottom: 0 }}>
+              <SegmentSpeedControl key={currentCutSeg.segId} segment={currentCutSeg} formatTimecode={formatTimecode} onChange={onChangeSegmentSpeed} onEdit={() => onEditSegmentSpeed(currentSegIndexSafe)} onHide={onHideSpeedControls} />
+            </div>
+          </div>
+        )}
+
         <div
           style={{ height: timelineHeight, width: `${zoom * 100}%`, position: 'relative', backgroundColor: timelineBackground, transition: darkModeTransition, borderTop: overlayClips.length > 0 ? '1px solid var(--gray-7)' : undefined }}
           ref={timelineWrapperRef}
@@ -661,6 +678,7 @@ function Timeline({
                 invertCutSegments={invertCutSegments}
                 formatTimecode={formatTimecode}
                 selected={selected}
+                onEditSpeed={onEditSegmentSpeed}
               />
             );
           })}

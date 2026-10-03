@@ -1,0 +1,42 @@
+.speedField {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  margin: 1.2rem 0 .7rem;
+}
+.speedField > span:first-child { flex: 1; }
+.presets { display: flex; gap: .35rem; flex-wrap: wrap; }
+.presets button { flex: 1; padding: .35rem .5rem; font-size: .8rem; }
+.presets button[aria-pressed="true"] { border-color: var(--blue-9); background: var(--blue-4); }
+.durations {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: .6rem;
+  padding: 1rem;
+  margin-top: 1rem;
+  background: var(--gray-3);
+  border: 1px solid var(--gray-6);
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.durations > span { color: var(--gray-11); }
+.error { color: var(--red-11); font-size: .85rem; margin-top: .6rem; }
+.strip {
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  color: var(--gray-12);
+  background: var(--blue-3);
+  border: 1px solid var(--blue-7);
+  border-radius: 5px 5px 0 0;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.strip input { width: 100%; min-width: 32px; margin: 0; accent-color: var(--blue-9); cursor: ew-resize; }
+.speedLabel, .hide { color: inherit; background: transparent; border: 0; padding: 2px; cursor: pointer; flex-shrink: 0; }
+.speedLabel { font-size: 11px; font-weight: 700; }
+.stripDuration { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.hide { display: flex; align-items: center; }

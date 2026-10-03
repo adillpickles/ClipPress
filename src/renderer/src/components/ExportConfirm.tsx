@@ -15,6 +15,7 @@ import i18n from 'i18next';
 import { useTranslation, Trans } from 'react-i18next';
 import { IoIosHelpCircle, IoIosSettings } from 'react-icons/io';
 import type { SweetAlertIcon } from 'sweetalert2';
+import { getSegmentOutputDuration } from '../segmentSpeed';
 
 import ExportButton from './ExportButton';
 import ExportModeButton from './ExportModeButton';
@@ -553,14 +554,14 @@ function ExportConfirm({
     ) return undefined;
 
     const plannedDuration = willMerge
-      ? segmentsToExport.reduce((sum, { start, end }) => sum + (end - start), 0)
+      ? segmentsToExport.reduce((sum, segment) => sum + getSegmentOutputDuration(segment, outputPlaybackRate), 0)
       : segmentsToExport.reduce(
-        (maxDuration, { start, end }) => Math.max(maxDuration, end - start),
+        (maxDuration, segment) => Math.max(maxDuration, getSegmentOutputDuration(segment, outputPlaybackRate)),
         0,
       );
 
     return plannedDuration > 0
-      ? plannedDuration / outputPlaybackRate
+      ? plannedDuration
       : undefined;
   }, [isSizeLimited, outputPlaybackRate, segmentsToExport, willMerge]);
 

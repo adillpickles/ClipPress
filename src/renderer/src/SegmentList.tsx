@@ -24,6 +24,7 @@ import type { UseSegments } from './hooks/useSegments';
 import * as Dialog from './components/Dialog';
 import { DialogButton } from './components/Button';
 import getSwal from './swal';
+import { getSegmentOutputDuration, getSegmentSpeed } from './segmentSpeed';
 
 
 const buttonBaseStyle: CSSProperties = {
@@ -93,6 +94,7 @@ const Segment = memo(({
   onInvertSelectedSegments,
   onDuplicateSegmentClick,
   getSegEstimatedSize,
+  onEditSpeed,
 }: {
   seg: StateSegment | InverseCutSegment,
   index: number,
@@ -125,6 +127,7 @@ const Segment = memo(({
   onInvertSelectedSegments: UseSegments['invertSelectedSegments'],
   onDuplicateSegmentClick: UseSegments['duplicateSegment'],
   getSegEstimatedSize: UseSegments['getSegEstimatedSize'],
+  onEditSpeed: (segmentIndex: number) => void,
 }) => {
   const { invertCutSegments, darkMode, simpleMode } = useUserSettings();
   const { t } = useTranslation();
@@ -147,6 +150,7 @@ const Segment = memo(({
       { label: t('Label segment'), click: () => onLabelPress(index) },
       { label: t('Remove segment'), click: () => onRemovePress(index) },
       { label: t('Duplicate segment'), click: () => onDuplicateSegmentClick(seg) },
+      { label: t('Change speed…'), enabled: seg.end != null, click: () => onEditSpeed(index) },
 
       { type: 'separator' },
 
@@ -176,11 +180,11 @@ const Segment = memo(({
       { label: t('Segment tags'), click: () => onEditSegmentTags(index) },
       { label: t('Extract frames as image files'), click: () => onExtractSegmentsFramesAsImages([seg]) },
     ];
-  }, [invertCutSegments, t, addSegment, onLabelSelectedSegments, onRemoveSelected, onExtractSelectedSegmentsFramesAsImages, updateSegOrder, index, jumpSegStart, jumpSegEnd, onLabelPress, onRemovePress, onDuplicateSegmentClick, seg, onSelectSingleSegment, onSelectAllSegments, onDeselectAllSegments, onSelectAllMarkers, onSelectSegmentsByLabel, onSelectSegmentsByExpr, onInvertSelectedSegments, onMutateSegmentsByExpr, onReorderPress, onEditSegmentTags, onExtractSegmentsFramesAsImages]);
+  }, [invertCutSegments, t, addSegment, onLabelSelectedSegments, onRemoveSelected, onExtractSelectedSegmentsFramesAsImages, updateSegOrder, index, jumpSegStart, jumpSegEnd, onLabelPress, onRemovePress, onDuplicateSegmentClick, seg, onSelectSingleSegment, onSelectAllSegments, onDeselectAllSegments, onSelectAllMarkers, onSelectSegmentsByLabel, onSelectSegmentsByExpr, onInvertSelectedSegments, onMutateSegmentsByExpr, onReorderPress, onEditSegmentTags, onExtractSegmentsFramesAsImages, onEditSpeed]);
 
   useContextMenu(ref, contextMenuTemplate);
 
-  const duration = useMemo(() => (seg.end == null ? undefined : seg.end - seg.start), [seg]);
+  const duration = useMemo(() => (seg.end == null ? undefined : getSegmentOutputDuration(seg)), [seg]);
   const estimatedSize = useMemo(() => getSegEstimatedSize(seg), [getSegEstimatedSize, seg]);
 
   const timeStr = useMemo(() => (
@@ -323,6 +327,7 @@ const Segment = memo(({
         <>
           <div style={{ fontSize: simpleMode ? '.82em' : '.75em', marginTop: simpleMode ? '.32rem' : 0, color: simpleMode ? 'var(--gray-10)' : undefined, lineHeight: 1.35 }}>
             {simpleMode ? formatSimpleDuration(duration) : `${t('Duration')} ${formatTimecode({ seconds: duration, shorten: true })}`}
+            {getSegmentSpeed(seg) !== 1 && <span> · {Math.round(getSegmentSpeed(seg) * 100)}%</span>}
             {estimatedSize != null && (
               <span style={{ fontSize: simpleMode ? '1em' : '.9em' }}>
                 {simpleMode ? ' · ~' : ', ~'}
@@ -395,6 +400,7 @@ function SegmentList({
   setEditingSegmentTagsSegmentIndex,
   onEditSegmentTags,
   getSegEstimatedSize,
+  onEditSpeed,
 }: {
   width: number,
   fileDuration: number | undefined,
@@ -437,6 +443,7 @@ function SegmentList({
   setEditingSegmentTagsSegmentIndex: Dispatch<SetStateAction<number | undefined>>,
   onEditSegmentTags: (index: number) => void,
   getSegEstimatedSize: UseSegments['getSegEstimatedSize'],
+  onEditSpeed: (segmentIndex: number) => void,
 }) {
   const { t } = useTranslation();
   const { getSegColor, nextSegColorIndex } = useSegColors();
@@ -668,6 +675,7 @@ function SegmentList({
         onInvertSelectedSegments={onInvertSelectedSegments}
         onDuplicateSegmentClick={onDuplicateSegmentClick}
         getSegEstimatedSize={getSegEstimatedSize}
+        onEditSpeed={onEditSpeed}
       />
     );
   }

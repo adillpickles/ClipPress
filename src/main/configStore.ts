@@ -37,6 +37,8 @@ const defaultKeyBindings: KeyBinding[] = [
   { keys: 'KeyD', action: 'cleanupFilesDialog' },
   { keys: 'KeyB', action: 'splitCurrentSegment' },
   { keys: 'KeyR', action: 'increaseRotation' },
+  { keys: 'ControlLeft+KeyR', action: 'toggleSegmentSpeedControls' },
+  { keys: 'MetaLeft+KeyR', action: 'toggleSegmentSpeedControls' },
   { keys: 'KeyG', action: 'goToTimecode' },
   { keys: 'KeyT', action: 'toggleStripAll' },
   { keys: 'ShiftLeft+KeyT', action: 'toggleStripCurrentFilter' },
@@ -554,5 +556,13 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
 
     logger.info('Migrated config to version 2');
     set('version', 2);
+  }
+
+  if (store.get('segmentSpeedShortcutsMigrated') !== true) {
+    const existingBindings = store.get('keyBindings') as KeyBinding[];
+    const addedBindings = defaultKeyBindings.filter((binding) => binding.action === 'toggleSegmentSpeedControls'
+      && !existingBindings.some((existing) => existing.keys === binding.keys || existing.action === binding.action));
+    if (addedBindings.length > 0) set('keyBindings', [...existingBindings, ...addedBindings]);
+    store.set('segmentSpeedShortcutsMigrated', true);
   }
 }

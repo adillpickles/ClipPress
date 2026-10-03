@@ -14,6 +14,7 @@ import { needsSmartCut, getCodecParams } from '../smartcut';
 import { getGuaranteedSegments, isDurationValid } from '../segments';
 import { getRotatedVideoDimensions, renderTextOverlayPng } from '../textOverlays';
 import { getRelativeSegmentOverlapWindow } from '../exportSegmentMath';
+import { getAudioTempoFilter, getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from '../segmentSpeed';
 import type { FFprobeStream } from '../../../common/ffprobe';
 import type { AvoidNegativeTs, FfmpegHwAccel, Html5ifyMode, PreserveMetadata } from '../../../common/types';
 import type { AllFilesMeta, Chapter, CopyfileStreams, CustomTagsByFile, LiteFFprobeStream, OverlayClip, ParamsByStreamId, SegmentToExport } from '../types';
@@ -175,7 +176,7 @@ function buildTextOverlayFilterGraph({
   rotation: number | undefined,
 }) {
   const graph: string[] = [];
-  const baseFilters = getOverlayRotationFilters(rotation);
+  const baseFilters = [getVideoTimingFilter(outputPlaybackRate), ...getOverlayRotationFilters(rotation)];
   let currentLabel = '[video0]';
   graph.push(`${videoInputLabel}${baseFilters.length > 0 ? baseFilters.join(',') : 'null'}${currentLabel}`);
 
@@ -711,7 +712,9 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
           return [];
         };
 
-        return await pMap(segments, async ({ start, end }, index) => {
+        return await pMap(segments, async (segment, index) => {
+          const { start, end } = segment;
+          const segmentRate = getSegmentPlaybackRate(segment, outputPlaybackRate);
           const finalOutPath = join(outputDir, cutFileNames[index]!);
           await assertOutPathIsNotSource(finalOutPath);
           if (await shouldSkipExistingFile(finalOutPath)) {
@@ -721,10 +724,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
           await maybeMkDeepOutDir({ outputDir, fileOutPath: finalOutPath });
 
-          const segmentDuration = end - start;
-          const mediaInputArgs = copyFileStreamsFiltered.length > 1
-            ? flatMap(copyFileStreamsFiltered, ({ path }) => [...getOutputPlaybackRateArgs(), '-ss', start.toFixed(5), '-i', path])
-            : [...getOutputPlaybackRateArgs(), '-ss', start.toFixed(5), '-i', copyFileStreamsFiltered[0]!.path];
+          const segmentDuration = getSegmentOutputDuration(segment, outputPlaybackRate);
+          const mediaInputArgs = flatMap(copyFileStreamsFiltered, ({ path }) => ['-ss', start.toFixed(5), '-t', (end - start).toFixed(5), '-i', path]);
 
           const segmentOverlayAssets = preparedOverlayAssets.filter((overlayAsset) => overlayAsset.start < end && overlayAsset.end > start);
           const overlayInputArgs = flatMap(segmentOverlayAssets, ({ imagePath }) => ['-loop', '1', '-i', imagePath]);
@@ -735,7 +736,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
             overlayAssets: segmentOverlayAssets,
             segmentStart: start,
             segmentEnd: end,
-            outputPlaybackRate,
+            outputPlaybackRate: segmentRate,
             rotation,
           });
 
@@ -747,8 +748,12 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
             needFlac: true,
             getAudioArgs: ({ path, streamIndex, outputIndex }) => {
               const audioGainDb = paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb ?? defaultAudioGainDb;
-              if (isNeutralAudioGain(audioGainDb)) return undefined;
-              return getAdjustedAudioGainArgs({ audioGainDb, outFormat, outputIndex });
+              if (segmentRate === 1 && isNeutralAudioGain(audioGainDb)) return undefined;
+              const audioFilters = [
+                'asetpts=PTS-STARTPTS', getAudioTempoFilter(segmentRate),
+                !isNeutralAudioGain(audioGainDb) ? (isMutedAudioGain(audioGainDb) ? 'volume=0' : `volume=${audioGainDb.toFixed(2)}dB`) : '',
+              ].filter(Boolean);
+              return [`-filter:${outputIndex}`, audioFilters.join(','), ...getAdjustedAudioEncodeArgs({ outFormat, outputIndex })];
             },
           });
 
@@ -781,7 +786,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
           appendFfmpegCommandLog(ffmpegArgs);
           const result = await runFfmpegWithProgress({
             ffmpegArgs,
-            duration: segmentDuration / outputPlaybackRate,
+            duration: segmentDuration,
             onProgress: (progress) => onSingleProgress(index, progress),
           });
           logStdoutStderr(result);
@@ -805,7 +810,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     } finally {
       if (chaptersPath != null) await tryDeleteFiles([chaptersPath]);
     }
-  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, filePath, getOutputPlaybackRateArgs, outputPlaybackRate, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, filePath, outputPlaybackRate, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   // inspired by https://gist.github.com/fernandoherreradelasheras/5eca67f4200f1a7cc8281747da08496e
   const cutEncodeSmartPart = useCallback(async ({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate, videoTimebase, allFilesMeta, copyFileStreams, videoStreamIndex, paramsByStreamId, ffmpegExperimental, hasBFrames }: {
