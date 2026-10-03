@@ -86,6 +86,36 @@ describe('update policy', () => {
     expect(controller.getStatus().installOnQuit).toBe(true);
   });
 
+  it('keeps the quit handler armed when the same preference is written during a download', async () => {
+    const { controller, backend } = setup();
+    let finish: () => void = () => undefined;
+    backend.download.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const checking = controller.check();
+    await vi.waitFor(() => expect(backend.download).toHaveBeenCalledOnce());
+    expect(backend.installOnQuit).toHaveBeenLastCalledWith(true);
+    controller.setPreferences({ enabled: true, mode: 'automatic' });
+    expect(backend.installOnQuit).toHaveBeenLastCalledWith(true);
+    finish();
+    await checking;
+    expect(controller.getStatus()).toMatchObject({ phase: 'ready', installOnQuit: true });
+  });
+
+  it('resumes after a quick Off -> Automatic change waits for cancellation to settle', async () => {
+    const { controller, backend } = setup();
+    let cancel: (error: Error) => void = () => undefined;
+    backend.download.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { cancel = reject; }));
+    const checking = controller.check();
+    await vi.waitFor(() => expect(backend.download).toHaveBeenCalledOnce());
+    controller.setPreferences({ enabled: false, mode: 'automatic' });
+    controller.setPreferences({ enabled: true, mode: 'automatic' });
+    expect(backend.download).toHaveBeenCalledOnce();
+    cancel(new Error('cancelled'));
+    await checking;
+    await vi.waitFor(() => expect(controller.getStatus().phase).toBe('ready'));
+    expect(backend.download).toHaveBeenCalledTimes(2);
+    expect(backend.installOnQuit).toHaveBeenLastCalledWith(true);
+  });
+
   it('does not download portable releases or releases excluded from a staged rollout', async () => {
     const { controller, backend } = setup(undefined, false);
     await controller.check();

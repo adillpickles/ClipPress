@@ -77,9 +77,11 @@ export default class UpdateController {
       this.backend?.cancel();
       if (this.state.phase === 'downloading') this.publish({ phase: 'available', percent: undefined });
     }
-    const installOnQuit = this.state.phase === 'ready'
-      && (this.approved || (preferences.enabled && preferences.mode === 'automatic'));
-    this.backend?.installOnQuit(installOnQuit);
+    const shouldInstall = this.approved || (preferences.enabled && preferences.mode === 'automatic');
+    const installOnQuit = this.state.phase === 'ready' && shouldInstall;
+    // Preserve the arm during an approved download. The backend registers its
+    // quit handler when verification completes, before download() resolves.
+    this.backend?.installOnQuit(shouldInstall && ['ready', 'downloading'].includes(this.state.phase));
     this.publish({ installOnQuit });
     if (this.options.supported && this.state.phase === 'available' && preferences.enabled && preferences.mode === 'automatic') this.download(false);
   }
@@ -120,7 +122,12 @@ export default class UpdateController {
     if (this.downloadPromise != null) return this.downloadPromise;
     if (!this.options.supported || this.state.version == null || !['available', 'error'].includes(this.state.phase)) return Promise.resolve(this.getStatus());
     this.approved = approved;
-    this.downloadPromise = this.performDownload().finally(() => { this.downloadPromise = undefined; });
+    this.downloadPromise = this.performDownload().finally(() => {
+      this.downloadPromise = undefined;
+      // A quick Off -> Automatic change may arrive before cancellation settles.
+      // Resume only after the old request has released its token and file handle.
+      if (this.options.supported && this.state.phase === 'available' && this.preferences.enabled && this.preferences.mode === 'automatic') this.download(false);
+    });
     return this.downloadPromise;
   }
 

@@ -6706,7 +6706,7 @@ function App() {
               )}
 
               <WhatsNew />
-              <UpdateNotice />
+              <UpdateNotice visible={!settingsVisible} />
 
               <ErrorDialog
                 error={genericError}
