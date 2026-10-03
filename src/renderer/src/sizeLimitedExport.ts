@@ -20,7 +20,8 @@ import {
 import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile } from './sizeLimitedResolution';
 import { getNextSizeLimitedAttempt, planSizeLimitedEncode } from './sizeLimitedPlanner';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
-import { buildConcatSegmentInputArgs, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
+import { buildConcatSegmentInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
+import { getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from './segmentSpeed';
 import type { OverlayClip, SegmentToExport, SizeLimitedEncoderCapabilities, SizeLimitedExecutionResult, SizeLimitedProgressMetadata, SizeLimitedResolvedStrategy, SizeLimitedRetryStep } from './types';
 import type { SizeLimitedVideoTransformProfile } from './sizeLimitedResolution';
 import { isMutedAudioGain, isNeutralAudioGain } from './util/streams';
@@ -242,7 +243,7 @@ function buildSegmentTextOverlayFilter({
 
   const graph: string[] = [];
   let currentLabel = '[v0]';
-  graph.push(`[0:${videoStreamIndex}]null${currentLabel}`);
+  graph.push(`[0:${videoStreamIndex}]${getVideoTimingFilter(outputPlaybackRate)}${currentLabel}`);
 
   overlayAssets.forEach((overlayAsset, index) => {
     const overlapWindow = getRelativeSegmentOverlapWindow({
@@ -276,14 +277,15 @@ function getMergedOverlayAssets({
   let mergedCursor = 0;
 
   segments.forEach((segment) => {
-    const segmentDuration = (segment.end - segment.start) / outputPlaybackRate;
+    const segmentDuration = getSegmentOutputDuration(segment, outputPlaybackRate);
+    const segmentRate = getSegmentPlaybackRate(segment, outputPlaybackRate);
     overlayAssets.forEach((overlayAsset) => {
       const overlapWindow = getRelativeSegmentOverlapWindow({
         overlayStart: overlayAsset.start,
         overlayEnd: overlayAsset.end,
         segmentStart: segment.start,
         segmentEnd: segment.end,
-        outputPlaybackRate,
+        outputPlaybackRate: segmentRate,
         timelineOffset: mergedCursor,
       });
       if (overlapWindow == null) return;
@@ -299,24 +301,22 @@ function getMergedOverlayAssets({
   return mergedAssets;
 }
 
-function getSegmentInputArgs({ filePath, segment, outputPlaybackRate }: {
+function getSegmentInputArgs({ filePath, segment }: {
   filePath: string,
   segment: SegmentToExport,
-  outputPlaybackRate: number,
 }) {
   return [
-    ...(outputPlaybackRate !== 1 ? ['-itsscale', String(1 / outputPlaybackRate)] : []),
     '-ss', segment.start.toFixed(5),
+    '-t', (segment.end - segment.start).toFixed(5),
     '-i', filePath,
   ];
 }
 
-function getMergeInputArgs({ filePath, segments, outputPlaybackRate }: {
+function getMergeInputArgs({ filePath, segments }: {
   filePath: string,
   segments: SegmentToExport[],
-  outputPlaybackRate: number,
 }) {
-  return buildConcatSegmentInputArgs({ filePath, segments, outputPlaybackRate });
+  return buildConcatSegmentInputArgs({ filePath, segments });
 }
 
 function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoProfile, overlayAssets, outputPlaybackRate, audioGainDb }: {
@@ -332,17 +332,15 @@ function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoPr
   const mergedOverlayAssets = overlayAssets != null
     ? getMergedOverlayAssets({ overlayAssets, segments, outputPlaybackRate })
     : [];
-  const graph: string[] = [];
+  const { graph, labels } = buildSegmentConcatFilters({ segments, videoStreamIndex, audioStreamIndex, outputPlaybackRate });
   const needsVideoPostProcessing = mergedOverlayAssets.length > 0 || videoFilter != null;
   const concatVideoLabel = needsVideoPostProcessing ? '[vconcat]' : '[v]';
   const needsAudioPostProcessing = audioStreamIndex != null && !isNeutralAudioGain(audioGainDb);
   const concatAudioLabel = needsAudioPostProcessing ? '[aconcat]' : '[a]';
 
   if (audioStreamIndex == null) {
-    const labels = segments.map((_, index) => `[${index}:${videoStreamIndex}]`).join('');
     graph.push(`${labels}concat=n=${segments.length}:v=1:a=0${concatVideoLabel}`);
   } else {
-    const labels = segments.map((_, index) => `[${index}:${videoStreamIndex}][${index}:${audioStreamIndex}]`).join('');
     graph.push(`${labels}concat=n=${segments.length}:v=1:a=1${concatVideoLabel}${concatAudioLabel}`);
   }
 
@@ -701,7 +699,8 @@ export async function exportSizeLimitedSegment({
   await assertOutPathIsNotSource({ outPath, filePath });
   await ensureOutputDir(outPath);
 
-  const plannedDuration = (segment.end - segment.start) / outputPlaybackRate;
+  const segmentRate = getSegmentPlaybackRate(segment, outputPlaybackRate);
+  const plannedDuration = getSegmentOutputDuration(segment, outputPlaybackRate);
   const { strategy, plan } = await resolveSizeLimitedPlan({
     controlMode,
     preset,
@@ -752,8 +751,8 @@ export async function exportSizeLimitedSegment({
       strategy,
       buildAttempt: async (attempt, tempPath = outPath) => {
         const attemptOutPath = makeAttemptPath(tempPath, attempt.attemptNumber);
-        const inputArgs = getSegmentInputArgs({ filePath, segment, outputPlaybackRate });
-        const outputTrimArgs = ['-t', (segment.end - segment.start).toFixed(5)];
+        const inputArgs = getSegmentInputArgs({ filePath, segment });
+        const outputTrimArgs = ['-t', plannedDuration.toFixed(5)];
         const videoProfile = resolveSizeLimitedVideoProfile({
           resolution,
           fps,
@@ -763,7 +762,8 @@ export async function exportSizeLimitedSegment({
           sourceFps,
           plannedVideoBitrate: attempt.videoBitrate,
         });
-        const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
+        const baseVideoFilter = buildSizeLimitedVideoFilter({ videoProfile });
+        const videoFilter = [getVideoTimingFilter(segmentRate), baseVideoFilter].filter(Boolean).join(',');
         const segmentOverlayAssets = preparedOverlayAssets.filter((overlayAsset) => overlayAsset.start < segment.end && overlayAsset.end > segment.start);
         const overlayInputArgs = segmentOverlayAssets.flatMap(({ imagePath }) => ['-loop', '1', '-i', imagePath]);
         const overlayFilter = buildSegmentTextOverlayFilter({
@@ -772,17 +772,16 @@ export async function exportSizeLimitedSegment({
           segmentStart: segment.start,
           segmentEnd: segment.end,
           imageInputStartIndex: 1,
-          outputPlaybackRate,
-          videoFilter,
+          outputPlaybackRate: segmentRate,
+          videoFilter: baseVideoFilter,
         });
         const commonArgs = [
           ...inputArgs,
           ...overlayInputArgs,
           ...(overlayFilter != null ? ['-filter_complex', overlayFilter.filterComplex] : []),
+          ...(overlayFilter == null ? ['-vf', videoFilter] : []),
         ];
-        const effectiveVideoProfile = overlayFilter != null
-          ? { outputWidth: undefined, outputHeight: undefined, outputFps: undefined }
-          : videoProfile;
+        const effectiveVideoProfile = { outputWidth: undefined, outputHeight: undefined, outputFps: undefined };
         const videoInputLabel = overlayFilter?.videoInputLabel ?? `0:${videoStream.index}`;
 
         if (strategy.executionMode === 'ffmpeg_two_pass') {
@@ -808,6 +807,7 @@ export async function exportSizeLimitedSegment({
               sourceFps,
               outputPlaybackRate,
               audioGainDb,
+              audioPlaybackRate: segmentRate,
               qualityCapOffset: attempt.qualityCapOffset,
             }),
           ];
@@ -832,6 +832,7 @@ export async function exportSizeLimitedSegment({
               sourceFps,
               outputPlaybackRate,
               audioGainDb,
+              audioPlaybackRate: segmentRate,
               qualityCapOffset: attempt.qualityCapOffset,
             }),
           ];
@@ -859,6 +860,7 @@ export async function exportSizeLimitedSegment({
             sourceFps,
             outputPlaybackRate,
             audioGainDb,
+            audioPlaybackRate: segmentRate,
             qualityCapOffset: attempt.qualityCapOffset,
           }),
         ];
@@ -960,8 +962,7 @@ export async function exportSizeLimitedMerge({
   await assertOutPathIsNotSource({ outPath, filePath });
   await ensureOutputDir(outPath);
 
-  const totalSourceDuration = segments.reduce((sum, segment) => sum + (segment.end - segment.start), 0);
-  const plannedDuration = totalSourceDuration / outputPlaybackRate;
+  const plannedDuration = segments.reduce((sum, segment) => sum + getSegmentOutputDuration(segment, outputPlaybackRate), 0);
   const { strategy, plan } = await resolveSizeLimitedPlan({
     controlMode,
     preset,
@@ -1012,7 +1013,7 @@ export async function exportSizeLimitedMerge({
       strategy,
       buildAttempt: async (attempt, tempPath = outPath) => {
         const attemptOutPath = makeAttemptPath(tempPath, attempt.attemptNumber);
-        const inputArgs = getMergeInputArgs({ filePath, segments, outputPlaybackRate });
+        const inputArgs = getMergeInputArgs({ filePath, segments });
         const overlayInputArgs = preparedOverlayAssets.flatMap(({ imagePath }) => ['-loop', '1', '-i', imagePath]);
         const outputTrimArgs = ['-t', plannedDuration.toFixed(5)];
         const videoProfile = resolveSizeLimitedVideoProfile({

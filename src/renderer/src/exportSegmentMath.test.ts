@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildConcatSegmentInputArgs, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
+import { buildConcatSegmentInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
 
 describe('buildConcatSegmentInputArgs', () => {
   it('builds each merged segment as its own trimmed input window', () => {
@@ -10,7 +10,6 @@ describe('buildConcatSegmentInputArgs', () => {
         { start: 0, end: 3 },
         { start: 10, end: 14.5 },
       ],
-      outputPlaybackRate: 1,
     })).toEqual([
       '-ss', '0.00000',
       '-t', '3.00000',
@@ -21,24 +20,43 @@ describe('buildConcatSegmentInputArgs', () => {
     ]);
   });
 
-  it('keeps playback-rate scaling tied to each trimmed input', () => {
+  it('keeps retimed segments trimmed in source coordinates', () => {
     expect(buildConcatSegmentInputArgs({
       filePath: 'clip.mp4',
       segments: [
-        { start: 5, end: 9 },
-        { start: 20, end: 24 },
+        { start: 5, end: 9, speed: 2 },
+        { start: 20, end: 24, speed: 0.5 },
       ],
-      outputPlaybackRate: 2,
     })).toEqual([
-      '-itsscale', '0.5',
       '-ss', '5.00000',
       '-t', '4.00000',
       '-i', 'clip.mp4',
-      '-itsscale', '0.5',
       '-ss', '20.00000',
       '-t', '4.00000',
       '-i', 'clip.mp4',
     ]);
+  });
+});
+
+describe('buildSegmentConcatFilters', () => {
+  it('retimes video and pitch-preserving audio before concatenating mixed speeds', () => {
+    const { graph, labels } = buildSegmentConcatFilters({
+      segments: [{ start: 5, end: 9, speed: 2 }, { start: 20, end: 24, speed: 0.25 }],
+      videoStreamIndex: 0,
+      audioStreamIndex: 1,
+      outputPlaybackRate: 1,
+    });
+    expect(graph).toContain('[0:0]setpts=(PTS-STARTPTS)/2[segmentv0]');
+    expect(graph).toContain('[1:1]asetpts=PTS-STARTPTS,atempo=0.5,atempo=0.5[segmenta1]');
+    expect(labels).toBe('[segmentv0][segmenta0][segmentv1][segmenta1]');
+  });
+
+  it('supports silent sources and the legacy whole-file rate', () => {
+    const { graph, labels } = buildSegmentConcatFilters({
+      segments: [{ start: 0, end: 4, speed: 2 }], videoStreamIndex: 2, audioStreamIndex: undefined, outputPlaybackRate: 0.5,
+    });
+    expect(graph).toEqual(['[0:2]setpts=(PTS-STARTPTS)/1[segmentv0]']);
+    expect(labels).toBe('[segmentv0]');
   });
 });
 

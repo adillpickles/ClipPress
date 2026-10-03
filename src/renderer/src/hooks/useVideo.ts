@@ -18,6 +18,21 @@ export default ({ filePath }: { filePath: string | undefined }) => {
 
   const videoRef = useRef<ChromiumHTMLVideoElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
+  const segmentPreviewSpeedRef = useRef(1);
+  const previewSpeedVideoRef = useRef<HTMLVideoElement>();
+
+  const setSegmentPreviewSpeed = useCallback((speed: number) => {
+    const video = videoRef.current;
+    if (video != null) {
+      const previousSpeed = previewSpeedVideoRef.current === video ? segmentPreviewSpeedRef.current : 1;
+      const rate = (video.playbackRate / previousSpeed) * speed;
+      previewSpeedVideoRef.current = video;
+      video.playbackRate = rate;
+      video.preservesPitch = true;
+      setPlaybackRateState(rate);
+    }
+    segmentPreviewSpeedRef.current = speed;
+  }, []);
 
   const setPlaybackRate = useCallback((rate: number) => {
     if (videoRef.current) videoRef.current.playbackRate = rate;
@@ -26,7 +41,7 @@ export default ({ filePath }: { filePath: string | undefined }) => {
 
   const setOutputPlaybackRate = useCallback((rate: number) => {
     setOutputPlaybackRateState(rate);
-    if (videoRef.current) videoRef.current.playbackRate = rate;
+    if (videoRef.current) videoRef.current.playbackRate = rate * segmentPreviewSpeedRef.current;
   }, []);
 
   const [playing, setPlaying] = useState(false);
@@ -135,7 +150,7 @@ export default ({ filePath }: { filePath: string | undefined }) => {
     // This was added to re-sync time if file gets reloaded #1674 - but I had to remove this because it broke loop-selected-segments https://github.com/mifi/lossless-cut/discussions/1785#discussioncomment-7852134
     // if (Math.abs(commandedTimeRef.current - video.currentTime) > 1) video.currentTime = commandedTimeRef.current;
 
-    if (resetPlaybackRate) setPlaybackRate(outputPlaybackRate);
+    if (resetPlaybackRate) setPlaybackRate(outputPlaybackRate * segmentPreviewSpeedRef.current);
     video?.play().catch((err) => {
       if (err instanceof Error && err.name === 'AbortError' && 'code' in err && err.code === 20) { // Probably "DOMException: The play() request was interrupted by a call to pause()."
         console.error(err);
@@ -151,6 +166,7 @@ export default ({ filePath }: { filePath: string | undefined }) => {
     videoContainerRef,
     playbackRate,
     setPlaybackRate,
+    setSegmentPreviewSpeed,
     outputPlaybackRate,
     setOutputPlaybackRate,
     commandedTime,

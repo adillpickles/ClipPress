@@ -594,14 +594,14 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     }
   }, [getRelevantTime, fileDuration, cutSegments, simpleMode, createIndexedSegment, safeSetCutSegments]);
 
-  const duplicateSegment = useCallback((segment: Pick<StateSegment, 'start' | 'end'> & Partial<Pick<StateSegment, 'name'>>) => {
+  const duplicateSegment = useCallback((segment: Pick<StateSegment, 'start' | 'end'> & Partial<Pick<StateSegment, 'name' | 'speed'>>) => {
     try {
       // Cannot duplicate if seg is not finished
       if (segment.start === undefined && segment.end === undefined) return;
 
       const cutSegmentsNew = [
         ...cutSegments,
-        createIndexedSegment({ segment: { start: segment.start, end: segment.end, name: segment.name }, incrementCount: true }),
+        createIndexedSegment({ segment: { start: segment.start, end: segment.end, name: segment.name, speed: segment.speed }, incrementCount: true }),
       ];
 
       safeSetCutSegments(cutSegmentsNew);
@@ -714,8 +714,8 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
 
     if (segment.start === relevantTime || segment.end === relevantTime) return; // No point
 
-    const firstPart = createIndexedSegment({ segment: { name: getNewName(segment.name, '1'), start: segment.start, end: relevantTime }, incrementCount: false });
-    const secondPart = createIndexedSegment({ segment: { name: getNewName(segment.name, '2'), start: relevantTime, end: segment.end }, incrementCount: true });
+    const firstPart = createIndexedSegment({ segment: { name: getNewName(segment.name, '1'), start: segment.start, end: relevantTime, speed: segment.speed }, incrementCount: false });
+    const secondPart = createIndexedSegment({ segment: { name: getNewName(segment.name, '2'), start: relevantTime, end: segment.end, speed: segment.speed }, incrementCount: true });
 
     const newSegments = [...cutSegments];
     newSegments.splice(firstSegmentAtCursorIndex, 1, firstPart, secondPart);

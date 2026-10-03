@@ -2,6 +2,7 @@ import type { MenuItem, MenuItemConstructorOptions } from 'electron';
 import { z } from 'zod';
 import type { FFprobeChapter, FFprobeFormat, FFprobeStream } from '../../common/ffprobe';
 import type { FileStream } from './ffmpeg';
+import { minSegmentSpeed, maxSegmentSpeed } from './segmentSpeed';
 
 
 export interface ChromiumHTMLVideoElement extends HTMLVideoElement {
@@ -32,6 +33,7 @@ export const llcProjectSaveableSegmentSchema = z.object({
   name: z.string(),
   tags: segmentTagsSchema.optional(),
   selected: z.boolean().optional(),
+  speed: z.number().min(minSegmentSpeed).max(maxSegmentSpeed).optional(),
 });
 
 export const streamParamsSchema = z.object({
@@ -109,11 +111,13 @@ export interface SegmentBase {
   start: number,
   end?: number | undefined,
   name?: string | undefined,
+  speed?: number | undefined,
 }
 
 export interface DefiniteSegmentBase {
   start: number,
   end: number,
+  speed?: number | undefined,
 }
 
 export interface SegmentColorIndex {

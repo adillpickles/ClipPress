@@ -2,11 +2,13 @@ import { memo, useCallback, useMemo } from 'react';
 import type { MotionStyle } from 'motion/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FaSave, FaTrashAlt } from 'react-icons/fa';
+import { useTranslation } from 'react-i18next';
 import type { ColorInstance } from 'color';
 
 import useUserSettings from './hooks/useUserSettings';
 import { useSegColors } from './contexts';
 import type { FormatTimecode, StateSegment } from './types';
+import { getSegmentSpeed } from './segmentSpeed';
 
 
 const markerButtonStyle: React.CSSProperties = { fontSize: 10, minWidth: 0, letterSpacing: '-.1em', color: 'white' };
@@ -80,7 +82,7 @@ function Marker({
 }
 
 function Segment({
-  seg, segNum, color, isActive, selected, onClick, getTimePercent, formatTimecode, invertCutSegments,
+  seg, segNum, color, isActive, selected, onClick, getTimePercent, formatTimecode, invertCutSegments, onEditSpeed,
 }: {
   seg: Omit<StateSegment, 'end'> & { end: number },
   segNum: number,
@@ -91,8 +93,10 @@ function Segment({
   getTimePercent: (a: number) => string,
   formatTimecode: FormatTimecode,
   invertCutSegments: boolean,
+  onEditSpeed: (index: number) => void,
 }) {
   const { darkMode, prefersReducedMotion, springAnimation } = useUserSettings();
+  const { t } = useTranslation();
   const { name } = seg;
 
   const border = useMemo(() => {
@@ -171,6 +175,15 @@ function Segment({
       exit={{ opacity: 0, scaleX: 0 }}
       role="button"
       onClick={onClick}
+      data-segment-id={seg.segId}
+      onContextMenuCapture={(event) => {
+        if (invertCutSegments) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onClick();
+        const remote = window.require('@electron/remote');
+        remote.Menu.buildFromTemplate([{ label: t('Change speed…'), click: () => onEditSpeed(segNum) }]).popup({ window: remote.getCurrentWindow() });
+      }}
       title={title}
     >
       <div style={{ alignSelf: 'flex-start', flexShrink: 0, fontSize: 10, minWidth: 0, letterSpacing: '-.1em' }}>{segNum + 1}</div>
@@ -203,12 +216,13 @@ function Segment({
       {name && <div style={{ flexShrink: 1, fontSize: 11, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>{name}</div>}
 
       <div style={{ flexGrow: 1 }} />
+      {getSegmentSpeed(seg) !== 1 && <span style={{ fontSize: 10, padding: '0 4px', whiteSpace: 'nowrap' }}>{Math.round(getSegmentSpeed(seg) * 100)}%</span>}
     </motion.div>
   );
 }
 
 function SegmentOrMarker({
-  seg, fileDurationNonZero, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected,
+  seg, fileDurationNonZero, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, onEditSpeed,
 } : {
   seg: StateSegment,
   fileDurationNonZero: number,
@@ -218,6 +232,7 @@ function SegmentOrMarker({
   invertCutSegments: boolean,
   formatTimecode: FormatTimecode,
   selected: boolean,
+  onEditSpeed: (index: number) => void,
 }) {
   const { getSegColor } = useSegColors();
 
@@ -228,7 +243,7 @@ function SegmentOrMarker({
   const onThisSegClick = useCallback(() => onSegClick(segNum), [onSegClick, segNum]);
 
   if (seg.end != null) {
-    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} />;
+    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} onEditSpeed={onEditSpeed} />;
   }
 
   return (
