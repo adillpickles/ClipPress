@@ -8,6 +8,7 @@ import isDev from './isDev';
 import type { ChromiumHTMLVideoElement } from './types';
 import type { FFprobeStream } from '../../common/ffprobe';
 import { getFrameDuration } from './util';
+import { normalizeRotation } from './textOverlays';
 import type { FfmpegHwAccel } from '../../common/types';
 
 const { compatPlayer: { createMediaSourceStream } } = window.require('@electron/remote').require('./index.js');
@@ -441,9 +442,21 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
     e.target.blur();
   }, []);
 
-  const videoStyle = useMemo<CSSProperties>(() => ({
-    position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, display: 'block', width: '100%', height: '100%', objectFit: 'contain', transform: rotate ? `rotate(${rotate}deg)` : undefined,
-  }), [rotate]);
+  const videoStyle = useMemo<CSSProperties>(() => {
+    const normalizedRotation = normalizeRotation(rotate);
+    const quarterTurn = normalizedRotation === 90 || normalizedRotation === 270;
+    const sourceAspect = videoStream?.width != null && videoStream.height != null ? videoStream.width / videoStream.height : 1;
+    return {
+      position: 'absolute',
+      left: '50%',
+      top: '50%',
+      display: 'block',
+      width: quarterTurn ? `${sourceAspect * 100}%` : '100%',
+      height: quarterTurn ? `${100 / sourceAspect}%` : '100%',
+      objectFit: 'contain',
+      transform: `translate(-50%, -50%) rotate(${normalizedRotation}deg)`,
+    };
+  }, [rotate, videoStream]);
 
   return (
     <div style={{ width: '100%', height: '100%', left: 0, right: 0, top: 0, bottom: 0, position: 'absolute', overflow: 'hidden', background: 'black', pointerEvents: 'none' }}>

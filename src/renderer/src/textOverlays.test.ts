@@ -1,6 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
-import { createDefaultTextOverlayClip, sanitizeOverlayClip, minTextOverlayDuration } from './textOverlays';
+import { createDefaultTextOverlayClip, sanitizeOverlayClip, minTextOverlayDuration, getVideoStreamRotation, getRotatedVideoDimensions } from './textOverlays';
+
+describe('video rotation', () => {
+  it('reads modern display matrices in the same direction as the preview and crop bounds', () => {
+    const rotation = getVideoStreamRotation({ side_data_list: [{ side_data_type: 'Display Matrix', rotation: -90 }] });
+    expect(rotation).toBe(90);
+    expect(getRotatedVideoDimensions({ width: 320, height: 180, rotation })).toEqual({ width: 180, height: 320 });
+    expect(getVideoStreamRotation({ side_data_list: [{ side_data_type: 'Display Matrix', rotation: 90 }] })).toBe(270);
+    expect(getVideoStreamRotation({ tags: { rotate: '90' }, side_data_list: [{ side_data_type: 'Display Matrix', rotation: 0 }] })).toBe(0);
+  });
+
+  it('accepts legacy rotation tags and leaves unrotated sources alone', () => {
+    expect(getVideoStreamRotation({ tags: { rotate: '90' } })).toBe(90);
+    expect(getVideoStreamRotation({ tags: { rotate: 'invalid' } })).toBeUndefined();
+    expect(getVideoStreamRotation({})).toBeUndefined();
+  });
+});
 
 describe('textOverlays bounds', () => {
   it('creates overlay that does not exceed file duration for short media', () => {

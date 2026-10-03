@@ -146,6 +146,7 @@ function Timeline({
   speedControlsVisible,
   onChangeSegmentSpeed,
   onEditSegmentSpeed,
+  onEditSegmentCrop,
   onHideSpeedControls,
 } : {
   fileDurationNonZero: number,
@@ -190,6 +191,7 @@ function Timeline({
   speedControlsVisible: boolean,
   onChangeSegmentSpeed: (speed: number) => void,
   onEditSegmentSpeed: (index: number) => void,
+  onEditSegmentCrop: (index: number) => void,
   onHideSpeedControls: () => void,
 }) {
   const { t } = useTranslation();
@@ -679,6 +681,7 @@ function Timeline({
                 formatTimecode={formatTimecode}
                 selected={selected}
                 onEditSpeed={onEditSegmentSpeed}
+                onEditCrop={onEditSegmentCrop}
               />
             );
           })}

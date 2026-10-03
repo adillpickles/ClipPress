@@ -378,6 +378,8 @@ function BottomBar({
   currentFrame,
   playbackMode,
   onAddTextOverlay,
+  onEditSegmentCrop,
+  canEditSegmentCrop,
 }: {
   zoom: number;
   setZoom: (fn: (z: number) => number) => void;
@@ -425,6 +427,8 @@ function BottomBar({
   currentFrame: Frame | undefined;
   playbackMode: PlaybackMode | undefined;
   onAddTextOverlay: () => void;
+  onEditSegmentCrop: () => void;
+  canEditSegmentCrop: boolean;
 }) {
   const { t } = useTranslation();
   const { getSegColor } = useSegColors();
@@ -773,7 +777,10 @@ function BottomBar({
 
         <div style={{ flexGrow: 1 }} />
 
-        <div style={{ flexBasis: leftRightWidth, display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ flexBasis: leftRightWidth, display: 'flex', justifyContent: 'flex-end', gap: 8, whiteSpace: 'nowrap' }}>
+          {hasVideo && (
+            <Button onClick={onEditSegmentCrop} disabled={!canEditSegmentCrop} style={{ minHeight: '2rem', padding: '0 .82rem' }}>{t('Zoom / Crop')}</Button>
+          )}
           {hasVideo && (
             <Button onClick={onAddTextOverlay} style={{ minHeight: '2rem', padding: '0 .82rem' }}>
               {t('Add Text')}

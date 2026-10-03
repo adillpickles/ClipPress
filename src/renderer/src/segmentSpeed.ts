@@ -47,9 +47,13 @@ export function getVideoTimingFilter(rate: number) {
 }
 
 /** Prefer the active occurrence when repeated/overlapping source ranges have different speeds. */
-export function getPreviewSegmentSpeed(segments: SpeedSegment[], activeIndex: number, time: number, fileDuration?: number) {
+export function getPreviewSegment<T extends SpeedSegment>(segments: T[], activeIndex: number, time: number, fileDuration?: number) {
   const containsTime = (segment: SpeedSegment) => time >= segment.start && time < (segment.end ?? (segment.initial ? fileDuration : undefined) ?? segment.start);
   const active = segments[activeIndex];
-  const segment = active != null && containsTime(active) ? active : segments.find((candidate) => containsTime(candidate));
+  return active != null && containsTime(active) ? active : segments.find((candidate) => containsTime(candidate));
+}
+
+export function getPreviewSegmentSpeed(segments: SpeedSegment[], activeIndex: number, time: number, fileDuration?: number) {
+  const segment = getPreviewSegment(segments, activeIndex, time, fileDuration);
   return segment != null ? getSegmentSpeed(segment) : 1;
 }

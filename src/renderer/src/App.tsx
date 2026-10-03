@@ -54,7 +54,10 @@ import BottomBar from './BottomBar';
 import ExportConfirm from './components/ExportConfirm';
 import TextOverlayEditor from './components/TextOverlayEditor';
 import SegmentSpeedDialog from './components/SegmentSpeedDialog';
-import { getPreviewSegmentSpeed, getSegmentSpeed, isSegmentSpeedValid } from './segmentSpeed';
+import { getPreviewSegment, getPreviewSegmentSpeed, getSegmentSpeed, isSegmentSpeedValid } from './segmentSpeed';
+import SegmentCropPreview from './components/SegmentCropPreview';
+import { getSegmentCrop, hasSegmentCrop } from './segmentCrop';
+import type { SegmentCrop } from './segmentCrop';
 import ValueTuners from './components/ValueTuners';
 import VolumeControl from './components/VolumeControl';
 import PlaybackStreamSelector from './components/PlaybackStreamSelector';
@@ -268,6 +271,7 @@ import mainApi from './mainApi.js';
 import type { AppEvent } from '../../main/index.js';
 import {
   createDefaultTextOverlayClip,
+  getVideoStreamRotation,
   sanitizeOverlayClip,
 } from './textOverlays';
 
@@ -916,9 +920,7 @@ function App() {
   const effectiveRotation = useMemo(
     () => (isRotationSet
       ? rotation
-      : (activeVideoStream?.tags?.rotate
-        ? parseInt(activeVideoStream.tags.rotate, 10)
-        : undefined)),
+      : getVideoStreamRotation(activeVideoStream)),
     [isRotationSet, activeVideoStream, rotation],
   );
 
@@ -1047,6 +1049,29 @@ function App() {
   const editingSpeedSegment = cutSegments.find((segment) => segment.segId === editingSpeedSegmentId);
   const speedControlsVisible = !invertCutSegments && currentCutSeg != null && (speedControlsBySegment[currentCutSeg.segId] ?? getSegmentSpeed(currentCutSeg) !== 1);
   const hasSegmentSpeedChanges = segmentsOrInverse.selected.some((segment) => getSegmentSpeed(segment) !== 1);
+  const hasSegmentCropChanges = segmentsOrInverse.selected.some((segment) => hasSegmentCrop(segment));
+  const [editingCropSegmentId, setEditingCropSegmentId] = useState<string>();
+  const editingCropSegment = !invertCutSegments && currentCutSeg?.segId === editingCropSegmentId ? currentCutSeg : undefined;
+  const previewSegment = invertCutSegments ? undefined : getPreviewSegment(cutSegments, currentSegIndexSafe, relevantTime, fileDuration);
+  const previewCrop = useMemo(() => getSegmentCrop(editingCropSegment ?? previewSegment ?? {}), [editingCropSegment, previewSegment]);
+
+  const editSegmentCrop = useCallback((index: number) => {
+    const segment = cutSegments[index];
+    if (segment?.end == null || activeVideoStream?.width == null || activeVideoStream.height == null || invertCutSegments || workingRef.current) return;
+    pause();
+    setWaveformMode(undefined);
+    setCurrentSegIndex(index);
+    seekAbs(segment.start);
+    setSelectedOverlayId(undefined);
+    setEditingCropSegmentId(segment.segId);
+  }, [activeVideoStream, cutSegments, invertCutSegments, pause, seekAbs, setCurrentSegIndex, setWaveformMode, workingRef]);
+
+  const changeSegmentCrop = useCallback((crop: SegmentCrop) => {
+    if (editingCropSegmentId == null || workingRef.current) return;
+    const index = cutSegments.findIndex((segment) => segment.segId === editingCropSegmentId);
+    if (index === -1 || cutSegments[index]?.end == null) return;
+    if (JSON.stringify(getSegmentCrop(cutSegments[index]!)) !== JSON.stringify(crop)) updateSegAtIndex(index, { crop });
+  }, [cutSegments, editingCropSegmentId, updateSegAtIndex, workingRef]);
 
   const changeSegmentSpeed = useCallback((segmentId: string, speed: number) => {
     if (!isSegmentSpeedValid(speed) || workingRef.current) return;
@@ -1074,6 +1099,7 @@ function App() {
   useEffect(() => {
     setSpeedControlsBySegment({});
     setEditingSpeedSegmentId(undefined);
+    setEditingCropSegmentId(undefined);
   }, [filePath]);
 
   const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath } = useSegmentsAutoSave({
@@ -2061,6 +2087,7 @@ function App() {
         name: currentCutSeg?.name,
         tags: currentCutSeg?.tags,
         speed: currentCutSeg?.speed,
+        crop: currentCutSeg?.crop,
       },
     ];
   }, [
@@ -3068,8 +3095,8 @@ function App() {
     try {
       setWorking({ text: i18n.t('Exporting') });
 
-      if (segmentsToChaptersOnly && hasSegmentSpeedChanges) {
-        throw new UserFacingError(i18n.t('Choose a clip export mode to apply segment speed changes. Chapters-only export keeps the original video.'));
+      if (segmentsToChaptersOnly && (hasSegmentSpeedChanges || hasSegmentCropChanges)) {
+        throw new UserFacingError(i18n.t('Choose a clip export mode to apply speed and crop changes. Chapters-only export keeps the original video.'));
       }
 
       if (isSizeLimitedExport) {
@@ -3368,9 +3395,9 @@ function App() {
         return;
       }
 
-      if (hasOverlayClips || hasSegmentSpeedChanges) {
-        if (hasSegmentSpeedChanges && !['mp4', 'mov', 'matroska'].includes(fileFormat ?? '')) {
-          throw new UserFacingError(i18n.t('Speed changes require MP4, MOV or MKV output. Choose one of these formats or use size-limited export.'));
+      if (hasOverlayClips || hasSegmentSpeedChanges || hasSegmentCropChanges) {
+        if ((hasSegmentSpeedChanges || hasSegmentCropChanges) && !['mp4', 'mov', 'matroska'].includes(fileFormat ?? '')) {
+          throw new UserFacingError(i18n.t('Speed and crop changes require MP4, MOV or MKV output. Choose one of these formats or use size-limited export.'));
         }
         if (
           activeVideoStream == null
@@ -3404,7 +3431,7 @@ function App() {
         const notices = new Set<string>();
         const warnings = new Set<string>();
         notices.add(
-          i18n.t('Text layers and speed changes require video encoding during export.'),
+          i18n.t('Text layers, speed and crop changes require video encoding during export.'),
         );
         if (hasAdditionalVideoStreamsForTextExport) {
           warnings.add(
@@ -3846,6 +3873,7 @@ function App() {
     hasAdditionalVideoStreamsForTextExport,
     hasOverlayClips,
     hasSegmentSpeedChanges,
+    hasSegmentCropChanges,
     haveInvalidSegs,
     hideAllNotifications,
     invertCutSegments,
@@ -6108,43 +6136,53 @@ function App() {
                           }}
                           onWheel={onTimelineWheel}
                         >
-                          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                          <video
-                            className={styles['video']}
-                            tabIndex={-1}
-                            muted={playbackVolume === 0 || compatPlayerEnabled}
-                            ref={videoRef}
-                            style={videoStyle}
-                            src={fileUri}
-                            onPlay={onStartPlaying}
-                            onPause={onStopPlaying}
-                            onAbort={onVideoAbort}
-                            onDurationChange={onDurationChange}
-                            onLoadedMetadata={() => setSegmentPreviewSpeed(previewSegmentSpeed)}
-                            onTimeUpdate={onTimeUpdate}
-                            onError={onVideoError}
-                            onClick={onVideoClick}
-                            onDoubleClick={toggleFullscreenVideo}
-                            onFocusCapture={onVideoFocus}
-                            onSeeked={onSeeked}
+                          <SegmentCropPreview
+                            videoWidth={activeVideoStream?.width ?? 1920}
+                            videoHeight={activeVideoStream?.height ?? 1080}
+                            rotation={effectiveRotation}
+                            crop={previewCrop}
+                            editing={editingCropSegment != null && !bigWaveformEnabled}
+                            onChange={changeSegmentCrop}
+                            onDone={() => setEditingCropSegmentId(undefined)}
                           >
-                            {renderSubtitles()}
-                          </video>
+                            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                            <video
+                              className={styles['video']}
+                              tabIndex={-1}
+                              muted={playbackVolume === 0 || compatPlayerEnabled}
+                              ref={videoRef}
+                              style={videoStyle}
+                              src={fileUri}
+                              onPlay={onStartPlaying}
+                              onPause={onStopPlaying}
+                              onAbort={onVideoAbort}
+                              onDurationChange={onDurationChange}
+                              onLoadedMetadata={() => setSegmentPreviewSpeed(previewSegmentSpeed)}
+                              onTimeUpdate={onTimeUpdate}
+                              onError={onVideoError}
+                              onClick={onVideoClick}
+                              onDoubleClick={toggleFullscreenVideo}
+                              onFocusCapture={onVideoFocus}
+                              onSeeked={onSeeked}
+                            >
+                              {renderSubtitles()}
+                            </video>
 
-                          {filePath != null && compatPlayerEnabled && (
-                          <MediaSourcePlayer
-                            rotate={effectiveRotation}
-                            filePath={filePath}
-                            videoStream={activeVideoStream}
-                            audioStreams={activeAudioStreams}
-                            audioGainByStreamId={activeAudioGainByStreamId}
-                            masterVideoRef={videoRef}
-                            mediaSourceQuality={mediaSourceQuality}
-                            ffmpegHwaccel={ffmpegHwaccel}
-                          />
-                          )}
+                            {filePath != null && compatPlayerEnabled && (
+                            <MediaSourcePlayer
+                              rotate={effectiveRotation}
+                              filePath={filePath}
+                              videoStream={activeVideoStream}
+                              audioStreams={activeAudioStreams}
+                              audioGainByStreamId={activeAudioGainByStreamId}
+                              masterVideoRef={videoRef}
+                              mediaSourceQuality={mediaSourceQuality}
+                              ffmpegHwaccel={ffmpegHwaccel}
+                            />
+                            )}
+                          </SegmentCropPreview>
                           {activeVideoStream?.width != null
-                        && activeVideoStream.height != null && (
+                        && activeVideoStream.height != null && editingCropSegment == null && (
                           <TextOverlayEditor
                             overlayClips={overlayClips}
                             selectedOverlayId={selectedOverlayId}
@@ -6310,6 +6348,8 @@ function App() {
                           currentFrame={currentFrame}
                           playbackMode={playbackMode}
                           onAddTextOverlay={addTextOverlay}
+                          onEditSegmentCrop={() => editSegmentCrop(currentSegIndexSafe)}
+                          canEditSegmentCrop={!invertCutSegments && currentCutSeg?.end != null}
                         />
 
                         <Timeline
@@ -6355,6 +6395,7 @@ function App() {
                           speedControlsVisible={speedControlsVisible}
                           onChangeSegmentSpeed={(speed) => { if (currentCutSeg != null) changeSegmentSpeed(currentCutSeg.segId, speed); }}
                           onEditSegmentSpeed={editSegmentSpeed}
+                          onEditSegmentCrop={editSegmentCrop}
                           onHideSpeedControls={toggleSegmentSpeedControls}
                         />
                       </div>
@@ -6415,6 +6456,7 @@ function App() {
                       onEditSegmentTags={onEditSegmentTags}
                       getSegEstimatedSize={getSegEstimatedSize}
                       onEditSpeed={editSegmentSpeed}
+                      onEditCrop={editSegmentCrop}
                     />
                   )}
                 </AnimatePresence>

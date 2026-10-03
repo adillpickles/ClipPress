@@ -1,4 +1,5 @@
 import type { OverlayBox, OverlayClip, TextOverlayClip } from './types';
+import type { FFprobeStream } from '../../common/ffprobe';
 
 const defaultTextOverlayDuration = 3;
 export const minTextOverlayDuration = 0.1;
@@ -35,6 +36,14 @@ export function normalizeRotation(rotation: number | undefined) {
   const normalized = (((normalizedRotation % 360) + 360) % 360);
   if (normalized === 90 || normalized === 180 || normalized === 270) return normalized;
   return 0;
+}
+
+/** FFprobe display matrices use counterclockwise degrees; the editor uses clockwise. */
+export function getVideoStreamRotation(stream: Pick<FFprobeStream, 'tags' | 'side_data_list'> | undefined) {
+  const matrixRotation = stream?.side_data_list?.find((data) => data.side_data_type === 'Display Matrix')?.rotation;
+  if (matrixRotation != null && Number.isFinite(matrixRotation)) return normalizeRotation(-matrixRotation);
+  const tagRotation = stream?.tags?.rotate != null ? Number(stream.tags.rotate) : undefined;
+  return tagRotation != null && Number.isFinite(tagRotation) ? normalizeRotation(tagRotation) : undefined;
 }
 
 export function getRotatedVideoDimensions({

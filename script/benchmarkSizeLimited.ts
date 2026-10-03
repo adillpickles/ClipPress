@@ -454,7 +454,6 @@ async function runAttempt({ ffmpegPath, input, output, tempDir, attempt, strateg
     // The benchmark never enables the app's experimental flag; it is an escape hatch for
     // awkward inputs, not part of what we are measuring.
     experimentalArgs: [],
-    rotation: undefined,
     sourceFps: probe.fps,
     outputPlaybackRate: 1,
     ...(attempt.qualityCapOffset != null ? { qualityCapOffset: attempt.qualityCapOffset } : {}),

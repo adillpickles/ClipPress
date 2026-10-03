@@ -94,7 +94,7 @@ const Segment = memo(({
   onInvertSelectedSegments,
   onDuplicateSegmentClick,
   getSegEstimatedSize,
-  onEditSpeed,
+  onEditSpeed, onEditCrop,
 }: {
   seg: StateSegment | InverseCutSegment,
   index: number,
@@ -128,6 +128,7 @@ const Segment = memo(({
   onDuplicateSegmentClick: UseSegments['duplicateSegment'],
   getSegEstimatedSize: UseSegments['getSegEstimatedSize'],
   onEditSpeed: (segmentIndex: number) => void,
+  onEditCrop: (segmentIndex: number) => void,
 }) => {
   const { invertCutSegments, darkMode, simpleMode } = useUserSettings();
   const { t } = useTranslation();
@@ -151,6 +152,7 @@ const Segment = memo(({
       { label: t('Remove segment'), click: () => onRemovePress(index) },
       { label: t('Duplicate segment'), click: () => onDuplicateSegmentClick(seg) },
       { label: t('Change speed…'), enabled: seg.end != null, click: () => onEditSpeed(index) },
+      { label: t('Zoom / Crop…'), enabled: seg.end != null, click: () => onEditCrop(index) },
 
       { type: 'separator' },
 
@@ -180,7 +182,7 @@ const Segment = memo(({
       { label: t('Segment tags'), click: () => onEditSegmentTags(index) },
       { label: t('Extract frames as image files'), click: () => onExtractSegmentsFramesAsImages([seg]) },
     ];
-  }, [invertCutSegments, t, addSegment, onLabelSelectedSegments, onRemoveSelected, onExtractSelectedSegmentsFramesAsImages, updateSegOrder, index, jumpSegStart, jumpSegEnd, onLabelPress, onRemovePress, onDuplicateSegmentClick, seg, onSelectSingleSegment, onSelectAllSegments, onDeselectAllSegments, onSelectAllMarkers, onSelectSegmentsByLabel, onSelectSegmentsByExpr, onInvertSelectedSegments, onMutateSegmentsByExpr, onReorderPress, onEditSegmentTags, onExtractSegmentsFramesAsImages, onEditSpeed]);
+  }, [invertCutSegments, t, addSegment, onLabelSelectedSegments, onRemoveSelected, onExtractSelectedSegmentsFramesAsImages, updateSegOrder, index, jumpSegStart, jumpSegEnd, onLabelPress, onRemovePress, onDuplicateSegmentClick, seg, onSelectSingleSegment, onSelectAllSegments, onDeselectAllSegments, onSelectAllMarkers, onSelectSegmentsByLabel, onSelectSegmentsByExpr, onInvertSelectedSegments, onMutateSegmentsByExpr, onReorderPress, onEditSegmentTags, onExtractSegmentsFramesAsImages, onEditSpeed, onEditCrop]);
 
   useContextMenu(ref, contextMenuTemplate);
 
@@ -400,7 +402,7 @@ function SegmentList({
   setEditingSegmentTagsSegmentIndex,
   onEditSegmentTags,
   getSegEstimatedSize,
-  onEditSpeed,
+  onEditSpeed, onEditCrop,
 }: {
   width: number,
   fileDuration: number | undefined,
@@ -444,6 +446,7 @@ function SegmentList({
   onEditSegmentTags: (index: number) => void,
   getSegEstimatedSize: UseSegments['getSegEstimatedSize'],
   onEditSpeed: (segmentIndex: number) => void,
+  onEditCrop: (segmentIndex: number) => void,
 }) {
   const { t } = useTranslation();
   const { getSegColor, nextSegColorIndex } = useSegColors();
@@ -676,6 +679,7 @@ function SegmentList({
         onDuplicateSegmentClick={onDuplicateSegmentClick}
         getSegEstimatedSize={getSegEstimatedSize}
         onEditSpeed={onEditSpeed}
+        onEditCrop={onEditCrop}
       />
     );
   }
