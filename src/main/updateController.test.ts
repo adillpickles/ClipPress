@@ -128,6 +128,18 @@ describe('update policy', () => {
     expect(other.backend.download).not.toHaveBeenCalled();
   });
 
+  it('disarms a verified installer if multiple-instance mode is enabled during the session', async () => {
+    const { controller, backend } = setup();
+    await controller.check();
+    controller.disableInstallation('multiple-instances');
+    controller.setPreferences({ enabled: true, mode: 'automatic' });
+    controller.approveInstall();
+    await controller.check(true);
+    expect(backend.installOnQuit).toHaveBeenLastCalledWith(false);
+    expect(controller.getStatus()).toMatchObject({ supported: false, reason: 'multiple-instances', phase: 'idle', installOnQuit: false });
+    expect(backend.check).toHaveBeenCalledOnce();
+  });
+
   it('does not install older, invalid, or prerelease versions into a stable build', () => {
     expect(isApplicableUpdate('0.1.0-beta.4', '0.1.0-beta.3')).toBe(false);
     expect(isApplicableUpdate('0.1.0', '0.2.0-beta.1')).toBe(false);

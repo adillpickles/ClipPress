@@ -28,7 +28,8 @@ Older versions are never installed automatically.
 
 Automatic installation is limited to the Windows x64 installer in single-instance
 mode. Development, offline sessions, other platforms, and portable copies do not
-run an installer. Restart after changing the multiple-instance setting.
+run an installer. Enabling multiple instances cancels/pauses installation for the
+current session. Disable that setting and restart to resume automatic installation.
 
 ## Release notes
 

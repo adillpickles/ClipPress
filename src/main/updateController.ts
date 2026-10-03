@@ -51,6 +51,15 @@ export default class UpdateController {
 
   getStatus = () => ({ ...this.state });
 
+  disableInstallation(reason: NonNullable<UpdateStatus['reason']>) {
+    if (!this.state.supported) return;
+    this.approved = false;
+    this.generation += 1;
+    this.backend?.cancel();
+    this.backend?.installOnQuit(false);
+    this.publish({ supported: false, reason, phase: 'idle', version: undefined, percent: undefined, installOnQuit: false });
+  }
+
   private publish(patch: Partial<UpdateStatus>) {
     this.state = { ...this.state, ...patch };
     this.options.onChange(this.getStatus());
@@ -83,7 +92,7 @@ export default class UpdateController {
     // quit handler when verification completes, before download() resolves.
     this.backend?.installOnQuit(shouldInstall && ['ready', 'downloading'].includes(this.state.phase));
     this.publish({ installOnQuit });
-    if (this.options.supported && this.state.phase === 'available' && preferences.enabled && preferences.mode === 'automatic') this.download(false);
+    if (this.state.supported && this.state.phase === 'available' && preferences.enabled && preferences.mode === 'automatic') this.download(false);
   }
 
   progress(percent: number) {
@@ -107,7 +116,7 @@ export default class UpdateController {
       const result = await backend.check();
       if (result?.available && isApplicableUpdate(this.options.currentVersion, result.version)) {
         this.publish({ phase: 'available', version: result.version });
-        if (this.options.supported && this.preferences.enabled && this.preferences.mode === 'automatic') await this.download(false);
+        if (this.state.supported && this.preferences.enabled && this.preferences.mode === 'automatic') await this.download(false);
       } else {
         this.publish({ phase: 'up-to-date', version: undefined });
       }
@@ -120,13 +129,13 @@ export default class UpdateController {
 
   download(approved = true): Promise<UpdateStatus> {
     if (this.downloadPromise != null) return this.downloadPromise;
-    if (!this.options.supported || this.state.version == null || !['available', 'error'].includes(this.state.phase)) return Promise.resolve(this.getStatus());
+    if (!this.state.supported || this.state.version == null || !['available', 'error'].includes(this.state.phase)) return Promise.resolve(this.getStatus());
     this.approved = approved;
     this.downloadPromise = this.performDownload().finally(() => {
       this.downloadPromise = undefined;
       // A quick Off -> Automatic change may arrive before cancellation settles.
       // Resume only after the old request has released its token and file handle.
-      if (this.options.supported && this.state.phase === 'available' && this.preferences.enabled && this.preferences.mode === 'automatic') this.download(false);
+      if (this.state.supported && this.state.phase === 'available' && this.preferences.enabled && this.preferences.mode === 'automatic') this.download(false);
     });
     return this.downloadPromise;
   }
@@ -157,7 +166,7 @@ export default class UpdateController {
   }
 
   approveInstall() {
-    if (this.state.phase === 'ready' && this.options.supported) {
+    if (this.state.phase === 'ready' && this.state.supported) {
       this.approved = true;
       this.backend?.installOnQuit(true);
       this.publish({ installOnQuit: true });

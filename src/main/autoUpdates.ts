@@ -19,8 +19,8 @@ export default function createAutoUpdates({ offline, storeBuild, onChange }: {
     if (offline) return 'offline';
     if (!app.isPackaged) return 'development';
     if (process.platform !== 'win32' || process.arch !== 'x64' || storeBuild) return 'platform';
-    if (configStore.get('allowMultipleInstances')) return 'multiple-instances';
     if (process.env['PORTABLE_EXECUTABLE_DIR'] != null || !existsSync(join(process.resourcesPath, 'clippress-installed'))) return 'portable';
+    if (configStore.get('allowMultipleInstances')) return 'multiple-instances';
     return undefined;
   };
   const reason = getReason();
@@ -69,6 +69,9 @@ export default function createAutoUpdates({ offline, storeBuild, onChange }: {
       };
     },
   });
-  configStore.onUpdateSettingsChange(() => controller.setPreferences(preferences()));
+  configStore.onUpdateSettingsChange(() => {
+    if (configStore.get('allowMultipleInstances')) controller.disableInstallation('multiple-instances');
+    controller.setPreferences(preferences());
+  });
   return controller;
 }

@@ -235,7 +235,7 @@ export const getSnapshotJson = () => JSON.stringify(store.store);
 export function set<T extends keyof Config>(key: T, val: Config[T]) {
   if (val === undefined) store.delete(key);
   else store.set(key, val);
-  if (key === 'enableUpdateCheck' || key === 'updateMode') updateSettingsEvents.dispatchEvent(new Event('change'));
+  if (key === 'enableUpdateCheck' || key === 'updateMode' || key === 'allowMultipleInstances') updateSettingsEvents.dispatchEvent(new Event('change'));
 }
 
 export function reset<T extends keyof Config>(key: T) {
