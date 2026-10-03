@@ -174,7 +174,7 @@ const defaults: Config = {
   reducedMotion: 'user',
   ffmpegHwaccel: 'none',
   exportEncodeMode: 'lossless',
-  sizeLimitMb: 10,
+  sizeLimitMb: 20,
   sizeLimitCodec: 'h264',
   sizeLimitQuality: 'fast',
   sizeLimitControlMode: 'simple',
