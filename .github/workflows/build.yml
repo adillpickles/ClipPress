@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   release-windows:
-    name: Windows x64 portable EXE
+    name: Windows x64 installer and portable EXE
     runs-on: windows-latest
     timeout-minutes: 60
 
@@ -63,18 +63,22 @@ jobs:
       - name: Download Windows x64 ffmpeg
         run: yarn download-ffmpeg-win32-x64
 
-      - name: Build Windows x64 portable EXE
+      - name: Build Windows installer, update metadata, and portable EXE
         run: yarn pack-win
 
       - name: Smoke test packaged app
         run: node script/e2e.ts 'dist\win-unpacked\ClipPress.exe' desktop screenshot.jpeg
 
-      - name: Upload Windows portable EXE artifact
+      - name: Upload Windows preview artifacts
         if: env.is_tag == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: ClipPress-Windows-x64-exe
-          path: dist/ClipPress-Windows-x64.exe
+          path: |
+            dist/ClipPress-Windows-x64.exe
+            dist/ClipPress-Setup-*.exe
+            dist/*.yml
+            dist/*.blockmap
           if-no-files-found: error
 
       - name: Upload Windows screenshot artifact
@@ -85,8 +89,14 @@ jobs:
           path: screenshot.jpeg
           if-no-files-found: error
 
-      - name: Publish tagged GitHub release asset
+      - name: Publish tagged GitHub release and update feed
         if: env.is_tag == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/ClipPress-Windows-x64.exe
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            dist/ClipPress-Windows-x64.exe
+            dist/ClipPress-Setup-*.exe
+            dist/*.yml
+            dist/*.blockmap

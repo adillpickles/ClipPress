@@ -267,6 +267,7 @@ import useErrorHandling from './hooks/useErrorHandling';
 import GenericDialog, { useDialog } from './components/GenericDialog';
 import useHtml5ify from './hooks/useHtml5ify';
 import WhatsNew from './components/WhatsNew';
+import UpdateNotice from './components/UpdateNotice';
 import mainApi from './mainApi.js';
 import type { AppEvent } from '../../main/index.js';
 import {
@@ -6705,6 +6706,7 @@ function App() {
               )}
 
               <WhatsNew />
+              <UpdateNotice visible={!settingsVisible} />
 
               <ErrorDialog
                 error={genericError}

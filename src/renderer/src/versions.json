@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.1.0-beta.4",
+    "highlightsMd": "- Safer exports that protect source files and preserve usable results after finalization trouble.\n- Better recovery for temporary Windows file locks and unreadable settings.\n- Smaller download, faster startup, and lower renderer memory use.\n- The version check now finds preview releases.\n"
+  },
+  {
+    "version": "0.1.0-beta.5",
+    "highlightsMd": "- The default shareable export target is now 20 MB.\n- Change speed per segment, with a duration preview, a timeline slider, and pitch-preserving audio.\n- Zoom and crop individual segments using preview handles or the zoom slider.\n- Windows installer builds can download updates automatically or ask first. Updates install when you close the app.\n- The What's new screen shows ClipPress notes once after an upgrade and skips empty announcements.\n"
+  },
+  {
     "version": "3.64.0"
   },
   {

@@ -163,6 +163,8 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ enableNativeHevc }), [enableNativeHevc]);
   const [enableUpdateCheck, setEnableUpdateCheck] = useState(safeGetConfigInitial('enableUpdateCheck'));
   useEffect(() => safeSetConfig({ enableUpdateCheck }), [enableUpdateCheck]);
+  const [updateMode, setUpdateMode] = useState(safeGetConfigInitial('updateMode'));
+  useEffect(() => safeSetConfig({ updateMode }), [updateMode]);
   const [cleanupChoices, setCleanupChoices] = useState(safeGetConfigInitial('cleanupChoices'));
   useEffect(() => safeSetConfig({ cleanupChoices }), [cleanupChoices]);
   const [allowMultipleInstances, setAllowMultipleInstances] = useState(safeGetConfigInitial('allowMultipleInstances'));
@@ -335,6 +337,7 @@ export default function useUserSettingsRoot() {
     captureFrameFileNameFormat,
     enableNativeHevc,
     enableUpdateCheck,
+    updateMode,
     cleanupChoices,
     allowMultipleInstances,
     darkMode,
@@ -428,6 +431,7 @@ export default function useUserSettingsRoot() {
     captureFrameFileNameFormat,
     enableNativeHevc,
     enableUpdateCheck,
+    updateMode,
     cleanupChoices,
     allowMultipleInstances,
     darkMode,
@@ -530,6 +534,7 @@ export default function useUserSettingsRoot() {
     setCaptureFrameFileNameFormat,
     setEnableNativeHevc,
     setEnableUpdateCheck,
+    setUpdateMode,
     setCleanupChoices,
     setAllowMultipleInstances,
     toggleDarkMode,

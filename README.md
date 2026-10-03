@@ -14,6 +14,7 @@ ClipPress is open-source and ad-free. If it helps you make better clips or saves
 - Per-track audio gain for practical volume fixes
 - Per-segment speed controls with pitch-preserving audio
 - Per-segment zoom and crop using preview handles
+- Windows installer with background or ask-first updates; portable download retained
 - Keep-source-quality export and target-file-size export
 - Multi-segment export as separate clips, one merged clip, or both
 - Modern desktop UI with keyboard shortcuts and project save/load
@@ -30,6 +31,13 @@ corner to crop, drag inside the frame to reposition, or use the zoom slider.
 Each segment keeps its own speed and crop in saved projects and undo history.
 These edits apply to separate and merged exports; target-size exports default to
 20 MB. See [segment editing notes](docs/segment-editing.md) for details.
+
+## App updates
+
+The Windows installer offers **Automatic** and **Ask before downloading** in
+**Settings > App updates**. Updates install on a normal exit and take effect on
+the next launch. The portable EXE remains available. See the
+[update guide and release QA checklist](docs/automatic-updates.md).
 
 ## Built on top of LosslessCut
 

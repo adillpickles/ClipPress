@@ -28,6 +28,7 @@ export async function checkNewVersion() {
       owner,
       repo,
       per_page: releasesToInspect,
+      request: { timeout: 15000 },
       headers: {
         'X-GitHub-Api-Version': '2022-11-28',
       },
@@ -41,6 +42,6 @@ export async function checkNewVersion() {
     return newestVersion;
   } catch (err) {
     logger.error('Failed to check github version', err instanceof Error ? err.message : String(err));
-    return undefined;
+    throw err;
   }
 }
