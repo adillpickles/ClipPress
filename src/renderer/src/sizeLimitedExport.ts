@@ -1013,7 +1013,6 @@ export async function exportSizeLimitedMerge({
         const commonArgs = [
           ...inputArgs,
           ...overlayInputArgs,
-          '-filter_complex', filterComplex,
         ];
 
         if (strategy.executionMode === 'ffmpeg_two_pass') {
@@ -1023,6 +1022,9 @@ export async function exportSizeLimitedMerge({
             '-hide_banner',
             ...getSizeLimitedSwsFlagsArgs(),
             ...commonArgs,
+            // Pass one writes video only, but every complex-filter output must
+            // be consumed. Keep the concat timing identical and sink its audio.
+            '-filter_complex', audioStream != null ? `${filterComplex};[a]anullsink` : filterComplex,
             ...outputTrimArgs,
             ...getSizeLimitedTwoPassEncodeArgs({
               strategy,
@@ -1046,6 +1048,7 @@ export async function exportSizeLimitedMerge({
             '-hide_banner',
             ...getSizeLimitedSwsFlagsArgs(),
             ...commonArgs,
+            '-filter_complex', filterComplex,
             ...outputTrimArgs,
             ...getSizeLimitedTwoPassEncodeArgs({
               strategy,
@@ -1074,6 +1077,7 @@ export async function exportSizeLimitedMerge({
           '-hide_banner',
           ...getSizeLimitedSwsFlagsArgs(),
           ...commonArgs,
+          '-filter_complex', filterComplex,
           ...outputTrimArgs,
           ...getSizeLimitedCommonEncodeArgs({
             strategy,
