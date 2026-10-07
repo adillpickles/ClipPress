@@ -21,7 +21,7 @@ import {
 import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile } from './sizeLimitedResolution';
 import { getNextSizeLimitedAttempt, planSizeLimitedEncode } from './sizeLimitedPlanner';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
-import { buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
+import { buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
 import { getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from './segmentSpeed';
 import { getSegmentCropFilter } from './segmentCrop';
 import type { OverlayClip, SegmentToExport, SizeLimitedEncoderCapabilities, SizeLimitedExecutionResult, SizeLimitedProgressMetadata, SizeLimitedResolvedStrategy, SizeLimitedRetryStep } from './types';
@@ -30,7 +30,7 @@ import { isMutedAudioGain, isNeutralAudioGain } from './util/streams';
 import { assertFileExists, readFileSize, moveExportWithRetry, transferTimestamps, unlinkWithRetry } from './util';
 import { UserFacingError } from '../errors';
 import { assertOutPathsNotSource } from './util/sourceProtection';
-import { getRotatedVideoDimensions, renderTextOverlayPng } from './textOverlays';
+import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } from './textOverlays';
 import createAsyncCache from './util/asyncCache';
 
 const { access, constants: { W_OK }, mkdir, mkdtemp, rmdir, stat, writeFile } = window.require('fs/promises');
@@ -208,8 +208,7 @@ async function prepareTextOverlayAssets({
 
   for (const [index, overlayClip] of overlayClips.entries()) {
     const width = Math.max(8, Math.round(rotatedVideoDimensions.width * overlayClip.box.width));
-    const height = Math.max(8, Math.round(rotatedVideoDimensions.height * overlayClip.box.height));
-    const imageData = await renderTextOverlayPng({ text: overlayClip.text, width, height });
+    const imageData = await renderTextOverlayPng({ text: overlayClip.text, width, fontSize: getOverlayFontSize(overlayClip) * rotatedVideoDimensions.height });
     const imagePath = join(outputDir, `clippress-size-limit-text-overlay-${Date.now()}-${index}.png`);
     await writeFile(imagePath, imageData, { flag: 'wx' });
     assets.push({
@@ -738,7 +737,7 @@ export async function exportSizeLimitedSegment({
         const cropFilter = getSegmentCropFilter(segment, dimensions.width, dimensions.height);
         const videoFilter = [getVideoTimingFilter(segmentRate), cropFilter, baseVideoFilter].filter(Boolean).join(',');
         const segmentOverlayAssets = preparedOverlayAssets.filter((overlayAsset) => overlayAsset.start < segment.end && overlayAsset.end > segment.start);
-        const overlayInputArgs = segmentOverlayAssets.flatMap(({ imagePath }) => ['-loop', '1', '-i', imagePath]);
+        const overlayInputArgs = buildOverlayImageInputArgs(segmentOverlayAssets.map(({ imagePath }) => imagePath));
         const overlayFilter = buildSegmentTextOverlayFilter({
           videoStreamIndex: videoStream.index,
           overlayAssets: segmentOverlayAssets,
@@ -985,7 +984,7 @@ export async function exportSizeLimitedMerge({
       buildAttempt: async (attempt, tempPath = outPath) => {
         const attemptOutPath = makeAttemptPath(tempPath, attempt.attemptNumber);
         const inputArgs = getMergeInputArgs({ filePath, segments, rotation });
-        const overlayInputArgs = preparedOverlayAssets.flatMap(({ imagePath }) => ['-loop', '1', '-i', imagePath]);
+        const overlayInputArgs = buildOverlayImageInputArgs(preparedOverlayAssets.map(({ imagePath }) => imagePath));
         const outputTrimArgs = ['-t', plannedDuration.toFixed(5)];
         const videoProfile = resolveSizeLimitedVideoProfile({
           resolution,

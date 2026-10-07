@@ -82,7 +82,7 @@ function Marker({
 }
 
 function Segment({
-  seg, segNum, color, isActive, selected, onClick, getTimePercent, formatTimecode, invertCutSegments, onEditSpeed, onEditCrop,
+  seg, segNum, color, isActive, selected, onClick, getTimePercent, instant, formatTimecode, invertCutSegments, speedControlsVisible, onEditSpeed, onChangeSpeed, onToggleSpeedControls, onEditCrop,
 }: {
   seg: Omit<StateSegment, 'end'> & { end: number },
   segNum: number,
@@ -91,14 +91,19 @@ function Segment({
   selected: boolean,
   onClick: () => void,
   getTimePercent: (a: number) => string,
+  instant: boolean,
   formatTimecode: FormatTimecode,
   invertCutSegments: boolean,
+  speedControlsVisible: boolean,
   onEditSpeed: (index: number) => void,
+  onChangeSpeed: (segmentId: string, speed: number) => void,
+  onToggleSpeedControls: (segmentId: string) => void,
   onEditCrop: (index: number) => void,
 }) {
   const { darkMode, prefersReducedMotion, springAnimation } = useUserSettings();
   const { t } = useTranslation();
   const { name } = seg;
+  const speed = getSegmentSpeed(seg);
 
   const border = useMemo(() => {
     const horizontalBorderWidth = '1px';
@@ -138,7 +143,7 @@ function Segment({
   }, [formatTimecode, name, seg.end, seg.start]);
 
   const wrapperStyle = useMemo<MotionStyle>(() => {
-    const cutSectionWidth = getTimePercent(seg.end - seg.start);
+    const cutSectionWidth = `calc(${getTimePercent(seg.end)} - ${getTimePercent(seg.start)})`;
     return {
       position: 'absolute',
       top: 0,
@@ -169,8 +174,8 @@ function Segment({
   return (
     <motion.div
       style={wrapperStyle}
-      layout={!prefersReducedMotion}
-      transition={springAnimation}
+      layout={!prefersReducedMotion && !instant}
+      transition={instant ? { duration: 0 } : springAnimation}
       initial={{ opacity: 0, scaleX: 0 }}
       animate={{ opacity: 1, scaleX: 1, backgroundColor }}
       exit={{ opacity: 0, scaleX: 0 }}
@@ -184,7 +189,10 @@ function Segment({
         onClick();
         const remote = window.require('@electron/remote');
         remote.Menu.buildFromTemplate([
+          { label: t('Speed controls'), type: 'checkbox', checked: speedControlsVisible, click: () => onToggleSpeedControls(seg.segId) },
           { label: t('Change speed…'), click: () => onEditSpeed(segNum) },
+          { label: t('Reset speed to 100%'), enabled: speed !== 1, click: () => onChangeSpeed(seg.segId, 1) },
+          { type: 'separator' },
           { label: t('Zoom / Crop…'), click: () => onEditCrop(segNum) },
         ]).popup({ window: remote.getCurrentWindow() });
       }}
@@ -220,35 +228,38 @@ function Segment({
       {name && <div style={{ flexShrink: 1, fontSize: 11, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>{name}</div>}
 
       <div style={{ flexGrow: 1 }} />
-      {getSegmentSpeed(seg) !== 1 && <span style={{ fontSize: 10, padding: '0 4px', whiteSpace: 'nowrap' }}>{Math.round(getSegmentSpeed(seg) * 100)}%</span>}
     </motion.div>
   );
 }
 
 function SegmentOrMarker({
-  seg, fileDurationNonZero, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, onEditSpeed, onEditCrop,
+  seg, toLanePercent, instant, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, speedControlsVisible, onEditSpeed, onChangeSpeed, onToggleSpeedControls, onEditCrop,
 } : {
   seg: StateSegment,
-  fileDurationNonZero: number,
+  toLanePercent: (time: number) => number,
+  instant: boolean,
   isActive: boolean,
   segNum: number,
   onSegClick: (a: number) => void,
   invertCutSegments: boolean,
   formatTimecode: FormatTimecode,
   selected: boolean,
+  speedControlsVisible: boolean,
   onEditSpeed: (index: number) => void,
+  onChangeSpeed: (segmentId: string, speed: number) => void,
+  onToggleSpeedControls: (segmentId: string) => void,
   onEditCrop: (index: number) => void,
 }) {
   const { getSegColor } = useSegColors();
 
   const segColor = useMemo(() => getSegColor(seg), [getSegColor, seg]);
 
-  const getTimePercent = (t: number) => `${(t / fileDurationNonZero) * 100}%`;
+  const getTimePercent = (t: number) => `${toLanePercent(t)}%`;
 
   const onThisSegClick = useCallback(() => onSegClick(segNum), [onSegClick, segNum]);
 
   if (seg.end != null) {
-    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} onEditSpeed={onEditSpeed} onEditCrop={onEditCrop} />;
+    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} instant={instant} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} speedControlsVisible={speedControlsVisible} onEditSpeed={onEditSpeed} onChangeSpeed={onChangeSpeed} onToggleSpeedControls={onToggleSpeedControls} onEditCrop={onEditCrop} />;
   }
 
   return (
