@@ -21,22 +21,85 @@
 }
 .durations > span { color: var(--gray-11); }
 .error { color: var(--red-11); font-size: .85rem; margin-top: .6rem; }
-.strip {
-  height: 26px;
+.retimeBar {
+  --retime-color: var(--blue-9);
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
   display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 6px;
+  flex-direction: column;
   box-sizing: border-box;
+  overflow: hidden;
   color: var(--gray-12);
-  background: var(--blue-3);
-  border: 1px solid var(--blue-7);
-  border-radius: 5px 5px 0 0;
+  background: var(--gray-3);
+  border: 1px solid var(--gray-7);
+  border-radius: 4px;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+  user-select: none;
+  container-type: inline-size;
 }
-.strip input { width: 100%; min-width: 32px; margin: 0; accent-color: var(--blue-9); cursor: ew-resize; }
-.speedLabel, .hide { color: inherit; background: transparent; border: 0; padding: 2px; cursor: pointer; flex-shrink: 0; }
-.speedLabel { font-size: 11px; font-weight: 700; }
-.stripDuration { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
-.hide { display: flex; align-items: center; }
+.retimeBar[data-tone="slow"] { --retime-color: var(--amber-9); }
+.retimeBar[data-active="true"] { border-color: var(--retime-color); }
+.retimeHeader {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 13px;
+  flex-shrink: 0;
+  background: var(--gray-4);
+  border-bottom: 1px solid var(--gray-6);
+}
+.retimeArrows {
+  flex: 1;
+  align-self: stretch;
+  margin: 3px 12px 3px 2px;
+  background: var(--retime-color);
+  /* One play-arrow per tile: tiles tighten when sped up and spread out in slow motion. */
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M1.5 0.5 7 4 1.5 7.5z'/%3E%3C/svg%3E") left center / var(--retime-arrow-spacing) 100% repeat-x;
+}
+.retimeBody {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+.retimeHide, .retimeSpeed { color: inherit; background: transparent; border: 0; cursor: pointer; flex-shrink: 0; }
+.retimeHide { display: flex; align-items: center; padding: 0 3px; color: var(--gray-11); }
+.retimeHide:hover { color: var(--gray-12); }
+.retimeSpeed {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 0 3px;
+  color: var(--retime-color);
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 3px;
+}
+.retimeSpeed:hover { background: var(--gray-5); }
+.retimeDuration {
+  position: absolute;
+  right: 12px;
+  color: var(--gray-11);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.retimeHandle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  padding: 0;
+  border: 0;
+  background: var(--retime-color);
+  opacity: .55;
+  cursor: ew-resize;
+}
+.retimeHandle:hover, .retimeBar[data-dragging="true"] .retimeHandle { opacity: 1; }
+@container (max-width: 160px) {
+  .retimeDuration { display: none; }
+}

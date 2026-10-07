@@ -6,13 +6,14 @@ import { saveColor } from './colors';
 import useUserSettings from './hooks/useUserSettings';
 
 
-function BetweenSegments({ start, end, fileDurationNonZero, invertCutSegments }: {
-  start: number,
-  end: number,
-  fileDurationNonZero: number,
+function BetweenSegments({ left: leftPercent, width, invertCutSegments, instant }: {
+  left: number,
+  width: number,
+  /** Skip the spring while the timeline is being retimed live. */
+  instant: boolean,
   invertCutSegments: boolean,
 }) {
-  const left = `${(start / fileDurationNonZero) * 100}%`;
+  const left = `${leftPercent}%`;
 
   const { effectiveExportMode, prefersReducedMotion, springAnimation } = useUserSettings();
 
@@ -32,10 +33,10 @@ function BetweenSegments({ start, end, fileDurationNonZero, invertCutSegments }:
       }}
       animate={{
         left,
-        width: `${((end - start) / fileDurationNonZero) * 100}%`,
+        width: `${width}%`,
       }}
-      layout={!prefersReducedMotion}
-      transition={springAnimation}
+      layout={!prefersReducedMotion && !instant}
+      transition={instant ? { duration: 0 } : springAnimation}
     >
       <div style={{ flexGrow: 1, borderBottom: '1px dashed var(--gray-10)', marginLeft: 5, marginRight: 5 }} />
       {/* https://github.com/mifi/lossless-cut/issues/2157 */}
