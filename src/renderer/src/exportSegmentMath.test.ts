@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
+import { buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
 
 describe('buildConcatSegmentInputArgs', () => {
   it('applies rotation before each input so the filter graph crops the displayed frame', () => {
@@ -176,5 +176,11 @@ describe('getRelativeSegmentOverlapWindow', () => {
       segmentEnd: 4,
       outputPlaybackRate: 2,
     })).toEqual({ start: 0.5, end: 1.5 });
+  });
+});
+
+describe('buildOverlayImageInputArgs', () => {
+  it('reads each text image once instead of looping it for every frame', () => {
+    expect(buildOverlayImageInputArgs(['a.png', 'b.png'])).toEqual(['-i', 'a.png', '-i', 'b.png']);
   });
 });

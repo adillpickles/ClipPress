@@ -1048,7 +1048,10 @@ function App() {
   const [speedControlsBySegment, setSpeedControlsBySegment] = useState<Record<string, boolean>>({});
   const [editingSpeedSegmentId, setEditingSpeedSegmentId] = useState<string>();
   const editingSpeedSegment = cutSegments.find((segment) => segment.segId === editingSpeedSegmentId);
-  const speedControlsVisible = !invertCutSegments && currentCutSeg != null && (speedControlsBySegment[currentCutSeg.segId] ?? getSegmentSpeed(currentCutSeg) !== 1);
+  // Retimed segments show their speed bar until hidden; Ctrl+R toggles it like Resolve's retime controls.
+  const speedControlsSegmentIds = useMemo(() => new Set(invertCutSegments ? [] : cutSegments
+    .filter((segment) => segment.end != null && (speedControlsBySegment[segment.segId] ?? getSegmentSpeed(segment) !== 1))
+    .map((segment) => segment.segId)), [cutSegments, invertCutSegments, speedControlsBySegment]);
   const hasSegmentSpeedChanges = segmentsOrInverse.selected.some((segment) => getSegmentSpeed(segment) !== 1);
   const hasSegmentCropChanges = segmentsOrInverse.selected.some((segment) => hasSegmentCrop(segment));
   const [editingCropSegmentId, setEditingCropSegmentId] = useState<string>();
@@ -1079,7 +1082,8 @@ function App() {
     const index = cutSegments.findIndex((segment) => segment.segId === segmentId);
     if (index === -1 || cutSegments[index]?.end == null) return;
     if (getSegmentSpeed(cutSegments[index]!) !== speed) updateSegAtIndex(index, { speed });
-    setSpeedControlsBySegment((existing) => ({ ...existing, [segmentId]: true }));
+    // Pin a bar shown by default so dragging back to 100% does not make it vanish mid-edit.
+    setSpeedControlsBySegment((existing) => ({ ...existing, [segmentId]: existing[segmentId] ?? true }));
   }, [cutSegments, updateSegAtIndex, workingRef]);
 
   const editSegmentSpeed = useCallback((index: number) => {
@@ -1090,10 +1094,15 @@ function App() {
     setEditingSpeedSegmentId(segment.segId);
   }, [cutSegments, invertCutSegments, setCurrentSegIndex, workingRef]);
 
+  const toggleSpeedControlsForSegment = useCallback((segmentId: string) => {
+    const segment = cutSegments.find((candidate) => candidate.segId === segmentId);
+    if (segment?.end == null || invertCutSegments || workingRef.current) return;
+    setSpeedControlsBySegment((existing) => ({ ...existing, [segmentId]: !speedControlsSegmentIds.has(segmentId) }));
+  }, [cutSegments, invertCutSegments, speedControlsSegmentIds, workingRef]);
+
   const toggleSegmentSpeedControls = useCallback(() => {
-    if (currentCutSeg?.end == null || invertCutSegments || workingRef.current) return;
-    setSpeedControlsBySegment((existing) => ({ ...existing, [currentCutSeg.segId]: !speedControlsVisible }));
-  }, [currentCutSeg, invertCutSegments, speedControlsVisible, workingRef]);
+    if (currentCutSeg != null) toggleSpeedControlsForSegment(currentCutSeg.segId);
+  }, [currentCutSeg, toggleSpeedControlsForSegment]);
 
   const previewSegmentSpeed = invertCutSegments ? 1 : getPreviewSegmentSpeed(cutSegments, currentSegIndexSafe, relevantTime, fileDuration);
   useEffect(() => setSegmentPreviewSpeed(previewSegmentSpeed), [previewSegmentSpeed, setSegmentPreviewSpeed]);
@@ -6393,11 +6402,11 @@ function App() {
                           onSelectOverlay={setSelectedOverlayId}
                           onUpdateOverlayClip={updateOverlayClip}
                           onDeleteOverlayClip={removeOverlayClip}
-                          speedControlsVisible={speedControlsVisible}
-                          onChangeSegmentSpeed={(speed) => { if (currentCutSeg != null) changeSegmentSpeed(currentCutSeg.segId, speed); }}
+                          speedControlsSegmentIds={speedControlsSegmentIds}
+                          onChangeSegmentSpeed={changeSegmentSpeed}
                           onEditSegmentSpeed={editSegmentSpeed}
                           onEditSegmentCrop={editSegmentCrop}
-                          onHideSpeedControls={toggleSegmentSpeedControls}
+                          onToggleSegmentSpeedControls={toggleSpeedControlsForSegment}
                         />
                       </div>
                     </>

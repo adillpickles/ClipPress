@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getAudioTempoFilter, getPreviewSegmentSpeed, getSegmentOutputDuration, getSegmentPlaybackRate, getSegmentSpeed, isSegmentSpeedValid } from './segmentSpeed';
+import { getAudioTempoFilter, getPreviewSegmentSpeed, getSegmentOutputDuration, getSegmentPlaybackRate, getSegmentSpeed, getSpeedForOutputDuration, isSegmentSpeedValid } from './segmentSpeed';
 import { createSegment, mapSaveableSegments } from './segments';
 import { llcProjectV3Schema } from './types';
 
@@ -42,5 +42,27 @@ describe('segment speed', () => {
     expect(createSegment(project.cutSegments[0]).speed).toBe(0.5);
     expect(llcProjectV3Schema.parse({ version: 3, cutSegments: [{ start: 0, end: 4, name: '' }] }).cutSegments[0]?.speed).toBeUndefined();
     expect(() => llcProjectV3Schema.parse({ version: 3, cutSegments: [{ start: 0, end: 4, name: '', speed: 0 }] })).toThrow();
+  });
+});
+
+describe('getSpeedForOutputDuration', () => {
+  it('slows down when the output is stretched and speeds up when it is shortened', () => {
+    expect(getSpeedForOutputDuration(10, 20)).toBe(0.5);
+    expect(getSpeedForOutputDuration(10, 4)).toBe(2.5);
+    expect(getSpeedForOutputDuration(10, 13.333)).toBe(0.75);
+  });
+
+  it('clamps to the supported range, including drags past the segment start', () => {
+    expect(getSpeedForOutputDuration(10, 100)).toBe(0.25);
+    expect(getSpeedForOutputDuration(10, 1)).toBe(4);
+    expect(getSpeedForOutputDuration(10, 0)).toBe(4);
+    expect(getSpeedForOutputDuration(10, -5)).toBe(4);
+  });
+
+  it('snaps close drags back to normal speed', () => {
+    expect(getSpeedForOutputDuration(10, 10.2)).toBe(1);
+    expect(getSpeedForOutputDuration(10, 9.8)).toBe(1);
+    expect(getSpeedForOutputDuration(10, 10.5)).toBe(0.95);
+    expect(getSpeedForOutputDuration(0, 5)).toBe(1);
   });
 });

@@ -21,6 +21,18 @@ export function getSegmentPlaybackRate(segment: { speed?: number | undefined }, 
   return getSegmentSpeed(segment) * outputPlaybackRate;
 }
 
+export const segmentSpeedPresets = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
+
+const retimeSnapTolerance = 0.03;
+
+/** Convert a dragged output length to a whole-percent speed, snapping near 100% so normal speed is easy to hit. */
+export function getSpeedForOutputDuration(sourceDuration: number, outputDuration: number) {
+  if (!(sourceDuration > 0)) return 1;
+  const rawSpeed = outputDuration > 0 ? sourceDuration / outputDuration : maxSegmentSpeed;
+  const speed = Math.round(Math.min(maxSegmentSpeed, Math.max(minSegmentSpeed, rawSpeed)) * 100) / 100;
+  return Math.abs(speed - 1) <= retimeSnapTolerance ? 1 : speed;
+}
+
 export function getSegmentOutputDuration(segment: SpeedSegment, outputPlaybackRate?: number, fileDuration?: number) {
   return Math.max(0, (segment.end ?? fileDuration ?? segment.start) - segment.start) / getSegmentPlaybackRate(segment, outputPlaybackRate);
 }

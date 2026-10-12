@@ -80,6 +80,8 @@ export const textOverlayClipSchema = z.object({
   start: z.number(),
   end: z.number(),
   text: z.string(),
+  /** Fraction of the video height. Older projects omit it and derive it from the box height. */
+  fontSize: z.number().optional(),
   box: overlayBoxSchema,
 });
 

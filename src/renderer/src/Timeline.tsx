@@ -21,43 +21,45 @@ import Button from './components/Button';
 import type { UseSegments } from './hooks/useSegments';
 import { keyMap } from './hooks/useTimelineScroll';
 import { minTextOverlayDuration } from './textOverlays';
-import SegmentSpeedControl from './components/SegmentSpeedControl';
+import SegmentRetimeBar from './components/SegmentRetimeBar';
+import { getSegmentOutputDuration, getSegmentSpeed, getSpeedForOutputDuration } from './segmentSpeed';
+import { createTimelineMap, getWarpedImageSpans } from './timelineMap';
+import type { TimelineMap } from './timelineMap';
 
 const remote = window.require('@electron/remote');
 const { Menu } = remote;
 
 
-type CalculateTimelinePercent = (time: number) => string | undefined;
-
 const currentTimeWidth = 1;
 
 // eslint-disable-next-line react/display-name
-const Waveform = memo(({ waveform, calculateTimelinePercent, fileDurationNonZero, darkMode }: {
+const Waveform = memo(({ waveform, timelineMap, laneDuration, fileDurationNonZero, darkMode }: {
   waveform: RenderableWaveform,
-  calculateTimelinePercent: CalculateTimelinePercent,
+  timelineMap: TimelineMap,
+  laneDuration: number,
   fileDurationNonZero: number,
   darkMode: boolean,
 }) => {
-  const leftPos = 'from' in waveform ? calculateTimelinePercent(waveform.from) : '0%';
+  const from = 'from' in waveform ? waveform.from : 0;
+  const to = 'to' in waveform ? Math.min(waveform.to, fileDurationNonZero) : fileDurationNonZero;
+  const spans = useMemo(() => getWarpedImageSpans(timelineMap, from, to, laneDuration), [from, laneDuration, timelineMap, to]);
 
-  const width = 'to' in waveform ? ((Math.min(waveform.to, fileDurationNonZero) - waveform.from) / fileDurationNonZero) * 100 : 100;
-
-  const style = useMemo<CSSProperties>(() => ({
-    pointerEvents: 'none', position: 'absolute', height: '100%', left: leftPos, width: `${width}%`, filter: darkMode ? undefined : 'invert(1)', imageRendering: 'pixelated',
-  }), [darkMode, leftPos, width]);
-
-  if (waveform.url == null) {
-    return <div style={{ ...style }} className={styles['loading-bg']} />;
-  }
-
-  return (
-    <img src={waveform.url} draggable={false} style={style} alt="" />
-  );
+  return spans.map((span) => {
+    const spanStyle: CSSProperties = { pointerEvents: 'none', position: 'absolute', height: '100%', left: `${span.left}%`, width: `${span.width}%`, overflow: 'hidden' };
+    if (waveform.url == null) return <div key={span.left} style={spanStyle} className={styles['loading-bg']} />;
+    return (
+      <div key={span.left} style={spanStyle}>
+        <img src={waveform.url} draggable={false} alt="" style={{ position: 'absolute', height: '100%', left: `${span.innerLeft}%`, width: `${span.innerWidth}%`, filter: darkMode ? undefined : 'invert(1)', imageRendering: 'pixelated' }} />
+      </div>
+    );
+  });
 });
 
 // eslint-disable-next-line react/display-name
-const Waveforms = memo(({ calculateTimelinePercent, fileDurationNonZero, waveforms, overviewWaveform, zoom, darkMode, height }: {
-  calculateTimelinePercent: CalculateTimelinePercent,
+const Waveforms = memo(({ timelineMap, laneDuration, laneWidthPercent, fileDurationNonZero, waveforms, overviewWaveform, zoom, darkMode, height }: {
+  timelineMap: TimelineMap,
+  laneDuration: number,
+  laneWidthPercent: number,
   fileDurationNonZero: number,
   waveforms: WaveformSlice[],
   overviewWaveform: OverviewWaveform | undefined,
@@ -65,11 +67,11 @@ const Waveforms = memo(({ calculateTimelinePercent, fileDurationNonZero, wavefor
   darkMode: boolean,
   height: number,
 }) => (
-  <div style={{ height, width: `${zoom * 100}%`, position: 'relative' }}>
+  <div style={{ height, width: `${laneWidthPercent}%`, position: 'relative' }}>
     {zoom === 1 && overviewWaveform != null ? (
-      <Waveform waveform={overviewWaveform} calculateTimelinePercent={calculateTimelinePercent} fileDurationNonZero={fileDurationNonZero} darkMode={darkMode} />
+      <Waveform waveform={overviewWaveform} timelineMap={timelineMap} laneDuration={laneDuration} fileDurationNonZero={fileDurationNonZero} darkMode={darkMode} />
     ) : waveforms.map((waveform) => (
-      <Waveform key={`${waveform.from}-${waveform.to}`} waveform={waveform} calculateTimelinePercent={calculateTimelinePercent} fileDurationNonZero={fileDurationNonZero} darkMode={darkMode} />
+      <Waveform key={`${waveform.from}-${waveform.to}`} waveform={waveform} timelineMap={timelineMap} laneDuration={laneDuration} fileDurationNonZero={fileDurationNonZero} darkMode={darkMode} />
     ))}
   </div>
 ));
@@ -89,6 +91,9 @@ const CommandedTime = memo(({ commandedTimePercent }: { commandedTimePercent: st
 
 const timelineHeight = 36;
 const textLaneHeight = 24;
+const retimeLaneHeight = 38;
+/** Extra lane space (fraction of the visible width) kept past the end while retiming. */
+const retimeTrailingSpace = 0.15;
 const laneLabelStyle: CSSProperties = {
   position: 'absolute',
   left: 8,
@@ -143,11 +148,11 @@ function Timeline({
   onSelectOverlay,
   onUpdateOverlayClip,
   onDeleteOverlayClip,
-  speedControlsVisible,
+  speedControlsSegmentIds,
   onChangeSegmentSpeed,
   onEditSegmentSpeed,
   onEditSegmentCrop,
-  onHideSpeedControls,
+  onToggleSegmentSpeedControls,
 } : {
   fileDurationNonZero: number,
   startTimeOffset: number,
@@ -188,11 +193,11 @@ function Timeline({
   onSelectOverlay: (overlayId: string | undefined) => void,
   onUpdateOverlayClip: (overlayId: string, updater: (clip: OverlayClip) => OverlayClip) => void,
   onDeleteOverlayClip: (overlayId: string) => void,
-  speedControlsVisible: boolean,
-  onChangeSegmentSpeed: (speed: number) => void,
+  speedControlsSegmentIds: ReadonlySet<string>,
+  onChangeSegmentSpeed: (segmentId: string, speed: number) => void,
   onEditSegmentSpeed: (index: number) => void,
   onEditSegmentCrop: (index: number) => void,
-  onHideSpeedControls: () => void,
+  onToggleSegmentSpeedControls: (segmentId: string) => void,
 }) {
   const { t } = useTranslation();
 
@@ -217,7 +222,34 @@ function Timeline({
   // See https://github.com/mifi/lossless-cut/issues/259
   const areKeyframesTooClose = keyFramesInZoomWindow.length > zoom * 200;
 
-  const calculateTimelinePos = useCallback((time: number | undefined) => (time !== undefined ? Math.min(time / fileDurationNonZero, 1) : undefined), [fileDurationNonZero]);
+  const retimeSegments = useMemo(() => cutSegments.flatMap((seg, index) => (
+    seg.end != null && speedControlsSegmentIds.has(seg.segId) ? [{ seg: { ...seg, end: seg.end }, index }] : []
+  )), [cutSegments, speedControlsSegmentIds]);
+
+  // The live speed of the segment being retimed, plus the timeline length when the drag began.
+  const [retimeDrag, setRetimeDrag] = useState<{ segId: string, speed: number, scaleDuration: number }>();
+
+  const timelineMap = useMemo(() => {
+    if (invertCutSegments) return createTimelineMap([], fileDurationNonZero);
+    const segments = retimeDrag == null ? cutSegments : cutSegments.map((seg) => (seg.segId === retimeDrag.segId ? { ...seg, speed: retimeDrag.speed } : seg));
+    return createTimelineMap(segments, fileDurationNonZero);
+  }, [cutSegments, fileDurationNonZero, invertCutSegments, retimeDrag]);
+
+  // While retiming, the pixel scale stays fixed so the edge tracks the cursor: lanes grow or
+  // shrink and scroll (with room to keep dragging) instead of the whole timeline refitting.
+  const scaleDuration = retimeDrag?.scaleDuration ?? timelineMap.displayDuration;
+  const laneDuration = timelineMap.displayDuration + (retimeDrag != null ? (scaleDuration / zoom) * retimeTrailingSpace : 0);
+  const laneWidthPercent = zoom * 100 * (laneDuration / scaleDuration);
+
+  const retimeDragging = retimeDrag != null;
+  const timelineMapRef = useRef(timelineMap);
+  useEffect(() => {
+    timelineMapRef.current = timelineMap;
+  }, [timelineMap]);
+
+  const toLanePercent = useCallback((time: number) => (timelineMap.toDisplay(time) / laneDuration) * 100, [laneDuration, timelineMap]);
+
+  const calculateTimelinePos = useCallback((time: number | undefined) => (time !== undefined ? Math.min(timelineMap.toDisplay(time) / laneDuration, 1) : undefined), [laneDuration, timelineMap]);
   const calculateTimelinePercent = useCallback((time: number | undefined) => {
     const pos = calculateTimelinePos(time);
     return pos !== undefined ? `${pos * 100}%` : undefined;
@@ -230,13 +262,13 @@ function Timeline({
     // https://github.com/mifi/lossless-cut/issues/676
     const pos = calculateTimelinePos(relevantTime);
     // eslint-disable-next-line react-hooks/refs
-    if (pos != null && timelineScrollerRef.current) return pos * zoom * timelineScrollerRef.current!.offsetWidth;
+    if (pos != null && timelineScrollerRef.current) return pos * (laneWidthPercent / 100) * timelineScrollerRef.current!.offsetWidth;
     return undefined;
-  }, [calculateTimelinePos, relevantTime, zoom]);
+  }, [calculateTimelinePos, laneWidthPercent, relevantTime]);
 
   const calcZoomWindowStartTime = useCallback(() => (timelineScrollerRef.current
-    ? (timelineScrollerRef.current.scrollLeft / (timelineScrollerRef.current!.offsetWidth * zoom)) * fileDurationNonZero
-    : 0), [fileDurationNonZero, zoom]);
+    ? timelineMap.toSource((timelineScrollerRef.current.scrollLeft / (timelineScrollerRef.current!.offsetWidth * (laneWidthPercent / 100))) * laneDuration)
+    : 0), [laneDuration, laneWidthPercent, timelineMap]);
 
   // const zoomWindowStartTime = calcZoomWindowStartTime(duration, zoom);
 
@@ -264,7 +296,7 @@ function Timeline({
 
   // Pan timeline when cursor moves out of timeline window
   useEffect(() => {
-    if (timeOfInterestPosPixels == null || timelineScrollerSkipEventRef.current) return;
+    if (timeOfInterestPosPixels == null || timelineScrollerSkipEventRef.current || retimeDragging) return;
 
     invariant(timelineScrollerRef.current != null);
     if (timeOfInterestPosPixels > timelineScrollerRef.current.scrollLeft + timelineScrollerRef.current.offsetWidth) {
@@ -275,7 +307,7 @@ function Timeline({
       const scrollLeft = timeOfInterestPosPixels - (timelineScrollerRef.current.offsetWidth * 0.9);
       scrollLeftMotion.set(Math.max(scrollLeft, 0));
     }
-  }, [timeOfInterestPosPixels, scrollLeftMotion]);
+  }, [timeOfInterestPosPixels, scrollLeftMotion, retimeDragging]);
 
   // Keep cursor in middle while zooming
   useEffect(() => {
@@ -285,11 +317,12 @@ function Timeline({
       invariant(timelineScrollerRef.current != null);
       const zoomedTargetWidth = timelineScrollerRef.current.offsetWidth * zoom;
 
-      const scrollLeft = Math.max((commandedTimeRef.current / fileDurationNonZero) * zoomedTargetWidth - timelineScrollerRef.current.offsetWidth / 2, 0);
+      const map = timelineMapRef.current;
+      const scrollLeft = Math.max((map.toDisplay(commandedTimeRef.current) / map.displayDuration) * zoomedTargetWidth - timelineScrollerRef.current.offsetWidth / 2, 0);
       scrollLeftMotion.set(scrollLeft);
       timelineScrollerRef.current.scrollLeft = scrollLeft;
     }
-  }, [zoom, fileDurationNonZero, commandedTimeRef, scrollLeftMotion, isZoomed]);
+  }, [zoom, commandedTimeRef, scrollLeftMotion, isZoomed]);
 
 
   useEffect(() => {
@@ -323,8 +356,8 @@ function Timeline({
     invariant(target != null);
     const rect = target.getBoundingClientRect();
     const relX = e.pageX - (rect.left + document.body.scrollLeft);
-    return (relX / target.offsetWidth) * fileDurationNonZero;
-  }, [fileDurationNonZero]);
+    return timelineMap.toSource((relX / target.offsetWidth) * laneDuration);
+  }, [laneDuration, timelineMap]);
 
   const mouseDownRef = useRef<unknown>();
 
@@ -465,6 +498,62 @@ function Timeline({
     window.addEventListener('mousemove', onMouseMove);
   }, [fileDurationNonZero, getMouseTimelinePos, onSelectOverlay, onUpdateOverlayClip, seekAbs]);
 
+  const onRetimeHandleMouseDown = useCallback((seg: Omit<StateSegment, 'end'> & { end: number }, index: number) => (event: ReactMouseEvent<HTMLElement>) => {
+    const scroller = timelineScrollerRef.current;
+    const wrapper = timelineWrapperRef.current;
+    if (event.button !== 0 || scroller == null || wrapper == null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setCurrentSegIndex(index);
+
+    const committedSpeed = getSegmentSpeed(seg);
+    const sourceDuration = seg.end - seg.start;
+    const dragScaleDuration = timelineMapRef.current.displayDuration;
+    const pixelsPerSecond = wrapper.offsetWidth / dragScaleDuration;
+    const pointerStart = event.clientX + scroller.scrollLeft;
+    let pointerX = event.clientX;
+    let nextSpeed = committedSpeed;
+
+    const update = () => {
+      const deltaSeconds = (pointerX + scroller.scrollLeft - pointerStart) / pixelsPerSecond;
+      nextSpeed = getSpeedForOutputDuration(sourceDuration, (sourceDuration / committedSpeed) + deltaSeconds);
+      setRetimeDrag({ segId: seg.segId, speed: nextSpeed, scaleDuration: dragScaleDuration });
+    };
+    setRetimeDrag({ segId: seg.segId, speed: committedSpeed, scaleDuration: dragScaleDuration });
+
+    // Holding the cursor near (or past) either edge scrolls the timeline so the drag can continue.
+    let frame = requestAnimationFrame(function autoScroll() {
+      const rect = scroller.getBoundingClientRect();
+      const edge = 40;
+      const overshoot = pointerX > rect.right - edge ? pointerX - (rect.right - edge) : Math.min(0, pointerX - (rect.left + edge));
+      if (overshoot !== 0) {
+        const before = scroller.scrollLeft;
+        scroller.scrollLeft += Math.max(-30, Math.min(30, overshoot / 2));
+        if (scroller.scrollLeft !== before) update();
+      }
+      frame = requestAnimationFrame(autoScroll);
+    });
+
+    const listeners = new AbortController();
+    // One commit per drag keeps undo to a single step; Escape cancels.
+    const finish = (commit: boolean) => {
+      cancelAnimationFrame(frame);
+      listeners.abort();
+      setRetimeDrag(undefined);
+      if (commit && nextSpeed !== committedSpeed) onChangeSegmentSpeed(seg.segId, nextSpeed);
+    };
+    window.addEventListener('mousemove', (moveEvent) => {
+      pointerX = moveEvent.clientX;
+      update();
+    }, { signal: listeners.signal });
+    window.addEventListener('mouseup', () => finish(true), { signal: listeners.signal });
+    window.addEventListener('keydown', (keyEvent) => {
+      if (keyEvent.key !== 'Escape') return;
+      keyEvent.stopPropagation();
+      finish(false);
+    }, { capture: true, signal: listeners.signal });
+  }, [onChangeSegmentSpeed, setCurrentSegIndex]);
+
   const onOverlayContextMenu = useCallback((overlayClip: OverlayClip) => (event: ReactMouseEvent<HTMLElement>) => {
     event.preventDefault();
     event.stopPropagation();
@@ -538,7 +627,9 @@ function Timeline({
       >
         {waveformEnabled && shouldShowWaveform && (waveforms.length > 0 || overviewWaveform != null) && (
           <Waveforms
-            calculateTimelinePercent={calculateTimelinePercent}
+            timelineMap={timelineMap}
+            laneDuration={laneDuration}
+            laneWidthPercent={laneWidthPercent}
             fileDurationNonZero={fileDurationNonZero}
             waveforms={waveforms}
             overviewWaveform={overviewWaveform}
@@ -549,12 +640,12 @@ function Timeline({
         )}
 
         {showThumbnails && (
-          <div style={{ height: 60, width: `${zoom * 100}%`, position: 'relative', marginBottom: 3 }}>
+          <div style={{ height: 60, width: `${laneWidthPercent}%`, position: 'relative', marginBottom: 3 }}>
             {thumbnails.map((thumbnail, i) => {
-              const leftPercent = (thumbnail.time / fileDurationNonZero) * 100;
+              const leftPercent = toLanePercent(thumbnail.time);
               const nextThumbnail = thumbnails[i + 1];
               const nextThumbTime = nextThumbnail ? nextThumbnail.time : fileDurationNonZero;
-              const maxWidthPercent = ((nextThumbTime - thumbnail.time) / fileDurationNonZero) * 100 * 0.9;
+              const maxWidthPercent = (toLanePercent(nextThumbTime) - leftPercent) * 0.9;
               return (
                 <img key={thumbnail.url} src={thumbnail.url} alt="" style={{ position: 'absolute', left: `${leftPercent}%`, height: '100%', boxSizing: 'border-box', maxWidth: `${maxWidthPercent}%`, objectFit: 'cover', border: '1px solid rgba(255, 255, 255, 0.5)', borderBottomRightRadius: 15, borderTopLeftRadius: 15, borderTopRightRadius: 15, pointerEvents: 'none' }} />
               );
@@ -563,12 +654,12 @@ function Timeline({
         )}
 
         {overlayClips.length > 0 && (
-          <div style={{ height: textLaneHeight, width: `${zoom * 100}%`, position: 'relative', backgroundColor: 'var(--gray-3)', borderTop: '1px solid var(--gray-7)' }}>
+          <div style={{ height: textLaneHeight, width: `${laneWidthPercent}%`, position: 'relative', backgroundColor: 'var(--gray-3)', borderTop: '1px solid var(--gray-7)' }}>
             <div style={laneLabelStyle}>Text</div>
 
             {overlayClips.map((overlayClip) => {
               const left = calculateTimelinePercent(overlayClip.start);
-              const width = `${Math.max(((overlayClip.end - overlayClip.start) / fileDurationNonZero) * 100, 0.5)}%`;
+              const width = `${Math.max(toLanePercent(overlayClip.end) - toLanePercent(overlayClip.start), 0.5)}%`;
               const selected = overlayClip.overlayId === selectedOverlayId;
               const deleteHovered = hoveredDeleteOverlayId === overlayClip.overlayId;
 
@@ -642,16 +733,38 @@ function Timeline({
           </div>
         )}
 
-        {speedControlsVisible && currentCutSeg?.end != null && (
-          <div style={{ height: 28, width: `${zoom * 100}%`, position: 'relative', background: 'var(--gray-2)' }}>
-            <div style={{ position: 'absolute', left: calculateTimelinePercent(currentCutSeg.start), width: calculateTimelinePercent(currentCutSeg.end - currentCutSeg.start), minWidth: 160, bottom: 0 }}>
-              <SegmentSpeedControl key={currentCutSeg.segId} segment={currentCutSeg} formatTimecode={formatTimecode} onChange={onChangeSegmentSpeed} onEdit={() => onEditSegmentSpeed(currentSegIndexSafe)} onHide={onHideSpeedControls} />
-            </div>
+        {retimeSegments.length > 0 && (
+          <div style={{ height: retimeLaneHeight, width: `${laneWidthPercent}%`, position: 'relative', isolation: 'isolate', overflow: 'hidden', backgroundColor: 'var(--gray-2)', borderTop: '1px solid var(--gray-7)' }}>
+            <div style={laneLabelStyle}>Speed</div>
+
+            {retimeSegments.map(({ seg, index }) => {
+              const left = toLanePercent(seg.start);
+              const dragging = retimeDrag?.segId === seg.segId;
+              const speed = dragging ? retimeDrag.speed : getSegmentSpeed(seg);
+              return (
+                <SegmentRetimeBar
+                  key={seg.segId}
+                  left={`${left}%`}
+                  width={`${toLanePercent(seg.end) - left}%`}
+                  speed={speed}
+                  committedSpeed={getSegmentSpeed(seg)}
+                  outputDuration={getSegmentOutputDuration({ ...seg, speed })}
+                  isActive={index === currentSegIndexSafe}
+                  dragging={dragging}
+                  formatTimecode={formatTimecode}
+                  onHandleMouseDown={onRetimeHandleMouseDown(seg, index)}
+                  onSelect={() => setCurrentSegIndex(index)}
+                  onChange={(nextSpeed) => onChangeSegmentSpeed(seg.segId, nextSpeed)}
+                  onEdit={() => onEditSegmentSpeed(index)}
+                  onHide={() => onToggleSegmentSpeedControls(seg.segId)}
+                />
+              );
+            })}
           </div>
         )}
 
         <div
-          style={{ height: timelineHeight, width: `${zoom * 100}%`, position: 'relative', backgroundColor: timelineBackground, transition: darkModeTransition, borderTop: overlayClips.length > 0 ? '1px solid var(--gray-7)' : undefined }}
+          style={{ height: timelineHeight, width: `${laneWidthPercent}%`, position: 'relative', backgroundColor: timelineBackground, transition: darkModeTransition, borderTop: overlayClips.length > 0 ? '1px solid var(--gray-7)' : undefined }}
           ref={timelineWrapperRef}
         >
           <div style={laneLabelStyle}>Video</div>
@@ -659,9 +772,9 @@ function Timeline({
           {inverseCutSegments.map((seg) => (
             <BetweenSegments
               key={seg.segId}
-              start={seg.start}
-              end={seg.end}
-              fileDurationNonZero={fileDurationNonZero}
+              left={toLanePercent(seg.start)}
+              width={toLanePercent(seg.end) - toLanePercent(seg.start)}
+              instant={retimeDragging}
               invertCutSegments={invertCutSegments}
             />
           ))}
@@ -676,18 +789,22 @@ function Timeline({
                 segNum={i}
                 onSegClick={setCurrentSegIndex}
                 isActive={i === currentSegIndexSafe}
-                fileDurationNonZero={fileDurationNonZero}
+                toLanePercent={toLanePercent}
+                instant={retimeDragging}
                 invertCutSegments={invertCutSegments}
                 formatTimecode={formatTimecode}
                 selected={selected}
+                speedControlsVisible={speedControlsSegmentIds.has(seg.segId)}
                 onEditSpeed={onEditSegmentSpeed}
+                onChangeSpeed={onChangeSegmentSpeed}
+                onToggleSpeedControls={onToggleSegmentSpeedControls}
                 onEditCrop={onEditSegmentCrop}
               />
             );
           })}
 
           {shouldShowKeyframes && !areKeyframesTooClose && keyFramesInZoomWindow.map((f) => (
-            <div key={f.time} style={{ position: 'absolute', top: 0, bottom: 0, left: `${(f.time / fileDurationNonZero) * 100}%`, marginLeft: -1, width: 1, background: 'var(--gray-10)', pointerEvents: 'none' }} />
+            <div key={f.time} style={{ position: 'absolute', top: 0, bottom: 0, left: `${toLanePercent(f.time)}%`, marginLeft: -1, width: 1, background: 'var(--gray-10)', pointerEvents: 'none' }} />
           ))}
 
           {currentTimePercent !== undefined && (

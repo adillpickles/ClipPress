@@ -5,6 +5,14 @@ const defaultTextOverlayDuration = 3;
 export const minTextOverlayDuration = 0.1;
 export const defaultTextOverlayText = 'Sample Text';
 export const defaultTextOverlayFontFamily = 'Arial, sans-serif';
+/** Font sizes are fractions of the (rotated) video height so they survive resolution changes. */
+export const defaultTextOverlayFontSize = 0.055;
+export const minTextOverlayFontSize = 0.015;
+export const maxTextOverlayFontSize = 0.3;
+export const minTextOverlayWidth = 0.05;
+export const textOverlayLineHeight = 1.15;
+// Before font size was stored, the preview derived it from the box height.
+const legacyFontSizePerBoxHeight = 0.28;
 
 const defaultOverlayBox: OverlayBox = {
   x: 0.2,
@@ -89,7 +97,8 @@ export function createDefaultTextOverlayClip({
     start,
     end,
     text: defaultTextOverlayText,
-    box: { ...defaultOverlayBox },
+    fontSize: defaultTextOverlayFontSize,
+    box: { ...defaultOverlayBox, height: defaultTextOverlayFontSize * (textOverlayLineHeight + 0.4) },
   };
 }
 
@@ -106,7 +115,7 @@ function wrapTextLines({
   text,
   maxWidth,
 }: {
-  ctx: CanvasRenderingContext2D,
+  ctx: Pick<CanvasRenderingContext2D, 'measureText'>,
   text: string,
   maxWidth: number,
 }) {
@@ -123,11 +132,19 @@ function wrapTextLines({
 
       for (const word of words) {
         const proposedLine = currentLine.length > 0 ? `${currentLine} ${word}` : word;
-        if (ctx.measureText(proposedLine).width <= maxWidth || currentLine.length === 0) {
+        if (ctx.measureText(proposedLine).width <= maxWidth) {
           currentLine = proposedLine;
         } else {
-          lines.push(currentLine);
-          currentLine = word;
+          if (currentLine.length > 0) lines.push(currentLine);
+          currentLine = '';
+          // Split a word wider than the box across lines instead of letting it overflow.
+          for (const char of word) {
+            if (currentLine.length > 0 && ctx.measureText(currentLine + char).width > maxWidth) {
+              lines.push(currentLine);
+              currentLine = '';
+            }
+            currentLine += char;
+          }
         }
       }
 
@@ -138,53 +155,65 @@ function wrapTextLines({
   return lines.length > 0 ? lines : [''];
 }
 
-export function getPreviewFontSize({
-  surfaceHeight,
-  boxHeight,
-}: {
-  surfaceHeight: number,
-  boxHeight: number,
+export function getOverlayFontSize(overlayClip: Pick<TextOverlayClip, 'fontSize' | 'box'>) {
+  const fontSize = overlayClip.fontSize ?? overlayClip.box.height * legacyFontSizePerBoxHeight;
+  return clamp(Number.isFinite(fontSize) ? fontSize : defaultTextOverlayFontSize, minTextOverlayFontSize, maxTextOverlayFontSize);
+}
+
+type MeasureContext = Pick<CanvasRenderingContext2D, 'font' | 'measureText'>;
+
+let sharedMeasureContext: MeasureContext | undefined;
+function getMeasureContext() {
+  sharedMeasureContext ??= document.createElement('canvas').getContext('2d') ?? undefined;
+  if (sharedMeasureContext == null) throw new Error('Failed to create text measuring canvas');
+  return sharedMeasureContext;
+}
+
+/**
+ * Wraps text to the box width at a fixed font size. The box grows to fit every line, so the
+ * editor preview and the exported image share one layout (all values in video pixels).
+ */
+export function layoutTextOverlay({ text, widthPx, fontSizePx, ctx: measureContext }: {
+  text: string,
+  widthPx: number,
+  fontSizePx: number,
+  ctx?: MeasureContext | undefined,
 }) {
-  return Math.max(14, Math.round(surfaceHeight * boxHeight * 0.28));
+  const paddingX = fontSizePx * 0.35;
+  const paddingY = fontSizePx * 0.2;
+  const ctx = measureContext ?? getMeasureContext();
+  ctx.font = `${fontSizePx}px ${defaultTextOverlayFontFamily}`;
+  const lines = wrapTextLines({ ctx, text, maxWidth: Math.max(1, widthPx - (paddingX * 2)) });
+  const lineHeightPx = fontSizePx * textOverlayLineHeight;
+  return { lines, lineHeightPx, paddingX, paddingY, heightPx: (lines.length * lineHeightPx) + (paddingY * 2) };
+}
+
+/** Box height (fraction of video height) that fits the clip's text; also pins the font size. */
+export function fitTextOverlayBox(overlayClip: TextOverlayClip, videoWidth: number, videoHeight: number, ctx?: MeasureContext): TextOverlayClip {
+  const fontSize = getOverlayFontSize(overlayClip);
+  const { heightPx } = layoutTextOverlay({ text: overlayClip.text, widthPx: overlayClip.box.width * videoWidth, fontSizePx: fontSize * videoHeight, ctx });
+  return { ...overlayClip, fontSize, box: { ...overlayClip.box, height: Math.min(1, heightPx / videoHeight) } };
 }
 
 export async function renderTextOverlayPng({
   text,
   width,
-  height,
+  fontSize,
 }: {
   text: string,
   width: number,
-  height: number,
+  fontSize: number,
 }) {
+  const { lines, lineHeightPx, paddingX, paddingY, heightPx } = layoutTextOverlay({ text, widthPx: width, fontSizePx: fontSize });
+
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(8, Math.round(width));
-  canvas.height = Math.max(8, Math.round(height));
+  canvas.height = Math.max(8, Math.ceil(heightPx));
 
   const ctx = canvas.getContext('2d');
   if (ctx == null) throw new Error('Failed to create text overlay canvas');
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  const horizontalPadding = Math.max(8, canvas.width * 0.06);
-  const verticalPadding = Math.max(6, canvas.height * 0.1);
-  const maxTextWidth = Math.max(1, canvas.width - (horizontalPadding * 2));
-  const maxTextHeight = Math.max(1, canvas.height - (verticalPadding * 2));
-
-  let fontSize = Math.max(14, Math.round(canvas.height * 0.32));
-  let lines = [''];
-  let lineHeight = fontSize * 1.15;
-
-  while (fontSize >= 12) {
-    ctx.font = `${fontSize}px ${defaultTextOverlayFontFamily}`;
-    lines = wrapTextLines({ ctx, text, maxWidth: maxTextWidth });
-    lineHeight = fontSize * 1.15;
-    const totalHeight = lines.length * lineHeight;
-    const widestLine = lines.reduce((max, line) => Math.max(max, ctx.measureText(line).width), 0);
-    if (widestLine <= maxTextWidth && totalHeight <= maxTextHeight) break;
-    fontSize -= 1;
-  }
-
   ctx.font = `${fontSize}px ${defaultTextOverlayFontFamily}`;
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
@@ -194,13 +223,7 @@ export async function renderTextOverlayPng({
   ctx.shadowOffsetX = Math.max(1, fontSize * 0.04);
   ctx.shadowOffsetY = Math.max(1, fontSize * 0.04);
 
-  const totalTextHeight = lines.length * lineHeight;
-  let cursorY = verticalPadding + Math.max(0, (maxTextHeight - totalTextHeight) / 2);
-
-  for (const line of lines) {
-    ctx.fillText(line, horizontalPadding, cursorY);
-    cursorY += lineHeight;
-  }
+  lines.forEach((line, index) => ctx.fillText(line, paddingX, paddingY + (index * lineHeightPx)));
 
   const dataUrl = canvas.toDataURL('image/png');
   const response = await fetch(dataUrl);
@@ -218,6 +241,7 @@ export function sanitizeOverlayClip(overlayClip: OverlayClip, fileDuration?: num
     start: clampedStart,
     end: clampedEnd,
     text: overlayClip.text,
+    ...(overlayClip.fontSize != null ? { fontSize: getOverlayFontSize(overlayClip) } : {}),
     box: clampOverlayBox({
       x: clampOverlayNumber(overlayClip.box.x),
       y: clampOverlayNumber(overlayClip.box.y),

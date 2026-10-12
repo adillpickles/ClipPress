@@ -26,6 +26,14 @@ export function getRelativeSegmentOverlapWindow({
   };
 }
 
+/**
+ * Read each text image once. `overlay` repeats a finished input's last frame by default,
+ * while `-loop 1` would decode the PNG again for every video frame and slow exports down.
+ */
+export function buildOverlayImageInputArgs(imagePaths: string[]) {
+  return imagePaths.flatMap((imagePath) => ['-i', imagePath]);
+}
+
 export function buildConcatSegmentInputArgs({
   filePath,
   segments,

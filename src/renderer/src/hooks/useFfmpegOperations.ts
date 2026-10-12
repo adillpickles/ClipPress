@@ -12,8 +12,8 @@ import { isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, 
 import { defaultAudioGainDb, getMapStreamsArgs, getStreamIdsToCopy, isMutedAudioGain, isNeutralAudioGain } from '../util/streams';
 import { needsSmartCut, getCodecParams } from '../smartcut';
 import { getGuaranteedSegments, isDurationValid } from '../segments';
-import { getRotatedVideoDimensions, renderTextOverlayPng } from '../textOverlays';
-import { getRelativeSegmentOverlapWindow } from '../exportSegmentMath';
+import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } from '../textOverlays';
+import { buildOverlayImageInputArgs, getRelativeSegmentOverlapWindow } from '../exportSegmentMath';
 import { getSegmentCropFilter } from '../segmentCrop';
 import { getSizeLimitedRotationArgs } from '../sizeLimitedFfmpegArgs';
 import { getAudioTempoFilter, getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from '../segmentSpeed';
@@ -126,8 +126,7 @@ async function prepareTextOverlayAssets({
   const rotatedVideoDimensions = getRotatedVideoDimensions({ width: videoWidth, height: videoHeight, rotation });
   const assets = await pMap(overlayClips, async (overlayClip, index) => {
     const width = Math.max(8, Math.round(rotatedVideoDimensions.width * overlayClip.box.width));
-    const height = Math.max(8, Math.round(rotatedVideoDimensions.height * overlayClip.box.height));
-    const imageData = await renderTextOverlayPng({ text: overlayClip.text, width, height });
+    const imageData = await renderTextOverlayPng({ text: overlayClip.text, width, fontSize: getOverlayFontSize(overlayClip) * rotatedVideoDimensions.height });
     const imagePath = join(outputDir, `clippress-text-overlay-${Date.now()}-${index}.png`);
     await writeFile(imagePath, imageData, { flag: 'wx' });
     return {
@@ -713,7 +712,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
           const mediaInputArgs = flatMap(copyFileStreamsFiltered, ({ path }) => ['-ss', start.toFixed(5), '-t', (end - start).toFixed(5), ...getSizeLimitedRotationArgs(rotation), '-i', path]);
 
           const segmentOverlayAssets = preparedOverlayAssets.filter((overlayAsset) => overlayAsset.start < end && overlayAsset.end > start);
-          const overlayInputArgs = flatMap(segmentOverlayAssets, ({ imagePath }) => ['-loop', '1', '-i', imagePath]);
+          const overlayInputArgs = buildOverlayImageInputArgs(segmentOverlayAssets.map(({ imagePath }) => imagePath));
           const chaptersInputIndex = copyFileStreamsFiltered.length + segmentOverlayAssets.length;
           const { filterGraph, videoOutputLabel } = buildTextOverlayFilterGraph({
             videoInputLabel: `[${mainInputFileIndex}:${videoStreamIndex}]`,
