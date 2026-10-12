@@ -89,3 +89,24 @@ export function getWarpedImageSpans(map: TimelineMap, from: number, to: number, 
     }];
   });
 }
+
+const retimeAutoScrollEdge = 40;
+/** How far past the starting point the pointer must travel before a drag that began in an edge zone scrolls. */
+const retimeAutoScrollArmDistance = 8;
+const retimeAutoScrollMaxStep = 30;
+
+/**
+ * Pixels to scroll the timeline this frame while dragging a retime handle.
+ *
+ * Scrolling only starts when the pointer moves toward an edge beyond where the drag began. A
+ * handle that already sits in the edge zone (a clip filling the timeline) must not scroll on a
+ * plain click: scrolling moves the handle, which would keep retiming the clip with no movement.
+ */
+export function getRetimeAutoScrollStep({ pointerX, startX, left, right }: { pointerX: number, startX: number, left: number, right: number }) {
+  const rightZone = Math.max(right - retimeAutoScrollEdge, startX + retimeAutoScrollArmDistance);
+  const leftZone = Math.min(left + retimeAutoScrollEdge, startX - retimeAutoScrollArmDistance);
+  let overshoot = 0;
+  if (pointerX > rightZone) overshoot = pointerX - rightZone;
+  else if (pointerX < leftZone) overshoot = pointerX - leftZone;
+  return Math.max(-retimeAutoScrollMaxStep, Math.min(retimeAutoScrollMaxStep, overshoot / 2));
+}

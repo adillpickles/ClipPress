@@ -24,7 +24,7 @@ import { minTextOverlayDuration } from './textOverlays';
 import SegmentRetimeBar from './components/SegmentRetimeBar';
 import LaneDeleteButton from './components/LaneDeleteButton';
 import { getSegmentOutputDuration, getSegmentSpeed, getSpeedForOutputDuration } from './segmentSpeed';
-import { createTimelineMap, getWarpedImageSpans } from './timelineMap';
+import { createTimelineMap, getRetimeAutoScrollStep, getWarpedImageSpans } from './timelineMap';
 import type { TimelineMap } from './timelineMap';
 
 const remote = window.require('@electron/remote');
@@ -513,6 +513,7 @@ function Timeline({
     const dragScaleDuration = timelineMapRef.current.displayDuration;
     const pixelsPerSecond = wrapper.offsetWidth / dragScaleDuration;
     const pointerStart = event.clientX + scroller.scrollLeft;
+    const startX = event.clientX;
     let pointerX = event.clientX;
     let nextSpeed = committedSpeed;
 
@@ -523,14 +524,13 @@ function Timeline({
     };
     setRetimeDrag({ segId: seg.segId, speed: committedSpeed, scaleDuration: dragScaleDuration });
 
-    // Holding the cursor near (or past) either edge scrolls the timeline so the drag can continue.
+    // Dragging toward (or past) either edge scrolls the timeline so the drag can continue.
     let frame = requestAnimationFrame(function autoScroll() {
       const rect = scroller.getBoundingClientRect();
-      const edge = 40;
-      const overshoot = pointerX > rect.right - edge ? pointerX - (rect.right - edge) : Math.min(0, pointerX - (rect.left + edge));
-      if (overshoot !== 0) {
+      const step = getRetimeAutoScrollStep({ pointerX, startX, left: rect.left, right: rect.right });
+      if (step !== 0) {
         const before = scroller.scrollLeft;
-        scroller.scrollLeft += Math.max(-30, Math.min(30, overshoot / 2));
+        scroller.scrollLeft += step;
         if (scroller.scrollLeft !== before) update();
       }
       frame = requestAnimationFrame(autoScroll);

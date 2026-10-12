@@ -16,16 +16,19 @@ Beta 4 installer does not include them.
   the scale stays fixed; hold the cursor at either edge to scroll the timeline. It
   refits when you let go.
 - Double-click the bar's edge to reset to 100%. Click the percentage for presets
-  (25%–400%), **Custom speed…**, or **Reset speed to 100%**. The **×** hides the bar
-  but keeps the speed, as in Resolve.
+  (25%–400%), **Custom speed…**, **Remove speed change**, or **Hide speed controls
+  (keep speed)**. The **×** on the selected bar removes the speed change, like deleting
+  a retime in Resolve.
 - **Change speed…** in the segment menu opens a dialog for an exact percentage.
   Preview and export use the same rate; exported audio keeps its pitch.
 - Choose **Zoom / Crop…** from the segment's menu, or click **Zoom / Crop** under
-  the preview. Drag a corner to change the frame and drag inside to reposition it.
-  The frame keeps the source's aspect ratio. The zoom slider supports 1× to 4×.
-- **Reset** restores the full frame. **Done** returns to the cropped preview.
-  Arrow keys move or resize a focused frame control; hold Shift for larger steps.
-  Escape cancels a gesture, or closes crop controls when no gesture is active.
+  the preview. The crop frame looks like a text box: drag a round corner handle to
+  resize, drag inside (or the **Crop** tab, which shows the output size) to move it,
+  or scroll over it to zoom. The frame keeps the source's aspect ratio, from 1× to 4×.
+- The toolbar over the video has zoom out/in, a zoom slider, **Reset** (full frame)
+  and **Done**. Enter finishes, Escape cancels a gesture or closes the controls, and
+  arrow keys move or resize a focused handle (Shift for larger steps). The crop
+  belongs to the clip, so trimming the clip keeps it.
 
 ## Preview, saving, and export
 
