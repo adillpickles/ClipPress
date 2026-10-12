@@ -82,7 +82,7 @@ function Marker({
 }
 
 function Segment({
-  seg, segNum, color, isActive, selected, onClick, getTimePercent, instant, formatTimecode, invertCutSegments, speedControlsVisible, onEditSpeed, onChangeSpeed, onToggleSpeedControls, onEditCrop,
+  seg, segNum, color, isActive, selected, onClick, getTimePercent, instant, formatTimecode, invertCutSegments, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop,
 }: {
   seg: Omit<StateSegment, 'end'> & { end: number },
   segNum: number,
@@ -96,7 +96,7 @@ function Segment({
   invertCutSegments: boolean,
   speedControlsVisible: boolean,
   onEditSpeed: (index: number) => void,
-  onChangeSpeed: (segmentId: string, speed: number) => void,
+  onRemoveSpeed: (segmentId: string) => void,
   onToggleSpeedControls: (segmentId: string) => void,
   onEditCrop: (index: number) => void,
 }) {
@@ -191,7 +191,7 @@ function Segment({
         remote.Menu.buildFromTemplate([
           { label: t('Speed controls'), type: 'checkbox', checked: speedControlsVisible, click: () => onToggleSpeedControls(seg.segId) },
           { label: t('Change speed…'), click: () => onEditSpeed(segNum) },
-          { label: t('Reset speed to 100%'), enabled: speed !== 1, click: () => onChangeSpeed(seg.segId, 1) },
+          { label: t('Remove speed change'), enabled: speed !== 1 || speedControlsVisible, click: () => onRemoveSpeed(seg.segId) },
           { type: 'separator' },
           { label: t('Zoom / Crop…'), click: () => onEditCrop(segNum) },
         ]).popup({ window: remote.getCurrentWindow() });
@@ -233,7 +233,7 @@ function Segment({
 }
 
 function SegmentOrMarker({
-  seg, toLanePercent, instant, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, speedControlsVisible, onEditSpeed, onChangeSpeed, onToggleSpeedControls, onEditCrop,
+  seg, toLanePercent, instant, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop,
 } : {
   seg: StateSegment,
   toLanePercent: (time: number) => number,
@@ -246,7 +246,7 @@ function SegmentOrMarker({
   selected: boolean,
   speedControlsVisible: boolean,
   onEditSpeed: (index: number) => void,
-  onChangeSpeed: (segmentId: string, speed: number) => void,
+  onRemoveSpeed: (segmentId: string) => void,
   onToggleSpeedControls: (segmentId: string) => void,
   onEditCrop: (index: number) => void,
 }) {
@@ -259,7 +259,7 @@ function SegmentOrMarker({
   const onThisSegClick = useCallback(() => onSegClick(segNum), [onSegClick, segNum]);
 
   if (seg.end != null) {
-    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} instant={instant} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} speedControlsVisible={speedControlsVisible} onEditSpeed={onEditSpeed} onChangeSpeed={onChangeSpeed} onToggleSpeedControls={onToggleSpeedControls} onEditCrop={onEditCrop} />;
+    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} instant={instant} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} speedControlsVisible={speedControlsVisible} onEditSpeed={onEditSpeed} onRemoveSpeed={onRemoveSpeed} onToggleSpeedControls={onToggleSpeedControls} onEditCrop={onEditCrop} />;
   }
 
   return (

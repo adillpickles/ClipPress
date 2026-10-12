@@ -66,10 +66,12 @@
   justify-content: center;
   min-height: 0;
 }
-.retimeHide, .retimeSpeed { color: inherit; background: transparent; border: 0; cursor: pointer; flex-shrink: 0; }
-.retimeHide { display: flex; align-items: center; padding: 0 3px; color: var(--gray-11); }
-.retimeHide:hover { color: var(--gray-12); }
 .retimeSpeed {
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 1px;
@@ -83,6 +85,7 @@
 .retimeDuration {
   position: absolute;
   right: 12px;
+  transition: right 120ms ease;
   color: var(--gray-11);
   white-space: nowrap;
   pointer-events: none;
@@ -100,6 +103,8 @@
   cursor: ew-resize;
 }
 .retimeHandle:hover, .retimeBar[data-dragging="true"] .retimeHandle { opacity: 1; }
+/* Make room for the delete button on the selected bar. */
+.retimeBar[data-active="true"] .retimeDuration { right: 34px; }
 @container (max-width: 160px) {
   .retimeDuration { display: none; }
 }

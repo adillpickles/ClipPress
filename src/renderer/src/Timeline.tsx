@@ -3,7 +3,7 @@ import { memo, useRef, useMemo, useCallback, useEffect, useState } from 'react';
 import { motion, useMotionValue, useSpring } from 'motion/react';
 import debounce from 'lodash/debounce';
 import { useTranslation } from 'react-i18next';
-import { FaCaretDown, FaCaretUp, FaTimes } from 'react-icons/fa';
+import { FaCaretDown, FaCaretUp } from 'react-icons/fa';
 import invariant from 'tiny-invariant';
 
 import TimelineSeg from './TimelineSeg';
@@ -22,6 +22,7 @@ import type { UseSegments } from './hooks/useSegments';
 import { keyMap } from './hooks/useTimelineScroll';
 import { minTextOverlayDuration } from './textOverlays';
 import SegmentRetimeBar from './components/SegmentRetimeBar';
+import LaneDeleteButton from './components/LaneDeleteButton';
 import { getSegmentOutputDuration, getSegmentSpeed, getSpeedForOutputDuration } from './segmentSpeed';
 import { createTimelineMap, getWarpedImageSpans } from './timelineMap';
 import type { TimelineMap } from './timelineMap';
@@ -153,6 +154,7 @@ function Timeline({
   onEditSegmentSpeed,
   onEditSegmentCrop,
   onToggleSegmentSpeedControls,
+  onRemoveSegmentSpeed,
 } : {
   fileDurationNonZero: number,
   startTimeOffset: number,
@@ -198,6 +200,7 @@ function Timeline({
   onEditSegmentSpeed: (index: number) => void,
   onEditSegmentCrop: (index: number) => void,
   onToggleSegmentSpeedControls: (segmentId: string) => void,
+  onRemoveSegmentSpeed: (segmentId: string) => void,
 }) {
   const { t } = useTranslation();
 
@@ -209,7 +212,6 @@ function Timeline({
   const timelineWrapperRef = useRef<HTMLDivElement>(null);
 
   const [hoveringTime, setHoveringTime] = useState<number>();
-  const [hoveredDeleteOverlayId, setHoveredDeleteOverlayId] = useState<string>();
 
   const displayTime = (hoveringTime != null && isFileOpened && !playing ? hoveringTime : relevantTime) + startTimeOffset;
   const displayTimePercent = useMemo(() => `${Math.round((displayTime / fileDurationNonZero) * 100)}%`, [displayTime, fileDurationNonZero]);
@@ -661,7 +663,6 @@ function Timeline({
               const left = calculateTimelinePercent(overlayClip.start);
               const width = `${Math.max(toLanePercent(overlayClip.end) - toLanePercent(overlayClip.start), 0.5)}%`;
               const selected = overlayClip.overlayId === selectedOverlayId;
-              const deleteHovered = hoveredDeleteOverlayId === overlayClip.overlayId;
 
               return (
                 <div
@@ -696,24 +697,7 @@ function Timeline({
                   />
                   <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', pointerEvents: 'none', margin: selected ? '0 36px 0 10px' : '0 10px', width: '100%', fontWeight: selected ? 700 : 600 }}>{overlayClip.text || 'Text'}</div>
                   {selected && (
-                    <button
-                      type="button"
-                      title={t('Delete text clip')}
-                      onMouseDown={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        onDeleteOverlayClip(overlayClip.overlayId);
-                      }}
-                      onMouseEnter={() => setHoveredDeleteOverlayId(overlayClip.overlayId)}
-                      onMouseLeave={() => setHoveredDeleteOverlayId((current) => (current === overlayClip.overlayId ? undefined : current))}
-                      style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', width: 18, height: 18, borderRadius: 999, border: `1px solid ${deleteHovered ? 'rgba(255, 94, 94, 0.78)' : 'rgba(255, 255, 255, 0.16)'}`, background: deleteHovered ? 'rgba(184, 36, 36, 0.88)' : 'rgba(10, 14, 22, 0.58)', color: deleteHovered ? 'white' : 'rgba(255, 255, 255, 0.88)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, cursor: 'pointer', transition: 'background-color 120ms ease, border-color 120ms ease, color 120ms ease' }}
-                    >
-                      <FaTimes size={8} />
-                    </button>
+                    <LaneDeleteButton title={t('Delete text clip')} onDelete={() => onDeleteOverlayClip(overlayClip.overlayId)} />
                   )}
                   <button
                     type="button"
@@ -756,6 +740,7 @@ function Timeline({
                   onSelect={() => setCurrentSegIndex(index)}
                   onChange={(nextSpeed) => onChangeSegmentSpeed(seg.segId, nextSpeed)}
                   onEdit={() => onEditSegmentSpeed(index)}
+                  onRemove={() => onRemoveSegmentSpeed(seg.segId)}
                   onHide={() => onToggleSegmentSpeedControls(seg.segId)}
                 />
               );
@@ -796,7 +781,7 @@ function Timeline({
                 selected={selected}
                 speedControlsVisible={speedControlsSegmentIds.has(seg.segId)}
                 onEditSpeed={onEditSegmentSpeed}
-                onChangeSpeed={onChangeSegmentSpeed}
+                onRemoveSpeed={onRemoveSegmentSpeed}
                 onToggleSpeedControls={onToggleSegmentSpeedControls}
                 onEditCrop={onEditSegmentCrop}
               />
