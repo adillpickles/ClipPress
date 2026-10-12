@@ -286,7 +286,7 @@ describe('getNextSizeLimitedRetryStep', () => {
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
       ...defaultStrategyArgs,
-      capabilities: { h264Nvenc: true, av1Nvenc: false, libx264: true, libsvtav1: false },
+      capabilities: { h264Nvenc: false, av1Nvenc: false, libx264: true, libsvtav1: false },
     });
 
     const fallbackPlan = planSizeLimitedEncode({
@@ -414,7 +414,7 @@ describe('getNextSizeLimitedRetryStep', () => {
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
       ...defaultStrategyArgs,
-      capabilities: { h264Nvenc: true, av1Nvenc: false, libx264: true, libsvtav1: false },
+      capabilities: { h264Nvenc: false, av1Nvenc: false, libx264: true, libsvtav1: false },
     });
 
     const fallbackPlan = planSizeLimitedEncode({

@@ -76,6 +76,7 @@ import {
   pickSizeLimitedStreams,
 } from './sizeLimitedExport';
 import { bytesPerMb } from './sizeLimitedPlanner';
+import { gpuEncoderLabels } from './gpuEncoders';
 import {
   buildSizeLimitedAutoFileNames as buildSizeLimitedAutoFileNamesRaw,
   findAvailableSizeLimitedAutoFileName,
@@ -460,6 +461,7 @@ function App() {
     keyframesEnabled,
     reducedMotion,
     ffmpegHwaccel,
+    exportGpuAcceleration,
     exportEncodeMode,
     sizeLimitMb,
     sizeLimitControlMode,
@@ -1612,6 +1614,7 @@ function App() {
     encCustomBitrate: encBitrate,
     appendFfmpegCommandLog,
     ffmpegHwaccel,
+    exportGpuAcceleration,
   });
 
   const {
@@ -2950,22 +2953,20 @@ function App() {
         ]),
       );
       for (const strategy of uniqueStrategies.values()) {
+        const encoder = gpuEncoderLabels[strategy.encoder];
         if (strategy.controlMode === 'advanced') {
-          const encoderLabel = {
-            libsvtav1: 'CPU AV1 (SVT-AV1)',
-            av1_nvenc: 'NVIDIA AV1',
-            libx264: 'CPU H.264',
-            h264_nvenc: 'NVIDIA H.264',
-          }[strategy.encoder];
-
-          const passLabel = strategy.executionMode === 'ffmpeg_two_pass'
+          // GPU 2-pass runs as one encode with the encoder's own multipass.
+          const passLabel = strategy.executionMode === 'ffmpeg_two_pass' || strategy.encoderMultipass
             ? i18n.t('2-pass')
             : i18n.t('1-pass');
+          if (strategy.fallbackReason === 'nvidia_unavailable') {
+            notices.add(i18n.t('No NVIDIA GPU was found, so Advanced mode used {{encoder}} instead.', { encoder }));
+          }
           notices.add(
             i18n.t(
               'Advanced mode used {{encoder}} {{passLabel}} with preset {{preset}}.',
               {
-                encoder: encoderLabel,
+                encoder,
                 passLabel,
                 preset: String(strategy.encoderPreset),
               },
@@ -2974,67 +2975,49 @@ function App() {
         } else {
           switch (strategy.id) {
             case 'max_quality_av1_cpu_two_pass': {
-              notices.add(
-                i18n.t(
-                  'Max Quality used CPU AV1 (SVT-AV1) 2-pass for the strongest low-bitrate result.',
-                ),
-              );
+              notices.add(i18n.t('Max Quality used CPU AV1 (SVT-AV1) 2-pass for the strongest low-bitrate result.'));
               break;
             }
-            case 'max_quality_av1_nvenc_two_pass': {
-              warnings.add(
-                i18n.t(
-                  'SVT-AV1 was unavailable, so Max Quality fell back to NVIDIA AV1 2-pass.',
-                ),
-              );
+            case 'max_quality_av1_nvenc_two_pass':
+            case 'max_quality_av1_gpu': {
+              warnings.add(i18n.t('SVT-AV1 was unavailable, so Max Quality used {{encoder}}.', { encoder }));
               break;
             }
-            case 'max_quality_h264_cpu_two_pass': {
-              warnings.add(
-                i18n.t(
-                  'AV1 encoders were unavailable, so Max Quality fell back to H.264 CPU 2-pass.',
-                ),
-              );
+            case 'max_quality_h264_cpu_two_pass':
+            case 'max_quality_h264_nvenc_two_pass':
+            case 'max_quality_h264_gpu': {
+              warnings.add(i18n.t('AV1 encoders were unavailable, so Max Quality used {{encoder}}.', { encoder }));
               break;
             }
-            case 'max_quality_h264_nvenc_two_pass': {
-              warnings.add(
-                i18n.t(
-                  'AV1 and CPU H.264 encoders were unavailable, so Max Quality fell back to NVIDIA H.264 2-pass.',
-                ),
-              );
-              break;
-            }
-            case 'quality_av1_nvenc': {
-              notices.add(
-                i18n.t(
-                  'Quality used NVIDIA AV1 for a stronger quality-to-speed balance.',
-                ),
-              );
+            case 'quality_av1_nvenc':
+            case 'quality_av1_gpu': {
+              notices.add(i18n.t('Quality used {{encoder}} for a stronger quality-to-speed balance.', { encoder }));
               break;
             }
             case 'quality_av1_cpu': {
-              warnings.add(
-                i18n.t(
-                  'NVIDIA AV1 was unavailable, so Quality fell back to CPU AV1.',
-                ),
-              );
+              notices.add(i18n.t('This GPU has no AV1 encoder, so Quality used CPU AV1 (SVT-AV1), which takes longer.'));
+              break;
+            }
+            case 'quality_h264_gpu': {
+              notices.add(i18n.t('This GPU has no AV1 encoder, so Quality used {{encoder}} to keep the export quick.', { encoder }));
               break;
             }
             case 'quality_h264_cpu': {
-              warnings.add(
-                i18n.t(
-                  'AV1 encoders were unavailable, so Quality fell back to H.264 CPU.',
-                ),
-              );
+              warnings.add(i18n.t('AV1 encoders were unavailable, so Quality fell back to H.264 CPU.'));
               break;
             }
-            case 'fast_av1_nvenc': {
-              notices.add(
-                i18n.t(
-                  'Fast used NVIDIA AV1 with a speed-tuned profile for quick shareable exports.',
-                ),
-              );
+            case 'fast_av1_nvenc':
+            case 'fast_av1_gpu': {
+              notices.add(i18n.t('Fast used {{encoder}} with a speed-tuned profile for quick shareable exports.', { encoder }));
+              break;
+            }
+            case 'fast_h264_gpu': {
+              notices.add(i18n.t('This GPU has no AV1 encoder, so Fast used {{encoder}}.', { encoder }));
+              break;
+            }
+            case 'fast_av1_cpu':
+            case 'fast_h264_cpu': {
+              notices.add(i18n.t('No usable GPU encoder was found, so Fast used {{encoder}}.', { encoder }));
               break;
             }
             default: {
@@ -3230,6 +3213,7 @@ function App() {
 
             const result = await exportSizeLimitedSegment({
               filePath,
+              gpuAcceleration: exportGpuAcceleration,
               outPath,
               segment,
               sourceDuration: fileDuration,
@@ -3309,6 +3293,7 @@ function App() {
 
           const mergedResult = await exportSizeLimitedMerge({
             filePath,
+            gpuAcceleration: exportGpuAcceleration,
             outPath: mergedOutFilePath,
             segments: sizeLimitedSegmentsForExport,
             targetSizeMb: sizeLimitMb,
@@ -3845,6 +3830,7 @@ function App() {
     allFilesMeta,
     appendFfmpegCommandLog,
     appendSizeLimitedResultNotices,
+    exportGpuAcceleration,
     areWeCutting,
     askForCleanupChoices,
     autoDeleteMergedSegments,

@@ -42,6 +42,14 @@ export interface SizeLimitedEncoderCapabilities {
   av1Nvenc: boolean,
   libx264: boolean,
   libsvtav1: boolean,
+  // AMD and Intel encoders, and the CPU size, are optional so callers that only know about
+  // NVENC (such as the benchmark) keep working; missing means unavailable or unknown.
+  h264Amf?: boolean | undefined,
+  av1Amf?: boolean | undefined,
+  h264Qsv?: boolean | undefined,
+  av1Qsv?: boolean | undefined,
+  /** Logical CPU threads, used to decide whether CPU AV1 is quick enough to prefer. */
+  cpuThreads?: number | undefined,
 }
 
 export type SizeLimitedStrategyId =
@@ -53,6 +61,18 @@ export type SizeLimitedStrategyId =
   | 'quality_av1_cpu'
   | 'quality_h264_cpu'
   | 'fast_av1_nvenc'
+  // Vendor-neutral paths: AMD and Intel encoders, NVIDIA H.264 where AV1 is missing, and CPU
+  // fallbacks for Fast. They borrow the planner budgets of the closest calibrated profile.
+  | 'max_quality_av1_gpu'
+  | 'max_quality_h264_gpu'
+  | 'quality_av1_gpu'
+  | 'quality_h264_gpu'
+  | 'fast_av1_gpu'
+  | 'fast_h264_gpu'
+  | 'fast_av1_cpu'
+  | 'fast_h264_cpu'
+  | 'advanced_av1_gpu'
+  | 'advanced_h264_gpu'
   | 'advanced_av1_cpu_single_pass'
   | 'advanced_av1_cpu_two_pass'
   | 'advanced_av1_nvenc_single_pass'
@@ -62,9 +82,9 @@ export type SizeLimitedStrategyId =
   | 'advanced_h264_nvenc_single_pass'
   | 'advanced_h264_nvenc_two_pass';
 
-export type SizeLimitedEncoderName = 'h264_nvenc' | 'av1_nvenc' | 'libx264' | 'libsvtav1';
+export type SizeLimitedEncoderName = 'h264_nvenc' | 'av1_nvenc' | 'h264_amf' | 'av1_amf' | 'h264_qsv' | 'av1_qsv' | 'libx264' | 'libsvtav1';
 
-export type SizeLimitedHardwareTarget = 'nvidia' | 'cpu';
+export type SizeLimitedHardwareTarget = 'nvidia' | 'amd' | 'intel' | 'cpu';
 
 export type SizeLimitedExecutionMode = 'single_pass' | 'ffmpeg_two_pass';
 
@@ -88,7 +108,12 @@ export interface SizeLimitedResolvedStrategy {
   usesGpu: boolean,
   executionMode: SizeLimitedExecutionMode,
   tuningProfile: SizeLimitedTuningProfile,
-  fallbackReason?: 'av1_unavailable' | 'av1_nvenc_unavailable' | 'h264_nvenc_unavailable' | 'svt_av1_unavailable' | undefined,
+  fallbackReason?: 'av1_unavailable' | 'av1_nvenc_unavailable' | 'h264_nvenc_unavailable' | 'svt_av1_unavailable' | 'gpu_av1_unavailable' | 'gpu_unavailable' | 'nvidia_unavailable' | undefined,
+  /**
+   * Hardware encoders ignore FFmpeg's 2-pass logs, so running one twice only repeats the same
+   * encode. A 2-pass GPU strategy instead runs once with the encoder's own full multipass.
+   */
+  encoderMultipass?: boolean | undefined,
 }
 
 export interface SizeLimitedRetryStep {

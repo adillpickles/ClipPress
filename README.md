@@ -16,6 +16,7 @@ ClipPress is open-source and ad-free. If it helps you make better clips or saves
 - Per-segment zoom and crop using preview handles
 - Windows installer with background or ask-first updates; portable download retained
 - Keep-source-quality export and target-file-size export
+- Automatic GPU acceleration on NVIDIA, AMD and Intel graphics, with CPU fallback ([details](docs/gpu-exports.md))
 - Multi-segment export as separate clips, one merged clip, or both
 - Modern desktop UI with keyboard shortcuts and project save/load
 

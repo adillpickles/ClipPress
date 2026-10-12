@@ -197,4 +197,56 @@ describe('getResolvedVideoArgs with a relaxed quality cap', () => {
 
     expect(args(14)).toEqual(args(undefined));
   });
+
+  it('runs a 2-pass NVENC request as one full-resolution multipass encode', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'advanced',
+      preset: 'fast',
+      advancedEncoder: 'av1_nvenc',
+      advancedTwoPass: true,
+      ...defaultStrategyArgs,
+      capabilities: fullCapabilities,
+    });
+
+    const args = getResolvedVideoArgs({
+      strategy,
+      videoBitrate: 4_000_000,
+      twoPass: false,
+      videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
+      sourceFps: 60,
+      outputPlaybackRate: 1,
+    });
+
+    expect(getArgValue(args, '-multipass')).toBe('fullres');
+  });
+
+  it.each([
+    ['av1_amf', { av1Amf: true }, '-quality', 'quality'],
+    ['av1_qsv', { av1Qsv: true }, '-preset', 'slower'],
+  ] as const)('drives %s with a peak-limited bitrate window', (encoder, gpu, presetFlag, presetValue) => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'quality',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: { h264Nvenc: false, av1Nvenc: false, libx264: true, libsvtav1: true, ...gpu },
+    });
+
+    const args = getResolvedVideoArgs({
+      strategy,
+      videoBitrate: 4_000_000,
+      twoPass: false,
+      videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
+      sourceFps: 60,
+      outputPlaybackRate: 1,
+    });
+
+    expect(getArgValue(args, '-c:v')).toBe(encoder);
+    expect(getArgValue(args, presetFlag)).toBe(presetValue);
+    expect(getArgValue(args, '-pix_fmt')).toBe('nv12');
+    expect(getArgValue(args, '-b:v')).toBe('4000k');
+    expect(getArgValue(args, '-maxrate')).toBe('4320k');
+    if (encoder === 'av1_amf') expect(getArgValue(args, '-rc')).toBe('vbr_peak');
+  });
 });

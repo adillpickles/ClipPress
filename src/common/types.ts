@@ -128,6 +128,8 @@ export interface Config {
   keyframesEnabled: boolean,
   reducedMotion: 'always' | 'never' | 'user',
   ffmpegHwaccel: FfmpegHwAccel,
+  /** Decode exports on the GPU and encode re-encoded regular exports with its H.264 encoder. */
+  exportGpuAcceleration: boolean,
   exportEncodeMode: ExportEncodeMode,
   sizeLimitMb: number,
   sizeLimitCodec: SizeLimitCodec,

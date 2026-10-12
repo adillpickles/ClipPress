@@ -14,6 +14,8 @@ import { needsSmartCut, getCodecParams } from '../smartcut';
 import { getGuaranteedSegments, isDurationValid } from '../segments';
 import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } from '../textOverlays';
 import { buildOverlayImageInputArgs, getRelativeSegmentOverlapWindow } from '../exportSegmentMath';
+import { getHardwareDecodeArgs, getRegularExportVideoArgs, pickGpuEncoder } from '../gpuEncoders';
+import { canUseHardwareDecode, getSizeLimitedEncoderCapabilities, markGpuEncoderFailed, runWithGpuFallbacks } from '../sizeLimitedExport';
 import { getSegmentCropFilter } from '../segmentCrop';
 import { getSizeLimitedRotationArgs } from '../sizeLimitedFfmpegArgs';
 import { getAudioTempoFilter, getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from '../segmentSpeed';
@@ -183,7 +185,7 @@ function buildTextOverlayFilterGraph({
 }
 
 
-function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, isEncoding, lossyMode, enableOverwriteOutput, outputPlaybackRate, cutFromAdjustmentFrames, cutToAdjustmentFrames, appendLastCommandsLog, encCustomBitrate, appendFfmpegCommandLog, ffmpegHwaccel }: {
+function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, isEncoding, lossyMode, enableOverwriteOutput, outputPlaybackRate, cutFromAdjustmentFrames, cutToAdjustmentFrames, appendLastCommandsLog, encCustomBitrate, appendFfmpegCommandLog, ffmpegHwaccel, exportGpuAcceleration }: {
   filePath: string | undefined,
   treatInputFileModifiedTimeAsStart: boolean,
   treatOutputFileModifiedTimeAsStart: boolean | null | undefined,
@@ -197,6 +199,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   encCustomBitrate: number | undefined,
   appendFfmpegCommandLog: (args: string[]) => void,
   ffmpegHwaccel: FfmpegHwAccel,
+  exportGpuAcceleration: boolean,
 }) {
   /**
    * ffmpeg is invoked with `-y`, so an output path that resolves to one of its inputs
@@ -696,6 +699,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
           return [];
         };
 
+        // Re-encode on the GPU's H.264 encoder when there is one; see runWithGpuFallbacks for recovery.
+        let gpuH264 = exportGpuAcceleration ? pickGpuEncoder(await getSizeLimitedEncoderCapabilities(), 'h264') : undefined;
+        const hardwareDecode = canUseHardwareDecode({ enabled: exportGpuAcceleration, inputCount: 1, width: videoWidth, height: videoHeight });
+
         return await pMap(segments, async (segment, index) => {
           const { start, end } = segment;
           const segmentRate = getSegmentPlaybackRate(segment, outputPlaybackRate);
@@ -709,7 +716,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
           await maybeMkDeepOutDir({ outputDir, fileOutPath: finalOutPath });
 
           const segmentDuration = getSegmentOutputDuration(segment, outputPlaybackRate);
-          const mediaInputArgs = flatMap(copyFileStreamsFiltered, ({ path }) => ['-ss', start.toFixed(5), '-t', (end - start).toFixed(5), ...getSizeLimitedRotationArgs(rotation), '-i', path]);
+          const getMediaInputArgs = (useHardwareDecode: boolean) => flatMap(copyFileStreamsFiltered, ({ path }) => [
+            ...getHardwareDecodeArgs(useHardwareDecode && path === filePath),
+            '-ss', start.toFixed(5), '-t', (end - start).toFixed(5), ...getSizeLimitedRotationArgs(rotation), '-i', path,
+          ]);
 
           const segmentOverlayAssets = preparedOverlayAssets.filter((overlayAsset) => overlayAsset.start < end && overlayAsset.end > start);
           const overlayInputArgs = buildOverlayImageInputArgs(segmentOverlayAssets.map(({ imagePath }) => imagePath));
@@ -744,17 +754,14 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
             },
           });
 
-          const ffmpegArgs = [
+          const getFfmpegArgs = (useHardwareDecode: boolean) => [
             '-hide_banner',
-            ...mediaInputArgs,
+            ...getMediaInputArgs(useHardwareDecode),
             ...overlayInputArgs,
             ...(chaptersPath != null ? getChaptersInputArgs(chaptersPath) : []),
             '-filter_complex', filterGraph,
             '-map', videoOutputLabel,
-            '-c:v', 'libx264',
-            '-preset', 'medium',
-            '-crf', '18',
-            '-pix_fmt', 'yuv420p',
+            ...getRegularExportVideoArgs(gpuH264?.encoder),
             ...mapStreamsArgs,
             ...customTagsArgs,
             ...customParamsArgs,
@@ -770,13 +777,26 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
             '-y', finalOutPath,
           ];
 
-          appendFfmpegCommandLog(ffmpegArgs);
-          const result = await runFfmpegWithProgress({
-            ffmpegArgs,
-            duration: segmentDuration,
-            onProgress: (progress) => onSingleProgress(index, progress),
+          await runWithGpuFallbacks({
+            hardwareDecode,
+            run: async (useHardwareDecode) => {
+              const ffmpegArgs = getFfmpegArgs(useHardwareDecode);
+              appendFfmpegCommandLog(ffmpegArgs);
+              const result = await runFfmpegWithProgress({
+                ffmpegArgs,
+                duration: segmentDuration,
+                onProgress: (progress) => onSingleProgress(index, progress),
+              });
+              logStdoutStderr(result);
+            },
+            onGpuEncoderFailed: async (error) => {
+              if (gpuH264 == null) return false;
+              console.warn(`${gpuH264.encoder} failed; continuing on the next encoder`, error);
+              markGpuEncoderFailed(gpuH264.encoder);
+              gpuH264 = pickGpuEncoder(await getSizeLimitedEncoderCapabilities(), 'h264');
+              return true;
+            },
           });
-          logStdoutStderr(result);
 
           await transferTimestamps({
             inPath: filePath,
@@ -797,7 +817,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     } finally {
       if (chaptersPath != null) await tryDeleteFiles([chaptersPath]);
     }
-  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, filePath, outputPlaybackRate, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, exportGpuAcceleration, filePath, outputPlaybackRate, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   // inspired by https://gist.github.com/fernandoherreradelasheras/5eca67f4200f1a7cc8281747da08496e
   const cutEncodeSmartPart = useCallback(async ({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate, videoTimebase, allFilesMeta, copyFileStreams, videoStreamIndex, paramsByStreamId, ffmpegExperimental, hasBFrames }: {
