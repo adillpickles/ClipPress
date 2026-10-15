@@ -46,17 +46,6 @@ jobs:
           node-version: 22
           cache: 'yarn'
 
-      # This global ffmpeg is used for screenshots (see below)
-      - uses: FedericoCarboni/setup-ffmpeg@v3
-        with:
-          ffmpeg-version: release
-          linking-type: static
-          # As of version 3 of this action, builds are no longer downloaded from GitHub
-          # except on Windows: https://github.com/GyanD/codexffmpeg/releases.
-          github-token: ${{ github.server_url == 'https://github.com' && github.token || '' }}
-
-      - run: ffmpeg -version
-
       # Because of timeout issue https://github.com/yarnpkg/yarn/issues/4890
       - run: yarn install --immutable --network-timeout 1000000
 
@@ -66,8 +55,9 @@ jobs:
       - name: Build Windows installer, update metadata, and portable EXE
         run: yarn pack-win
 
+      # Fails unless the packaged editor renders and quits cleanly; the screenshot shows the app window.
       - name: Smoke test packaged app
-        run: node script/e2e.ts 'dist\win-unpacked\ClipPress.exe' desktop screenshot.jpeg
+        run: node script/e2e.ts 'dist\win-unpacked\ClipPress.exe' screenshot.jpeg
 
       - name: Upload Windows preview artifacts
         if: env.is_tag == 'false'
@@ -81,13 +71,14 @@ jobs:
             dist/*.blockmap
           if-no-files-found: error
 
+      # Also after a failed smoke test, to show what the app displayed.
       - name: Upload Windows screenshot artifact
-        if: env.is_tag == 'false'
+        if: ${{ !cancelled() && env.is_tag == 'false' }}
         uses: actions/upload-artifact@v4
         with:
           name: screenshot-windows
           path: screenshot.jpeg
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Publish tagged GitHub release and update feed
         if: env.is_tag == 'true'
