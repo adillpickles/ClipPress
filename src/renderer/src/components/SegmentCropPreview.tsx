@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { FaMinus, FaPlus } from 'react-icons/fa';
 
 import type { CropCorner, SegmentCrop } from '../segmentCrop';
-import { fullFrameCrop, getSegmentCropPixels, minCropSize, moveSegmentCrop, resizeSegmentCrop, zoomSegmentCrop } from '../segmentCrop';
+import { fullFrameCrop, getSegmentCropPixels, isSameSegmentCrop, minCropSize, moveSegmentCrop, resizeSegmentCrop, zoomSegmentCrop } from '../segmentCrop';
 import { getRotatedVideoDimensions } from '../textOverlays';
 import styles from './SegmentCrop.module.css';
 
@@ -45,16 +45,33 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
     draftRef.current = next;
     setDraft(next);
   };
-  const commit = () => {
+  const cancelGesture = () => {
     clearTimeout(wheelTimerRef.current);
-    if (draftRef.current != null) onChange(draftRef.current);
     setCropDraft(undefined);
     interactionRef.current = undefined;
     setDragging(false);
   };
+  /**
+   * Commits a pending wheel or slider zoom as its own undo step, before anything else edits the
+   * crop. Returns the crop the next edit should build on. Never touches a pointer gesture.
+   */
+  const settleZoom = () => {
+    clearTimeout(wheelTimerRef.current);
+    const pending = interactionRef.current == null ? draftRef.current : undefined;
+    if (pending == null) return draftRef.current ?? crop;
+    setCropDraft(undefined);
+    onChange(pending);
+    return pending;
+  };
 
+  const lastCropRef = useRef(crop);
   useEffect(() => {
-    // Undo, project loading, and segment switches cancel an unfinished gesture.
+    const previousCrop = lastCropRef.current;
+    lastCropRef.current = crop;
+    // Leaving the editor, undo, project loading and segment switches cancel an unfinished
+    // gesture. Re-renders that keep the crop, and the zoom a drag committed as it began, do not.
+    const interaction = interactionRef.current;
+    if (editing && (isSameSegmentCrop(previousCrop, crop) || (interaction != null && isSameSegmentCrop(interaction.crop, crop)))) return;
     clearTimeout(wheelTimerRef.current);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDraft(undefined);
@@ -90,14 +107,17 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
       setDraft(next);
     };
     const end = (event: PointerEvent) => {
-      if (interactionRef.current == null || event.pointerId !== interactionRef.current.pointerId) return;
-      if (draftRef.current != null) onChange(draftRef.current);
+      const interaction = interactionRef.current;
+      if (interaction == null || event.pointerId !== interaction.pointerId) return;
+      // A press without movement is not an edit.
+      if (draftRef.current != null && !isSameSegmentCrop(draftRef.current, interaction.crop)) onChange(draftRef.current);
       draftRef.current = undefined;
       setDraft(undefined);
       interactionRef.current = undefined;
       setDragging(false);
     };
     const cancel = () => {
+      clearTimeout(wheelTimerRef.current);
       draftRef.current = undefined;
       setDraft(undefined);
       interactionRef.current = undefined;
@@ -112,6 +132,7 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
       } else if (event.key === 'Enter' && interactionRef.current == null) {
         event.preventDefault();
         event.stopPropagation();
+        clearTimeout(wheelTimerRef.current);
         if (draftRef.current != null) onChange(draftRef.current);
         cancel();
         onDone();
@@ -134,10 +155,14 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
   useEffect(() => () => clearTimeout(wheelTimerRef.current), []);
 
   const begin = (event: ReactPointerEvent<HTMLElement>, corner?: CropCorner) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || interactionRef.current != null) return;
     event.preventDefault();
     event.stopPropagation();
-    interactionRef.current = { ...(corner != null ? { corner } : {}), crop: currentCrop, x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+    // A zoom still waiting for the wheel to go quiet is committed first, as its own step; the
+    // drag owns the crop from here until the pointer is released.
+    const base = settleZoom();
+    interactionRef.current = { ...(corner != null ? { corner } : {}), crop: base, x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+    setCropDraft(base);
     event.currentTarget.setPointerCapture(event.pointerId);
     setDragging(true);
   };
@@ -145,10 +170,9 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
   const zoom = 1 / currentCrop.width;
   // Steps build on the latest draft, so several wheel ticks in one frame all count.
   const setZoom = (getNextZoom: (currentZoom: number) => number, commitNow: boolean) => {
-    const base = draftRef.current ?? crop;
+    const base = commitNow ? settleZoom() : (draftRef.current ?? crop);
     const next = zoomSegmentCrop(base, Math.min(maxZoom, Math.max(1, getNextZoom(1 / base.width))));
     if (commitNow) {
-      setCropDraft(undefined);
       onChange(next);
     } else {
       setCropDraft(next);
@@ -160,8 +184,10 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
     event.stopPropagation();
     setZoom((current) => current * (event.deltaY < 0 ? 1.08 : 1 / 1.08), false);
     clearTimeout(wheelTimerRef.current);
-    wheelTimerRef.current = setTimeout(commit, wheelCommitDelayMs);
+    wheelTimerRef.current = setTimeout(settleZoom, wheelCommitDelayMs);
   };
+  /** Arrow-key moves and resizes build on a pending zoom, committed first as its own step. */
+  const nudge = (getNext: (base: SegmentCrop) => SegmentCrop) => onChange(getNext(settleZoom()));
 
   const dimensions = getRotatedVideoDimensions({ width: videoWidth, height: videoHeight, rotation });
   const aspect = dimensions.width / dimensions.height;
@@ -208,7 +234,7 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
                 event.stopPropagation();
                 event.preventDefault();
                 const delta = event.shiftKey ? 0.05 : 0.01;
-                onChange(moveSegmentCrop(crop, event.key === 'ArrowLeft' ? -delta : (event.key === 'ArrowRight' ? delta : 0), event.key === 'ArrowUp' ? -delta : (event.key === 'ArrowDown' ? delta : 0)));
+                nudge((base) => moveSegmentCrop(base, event.key === 'ArrowLeft' ? -delta : (event.key === 'ArrowRight' ? delta : 0), event.key === 'ArrowUp' ? -delta : (event.key === 'ArrowDown' ? delta : 0)));
               }}
             />
             <div className={styles['grid']} />
@@ -231,7 +257,7 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
                   event.stopPropagation();
                   event.preventDefault();
                   const delta = event.shiftKey ? 0.05 : 0.01;
-                  onChange(resizeSegmentCrop(crop, corner, event.key === 'ArrowLeft' ? -delta : (event.key === 'ArrowRight' ? delta : 0), event.key === 'ArrowUp' ? -delta : (event.key === 'ArrowDown' ? delta : 0)));
+                  nudge((base) => resizeSegmentCrop(base, corner, event.key === 'ArrowLeft' ? -delta : (event.key === 'ArrowRight' ? delta : 0), event.key === 'ArrowUp' ? -delta : (event.key === 'ArrowDown' ? delta : 0)));
                 }}
               />
             ))}
@@ -251,17 +277,18 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
               style={{ '--zoom-fill': zoomFill } as CSSProperties}
               aria-label={t('Zoom')}
               aria-valuetext={`${zoom.toFixed(2)}×`}
+              onPointerDown={settleZoom}
               onChange={(event) => { const value = Number(event.target.value) / 100; setZoom(() => value, false); }}
-              onPointerUp={commit}
-              onKeyUp={commit}
-              onBlur={commit}
+              onPointerUp={settleZoom}
+              onKeyUp={settleZoom}
+              onBlur={settleZoom}
               onKeyDown={(event) => event.stopPropagation()}
             />
             <button type="button" className={styles['iconButton']} onClick={() => setZoom((current) => current + zoomButtonStep, true)} disabled={zoom >= maxZoom - 0.001} title={t('Zoom in')} aria-label={t('Zoom in')}><FaPlus size={9} /></button>
             <output className={styles['zoomValue']}>{zoom.toFixed(1)}×</output>
             <span className={styles['divider']} />
-            <button type="button" className={styles['textButton']} onClick={() => { setCropDraft(undefined); onChange(fullFrameCrop); }} disabled={zoom <= 1.001}>{t('Reset')}</button>
-            <button type="button" className={styles['doneButton']} onClick={() => { commit(); onDone(); }}>{t('Done')}</button>
+            <button type="button" className={styles['textButton']} onClick={() => { cancelGesture(); onChange(fullFrameCrop); }} disabled={zoom <= 1.001}>{t('Reset')}</button>
+            <button type="button" className={styles['doneButton']} onClick={() => { settleZoom(); onDone(); }}>{t('Done')}</button>
           </div>
         )}
       </div>
