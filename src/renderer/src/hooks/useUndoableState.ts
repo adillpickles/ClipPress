@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import UndoableHistory from '../undoableHistory';
+import UndoableHistory, { applyUndoableUpdate } from '../undoableHistory';
 import type { UndoableSetOptions } from '../undoableHistory';
+import type { EditTracker } from '../editHistoryOrder';
 
 export interface UndoableControls<T> {
   back: () => boolean,
@@ -11,21 +12,22 @@ export interface UndoableControls<T> {
 }
 
 /**
- * State with its own undo history. `onNewStep` fires once per new undo step so a coordinator can
- * keep one undo order across several pieces of state (see editHistoryOrder).
+ * State with its own undo history. Every edit is reported to `tracker` as it happens, so a
+ * coordinator can keep one undo order across several pieces of state (see editHistoryOrder).
  */
-export default function useUndoableState<T>(initial: T, { capacity = 100, onNewStep }: { capacity?: number, onNewStep?: () => void } = {}) {
+export default function useUndoableState<T>(initial: T, { capacity = 100, tracker }: { capacity?: number, tracker?: EditTracker | undefined } = {}) {
   const [state, setRawState] = useState(initial);
   const [history] = useState(() => new UndoableHistory(initial, capacity));
-  const onNewStepRef = useRef(onNewStep);
+  const trackerRef = useRef(tracker);
   useEffect(() => {
-    onNewStepRef.current = onNewStep;
-  }, [onNewStep]);
+    trackerRef.current = tracker;
+  }, [tracker]);
 
-  // Updates read the history rather than React's state, so several in one tick compose correctly.
+  // Updates read the history rather than React's state, so several in one tick compose correctly,
+  // and each is recorded right away, in the order the edits were made.
   const setState = useCallback((update: T | ((current: T) => T), options?: UndoableSetOptions) => {
     const next = typeof update === 'function' ? (update as (current: T) => T)(history.current) : update;
-    if (history.set(next, options)) onNewStepRef.current?.();
+    applyUndoableUpdate(history, next, trackerRef.current, options);
     setRawState(history.current);
   }, [history]);
 
@@ -42,6 +44,7 @@ export default function useUndoableState<T>(initial: T, { capacity = 100, onNewS
     },
     reset: (value: T) => {
       history.reset(value);
+      trackerRef.current?.reset();
       setRawState(value);
     },
   }), [history]);

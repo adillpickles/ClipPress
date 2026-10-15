@@ -1,8 +1,9 @@
-/** Updates with the same key this close together become one undo step (a drag, a burst of typing). */
-export const coalesceWindowMs = 1000;
+import type { EditTracker } from './editHistoryOrder';
+
+export type UndoableSetResult = 'unchanged' | 'added' | 'extended';
 
 export interface UndoableSetOptions {
-  /** Consecutive updates with this key within a second are merged into one step. */
+  /** Updates with this key join the latest step while it is still the latest edit (a drag, a burst of typing). */
   coalesceKey?: string | undefined,
   /** Change the current step in place, without creating an undo step (bookkeeping, not an edit). */
   merge?: boolean | undefined,
@@ -14,63 +15,66 @@ export default class UndoableHistory<T> {
 
   private position = 0;
 
-  private lastKey: string | undefined;
-
-  private lastTime = 0;
-
   private readonly capacity: number;
 
-  private readonly now: () => number;
-
-  constructor(initial: T, capacity = 100, now = () => Date.now()) {
+  constructor(initial: T, capacity = 100) {
     this.steps = [initial];
-    this.capacity = capacity;
-    this.now = now;
+    this.capacity = Math.max(2, capacity);
   }
 
   get current() {
     return this.steps[this.position]!;
   }
 
-  /** Returns whether a new undo step was created. */
-  set(next: T, { coalesceKey, merge = false }: UndoableSetOptions = {}) {
-    if (next === this.current) return false;
-    const now = this.now();
-    // Never fold an edit into the first step: that is the state the user can always return to.
-    const coalesce = coalesceKey != null && coalesceKey === this.lastKey && now - this.lastTime < coalesceWindowMs
-      && this.position > 0 && this.position === this.steps.length - 1;
-    let newStep = false;
-    if (merge || coalesce) {
+  /**
+   * Records an edit. With `extend`, the edit replaces the latest step instead of adding one (the
+   * rest of a drag or a typing burst), unless that step is the first, which the user can always
+   * return to, or is no longer the latest because of an undo.
+   */
+  set(next: T, { extend = false }: { extend?: boolean } = {}): UndoableSetResult {
+    if (next === this.current) return 'unchanged';
+    if (extend && this.position > 0 && this.position === this.steps.length - 1) {
       this.steps[this.position] = next;
-    } else {
-      this.steps = [...this.steps.slice(0, this.position + 1), next].slice(-this.capacity);
-      this.position = this.steps.length - 1;
-      newStep = true;
+      return 'extended';
     }
-    if (!merge) {
-      this.lastKey = coalesceKey;
-      this.lastTime = now;
-    }
-    return newStep;
+    // At capacity the oldest steps are dropped; the cursor stays on the new, latest step.
+    this.steps = [...this.steps.slice(0, this.position + 1), next].slice(-this.capacity);
+    this.position = this.steps.length - 1;
+    return 'added';
+  }
+
+  /** Changes the current step in place, without an undo step (bookkeeping, not an edit). */
+  replaceCurrent(next: T) {
+    this.steps[this.position] = next;
   }
 
   back() {
     if (this.position === 0) return false;
     this.position -= 1;
-    this.lastKey = undefined;
     return true;
   }
 
   forward() {
     if (this.position >= this.steps.length - 1) return false;
     this.position += 1;
-    this.lastKey = undefined;
     return true;
   }
 
   reset(value: T) {
     this.steps = [value];
     this.position = 0;
-    this.lastKey = undefined;
   }
+}
+
+/**
+ * Applies one update to a history and reports it to the shared undo order right away, so edits
+ * are ordered as they were made. This is what useUndoableState does on every update.
+ */
+export function applyUndoableUpdate<T>(history: UndoableHistory<T>, next: T, tracker: EditTracker | undefined, { coalesceKey, merge = false }: UndoableSetOptions = {}) {
+  if (merge) {
+    history.replaceCurrent(next);
+    return;
+  }
+  const result = history.set(next, { extend: tracker?.continues(coalesceKey) ?? false });
+  if (result !== 'unchanged') tracker?.edited({ newStep: result === 'added', coalesceKey });
 }

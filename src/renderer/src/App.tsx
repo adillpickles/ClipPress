@@ -164,7 +164,6 @@ import type { SourceSafeFileNameAdjustment } from './util/sourceProtection';
 import { adjustRate } from './util/rate-calculator';
 import { getWrittenExportPaths } from './util/exportResults';
 import type { ExportedFile } from './util/exportResults';
-import { resetSegmentHistory } from './util/segmentHistory';
 import { askExtractFramesAsImages } from './dialogs/extractFrames';
 import type { CleanupChoicesType } from './dialogs';
 import {
@@ -342,13 +341,13 @@ function App() {
     {},
   );
   // Ctrl+Z undoes the latest edit across segments, text, stream params (gain) and speed bars.
-  const editHistoryOrderRef = useRef(new EditHistoryOrder<EditDomain>());
+  const [editHistoryOrder] = useState(() => new EditHistoryOrder<EditDomain>());
   const [paramsByStreamId, setParamsByStreamId, streamParamsHistory] = useUndoableState<ParamsByStreamId>(
     new Map(),
-    { onNewStep: () => editHistoryOrderRef.current.record('streamParams') },
+    { tracker: editHistoryOrder.tracker('streamParams') },
   );
   const [overlayClips, setOverlayClips, overlayClipsHistory] = useUndoableState<OverlayClip[]>([], {
-    onNewStep: () => editHistoryOrderRef.current.record('overlays'),
+    tracker: editHistoryOrder.tracker('overlays'),
   });
   const [selectedOverlayId, setSelectedOverlayId] = useState<string>();
   const [detectedFps, setDetectedFps] = useState<number>();
@@ -1051,38 +1050,15 @@ function App() {
     showGenericDialog,
     simpleMode,
     ffmpegHwaccel,
+    editTracker: editHistoryOrder.tracker('segments'),
   });
 
   const [speedControlsBySegment, setSpeedControlsBySegment, speedControlsHistory] = useUndoableState<Record<string, boolean>>({}, {
-    onNewStep: () => editHistoryOrderRef.current.record('speedControls'),
+    tracker: editHistoryOrder.tracker('speedControls'),
   });
 
-  // Segment edits keep react-use's history; record each new entry in the shared undo order.
-  // Its own undo/redo steps are flagged so they are not mistaken for new edits.
-  const segmentsHistoryNavigationRef = useRef(false);
-  useEffect(() => {
-    if (segmentsHistoryNavigationRef.current) {
-      segmentsHistoryNavigationRef.current = false;
-      return;
-    }
-    if (cutSegmentsHistory.position === cutSegmentsHistory.history.length - 1) editHistoryOrderRef.current.record('segments');
-  }, [cutSegments, cutSegmentsHistory]);
-
   const editHistories = useMemo<Record<EditDomain, EditDomainHistory>>(() => ({
-    segments: {
-      back: () => {
-        if (cutSegmentsHistory.position === 0) return false;
-        segmentsHistoryNavigationRef.current = true;
-        cutSegmentsHistory.back();
-        return true;
-      },
-      forward: () => {
-        if (cutSegmentsHistory.position >= cutSegmentsHistory.history.length - 1) return false;
-        segmentsHistoryNavigationRef.current = true;
-        cutSegmentsHistory.forward();
-        return true;
-      },
-    },
+    segments: cutSegmentsHistory,
     overlays: overlayClipsHistory,
     streamParams: streamParamsHistory,
     speedControls: speedControlsHistory,
@@ -1755,10 +1731,8 @@ function App() {
     playingRef.current = false;
     setPlaybackMode(undefined);
     setFileDuration(undefined);
-    // Reset segment history so undo/redo cannot resurrect the previous file's segments.
-    // Truncating to a single empty entry (rather than only overwriting history[0])
-    // also removes every forward entry, so redo has nothing left to restore.
-    resetSegmentHistory(cutSegmentsHistory);
+    // A new history, so undo/redo cannot resurrect the previous file's segments.
+    cutSegmentsHistory.reset([]);
     setDetectedFileFormat(undefined);
     setRotation(360);
     setProgress(undefined);
@@ -1769,7 +1743,7 @@ function App() {
     setCustomTagsByFile({});
     streamParamsHistory.reset(new Map());
     overlayClipsHistory.reset([]);
-    editHistoryOrderRef.current.clear();
+    editHistoryOrder.clear();
     setSelectedOverlayId(undefined);
     setDetectedFps(undefined);
     setMainFileMeta(undefined);
@@ -1788,6 +1762,7 @@ function App() {
     setOutputPlaybackRateState(1);
     setCurrentFileExportCount(0);
   }, [
+    editHistoryOrder,
     overlayClipsHistory,
     streamParamsHistory,
     videoRef,
@@ -5393,8 +5368,8 @@ function App() {
       closeBatch,
       removeCurrentSegment: () => removeSegment(currentSegIndexSafe, true),
       removeCurrentCutpoint: () => removeSegment(currentSegIndexSafe),
-      undo: () => editHistoryOrderRef.current.undo(editHistories),
-      redo: () => editHistoryOrderRef.current.redo(editHistories),
+      undo: () => editHistoryOrder.undo(editHistories),
+      redo: () => editHistoryOrder.redo(editHistories),
       labelCurrentSegment: () => labelSegment(currentSegIndexSafe),
       addSegment,
       duplicateCurrentSegment,
@@ -5483,6 +5458,7 @@ function App() {
     return ret;
   }, [
     editHistories,
+    editHistoryOrder,
     togglePlaySelectedSegments,
     toggleLoopSelectedSegments,
     pause,
