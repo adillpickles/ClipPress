@@ -22,9 +22,11 @@ ClipPress is open-source and ad-free. If it helps you make better clips or saves
 
 ## Speed and zoom/crop
 
-Right-click a timeline segment and choose **Change speed…**, or press `Ctrl+R`
-to show its speed layer. The dialog shows the edited duration; drag the layer's
-slider for quick adjustments.
+Press `Ctrl+R` (or right-click a segment → **Speed controls**) to show the
+selected segment's speed bar. Drag its right edge outward to slow the segment
+down or inward to speed it up; the bar shows the speed and new duration, and
+everything after the segment moves to fit. For an exact percentage, right-click
+the segment and choose **Change speed…**. Exported audio keeps its pitch.
 
 Select a segment and click **Zoom / Crop**, or use its right-click menu. Drag a
 corner to crop, drag inside the frame to reposition, or use the zoom slider.
