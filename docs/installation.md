@@ -2,14 +2,15 @@
 
 ## Windows downloads
 
-The currently published preview through `0.1.0-beta.4` is a single portable
-executable for Windows 10/11 x64. The next preview can also ship a per-user Windows
-installer with automatic updates; the portable download remains available.
+ClipPress previews are built for Windows 10/11 x64. Starting with `0.1.0-beta.5`,
+each release offers a per-user installer with automatic updates as well as the
+portable executable. Releases up to `0.1.0-beta.4` ship only the portable executable.
 
-- Windows: download `ClipPress-Windows-x64.exe` from the [Releases page](https://github.com/adillpickles/ClipPress/releases) and run it. FFmpeg is included. There is nothing to extract or install.
-- When available, choose `ClipPress-Setup-<version>.exe` for installation and
-  automatic updates. It installs for the current user without administrator
-  privileges. See [automatic updates](automatic-updates.md) for the two modes.
+- Installer: choose `ClipPress-Setup-<version>.exe` from the [Releases page](https://github.com/adillpickles/ClipPress/releases)
+  for installation and automatic updates. It installs for the current user without
+  administrator privileges. See [automatic updates](automatic-updates.md) for the two modes.
+- Portable: download `ClipPress-Windows-x64.exe` and run it. FFmpeg is included. There
+  is nothing to extract or install, and it does not update itself.
 - The build is unsigned, so Windows SmartScreen may warn before the first run.
 - No macOS or Linux builds are published for the preview.
 
@@ -41,7 +42,7 @@ You can also specify a custom folder containing `config.json` with the CLI optio
 
 ## How to uninstall
 
-Delete `ClipPress-Windows-x64.exe`.
+For the portable app, delete `ClipPress-Windows-x64.exe`.
 
 For an installed copy, use Windows **Settings > Apps > Installed apps > ClipPress >
 Uninstall**. Uninstalling preserves your settings by default.

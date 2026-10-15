@@ -1,7 +1,7 @@
 # Segment speed and zoom/crop
 
-These features are available in the development branch after Beta 4. The published
-Beta 4 installer does not include them.
+These features are new in `0.1.0-beta.5`. Beta 4 and earlier downloads do not
+include them.
 
 ## Controls
 
