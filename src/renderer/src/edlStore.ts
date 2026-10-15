@@ -8,7 +8,7 @@ import { askForYouTubeInput, showOpenDialog } from './dialogs';
 import { getOutPath } from './util';
 import type { CustomTagsByFile, EdlExportType, EdlFileType, EdlImportType, GetFrameCount, LlcProject, OverlayClip, ParamsByStreamId, SegmentBase, StateSegment } from './types';
 import { llcProjectV1Schema, llcProjectV2Schema, llcProjectV3Schema } from './types';
-import { mapSaveableSegments } from './segments';
+import { buildLlcProjectData as buildProjectData, getProjectSegmentsToLoad } from './llcProject';
 import isDev from './isDev';
 import { createWriteFileAtomically } from './util/atomicWrite';
 
@@ -85,54 +85,16 @@ export async function saveSrt(path: string, cutSegments: SegmentBase[]) {
   await writeFile(path, formatSrt(cutSegments));
 }
 
-function serializeProjectStreamEdits({ mediaFilePath, customTagsByFile, paramsByStreamId }: {
-  mediaFilePath: string,
-  customTagsByFile?: CustomTagsByFile | undefined,
-  paramsByStreamId?: ParamsByStreamId | undefined,
-}): LlcProject['streamEdits'] {
-  const customTags = customTagsByFile?.[mediaFilePath];
-  const fileStreamParams = paramsByStreamId?.get(mediaFilePath);
-  const streamParams = fileStreamParams != null
-    ? [...fileStreamParams.entries()]
-      .filter(([, params]) => Object.keys(params).length > 0)
-      .sort(([streamIdA], [streamIdB]) => streamIdA - streamIdB)
-      .map(([streamId, params]) => ({ streamId, params: { ...params } }))
-    : undefined;
-
-  if (customTags == null && (streamParams == null || streamParams.length === 0)) return undefined;
-
-  return {
-    ...(customTags != null ? { customTags } : {}),
-    ...(streamParams != null && streamParams.length > 0 ? { streamParams } : {}),
-  };
+export function buildLlcProjectData({ mediaFilePath, ...rest }: Omit<Parameters<typeof buildProjectData>[0], 'mediaFileName'>): LlcProject {
+  return buildProjectData({ mediaFileName: basename(mediaFilePath), mediaFilePath, ...rest });
 }
 
-export function buildLlcProjectData({ mediaFilePath, cutSegments, customTagsByFile, paramsByStreamId, overlayClips }: {
-  mediaFilePath: string,
-  cutSegments: StateSegment[],
-  customTagsByFile?: CustomTagsByFile | undefined,
-  paramsByStreamId?: ParamsByStreamId | undefined,
-  overlayClips?: OverlayClip[] | undefined,
-}): LlcProject {
-  return {
-    version: 3,
-    mediaFileName: basename(mediaFilePath),
-    cutSegments: mapSaveableSegments(cutSegments),
-    streamEdits: serializeProjectStreamEdits({ mediaFilePath, customTagsByFile, paramsByStreamId }),
-    ...(overlayClips != null && overlayClips.length > 0 ? { overlayClips } : {}),
-  };
-}
-
-export async function saveLlcProject({ savePath, mediaFilePath, cutSegments, customTagsByFile, paramsByStreamId, overlayClips }: {
-  savePath: string,
-  mediaFilePath: string,
-  cutSegments: StateSegment[],
-  customTagsByFile?: CustomTagsByFile | undefined,
-  paramsByStreamId?: ParamsByStreamId | undefined,
-  overlayClips?: OverlayClip[] | undefined,
-}) {
-  const projectData = buildLlcProjectData({ mediaFilePath, cutSegments, customTagsByFile, paramsByStreamId, overlayClips });
+export async function writeLlcProject(savePath: string, projectData: LlcProject) {
   await writeFileAtomically(savePath, JSON5.stringify(projectData, null, 2));
+}
+
+export async function saveLlcProject({ savePath, ...rest }: Parameters<typeof buildLlcProjectData>[0] & { savePath: string }) {
+  await writeLlcProject(savePath, buildLlcProjectData(rest));
 }
 
 export async function loadLlcProject(path: string) {
@@ -203,7 +165,8 @@ export async function readEdlFile({ type, path, fps }: {
   if (type === 'otio') return loadOtio(path);
   if (type === 'llc') {
     const project = await loadLlcProject(path);
-    return project.cutSegments;
+    // A project of the whole file has no segments to import
+    return getProjectSegmentsToLoad(project);
   }
   throw new Error('Invalid EDL type');
 }

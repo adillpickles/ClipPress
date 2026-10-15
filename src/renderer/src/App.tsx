@@ -259,6 +259,8 @@ import EditHistoryOrder from './editHistoryOrder';
 import type { EditDomainHistory } from './editHistoryOrder';
 import useTimecode from './hooks/useTimecode';
 import useSegmentsAutoSave from './hooks/useSegmentsAutoSave';
+import { getProjectSegmentsToLoad } from './llcProject';
+import type { ProjectSession } from './projectAutoSave';
 import useThumbnails from './hooks/useThumbnails';
 import useSubtitles from './hooks/useSubtitles';
 import useStreamsMeta from './hooks/useStreamsMeta';
@@ -334,6 +336,8 @@ function App() {
   const [progress, setProgress] = useState<number>();
   const [startTimeOffset, setStartTimeOffset] = useState(0);
   const [filePath, setFilePath] = useState<string>();
+  // The open of filePath, for autosave. Set and cleared together with filePath.
+  const [projectSession, setProjectSession] = useState<ProjectSession>();
   const [currentClipName, setCurrentClipName] = useState<string>();
   const [fileDuration, setFileDuration] = useState<number>();
   const [externalFilesMeta, setExternalFilesMeta] = useState<FilesMeta>({});
@@ -1143,11 +1147,13 @@ function App() {
     setEditingCropSegmentId(undefined);
   }, [filePath, speedControlsHistory]);
 
-  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath } = useSegmentsAutoSave({
+  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved } = useSegmentsAutoSave({
     autoSaveProjectFile,
     storeProjectInWorkingDir,
     filePath,
+    projectSession,
     customOutDir,
+    fileDuration,
     cutSegments,
     customTagsByFile,
     paramsByStreamId,
@@ -1715,6 +1721,8 @@ function App() {
 
   const resetState = useCallback(() => {
     console.log('State reset');
+    // Saves the closing file's latest state, before it is reset below.
+    endProjectSession();
     const video = videoRef.current;
     setCommandedTime(0);
     if (video != null) {
@@ -1738,6 +1746,7 @@ function App() {
     setProgress(undefined);
     setStartTimeOffset(0);
     setFilePath(undefined);
+    setProjectSession(undefined);
     setCurrentClipName(undefined);
     setExternalFilesMeta({});
     setCustomTagsByFile({});
@@ -1763,6 +1772,7 @@ function App() {
     setCurrentFileExportCount(0);
   }, [
     editHistoryOrder,
+    endProjectSession,
     overlayClipsHistory,
     streamParamsHistory,
     videoRef,
@@ -2499,6 +2509,9 @@ function App() {
         setWorking({ text: i18n.t('Cleaning up'), abortController });
         console.log('Cleaning up files', cleanupChoices2);
 
+        // Closing the file saves its project, which must not land after the project file is deleted.
+        await whenProjectSaved();
+
         const pathsToDelete: string[] = [];
         if (cleanupChoices2.trashTmpFiles && savedPaths.previewFilePath) pathsToDelete.push(savedPaths.previewFilePath);
         if (cleanupChoices2.trashProjectFile && savedPaths.projectFilePath) pathsToDelete.push(savedPaths.projectFilePath);
@@ -2519,6 +2532,7 @@ function App() {
       projectFileSavePath,
       resetState,
       setWorking,
+      whenProjectSaved,
       withErrorHandling,
     ],
   );
@@ -4220,7 +4234,9 @@ function App() {
       mediaFilePath: string;
       project: Awaited<ReturnType<typeof loadLlcProject>>;
     }) => {
-      loadCutSegments({ segments: project.cutSegments, append: false });
+      // The whole file loads no segments: its full-file segment is created once the media has loaded.
+      const segments = getProjectSegmentsToLoad(project);
+      if (segments.length > 0) loadCutSegments({ segments, append: false });
       setCustomTagsByFile(
         project.streamEdits?.customTags != null
           ? { [mediaFilePath]: project.streamEdits.customTags }
@@ -4293,9 +4309,17 @@ function App() {
       const generation = loadGenerationRef.current;
       const isStale = () => generation !== loadGenerationRef.current;
 
+      // The project file the opened state comes from, if any.
+      let loadedProjectPath: string | undefined;
+
+      async function loadProject(path: string) {
+        await loadProjectIntoState({ path, mediaFilePath: fp });
+        loadedProjectPath = path;
+      }
+
       async function tryOpenProjectPath(path: string) {
         if (!(await mainApi.pathExists(path))) return false;
-        await loadProjectIntoState({ path, mediaFilePath: fp });
+        await loadProject(path);
         return true;
       }
 
@@ -4320,10 +4344,7 @@ function App() {
             // Ok, the file exists. now we have to ask the user, because we need to read that file
             await ensureAccessToSourceDir(fp);
             // Ok, we got access from the user (or already have access), now read the project file
-            await loadProjectIntoState({
-              path: sameDirEdlFilePath,
-              mediaFilePath: fp,
-            });
+            await loadProject(sameDirEdlFilePath);
           }
 
           // OK, we didn't find a project file, instead maybe try to create project (segments) from chapters
@@ -4459,9 +4480,14 @@ function App() {
           if (isStale()) return;
         }
 
+        // Reading a project file that is still being saved (by the previous file, or the previous
+        // open of this file) would miss its latest edits, and the next save would then drop them.
+        await whenProjectSaved();
+        if (isStale()) return;
+
         // eslint-disable-next-line unicorn/prefer-ternary
         if (projectPath) {
-          await loadProjectIntoState({ path: projectPath, mediaFilePath: fp });
+          await loadProject(projectPath);
         } else {
           await tryFindAndLoadProjectFile({
             chapters: ffprobeMeta.chapters,
@@ -4537,6 +4563,8 @@ function App() {
         }
 
         if (isStale()) return;
+        // Autosave compares later changes with the state opened here.
+        setProjectSession({ id: generation, loadedProjectPath });
         // This needs to be last, because it triggers <video> to load the video
         // If not, onVideoError might be triggered before setWorking() has been cleared.
         // https://github.com/mifi/lossless-cut/issues/515
@@ -4577,6 +4605,7 @@ function App() {
       showPreviewFileLoadedMessage,
       showNotNativelySupportedMessage,
       loadProjectIntoState,
+      whenProjectSaved,
     ],
   );
 

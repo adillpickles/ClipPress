@@ -1,20 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { useDebounce } from 'use-debounce';
-import isEqual from 'lodash/isEqual';
+import { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 
 import isDev from '../isDev';
-import { buildLlcProjectData, saveLlcProject } from '../edlStore';
+import { buildLlcProjectData, writeLlcProject } from '../edlStore';
+import { encodeLlcProjectFile, getProjectSegmentsToSave } from '../llcProject';
+import ProjectAutoSave from '../projectAutoSave';
+import type { ProjectSession, ProjectSnapshot } from '../projectAutoSave';
 import { getSuffixedOutPath } from '../util';
 import type { CustomTagsByFile, OverlayClip, ParamsByStreamId, StateSegment } from '../types';
 import { errorToast } from '../swal';
 import i18n from '../i18n';
 
 
-export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, customOutDir, cutSegments, customTagsByFile, paramsByStreamId, overlayClips }: {
+export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, projectSession, customOutDir, fileDuration, cutSegments, customTagsByFile, paramsByStreamId, overlayClips }: {
   autoSaveProjectFile: boolean,
   storeProjectInWorkingDir: boolean,
   filePath: string | undefined,
+  /** The open of `filePath` the state belongs to. */
+  projectSession: ProjectSession | undefined,
   customOutDir: string | undefined,
+  fileDuration: number | undefined,
   cutSegments: StateSegment[],
   customTagsByFile: CustomTagsByFile,
   paramsByStreamId: ParamsByStreamId,
@@ -26,67 +30,35 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, custo
   const getProjectFileSavePath = useCallback((storeProjectInWorkingDirIn: boolean) => getEdlFilePath(filePath, storeProjectInWorkingDirIn ? customOutDir : undefined), [getEdlFilePath, filePath, customOutDir]);
   const projectFileSavePath = useMemo(() => getProjectFileSavePath(storeProjectInWorkingDir), [getProjectFileSavePath, storeProjectInWorkingDir]);
 
-  const currentSaveOperation = useMemo(() => {
-    if (!projectFileSavePath || filePath == null) return undefined;
-    return {
-      cutSegments,
-      customTagsByFile,
-      paramsByStreamId,
-      overlayClips,
-      projectFileSavePath,
-      filePath,
-      projectData: buildLlcProjectData({ mediaFilePath: filePath, cutSegments, customTagsByFile, paramsByStreamId, overlayClips }),
-    };
-  }, [cutSegments, customTagsByFile, filePath, overlayClips, paramsByStreamId, projectFileSavePath]);
+  const [autoSave] = useState(() => new ProjectAutoSave({
+    // NOTE: Could lose a save if the app quits this soon after an edit (closing the file saves at once)
+    delayMs: isDev ? 2000 : 500,
+    write: writeLlcProject,
+    onError: (err) => {
+      errorToast(i18n.t('Unable to save project file'));
+      console.error('Failed to save project file', err);
+    },
+  }));
 
-  // NOTE: Could lose a save if user closes too fast, but not a big issue I think
-  const [debouncedSaveOperation] = useDebounce(currentSaveOperation, isDev ? 2000 : 500);
+  const snapshot = useMemo<ProjectSnapshot | undefined>(() => {
+    if (projectSession == null || filePath == null || !projectFileSavePath) return undefined;
+    const project = buildLlcProjectData({ mediaFilePath: filePath, cutSegments: getProjectSegmentsToSave(cutSegments), customTagsByFile, paramsByStreamId, overlayClips });
+    return { session: projectSession, path: projectFileSavePath, project, fileData: encodeLlcProjectFile(project, fileDuration) };
+  }, [cutSegments, customTagsByFile, fileDuration, filePath, overlayClips, paramsByStreamId, projectFileSavePath, projectSession]);
 
-  const lastSaveOperation = useRef<{ projectData: ReturnType<typeof buildLlcProjectData>, projectFileSavePath: string }>();
+  // A layout effect, so autosave has every committed state before any later event can close the file.
+  useLayoutEffect(() => {
+    autoSave.update(snapshot, { enabled: autoSaveProjectFile });
+  }, [autoSave, autoSaveProjectFile, snapshot]);
 
-  useEffect(() => {
-    async function save() {
-      try {
-        if (!autoSaveProjectFile
-          || !debouncedSaveOperation
-          || debouncedSaveOperation.filePath == null
-          // Don't create llc file if no segments yet
-          || debouncedSaveOperation.cutSegments.length === 0
-          // or if initial segment (and not deselected): https://github.com/mifi/lossless-cut/issues/2745#issuecomment-3979480707
-          || (debouncedSaveOperation.cutSegments[0]?.initial && debouncedSaveOperation.cutSegments[0].selected)
-        ) {
-          return;
-        }
-
-        if (lastSaveOperation.current && lastSaveOperation.current.projectFileSavePath === debouncedSaveOperation.projectFileSavePath && isEqual(lastSaveOperation.current.projectData, debouncedSaveOperation.projectData)) {
-          console.log('Project unchanged, skipping save');
-          return;
-        }
-
-        console.log('Saving project file', debouncedSaveOperation.projectFileSavePath, debouncedSaveOperation.cutSegments);
-        await saveLlcProject({
-          savePath: debouncedSaveOperation.projectFileSavePath,
-          mediaFilePath: debouncedSaveOperation.filePath,
-          cutSegments: debouncedSaveOperation.cutSegments,
-          customTagsByFile: debouncedSaveOperation.customTagsByFile,
-          paramsByStreamId: debouncedSaveOperation.paramsByStreamId,
-          overlayClips: debouncedSaveOperation.overlayClips,
-        });
-        lastSaveOperation.current = {
-          projectData: debouncedSaveOperation.projectData,
-          projectFileSavePath: debouncedSaveOperation.projectFileSavePath,
-        };
-      } catch (err) {
-        errorToast(i18n.t('Unable to save project file'));
-        console.error('Failed to save project file', err);
-      }
-    }
-    save();
-  }, [debouncedSaveOperation, autoSaveProjectFile]);
+  const endProjectSession = useCallback(() => autoSave.endSession(), [autoSave]);
+  const whenProjectSaved = useCallback(() => autoSave.whenSaved(), [autoSave]);
 
   return {
     getEdlFilePath,
     projectFileSavePath,
     getProjectFileSavePath,
+    endProjectSession,
+    whenProjectSaved,
   };
 };
