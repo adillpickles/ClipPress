@@ -1,6 +1,5 @@
 import type { MutableRefObject, FormEvent } from 'react';
 import { useCallback, useRef, useMemo, useState, useEffect } from 'react';
-import { useStateWithHistory } from 'react-use/lib/useStateWithHistory';
 import i18n from 'i18next';
 import pMap from 'p-map';
 import invariant from 'tiny-invariant';
@@ -32,6 +31,8 @@ import { UserFacingError } from '../../errors';
 import { editSegmentByExpressionHelpUrl, selectSegmentByExpressionHelpUrl } from '../../../common/constants';
 import type { Segment as ScopeSegment } from '../../../common/userTypes';
 import type { FfmpegHwAccel } from '../../../common/types';
+import useUndoableState from './useUndoableState';
+import type { EditTracker } from '../editHistoryOrder';
 
 const remote = window.require('@electron/remote');
 const { shell } = remote;
@@ -42,7 +43,7 @@ type ParameterDialogParameters = Record<string, string>;
 
 const offsetSegments = (segments: DefiniteSegmentBase[], offset: number) => segments.map((s) => ({ start: s.start + offset, end: s.end + offset }));
 
-function useSegments({ filePath, workingRef, setWorking, setProgress, videoStream, fileDuration, getRelevantTime, maxLabelLength, checkFileOpened, invertCutSegments, segmentsToChaptersOnly, timecodePlaceholder, parseTimecode, appendFfmpegCommandLog, fileDurationNonZero, mainFileMeta, seekAbs, activeVideoStreamIndex, activeAudioStreamIndexes, handleError, showGenericDialog, simpleMode, ffmpegHwaccel }: {
+function useSegments({ filePath, workingRef, setWorking, setProgress, videoStream, fileDuration, getRelevantTime, maxLabelLength, checkFileOpened, invertCutSegments, segmentsToChaptersOnly, timecodePlaceholder, parseTimecode, appendFfmpegCommandLog, fileDurationNonZero, mainFileMeta, seekAbs, activeVideoStreamIndex, activeAudioStreamIndexes, handleError, showGenericDialog, simpleMode, ffmpegHwaccel, editTracker }: {
   filePath?: string | undefined,
   workingRef: MutableRefObject<boolean>,
   setWorking: (w: { text: string, abortController?: AbortController } | undefined) => void,
@@ -66,6 +67,8 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
   showGenericDialog: ShowGenericDialog,
   simpleMode: boolean,
   ffmpegHwaccel: FfmpegHwAccel,
+  /** Reports every segment edit to the shared undo order. */
+  editTracker?: EditTracker | undefined,
 }) {
   const { t } = useTranslation();
 
@@ -87,10 +90,7 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     return addSegmentColorIndex(createSegment(segment), segColorCounterRef.current);
   }, [setSegColorCounter]);
 
-  const [cutSegments, setCutSegments, cutSegmentsHistory] = useStateWithHistory<StateSegment[], StateSegment[]>(
-    [],
-    100,
-  );
+  const [cutSegments, setCutSegments, cutSegmentsHistory] = useUndoableState<StateSegment[]>([], { tracker: editTracker });
 
   const [currentSegIndex, setCurrentSegIndex] = useState(0);
 

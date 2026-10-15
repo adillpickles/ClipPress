@@ -44,6 +44,8 @@ export const llcProjectSaveableSegmentSchema = z.object({
   selected: z.boolean().optional(),
   speed: z.number().min(minSegmentSpeed).max(maxSegmentSpeed).optional(),
   crop: segmentCropSchema.optional(),
+  /** Marks a project's only segment as the untouched whole file. Older readers drop it and load an ordinary segment. */
+  initial: z.boolean().optional(),
 });
 
 export const streamParamsSchema = z.object({

@@ -1,0 +1,27 @@
+.deleteButton {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(10, 14, 22, 0.58);
+  color: rgba(255, 255, 255, 0.88);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.deleteButton:hover,
+.deleteButton:focus-visible {
+  border-color: rgba(255, 94, 94, 0.78);
+  background: rgba(184, 36, 36, 0.88);
+  color: white;
+  outline: none;
+}

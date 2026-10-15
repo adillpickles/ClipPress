@@ -1,10 +1,11 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FaCaretDown, FaTimes } from 'react-icons/fa';
+import { FaCaretDown } from 'react-icons/fa';
 
 import { segmentSpeedPresets } from '../segmentSpeed';
 import type { FormatTimecode } from '../types';
 import styles from './SegmentSpeed.module.css';
+import LaneDeleteButton from './LaneDeleteButton';
 
 const remote = window.require('@electron/remote');
 const { Menu } = remote;
@@ -15,7 +16,7 @@ const baseArrowSpacing = 14;
  * Resolve-style retime header drawn over a segment's timeline span. The timeline owns the
  * drag because a speed change ripples every lane; this only renders the bar and its menus.
  */
-export default function SegmentRetimeBar({ left, width, speed, committedSpeed, outputDuration, isActive, dragging, formatTimecode, onHandleMouseDown, onSelect, onChange, onEdit, onHide }: {
+export default function SegmentRetimeBar({ left, width, speed, committedSpeed, outputDuration, isActive, dragging, formatTimecode, onHandleMouseDown, onSelect, onChange, onEdit, onRemove, onHide }: {
   left: string,
   width: string,
   speed: number,
@@ -28,6 +29,9 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
   onSelect: () => void,
   onChange: (nextSpeed: number) => void,
   onEdit: () => void,
+  /** Like Resolve: deleting the retime returns the segment to 100% and closes the bar. */
+  onRemove: () => void,
+  /** Close the bar but keep the speed. */
   onHide: () => void,
 }) {
   const { t } = useTranslation();
@@ -43,9 +47,9 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
       })),
       { type: 'separator' as const },
       { label: t('Custom speed…'), click: onEdit },
-      { label: t('Reset speed to 100%'), enabled: committedSpeed !== 1, click: () => onChange(1) },
       { type: 'separator' as const },
-      { label: t('Hide speed controls'), click: onHide },
+      { label: t('Remove speed change'), click: onRemove },
+      { label: t('Hide speed controls (keep speed)'), click: onHide },
     ]).popup({ window: remote.getCurrentWindow() });
   };
 
@@ -69,7 +73,6 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
       }}
     >
       <div className={styles['retimeHeader']}>
-        <button type="button" className={styles['retimeHide']} onClick={(event) => { event.stopPropagation(); onHide(); }} title={t('Hide speed controls')} aria-label={t('Hide speed controls')}><FaTimes size={8} /></button>
         <div className={styles['retimeArrows']} style={arrowsStyle} />
       </div>
 
@@ -79,6 +82,10 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
         </button>
         <span className={styles['retimeDuration']}>{formatTimecode({ seconds: outputDuration, shorten: true })}</span>
       </div>
+
+      {isActive && !dragging && (
+        <LaneDeleteButton title={t('Remove speed change (back to 100%)')} onDelete={onRemove} style={{ right: 12 }} />
+      )}
 
       <button
         type="button"

@@ -164,7 +164,6 @@ import type { SourceSafeFileNameAdjustment } from './util/sourceProtection';
 import { adjustRate } from './util/rate-calculator';
 import { getWrittenExportPaths } from './util/exportResults';
 import type { ExportedFile } from './util/exportResults';
-import { resetSegmentHistory } from './util/segmentHistory';
 import { askExtractFramesAsImages } from './dialogs/extractFrames';
 import type { CleanupChoicesType } from './dialogs';
 import {
@@ -254,8 +253,14 @@ import { parseFfprobeDuration } from '../../common/util.js';
 
 import useLoading from './hooks/useLoading';
 import useVideo from './hooks/useVideo';
+import usePreviewAudioGain from './hooks/usePreviewAudioGain';
+import useUndoableState from './hooks/useUndoableState';
+import EditHistoryOrder from './editHistoryOrder';
+import type { EditDomainHistory } from './editHistoryOrder';
 import useTimecode from './hooks/useTimecode';
 import useSegmentsAutoSave from './hooks/useSegmentsAutoSave';
+import { getProjectSegmentsToLoad } from './llcProject';
+import type { ProjectSession } from './projectAutoSave';
 import useThumbnails from './hooks/useThumbnails';
 import useSubtitles from './hooks/useSubtitles';
 import useStreamsMeta from './hooks/useStreamsMeta';
@@ -318,6 +323,8 @@ function addSourceSafetyNotice(
   );
 }
 
+type EditDomain = 'segments' | 'overlays' | 'streamParams' | 'speedControls';
+
 function App() {
   const { t } = useTranslation();
 
@@ -329,16 +336,23 @@ function App() {
   const [progress, setProgress] = useState<number>();
   const [startTimeOffset, setStartTimeOffset] = useState(0);
   const [filePath, setFilePath] = useState<string>();
+  // The open of filePath, for autosave. Set and cleared together with filePath.
+  const [projectSession, setProjectSession] = useState<ProjectSession>();
   const [currentClipName, setCurrentClipName] = useState<string>();
   const [fileDuration, setFileDuration] = useState<number>();
   const [externalFilesMeta, setExternalFilesMeta] = useState<FilesMeta>({});
   const [customTagsByFile, setCustomTagsByFile] = useState<CustomTagsByFile>(
     {},
   );
-  const [paramsByStreamId, setParamsByStreamId] = useState<ParamsByStreamId>(
+  // Ctrl+Z undoes the latest edit across segments, text, stream params (gain) and speed bars.
+  const [editHistoryOrder] = useState(() => new EditHistoryOrder<EditDomain>());
+  const [paramsByStreamId, setParamsByStreamId, streamParamsHistory] = useUndoableState<ParamsByStreamId>(
     new Map(),
+    { tracker: editHistoryOrder.tracker('streamParams') },
   );
-  const [overlayClips, setOverlayClips] = useState<OverlayClip[]>([]);
+  const [overlayClips, setOverlayClips, overlayClipsHistory] = useUndoableState<OverlayClip[]>([], {
+    tracker: editHistoryOrder.tracker('overlays'),
+  });
   const [selectedOverlayId, setSelectedOverlayId] = useState<string>();
   const [detectedFps, setDetectedFps] = useState<number>();
   const [mainFileMeta, setMainFileMeta] = useState<{
@@ -835,14 +849,8 @@ function App() {
     ),
     [activeAudioStreams, filePath, paramsByStreamId],
   );
-  const hasAdjustedAudioGain = useMemo(() => {
-    if (filePath == null) return false;
-    const fileStreamParams = paramsByStreamId.get(filePath);
-    if (fileStreamParams == null) return false;
-    return [...fileStreamParams.values()].some(
-      (streamParams) => !isNeutralAudioGain(streamParams.audioGainDb),
-    );
-  }, [filePath, paramsByStreamId]);
+  // The native player plays one audio track; with more, the FFmpeg-assisted player applies gain itself.
+  usePreviewAudioGain(videoRef, activeAudioStreams.length === 1 ? activeAudioGainByStreamId[activeAudioStreams[0]!.index] : undefined, filePath);
   const previewAudioGainControls = useMemo(
     () => activeAudioStreams.map((stream, index) => ({
       streamIndex: stream.index,
@@ -857,17 +865,18 @@ function App() {
 
   const updateOverlayClip = useCallback(
     (overlayId: string, updater: (clip: OverlayClip) => OverlayClip) => {
+      // A drag or a burst of typing on one text box is one undo step.
       setOverlayClips((existingClips) => existingClips.map((overlayClip) => (overlayClip.overlayId === overlayId
         ? sanitizeOverlayClip(updater(overlayClip), fileDuration)
-        : overlayClip)));
+        : overlayClip)), { coalesceKey: `overlay:${overlayId}` });
     },
-    [fileDuration],
+    [fileDuration, setOverlayClips],
   );
 
   const removeOverlayClip = useCallback((overlayId: string) => {
     setOverlayClips((existingClips) => existingClips.filter((overlayClip) => overlayClip.overlayId !== overlayId));
     setSelectedOverlayId((existingOverlayId) => (existingOverlayId === overlayId ? undefined : existingOverlayId));
-  }, []);
+  }, [setOverlayClips]);
 
   const addTextOverlay = useCallback(() => {
     if (mainVideoStream == null) return;
@@ -878,7 +887,7 @@ function App() {
     });
     setOverlayClips((existingClips) => [...existingClips, overlayClip]);
     setSelectedOverlayId(overlayClip.overlayId);
-  }, [fileDuration, getRelevantTime, mainVideoStream]);
+  }, [fileDuration, getRelevantTime, mainVideoStream, setOverlayClips]);
 
   useEffect(() => {
     if (selectedOverlayId == null) return;
@@ -1045,9 +1054,19 @@ function App() {
     showGenericDialog,
     simpleMode,
     ffmpegHwaccel,
+    editTracker: editHistoryOrder.tracker('segments'),
   });
 
-  const [speedControlsBySegment, setSpeedControlsBySegment] = useState<Record<string, boolean>>({});
+  const [speedControlsBySegment, setSpeedControlsBySegment, speedControlsHistory] = useUndoableState<Record<string, boolean>>({}, {
+    tracker: editHistoryOrder.tracker('speedControls'),
+  });
+
+  const editHistories = useMemo<Record<EditDomain, EditDomainHistory>>(() => ({
+    segments: cutSegmentsHistory,
+    overlays: overlayClipsHistory,
+    streamParams: streamParamsHistory,
+    speedControls: speedControlsHistory,
+  }), [cutSegmentsHistory, overlayClipsHistory, speedControlsHistory, streamParamsHistory]);
   const [editingSpeedSegmentId, setEditingSpeedSegmentId] = useState<string>();
   const editingSpeedSegment = cutSegments.find((segment) => segment.segId === editingSpeedSegmentId);
   // Retimed segments show their speed bar until hidden; Ctrl+R toggles it like Resolve's retime controls.
@@ -1085,22 +1104,36 @@ function App() {
     if (index === -1 || cutSegments[index]?.end == null) return;
     if (getSegmentSpeed(cutSegments[index]!) !== speed) updateSegAtIndex(index, { speed });
     // Pin a bar shown by default so dragging back to 100% does not make it vanish mid-edit.
-    setSpeedControlsBySegment((existing) => ({ ...existing, [segmentId]: existing[segmentId] ?? true }));
-  }, [cutSegments, updateSegAtIndex, workingRef]);
+    setSpeedControlsBySegment((existing) => (existing[segmentId] != null ? existing : { ...existing, [segmentId]: true }), { merge: true });
+  }, [cutSegments, setSpeedControlsBySegment, updateSegAtIndex, workingRef]);
 
   const editSegmentSpeed = useCallback((index: number) => {
     const segment = cutSegments[index];
     if (segment?.end == null || invertCutSegments || workingRef.current) return;
     setCurrentSegIndex(index);
-    setSpeedControlsBySegment((existing) => ({ ...existing, [segment.segId]: true }));
+    setSpeedControlsBySegment((existing) => (existing[segment.segId] ? existing : { ...existing, [segment.segId]: true }), { merge: true });
     setEditingSpeedSegmentId(segment.segId);
-  }, [cutSegments, invertCutSegments, setCurrentSegIndex, workingRef]);
+  }, [cutSegments, invertCutSegments, setCurrentSegIndex, setSpeedControlsBySegment, workingRef]);
+
+  /** Like deleting a retime in Resolve: back to 100%, and the bar returns to its default (hidden). One undo step. */
+  const removeSegmentSpeed = useCallback((segmentId: string) => {
+    if (workingRef.current) return;
+    const index = cutSegments.findIndex((segment) => segment.segId === segmentId);
+    if (index === -1) return;
+    const speedChanged = getSegmentSpeed(cutSegments[index]!) !== 1;
+    if (speedChanged) updateSegAtIndex(index, { speed: 1 });
+    // Dropping the pin (rather than storing "hidden") lets an undo of the speed bring the bar back.
+    setSpeedControlsBySegment((existing) => {
+      if (!(segmentId in existing)) return existing;
+      return Object.fromEntries(Object.entries(existing).filter(([id]) => id !== segmentId));
+    }, { merge: speedChanged });
+  }, [cutSegments, setSpeedControlsBySegment, updateSegAtIndex, workingRef]);
 
   const toggleSpeedControlsForSegment = useCallback((segmentId: string) => {
     const segment = cutSegments.find((candidate) => candidate.segId === segmentId);
     if (segment?.end == null || invertCutSegments || workingRef.current) return;
     setSpeedControlsBySegment((existing) => ({ ...existing, [segmentId]: !speedControlsSegmentIds.has(segmentId) }));
-  }, [cutSegments, invertCutSegments, speedControlsSegmentIds, workingRef]);
+  }, [cutSegments, invertCutSegments, setSpeedControlsBySegment, speedControlsSegmentIds, workingRef]);
 
   const toggleSegmentSpeedControls = useCallback(() => {
     if (currentCutSeg != null) toggleSpeedControlsForSegment(currentCutSeg.segId);
@@ -1109,16 +1142,18 @@ function App() {
   const previewSegmentSpeed = invertCutSegments ? 1 : getPreviewSegmentSpeed(cutSegments, currentSegIndexSafe, relevantTime, fileDuration);
   useEffect(() => setSegmentPreviewSpeed(previewSegmentSpeed), [previewSegmentSpeed, setSegmentPreviewSpeed]);
   useEffect(() => {
-    setSpeedControlsBySegment({});
+    speedControlsHistory.reset({});
     setEditingSpeedSegmentId(undefined);
     setEditingCropSegmentId(undefined);
-  }, [filePath]);
+  }, [filePath, speedControlsHistory]);
 
-  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath } = useSegmentsAutoSave({
+  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved } = useSegmentsAutoSave({
     autoSaveProjectFile,
     storeProjectInWorkingDir,
     filePath,
+    projectSession,
     customOutDir,
+    fileDuration,
     cutSegments,
     customTagsByFile,
     paramsByStreamId,
@@ -1653,7 +1688,6 @@ function App() {
       ))
     // or if selected multiple audio streams (html5 video element doesn't support that)
     || activeAudioStreamIndexes.size > 1
-    || hasAdjustedAudioGain
   );
   // if user selected a rotation, but they might want to turn off the rotation preview
   // but allow the user to disable
@@ -1687,6 +1721,8 @@ function App() {
 
   const resetState = useCallback(() => {
     console.log('State reset');
+    // Saves the closing file's latest state, before it is reset below.
+    endProjectSession();
     const video = videoRef.current;
     setCommandedTime(0);
     if (video != null) {
@@ -1703,20 +1739,20 @@ function App() {
     playingRef.current = false;
     setPlaybackMode(undefined);
     setFileDuration(undefined);
-    // Reset segment history so undo/redo cannot resurrect the previous file's segments.
-    // Truncating to a single empty entry (rather than only overwriting history[0])
-    // also removes every forward entry, so redo has nothing left to restore.
-    resetSegmentHistory(cutSegmentsHistory);
+    // A new history, so undo/redo cannot resurrect the previous file's segments.
+    cutSegmentsHistory.reset([]);
     setDetectedFileFormat(undefined);
     setRotation(360);
     setProgress(undefined);
     setStartTimeOffset(0);
     setFilePath(undefined);
+    setProjectSession(undefined);
     setCurrentClipName(undefined);
     setExternalFilesMeta({});
     setCustomTagsByFile({});
-    setParamsByStreamId(new Map());
-    setOverlayClips([]);
+    streamParamsHistory.reset(new Map());
+    overlayClipsHistory.reset([]);
+    editHistoryOrder.clear();
     setSelectedOverlayId(undefined);
     setDetectedFps(undefined);
     setMainFileMeta(undefined);
@@ -1735,6 +1771,10 @@ function App() {
     setOutputPlaybackRateState(1);
     setCurrentFileExportCount(0);
   }, [
+    editHistoryOrder,
+    endProjectSession,
+    overlayClipsHistory,
+    streamParamsHistory,
     videoRef,
     setCommandedTime,
     setPlaybackRate,
@@ -2469,6 +2509,9 @@ function App() {
         setWorking({ text: i18n.t('Cleaning up'), abortController });
         console.log('Cleaning up files', cleanupChoices2);
 
+        // Closing the file saves its project, which must not land after the project file is deleted.
+        await whenProjectSaved();
+
         const pathsToDelete: string[] = [];
         if (cleanupChoices2.trashTmpFiles && savedPaths.previewFilePath) pathsToDelete.push(savedPaths.previewFilePath);
         if (cleanupChoices2.trashProjectFile && savedPaths.projectFilePath) pathsToDelete.push(savedPaths.projectFilePath);
@@ -2489,6 +2532,7 @@ function App() {
       projectFileSavePath,
       resetState,
       setWorking,
+      whenProjectSaved,
       withErrorHandling,
     ],
   );
@@ -3108,18 +3152,6 @@ function App() {
           );
         }
 
-        notices.add(
-          sizeLimitedAudioStream != null
-            ? i18n.t(
-              'ClipPress created a shareable MP4 and kept only the main video plus one audio track.',
-            )
-            : i18n.t(
-              'ClipPress created a shareable MP4 and kept only the main video track.',
-            ),
-        );
-        if (hasOverlayClips) {
-          warnings.add(i18n.t('Text overlays may cause size limit inaccuracies'));
-        }
         if (!exportConfirmEnabled) {
           notices.add(
             i18n.t(
@@ -4202,13 +4234,15 @@ function App() {
       mediaFilePath: string;
       project: Awaited<ReturnType<typeof loadLlcProject>>;
     }) => {
-      loadCutSegments({ segments: project.cutSegments, append: false });
+      // The whole file loads no segments: its full-file segment is created once the media has loaded.
+      const segments = getProjectSegmentsToLoad(project);
+      if (segments.length > 0) loadCutSegments({ segments, append: false });
       setCustomTagsByFile(
         project.streamEdits?.customTags != null
           ? { [mediaFilePath]: project.streamEdits.customTags }
           : {},
       );
-      setParamsByStreamId(
+      streamParamsHistory.reset(
         project.streamEdits?.streamParams != null
           && project.streamEdits.streamParams.length > 0
           ? new Map([
@@ -4223,10 +4257,10 @@ function App() {
           ])
           : new Map(),
       );
-      setOverlayClips(project.overlayClips ?? []);
+      overlayClipsHistory.reset(project.overlayClips ?? []);
       setSelectedOverlayId(undefined);
     },
-    [loadCutSegments],
+    [loadCutSegments, overlayClipsHistory, streamParamsHistory],
   );
 
   const loadProjectIntoState = useCallback(
@@ -4275,9 +4309,17 @@ function App() {
       const generation = loadGenerationRef.current;
       const isStale = () => generation !== loadGenerationRef.current;
 
+      // The project file the opened state comes from, if any.
+      let loadedProjectPath: string | undefined;
+
+      async function loadProject(path: string) {
+        await loadProjectIntoState({ path, mediaFilePath: fp });
+        loadedProjectPath = path;
+      }
+
       async function tryOpenProjectPath(path: string) {
         if (!(await mainApi.pathExists(path))) return false;
-        await loadProjectIntoState({ path, mediaFilePath: fp });
+        await loadProject(path);
         return true;
       }
 
@@ -4302,10 +4344,7 @@ function App() {
             // Ok, the file exists. now we have to ask the user, because we need to read that file
             await ensureAccessToSourceDir(fp);
             // Ok, we got access from the user (or already have access), now read the project file
-            await loadProjectIntoState({
-              path: sameDirEdlFilePath,
-              mediaFilePath: fp,
-            });
+            await loadProject(sameDirEdlFilePath);
           }
 
           // OK, we didn't find a project file, instead maybe try to create project (segments) from chapters
@@ -4441,9 +4480,14 @@ function App() {
           if (isStale()) return;
         }
 
+        // Reading a project file that is still being saved (by the previous file, or the previous
+        // open of this file) would miss its latest edits, and the next save would then drop them.
+        await whenProjectSaved();
+        if (isStale()) return;
+
         // eslint-disable-next-line unicorn/prefer-ternary
         if (projectPath) {
-          await loadProjectIntoState({ path: projectPath, mediaFilePath: fp });
+          await loadProject(projectPath);
         } else {
           await tryFindAndLoadProjectFile({
             chapters: ffprobeMeta.chapters,
@@ -4519,6 +4563,8 @@ function App() {
         }
 
         if (isStale()) return;
+        // Autosave compares later changes with the state opened here.
+        setProjectSession({ id: generation, loadedProjectPath });
         // This needs to be last, because it triggers <video> to load the video
         // If not, onVideoError might be triggered before setWorking() has been cleared.
         // https://github.com/mifi/lossless-cut/issues/515
@@ -4559,6 +4605,7 @@ function App() {
       showPreviewFileLoadedMessage,
       showNotNativelySupportedMessage,
       loadProjectIntoState,
+      whenProjectSaved,
     ],
   );
 
@@ -4880,7 +4927,7 @@ function App() {
     Parameters<typeof StreamsSelector>[0]['updateStreamParams']
   >(
     (fileId, streamId, setter) => setParamsByStreamId(
-      produce((draft) => {
+      produce((draft: ParamsByStreamId) => {
         if (!draft.has(fileId)) draft.set(fileId, new Map());
         const fileMap = draft.get(fileId);
         invariant(fileMap != null);
@@ -4890,6 +4937,8 @@ function App() {
         invariant(params != null);
         setter(params);
       }),
+      // Dragging a gain slider is one undo step.
+      { coalesceKey: `stream:${fileId}:${streamId}` },
     ),
     [setParamsByStreamId],
   );
@@ -5348,8 +5397,8 @@ function App() {
       closeBatch,
       removeCurrentSegment: () => removeSegment(currentSegIndexSafe, true),
       removeCurrentCutpoint: () => removeSegment(currentSegIndexSafe),
-      undo: () => cutSegmentsHistory.back(),
-      redo: () => cutSegmentsHistory.forward(),
+      undo: () => editHistoryOrder.undo(editHistories),
+      redo: () => editHistoryOrder.redo(editHistories),
       labelCurrentSegment: () => labelSegment(currentSegIndexSafe),
       addSegment,
       duplicateCurrentSegment,
@@ -5437,6 +5486,8 @@ function App() {
 
     return ret;
   }, [
+    editHistories,
+    editHistoryOrder,
     togglePlaySelectedSegments,
     toggleLoopSelectedSegments,
     pause,
@@ -5539,7 +5590,6 @@ function App() {
     batchFileJump,
     removeSegment,
     currentSegIndexSafe,
-    cutSegmentsHistory,
     labelSegment,
     onExportPress,
     userHtml5ifyCurrentFile,
@@ -6393,6 +6443,7 @@ function App() {
                           onEditSegmentSpeed={editSegmentSpeed}
                           onEditSegmentCrop={editSegmentCrop}
                           onToggleSegmentSpeedControls={toggleSpeedControlsForSegment}
+                          onRemoveSegmentSpeed={removeSegmentSpeed}
                         />
                       </div>
                     </>

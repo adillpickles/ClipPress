@@ -20,6 +20,10 @@ export function getSegmentCrop(segment: { crop?: SegmentCrop | undefined }) {
   return segment.crop != null ? clampSegmentCrop(segment.crop) : fullFrameCrop;
 }
 
+export function isSameSegmentCrop(a: SegmentCrop, b: SegmentCrop) {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
+
 export function hasSegmentCrop(segment: { crop?: SegmentCrop | undefined }) {
   return getSegmentCrop(segment).width < 1;
 }

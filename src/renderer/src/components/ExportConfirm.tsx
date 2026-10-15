@@ -15,7 +15,8 @@ import i18n from 'i18next';
 import { useTranslation, Trans } from 'react-i18next';
 import { IoIosHelpCircle, IoIosSettings } from 'react-icons/io';
 import type { SweetAlertIcon } from 'sweetalert2';
-import { getSegmentOutputDuration } from '../segmentSpeed';
+import { getSegmentOutputDuration, getSegmentSpeed } from '../segmentSpeed';
+import { hasSegmentCrop } from '../segmentCrop';
 
 import ExportButton from './ExportButton';
 import ExportModeButton from './ExportModeButton';
@@ -80,7 +81,7 @@ const { shell } = remote;
 
 const noticeStyle: CSSProperties = { marginBottom: '.5em' };
 const infoStyle: CSSProperties = { ...noticeStyle, color: primaryTextColor };
-const warningStyle: CSSProperties = { ...noticeStyle, color: warningColor };
+const warningStyle: CSSProperties = { ...noticeStyle, color: 'var(--orange-11)' };
 
 const rightIconStyle: CSSProperties = {
   fontSize: '1.2em',
@@ -696,30 +697,18 @@ function ExportConfirm({
       });
     }
 
-    if (hasOverlayClips) {
-      if (isSizeLimited) {
-        generic.push({
-          warning: true,
-          text: t('Text overlays may cause size limit inaccuracies'),
-        });
-      } else {
-        generic.push({
-          text: t(
-            'Text layers require a composited video export, so the video track will be encoded.',
-          ),
-        });
-      }
+    // Text, speed and crop are drawn into the picture, so the video is re-encoded. Target-size
+    // exports always re-encode and already budget for overlays, so they need no notice at all.
+    const hasSegmentTransforms = segmentsToExport.some((segment) => getSegmentSpeed(segment) !== 1 || hasSegmentCrop(segment));
+    const reencodesVideo = isSizeLimited || hasOverlayClips || hasSegmentTransforms || isEncoding;
+    if (!isSizeLimited && (hasOverlayClips || hasSegmentTransforms)) {
+      generic.push({
+        text: t('Text, speed and crop changes are drawn into the picture, so the video is re-encoded instead of copied.'),
+      });
     }
 
     if (areWeCutting) {
       // https://github.com/mifi/lossless-cut/issues/1809
-      if (isSizeLimited) {
-        generic.push({
-          text: t(
-            'Size-limited export creates a shareable MP4 and keeps only the main video plus one audio track.',
-          ),
-        });
-      }
       if (effectiveOutFormat === 'flac') {
         generic.push({
           text: t(
@@ -735,7 +724,8 @@ function ExportConfirm({
           ),
         });
       }
-      if (keyframesEnabled && haveSegmentWithProblematicKeyframe) {
+      // Only a lossless copy has to start at a keyframe; a re-encode cuts exactly.
+      if (keyframesEnabled && haveSegmentWithProblematicKeyframe && !reencodesVideo) {
         generic.push({
           warning: true,
           text: t(
@@ -754,6 +744,7 @@ function ExportConfirm({
         + Object.values(specific).filter((n) => n != null && n.warning).length,
     };
   }, [
+    segmentsToExport,
     areWeCutting,
     areWeCuttingProblematicStreams,
     avoidNegativeTs,

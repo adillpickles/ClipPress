@@ -24,7 +24,7 @@ export const createSegment = (props?: {
   end?: number | undefined,
   name?: string | undefined,
   tags?: unknown | undefined,
-  initial?: true,
+  initial?: boolean | undefined,
   selected?: boolean | undefined,
   speed?: number | undefined,
   crop?: SegmentCrop | undefined,

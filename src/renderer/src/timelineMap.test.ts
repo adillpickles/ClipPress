@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createTimelineMap, getWarpedImageSpans } from './timelineMap';
+import { createTimelineMap, getRetimeAutoScrollStep, getWarpedImageSpans } from './timelineMap';
 
 describe('createTimelineMap', () => {
   it('is the identity without speed changes', () => {
@@ -51,5 +51,25 @@ describe('getWarpedImageSpans', () => {
     expect(spans[1]!.left).toBeCloseTo((10 / 30) * 100);
     expect(spans[1]!.innerLeft).toBeCloseTo(-100);
     expect(spans[1]!.innerWidth).toBeCloseTo(200);
+  });
+});
+
+describe('getRetimeAutoScrollStep', () => {
+  const lane = { left: 0, right: 1000 };
+
+  it('does not scroll on a click or hold, even when the handle starts in the edge zone', () => {
+    expect(getRetimeAutoScrollStep({ ...lane, startX: 995, pointerX: 995 })).toBe(0);
+    expect(getRetimeAutoScrollStep({ ...lane, startX: 995, pointerX: 1001 })).toBe(0);
+    expect(getRetimeAutoScrollStep({ ...lane, startX: 995, pointerX: 980 })).toBe(0);
+  });
+
+  it('scrolls once the pointer keeps moving outward past the start', () => {
+    expect(getRetimeAutoScrollStep({ ...lane, startX: 995, pointerX: 1013 })).toBe(5);
+    expect(getRetimeAutoScrollStep({ ...lane, startX: 500, pointerX: 980 })).toBe(10);
+    expect(getRetimeAutoScrollStep({ ...lane, startX: 500, pointerX: 20 })).toBe(-10);
+  });
+
+  it('caps the speed', () => {
+    expect(getRetimeAutoScrollStep({ ...lane, startX: 500, pointerX: 2000 })).toBe(30);
   });
 });

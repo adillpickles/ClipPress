@@ -1,4 +1,7 @@
+/* Shares the text box editor's look (TextOverlayEditor): cyan accent, label tab, round handles. */
 .wrapper {
+  --crop-accent: rgba(88, 200, 255, .95);
+  --crop-ink: rgba(5, 12, 20, .9);
   position: absolute;
   inset: 0;
   display: flex;
@@ -9,49 +12,173 @@
 
 .surface { position: relative; flex-shrink: 0; }
 .viewport { position: absolute; inset: 0; overflow: hidden; background: #000; }
+
+/* Dims the picture outside the crop; lives in the clipped viewport so it stays on the video. */
+.dim {
+  position: absolute;
+  pointer-events: none;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .62);
+}
 .frame {
   position: absolute;
-  border: 1.5px solid var(--blue-9);
   box-sizing: border-box;
-  box-shadow: 0 0 0 1500px rgba(0, 0, 0, .52);
+  border: 1.5px solid var(--crop-accent);
 }
-.move { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; cursor: move; touch-action: none; }
-.move:focus-visible { outline: 2px solid white; outline-offset: -4px; }
+.frame[data-dragging="true"] .grid { opacity: 1; }
+
+.move {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: move;
+  touch-action: none;
+}
+.move:focus-visible { outline: 2px solid var(--crop-accent); outline-offset: -5px; }
+
+/* Rule-of-thirds guides, only while adjusting. */
+.grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  background:
+    linear-gradient(to right, transparent calc(33.33% - .5px), rgba(255, 255, 255, .35) calc(33.33% - .5px), rgba(255, 255, 255, .35) calc(33.33% + .5px), transparent calc(33.33% + .5px), transparent calc(66.66% - .5px), rgba(255, 255, 255, .35) calc(66.66% - .5px), rgba(255, 255, 255, .35) calc(66.66% + .5px), transparent calc(66.66% + .5px)),
+    linear-gradient(to bottom, transparent calc(33.33% - .5px), rgba(255, 255, 255, .35) calc(33.33% - .5px), rgba(255, 255, 255, .35) calc(33.33% + .5px), transparent calc(33.33% + .5px), transparent calc(66.66% - .5px), rgba(255, 255, 255, .35) calc(66.66% - .5px), rgba(255, 255, 255, .35) calc(66.66% + .5px), transparent calc(66.66% + .5px));
+}
+
+/* Matches the text box's move tab. Sits inside the frame when the crop touches the top edge. */
+.tab {
+  position: absolute;
+  /* Clear of the corner handle. */
+  left: 10px;
+  bottom: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 6px 6px 0 0;
+  background: var(--crop-accent);
+  color: var(--crop-ink);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+.frame[data-tab-inside="true"] .tab { bottom: auto; top: 0; border-radius: 0 0 6px 6px; }
+.tabDetail { font-weight: 600; letter-spacing: 0; text-transform: none; opacity: .72; font-variant-numeric: tabular-nums; }
+
+/* Same handle as the text box's resize corner. */
 .corner {
   position: absolute;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   min-width: 0;
   padding: 0;
   transform: translate(-50%, -50%);
-  background: white;
-  border: 2px solid var(--blue-9);
-  border-radius: 5px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .45);
+  border-radius: 999px;
+  border: 2px solid rgba(5, 12, 20, .6);
+  background: var(--crop-accent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
   touch-action: none;
+  transition: transform 100ms ease;
 }
-.guideVertical, .guideHorizontal { position: absolute; pointer-events: none; opacity: .35; }
-.guideVertical { inset: 0 33.33%; border-left: 1px solid white; border-right: 1px solid white; }
-.guideHorizontal { inset: 33.33% 0; border-top: 1px solid white; border-bottom: 1px solid white; }
+.corner:hover, .corner:focus-visible { transform: translate(-50%, -50%) scale(1.2); outline: none; }
+
+/* One compact control pill over the bottom of the picture. */
 .toolbar {
   position: absolute;
-  bottom: 12px;
   left: 50%;
+  bottom: 12px;
   transform: translateX(-50%);
-  max-width: calc(100% - 36px);
-  width: 460px;
-  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 24px);
+  padding: 5px 5px 5px 8px;
   box-sizing: border-box;
-  border-radius: 12px;
-  border: 1px solid var(--gray-7);
-  background: var(--gray-2);
-  color: var(--gray-12);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, .3);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  background: rgba(10, 14, 22, .84);
+  backdrop-filter: blur(10px);
+  color: rgba(255, 255, 255, .92);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .45);
   font-size: 12px;
+  transition: opacity 120ms ease;
 }
-.hint { display: block; color: var(--gray-11); font-size: 11px; margin-bottom: 6px; }
-.controls { display: flex; gap: 10px; align-items: center; }
-.controls input { min-width: 40px; width: 100%; accent-color: var(--blue-9); }
-.controls output { font-variant-numeric: tabular-nums; min-width: 38px; }
-.controls button { padding: 5px 10px; font-size: 12px; }
-.controls .done { background: var(--blue-9); color: white; }
+/* Get out of the way while the frame is being dragged. */
+.toolbar[data-dragging="true"] { opacity: .25; pointer-events: none; }
+
+.iconButton, .textButton, .doneButton {
+  min-width: 0;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  transition: background-color 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+.iconButton:disabled, .textButton:disabled { opacity: .35; cursor: default; }
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+}
+.iconButton:not(:disabled):hover { background: rgba(255, 255, 255, .1); }
+
+.slider {
+  width: 140px;
+  min-width: 60px;
+  height: 4px;
+  margin: 0 2px;
+  border-radius: 999px;
+  appearance: none;
+  background: linear-gradient(to right, var(--crop-accent) var(--zoom-fill), rgba(255, 255, 255, .18) var(--zoom-fill));
+  cursor: pointer;
+}
+.slider::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  appearance: none;
+  border: 2px solid rgba(5, 12, 20, .6);
+  background: var(--crop-accent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+}
+.slider:focus-visible { outline: 2px solid var(--crop-accent); outline-offset: 4px; }
+
+.zoomValue { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.divider { width: 1px; height: 16px; margin: 0 2px; background: rgba(255, 255, 255, .14); }
+
+.textButton {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, .8);
+}
+.textButton:not(:disabled):hover { background: rgba(255, 255, 255, .1); color: white; }
+
+.doneButton {
+  height: 26px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--crop-accent);
+  color: var(--crop-ink);
+  font-weight: 700;
+}
+.doneButton:hover { background: rgba(120, 212, 255, 1); }
