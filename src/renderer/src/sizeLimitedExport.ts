@@ -11,7 +11,7 @@ import type {
 } from '../../common/types.js';
 import { getExperimentalArgs, getFfmpegPath, logStdoutStderr, runFfmpeg, runFfmpegWithProgress } from './ffmpeg';
 import mainApi from './mainApi';
-import { finalizeSizeLimitedExecutionResult } from './sizeLimitedExecutionPolicy';
+import runSizeLimitedAttempts from './sizeLimitedAttempts';
 import {
   getSizeLimitedCommonEncodeArgs,
   getSizeLimitedRotationArgs,
@@ -19,7 +19,7 @@ import {
   getSizeLimitedTwoPassEncodeArgs,
 } from './sizeLimitedFfmpegArgs';
 import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile } from './sizeLimitedResolution';
-import { getNextSizeLimitedAttempt, planSizeLimitedEncode } from './sizeLimitedPlanner';
+import { planSizeLimitedEncode } from './sizeLimitedPlanner';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import { buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
 import { getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from './segmentSpeed';
@@ -256,18 +256,30 @@ async function prepareTextOverlayAssets({
   const rotatedVideoDimensions = getRotatedVideoDimensions({ width: videoWidth, height: videoHeight, rotation });
   const assets: PreparedTextOverlayAsset[] = [];
 
-  for (const [index, overlayClip] of overlayClips.entries()) {
-    const width = Math.max(8, Math.round(rotatedVideoDimensions.width * overlayClip.box.width));
-    const imageData = await renderTextOverlayPng({ text: overlayClip.text, width, fontSize: getOverlayFontSize(overlayClip) * rotatedVideoDimensions.height });
-    const imagePath = join(outputDir, `clippress-size-limit-text-overlay-${Date.now()}-${index}.png`);
-    await writeFile(imagePath, imageData, { flag: 'wx' });
-    assets.push({
-      imagePath,
-      x: Math.max(0, Math.round(rotatedVideoDimensions.width * overlayClip.box.x)),
-      y: Math.max(0, Math.round(rotatedVideoDimensions.height * overlayClip.box.y)),
-      start: overlayClip.start,
-      end: overlayClip.end,
-    });
+  try {
+    for (const [index, overlayClip] of overlayClips.entries()) {
+      const width = Math.max(8, Math.round(rotatedVideoDimensions.width * overlayClip.box.width));
+      const imageData = await renderTextOverlayPng({ text: overlayClip.text, width, fontSize: getOverlayFontSize(overlayClip) * rotatedVideoDimensions.height });
+      const imagePath = join(outputDir, `clippress-size-limit-text-overlay-${Date.now()}-${index}.png`);
+      try {
+        await writeFile(imagePath, imageData, { flag: 'wx' });
+      } catch (err) {
+        // A partly written image is ours to remove, but not a file that was already there.
+        if (!(err instanceof Error && 'code' in err && err.code === 'EEXIST')) await deleteIfExists(imagePath);
+        throw err;
+      }
+      assets.push({
+        imagePath,
+        x: Math.max(0, Math.round(rotatedVideoDimensions.width * overlayClip.box.x)),
+        y: Math.max(0, Math.round(rotatedVideoDimensions.height * overlayClip.box.y)),
+        start: overlayClip.start,
+        end: overlayClip.end,
+      });
+    }
+  } catch (err) {
+    // The export, which removes these images when it finishes, never starts.
+    await Promise.all(assets.map(({ imagePath }) => deleteIfExists(imagePath)));
+    throw err;
   }
 
   return assets;
@@ -476,21 +488,11 @@ async function executeAttempts({
   buildAttempt: (attempt: SizeLimitedRetryStep, tempPath?: string) => Promise<AttemptFiles>,
   onProgress: (progress: number, metadata?: SizeLimitedProgressMetadata) => void,
 }) {
-  // Two candidates are tracked rather than one "best so far".
-  //
-  // `bestUnderCap` is the *largest* result that stayed within the limit, because among
-  // results that all respect the cap the biggest one used the budget best and therefore
-  // looks best. `smallestOverCap` is only kept so that, if nothing ever fit, the failure
-  // can report how close we got. Keeping them apart is what lets an undershoot top-up run
-  // without ever being able to return a file over the limit.
-  let bestUnderCap: SizeLimitedExecutionResult | undefined;
-  let smallestOverCap: SizeLimitedExecutionResult | undefined;
-  let currentAttempt: SizeLimitedRetryStep | undefined = plan.initialAttempt;
-
-  while (currentAttempt != null) {
-    const attemptFiles = await buildAttempt(currentAttempt);
-
-    try {
+  return runSizeLimitedAttempts({
+    plan,
+    strategy,
+    buildAttempt: (attempt) => buildAttempt(attempt),
+    runAttempt: async (attemptFiles, attempt) => {
       if (strategy.executionMode === 'ffmpeg_two_pass') {
         const { pass1Args } = attemptFiles;
         if (pass1Args == null) throw new UserFacingError('2-pass encoding was not configured correctly');
@@ -500,13 +502,13 @@ async function executeAttempts({
           duration: plan.duration,
           onProgress,
           pass1ProgressMetadata: makeProgressMetadata({
-            attemptNumber: currentAttempt.attemptNumber,
+            attemptNumber: attempt.attemptNumber,
             maxAttempts: plan.maxAttempts,
             phaseNumber: 1,
             phaseCount: 2,
           }),
           pass2ProgressMetadata: makeProgressMetadata({
-            attemptNumber: currentAttempt.attemptNumber,
+            attemptNumber: attempt.attemptNumber,
             maxAttempts: plan.maxAttempts,
             phaseNumber: 2,
             phaseCount: 2,
@@ -518,87 +520,22 @@ async function executeAttempts({
           duration: plan.duration,
           onProgress,
           progressMetadata: makeProgressMetadata({
-            attemptNumber: currentAttempt.attemptNumber,
+            attemptNumber: attempt.attemptNumber,
             maxAttempts: plan.maxAttempts,
             phaseNumber: 1,
             phaseCount: 1,
           }),
         });
       }
-
-      const size = await readFileSize(attemptFiles.outPath);
-      const metTarget = size <= plan.hardTargetBytes;
-      const candidate = {
-        path: attemptFiles.outPath,
-        size,
-        targetBytes: plan.hardTargetBytes,
-        attemptCount: currentAttempt.attemptNumber,
-        metTarget,
-        created: true,
-        strategy,
-      } satisfies SizeLimitedExecutionResult;
-
-      if (metTarget) {
-        // Keep whichever under-cap result filled more of the budget.
-        if (bestUnderCap == null || candidate.size > bestUnderCap.size) {
-          if (bestUnderCap != null && bestUnderCap.path !== candidate.path) await deleteIfExists(bestUnderCap.path);
-          bestUnderCap = candidate;
-        } else {
-          await deleteIfExists(candidate.path);
-        }
-
-        currentAttempt = getNextSizeLimitedAttempt({
-          hasUnderCapResult: true,
-          plan,
-          previousAttempt: currentAttempt,
-          previousOutputSize: size,
-        });
-      } else {
-        if (smallestOverCap == null || candidate.size < smallestOverCap.size) {
-          if (smallestOverCap != null && smallestOverCap.path !== candidate.path) await deleteIfExists(smallestOverCap.path);
-          smallestOverCap = candidate;
-        } else {
-          await deleteIfExists(candidate.path);
-        }
-
-        // A top-up that overshot has already given us a good under-cap result to fall
-        // back on, so stop rather than spending more passes shrinking it again.
-        currentAttempt = getNextSizeLimitedAttempt({
-          hasUnderCapResult: bestUnderCap != null,
-          plan,
-          previousAttempt: currentAttempt,
-          previousOutputSize: size,
-        });
-      }
-    } catch (error) {
-      await deleteIfExists(attemptFiles.outPath);
-      // A later attempt only ever tries to improve on a result that already fits. If it
-      // fails, the export has not failed: keep the good file rather than reporting an
-      // error the user cannot act on.
-      if (bestUnderCap != null) {
-        console.warn('A size-limited top-up attempt failed; keeping the earlier result that met the target', error);
-        currentAttempt = undefined;
-      } else {
-        throw error;
-      }
-    } finally {
+    },
+    cleanUpAttempt: async (attemptFiles) => {
       await deleteIfExists(attemptFiles.pass1OutPath);
       await deletePassArtifacts(attemptFiles.passlogFile);
-    }
-  }
-
-  if (bestUnderCap != null) {
-    // An over-cap attempt may still be on disk from a top-up that went too far.
-    if (smallestOverCap != null && smallestOverCap.path !== bestUnderCap.path) {
-      await deleteIfExists(smallestOverCap.path);
-    }
-    return bestUnderCap;
-  }
-
-  // Nothing fitted. The over-cap file must not be left behind pretending to be an export.
-  if (smallestOverCap != null) await deleteIfExists(smallestOverCap.path);
-
-  return finalizeSizeLimitedExecutionResult(smallestOverCap);
+    },
+    readFileSize,
+    deleteIfExists,
+    isCancellation: isAbortedError,
+  });
 }
 
 async function executeWithRetries(args: Parameters<typeof executeAttempts>[0] & { outPath: string }) {
