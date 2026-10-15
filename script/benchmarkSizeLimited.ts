@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { availableParallelism } from 'node:os';
 import { basename, dirname, join, parse, resolve } from 'node:path';
 import { execa } from 'execa';
 
@@ -14,6 +15,8 @@ import {
 } from '../src/renderer/src/sizeLimitedPlanner.ts';
 import { resolveSizeLimitedVideoProfile } from '../src/renderer/src/sizeLimitedResolution.ts';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from '../src/renderer/src/sizeLimitedStrategy.ts';
+import { gpuEncoders } from '../src/renderer/src/gpuEncoders.ts';
+import type { GpuEncoderName } from '../src/renderer/src/gpuEncoders.ts';
 import type {
   SizeLimitedEncoderCapabilities,
   SizeLimitedResolvedStrategy,
@@ -314,14 +317,15 @@ async function runProcess(binaryPath: string, args: string[]) {
   return execa(binaryPath, args, { all: true });
 }
 
-async function probeEncoder(ffmpegPath: string, encoder: 'h264_nvenc' | 'av1_nvenc') {
+async function probeEncoder(ffmpegPath: string, encoder: GpuEncoderName) {
   try {
     await runProcess(ffmpegPath, [
       '-hide_banner',
       '-f', 'lavfi',
-      '-i', 'color=c=black:s=640x360:r=30:d=0.2',
+      '-i', 'color=c=black:s=1280x720:r=30:d=0.2',
       '-frames:v', '3',
       '-an',
+      '-pix_fmt', 'nv12',
       '-c:v', encoder,
       '-f', 'null',
       '-',
@@ -332,16 +336,21 @@ async function probeEncoder(ffmpegPath: string, encoder: 'h264_nvenc' | 'av1_nve
   }
 }
 
-/** Capability detection mirrors the app: parse `-encoders`, then actually initialize NVENC. */
+/** Capability detection mirrors the app: parse `-encoders`, then actually open each GPU encoder. */
 async function getCapabilities(ffmpegPath: string): Promise<SizeLimitedEncoderCapabilities> {
   const { all } = await runProcess(ffmpegPath, ['-hide_banner', '-encoders']);
   const encoders = parseFfmpegEncoderNames(all ?? '');
-  return {
+  const capabilities: SizeLimitedEncoderCapabilities = {
     libx264: encoders.has('libx264'),
     libsvtav1: encoders.has('libsvtav1'),
-    h264Nvenc: encoders.has('h264_nvenc') ? await probeEncoder(ffmpegPath, 'h264_nvenc') : false,
-    av1Nvenc: encoders.has('av1_nvenc') ? await probeEncoder(ffmpegPath, 'av1_nvenc') : false,
+    h264Nvenc: false,
+    av1Nvenc: false,
+    cpuThreads: availableParallelism(),
   };
+  for (const { encoder, capability } of gpuEncoders) {
+    capabilities[capability] = encoders.has(encoder) && await probeEncoder(ffmpegPath, encoder);
+  }
+  return capabilities;
 }
 
 const capabilityByEncoder = {
@@ -349,10 +358,14 @@ const capabilityByEncoder = {
   libsvtav1: 'libsvtav1',
   h264_nvenc: 'h264Nvenc',
   av1_nvenc: 'av1Nvenc',
+  h264_amf: 'h264Amf',
+  av1_amf: 'av1Amf',
+  h264_qsv: 'h264Qsv',
+  av1_qsv: 'av1Qsv',
 } as const satisfies Record<SizeLimitedResolvedStrategy['encoder'], keyof SizeLimitedEncoderCapabilities>;
 
 function isCaseRunnable(strategy: SizeLimitedResolvedStrategy, capabilities: SizeLimitedEncoderCapabilities) {
-  return capabilities[capabilityByEncoder[strategy.encoder]];
+  return capabilities[capabilityByEncoder[strategy.encoder]] === true;
 }
 
 async function readProbe(ffprobePath: string, input: string) {

@@ -38,12 +38,16 @@ export function buildConcatSegmentInputArgs({
   filePath,
   segments,
   rotation,
+  decodeArgs = [],
 }: {
   filePath: string,
   segments: DefiniteSegmentBase[],
   rotation?: number | undefined,
+  /** Input options such as hardware decoding, repeated for every segment input. */
+  decodeArgs?: string[] | undefined,
 }) {
   return segments.flatMap((segment) => [
+    ...decodeArgs,
     '-ss', segment.start.toFixed(5),
     '-t', (segment.end - segment.start).toFixed(5),
     ...getSizeLimitedRotationArgs(rotation),

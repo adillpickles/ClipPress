@@ -176,6 +176,7 @@ const defaults: Config = {
   keyframesEnabled: true,
   reducedMotion: 'user',
   ffmpegHwaccel: 'none',
+  exportGpuAcceleration: true,
   exportEncodeMode: 'lossless',
   sizeLimitMb: 20,
   sizeLimitCodec: 'h264',

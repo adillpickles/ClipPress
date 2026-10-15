@@ -68,6 +68,7 @@ import { shouldWarnAboutTightAdvancedH264Target } from '../sizeLimitedExecutionP
 import { planSizeLimitedEncode } from '../sizeLimitedPlanner';
 import { getSizeLimitedEncoderCapabilities } from '../sizeLimitedExport';
 import { resolveSizeLimitedStrategy } from '../sizeLimitedStrategy';
+import { gpuVendorLabels, pickGpuEncoder } from '../gpuEncoders';
 import {
   getSizeLimitedSimpleFpsOptions,
   getSizeLimitedSimpleResolutionOptions,
@@ -900,7 +901,7 @@ function ExportConfirm({
   const onSizeLimitedAdvancedEncoderHelpPress = useCallback(() => {
     showHelpText({
       text: t(
-        'Choose the exact encoder path directly in Advanced mode. AV1 CPU prioritizes premium quality, AV1 NVIDIA prioritizes faster AV1, H.264 CPU is the compatibility CPU path, and H.264 NVIDIA is the fastest GPU-backed H.264 path.',
+        'Choose the exact encoder path directly in Advanced mode. AV1 CPU prioritizes premium quality, AV1 GPU prioritizes faster AV1, H.264 CPU is the compatibility CPU path, and H.264 GPU is the fastest H.264 path. GPU options use NVIDIA, AMD, or Intel hardware, whichever is present; the preset (p1 fastest to p7 best) is mapped to each vendor.',
       ),
     });
   }, [showHelpText, t]);
@@ -908,7 +909,7 @@ function ExportConfirm({
   const onSizeLimitedAdvancedTwoPassHelpPress = useCallback(() => {
     showHelpText({
       text: t(
-        'Turn this on to use true ffmpeg 2-pass encoding for the selected encoder path. ClipPress will show Pass 1/2 and Pass 2/2 during export when this is enabled.',
+        'Turn this on for 2-pass encoding. CPU encoders run FFmpeg 2-pass and show Pass 1/2 and Pass 2/2 during export. NVIDIA GPUs run their built-in full multipass in a single encode, which is as good and takes about half the time; AMD and Intel GPUs encode once.',
       ),
     });
   }, [showHelpText, t]);
@@ -1107,6 +1108,10 @@ function ExportConfirm({
     );
   }, [selectedSizeLimitedFps, sizeLimitedSourceFps, t]);
 
+  // The "NVIDIA" Advanced choices use whichever GPU vendor is present.
+  const gpuAv1Encoder = encoderCapabilities != null ? pickGpuEncoder(encoderCapabilities, 'av1') : undefined;
+  const gpuH264Encoder = encoderCapabilities != null ? pickGpuEncoder(encoderCapabilities, 'h264') : undefined;
+
   const advancedEncoderUnavailableMessage = useMemo(() => {
     if (encoderCapabilities == null) return undefined;
 
@@ -1118,17 +1123,11 @@ function ExportConfirm({
         'AV1 CPU (SVT-AV1) is unavailable in this bundled ffmpeg build.',
       );
     }
-    if (
-      sizeLimitAdvancedEncoder === 'av1_nvenc'
-      && !encoderCapabilities.av1Nvenc
-    ) return t('AV1 NVIDIA (NVENC) is unavailable on this system.');
+    if (sizeLimitAdvancedEncoder === 'av1_nvenc' && gpuAv1Encoder == null) return t('No GPU AV1 encoder is available on this system. AV1 needs an NVIDIA RTX 40-series, AMD RX 7000-series, Intel Arc, or newer GPU.');
     if (sizeLimitAdvancedEncoder === 'h264_cpu' && !encoderCapabilities.libx264) return t('H.264 CPU (x264) is unavailable in this bundled ffmpeg build.');
-    if (
-      sizeLimitAdvancedEncoder === 'h264_nvenc'
-      && !encoderCapabilities.h264Nvenc
-    ) return t('H.264 NVIDIA (NVENC) is unavailable on this system.');
+    if (sizeLimitAdvancedEncoder === 'h264_nvenc' && gpuH264Encoder == null) return t('No GPU H.264 encoder is available on this system.');
     return undefined;
-  }, [encoderCapabilities, sizeLimitAdvancedEncoder, t]);
+  }, [encoderCapabilities, gpuAv1Encoder, gpuH264Encoder, sizeLimitAdvancedEncoder, t]);
 
   const advancedH264TargetWarningMessage = useMemo(() => {
     if (!isSizeLimited || sizeLimitControlMode !== 'advanced') return undefined;
@@ -2079,12 +2078,9 @@ function ExportConfirm({
                               </option>
                               <option
                                 value="av1_nvenc"
-                                disabled={
-                                  encoderCapabilities != null
-                                  && !encoderCapabilities.av1Nvenc
-                                }
+                                disabled={encoderCapabilities != null && gpuAv1Encoder == null}
                               >
-                                {t('AV1 NVIDIA (NVENC)')}
+                                {gpuAv1Encoder != null ? t('AV1 GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuAv1Encoder.vendor] }) : t('AV1 GPU')}
                               </option>
                               <option
                                 value="h264_cpu"
@@ -2097,12 +2093,9 @@ function ExportConfirm({
                               </option>
                               <option
                                 value="h264_nvenc"
-                                disabled={
-                                  encoderCapabilities != null
-                                  && !encoderCapabilities.h264Nvenc
-                                }
+                                disabled={encoderCapabilities != null && gpuH264Encoder == null}
                               >
-                                {t('H.264 NVIDIA (NVENC)')}
+                                {gpuH264Encoder != null ? t('H.264 GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuH264Encoder.vendor] }) : t('H.264 GPU')}
                               </option>
                             </Select>
                             {advancedEncoderUnavailableMessage != null && (

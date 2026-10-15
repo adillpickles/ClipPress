@@ -1,5 +1,8 @@
+import type { SizeLimitAdvancedNvencPreset } from '../../common/types.js';
 import type { SizeLimitedVideoTransformProfile } from './sizeLimitedResolution';
 import type { SizeLimitedResolvedStrategy } from './sizeLimitedTypes';
+// The extension is required because `script/benchmarkSizeLimited.ts` loads this module in plain Node.
+import { getAmfQualityPreset, getQsvPreset } from './gpuEncoders.ts';
 
 const fastCpuX264Params = 'aq-mode=3:aq-strength=0.8:deblock=-1,-1:rc-lookahead=20:me=hex:subme=6';
 const qualityCpuX264Params = 'aq-mode=3:aq-strength=0.85:deblock=-1,-1:rc-lookahead=28:me=umh:subme=7:ref=3';
@@ -48,6 +51,21 @@ function getMaxQualityKeyintFrames({
  */
 const minNvencCq = 10;
 
+/** GPU strategies carry an NVENC-style preset; AMD and Intel translate it to their own scale. */
+function getGpuPreset(strategy: SizeLimitedResolvedStrategy): SizeLimitAdvancedNvencPreset {
+  const preset = String(strategy.encoderPreset);
+  return /^p[1-7]$/u.test(preset) ? preset as SizeLimitAdvancedNvencPreset : 'p6';
+}
+
+/**
+ * NVENC's own multipass. `fullres` stands in for a 2-pass request (FFmpeg pass logs do
+ * nothing for hardware encoders); `qres` is the cheaper default for single-pass quality.
+ */
+function getNvencMultipassArgs(strategy: SizeLimitedResolvedStrategy, { twoPass, isFast }: { twoPass: boolean, isFast: boolean }) {
+  if (strategy.encoderMultipass) return ['-multipass', 'fullres'];
+  return !twoPass && !isFast ? ['-multipass', 'qres'] : [];
+}
+
 function resolveNvencCq({ baseCq, qualityCapOffset }: { baseCq: number, qualityCapOffset: number | undefined }) {
   if (qualityCapOffset == null || qualityCapOffset <= 0) return String(baseCq);
   return String(Math.max(minNvencCq, baseCq - qualityCapOffset));
@@ -88,7 +106,7 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoPro
         '-preset', String(strategy.encoderPreset),
         '-tune', isMaxQuality ? 'uhq' : 'hq',
         '-rc', 'vbr',
-        ...(!twoPass && !isFast ? ['-multipass', 'qres'] : []),
+        ...getNvencMultipassArgs(strategy, { twoPass, isFast }),
         '-cq', resolveNvencCq({ baseCq: isMaxQuality ? 26 : (isFast ? 33 : 28), qualityCapOffset }),
         '-rc-lookahead', isMaxQuality ? '32' : (isFast ? '4' : '20'),
         '-spatial-aq', '1',
@@ -129,7 +147,7 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoPro
         '-tune', 'hq',
         '-profile:v', 'high',
         '-rc', 'vbr_hq',
-        ...(twoPass ? [] : ['-multipass', 'qres']),
+        ...getNvencMultipassArgs(strategy, { twoPass, isFast: false }),
         '-rc-lookahead', isFast ? '12' : '20',
         '-spatial-aq', '1',
         '-temporal-aq', '1',
@@ -141,6 +159,41 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoPro
           videoBitrate,
           maxRateFactor: constrainedH264MaxRateFactor,
           bufferFactor: constrainedH264BufferFactor,
+        }),
+      ];
+    }
+
+    // AMD and Intel arguments stay close to defaults every driver generation accepts: a
+    // peak-constrained bitrate window plus the vendor's quality preset. If a driver still
+    // rejects them, the export retries on the next encoder (see sizeLimitedExport).
+    case 'av1_amf':
+    case 'h264_amf': {
+      const isAv1 = strategy.encoder === 'av1_amf';
+      return [
+        '-c:v', strategy.encoder,
+        '-usage', 'transcoding',
+        '-quality', getAmfQualityPreset(strategy.encoder, getGpuPreset(strategy)),
+        '-rc', 'vbr_peak',
+        '-pix_fmt', 'nv12',
+        ...getBitrateWindowArgs({
+          videoBitrate,
+          maxRateFactor: isAv1 ? 1.08 : constrainedH264MaxRateFactor,
+          bufferFactor: isAv1 ? 2 : constrainedH264BufferFactor,
+        }),
+      ];
+    }
+
+    case 'av1_qsv':
+    case 'h264_qsv': {
+      const isAv1 = strategy.encoder === 'av1_qsv';
+      return [
+        '-c:v', strategy.encoder,
+        '-preset', getQsvPreset(getGpuPreset(strategy)),
+        '-pix_fmt', 'nv12',
+        ...getBitrateWindowArgs({
+          videoBitrate,
+          maxRateFactor: isAv1 ? 1.08 : constrainedH264MaxRateFactor,
+          bufferFactor: isAv1 ? 2 : constrainedH264BufferFactor,
         }),
       ];
     }

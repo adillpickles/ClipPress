@@ -191,6 +191,8 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ reducedMotion }), [reducedMotion]);
   const [ffmpegHwaccel, setFfmpegHwaccel] = useState(safeGetConfigInitial('ffmpegHwaccel'));
   useEffect(() => safeSetConfig({ ffmpegHwaccel }), [ffmpegHwaccel]);
+  const [exportGpuAcceleration, setExportGpuAcceleration] = useState(safeGetConfigInitial('exportGpuAcceleration'));
+  useEffect(() => safeSetConfig({ exportGpuAcceleration }), [exportGpuAcceleration]);
   const [exportEncodeMode, setExportEncodeMode] = useState(safeGetConfigInitial('exportEncodeMode'));
   useEffect(() => safeSetConfig({ exportEncodeMode }), [exportEncodeMode]);
   const [sizeLimitMb, setSizeLimitMb] = useState(safeGetConfigInitial('sizeLimitMb'));
@@ -351,6 +353,7 @@ export default function useUserSettingsRoot() {
     keyframesEnabled,
     reducedMotion,
     ffmpegHwaccel,
+    exportGpuAcceleration,
     exportEncodeMode,
     sizeLimitMb,
     sizeLimitControlMode,
@@ -445,6 +448,7 @@ export default function useUserSettingsRoot() {
     keyframesEnabled,
     reducedMotion,
     ffmpegHwaccel,
+    exportGpuAcceleration,
     exportEncodeMode,
     sizeLimitMb,
     sizeLimitControlMode,
@@ -549,6 +553,7 @@ export default function useUserSettingsRoot() {
     prefersReducedMotion,
     setReducedMotion,
     setFfmpegHwaccel,
+    setExportGpuAcceleration,
     setExportEncodeMode,
     setSizeLimitMb,
     setSizeLimitControlMode,

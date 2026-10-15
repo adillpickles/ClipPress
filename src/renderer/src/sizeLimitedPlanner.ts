@@ -67,7 +67,11 @@ function createProfile(profile: StrategyProfile) {
   return profile;
 }
 
-const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
+type CalibratedStrategyId = Exclude<SizeLimitedStrategyId,
+  | 'max_quality_av1_gpu' | 'max_quality_h264_gpu' | 'quality_av1_gpu' | 'quality_h264_gpu' | 'fast_av1_gpu'
+  | 'fast_h264_gpu' | 'fast_av1_cpu' | 'fast_h264_cpu' | 'advanced_av1_gpu' | 'advanced_h264_gpu'>;
+
+const calibratedProfiles: Record<CalibratedStrategyId, StrategyProfile> = {
   max_quality_av1_cpu_two_pass: createProfile({
     overheadRatio: 0.017,
     minOverheadBytes: 20 * 1024,
@@ -260,6 +264,22 @@ const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
     tinyTargetTotalBitrate: 900_000,
     ...h264TwoPassRetryProfile,
   }),
+};
+
+// The vendor-neutral strategies name the profile they plan with; these entries only keep the
+// lookup total. The retry loop corrects any size misses on uncalibrated AMD and Intel encoders.
+const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
+  ...calibratedProfiles,
+  max_quality_av1_gpu: calibratedProfiles.max_quality_av1_nvenc_two_pass,
+  max_quality_h264_gpu: calibratedProfiles.max_quality_h264_nvenc_two_pass,
+  quality_av1_gpu: calibratedProfiles.quality_av1_nvenc,
+  quality_h264_gpu: calibratedProfiles.advanced_h264_nvenc_single_pass,
+  fast_av1_gpu: calibratedProfiles.fast_av1_nvenc,
+  fast_h264_gpu: calibratedProfiles.advanced_h264_nvenc_single_pass,
+  fast_av1_cpu: calibratedProfiles.quality_av1_cpu,
+  fast_h264_cpu: calibratedProfiles.quality_h264_cpu,
+  advanced_av1_gpu: calibratedProfiles.advanced_av1_nvenc_single_pass,
+  advanced_h264_gpu: calibratedProfiles.advanced_h264_nvenc_single_pass,
 };
 
 function clamp(value: number, min: number, max: number) {
