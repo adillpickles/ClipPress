@@ -161,6 +161,37 @@ describe('CloseGuard', () => {
       expect(t.closed()).toBe(1);
     });
 
+    it('does not close the window before the withdrawn offer has closed', async () => {
+      let closeDialog!: () => void;
+      const t = setup({
+        showNotResponding: (signal) => new Promise((resolve) => {
+          // Like a native dialog: abort starts closing it, it is gone a little later.
+          signal.addEventListener('abort', () => { closeDialog = () => resolve('wait'); });
+        }),
+      });
+      t.close();
+      await t.wait(ackTimeoutMs);
+      t.guard.onAcknowledged(1);
+      t.guard.onDecision(1, 'close');
+      await t.wait(100);
+      expect(t.closed()).toBe(0);
+      closeDialog();
+      await t.wait(0);
+      expect(t.closed()).toBe(1);
+    });
+
+    it('closes anyway if a withdrawn offer never reports that it closed', async () => {
+      const t = setup({ showNotResponding: () => new Promise(() => undefined) });
+      t.close();
+      await t.wait(ackTimeoutMs);
+      t.guard.onAcknowledged(1);
+      t.guard.onDecision(1, 'close');
+      await t.wait(4900);
+      expect(t.closed()).toBe(0);
+      await t.wait(200);
+      expect(t.closed()).toBe(1);
+    });
+
     it('offers again after the user chose to keep waiting, if it stays silent', async () => {
       const t = setup();
       t.close();

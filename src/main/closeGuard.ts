@@ -1,6 +1,9 @@
 /** Whether the window may close, as decided by the renderer once it has saved (or the user chose). */
 export type CloseDecision = 'close' | 'cancel';
 
+/** How long to wait for an aborted "not responding" dialog to close before going on regardless. */
+const dialogCloseTimeoutMs = 5000;
+
 export interface CloseGuardOptions {
   /** Whether to ask "Are you sure you want to quit?" first (the user's setting, with a file open). */
   shouldConfirm: () => boolean,
@@ -11,7 +14,8 @@ export interface CloseGuardOptions {
   askRenderer: (requestId: number) => void,
   /**
    * Shown when the renderer does not respond. Resolves 'close' to close without saving, or 'wait'.
-   * `signal` aborts (closing the dialog) when the renderer responds after all.
+   * `signal` aborts (closing the dialog) when the renderer responds after all; the promise must
+   * then settle once the dialog is gone, because the window is not closed before that.
    */
   showNotResponding: (signal: AbortSignal) => Promise<'close' | 'wait'>,
   /** Closes the window for real; `handleClose` lets that close through. */
@@ -147,13 +151,14 @@ export default class CloseGuard {
       } else {
         // It does not respond: offer to close without saving, until it responds after all.
         const abort = new AbortController();
+        const dialog = this.options.showNotResponding(abort.signal).then((choice) => ({ choice }));
         // eslint-disable-next-line no-await-in-loop
-        const event = await Promise.race([
-          decided,
-          changed(),
-          this.options.showNotResponding(abort.signal).then((choice) => ({ choice })),
-        ]);
+        const event = await Promise.race([decided, changed(), dialog]);
         abort.abort();
+        // Closing the window while a native dialog is still open or closing crashed Electron on
+        // Windows (access violation, seen in the installer upgrade test): let the dialog go first.
+        // eslint-disable-next-line no-await-in-loop
+        await Promise.race([dialog.catch(() => undefined), new Promise((resolve) => { setTimeout(resolve, dialogCloseTimeoutMs); })]);
         if (event != null) {
           if ('decision' in event) return event.decision;
           if (event.choice === 'close') return 'close';

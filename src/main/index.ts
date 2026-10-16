@@ -293,6 +293,7 @@ function createWindow() {
     canAskRenderer: () => rendererReady && !window.webContents.isDestroyed() && !window.webContents.isCrashed(),
     askRenderer: (id) => window.webContents.send('close-requested', id),
     showNotResponding: async (signal) => {
+      logger.warn('The window is not responding to the request to close; offering to quit without saving');
       const { response } = await electron.dialog.showMessageBox(window, {
         type: 'warning',
         buttons: [i18n.t('Keep waiting'), i18n.t('Quit without saving')],
@@ -303,9 +304,13 @@ function createWindow() {
         detail: i18n.t('You can keep waiting, or quit now and lose the changes that are not saved yet.'),
         signal,
       });
+      logger.info('Not-responding dialog closed', { quitWithoutSaving: response === 1, withdrawn: signal.aborted });
       return response === 1 ? 'close' : 'wait';
     },
-    close: () => { if (!window.isDestroyed()) window.close(); },
+    close: () => {
+      logger.info('Closing the main window');
+      if (!window.isDestroyed()) window.close();
+    },
     ackTimeoutMs: 5000,
     onError: (err) => logger.error('Failed to get ready to close', err),
   });
