@@ -15,6 +15,7 @@ import '@fontsource-variable/open-sans/wght-italic.css';
 import type { KeyboardLayoutMap } from './types';
 import App from './App';
 import ErrorBoundary from './ErrorBoundary';
+import { listenForCloseRequests } from './closeRequests';
 import './i18n';
 
 import type { RemoteApiLegacy, RemoteRpcApi } from '../../main';
@@ -60,6 +61,9 @@ enableMapSet();
 const { app } = window.require('@electron/remote');
 
 console.log('Version', app.getVersion());
+
+// Before rendering, so that closing works even if the editor fails to render.
+listenForCloseRequests();
 
 
 const container = document.getElementById('root')!;

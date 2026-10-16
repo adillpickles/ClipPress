@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 
 import isDev from '../isDev';
 import { buildLlcProjectData, writeLlcProject } from '../edlStore';
@@ -31,7 +31,7 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
   const projectFileSavePath = useMemo(() => getProjectFileSavePath(storeProjectInWorkingDir), [getProjectFileSavePath, storeProjectInWorkingDir]);
 
   const [autoSave] = useState(() => new ProjectAutoSave({
-    // NOTE: Could lose a save if the app quits this soon after an edit (closing the file saves at once)
+    // Closing the file or the app saves at once (see `flushProject`), as does leaving the window.
     delayMs: isDev ? 2000 : 500,
     write: writeLlcProject,
     onError: (err) => {
@@ -51,8 +51,23 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
     autoSave.update(snapshot, { enabled: autoSaveProjectFile });
   }, [autoSave, autoSaveProjectFile, snapshot]);
 
+  // Losing focus or being hidden often comes right before the app is terminated without closing
+  // normally: an installer or Task Manager ending it, or the session ending. Save a waiting change now.
+  useEffect(() => {
+    const saveNow = () => autoSave.saveNow();
+    const saveNowIfHidden = () => { if (document.visibilityState === 'hidden') autoSave.saveNow(); };
+    window.addEventListener('blur', saveNow);
+    document.addEventListener('visibilitychange', saveNowIfHidden);
+    return () => {
+      window.removeEventListener('blur', saveNow);
+      document.removeEventListener('visibilitychange', saveNowIfHidden);
+    };
+  }, [autoSave]);
+
   const endProjectSession = useCallback(() => autoSave.endSession(), [autoSave]);
   const whenProjectSaved = useCallback(() => autoSave.whenSaved(), [autoSave]);
+  const saveProjectNow = useCallback(() => autoSave.saveNow(), [autoSave]);
+  const flushProject = useCallback(() => autoSave.flush(), [autoSave]);
 
   return {
     getEdlFilePath,
@@ -60,5 +75,7 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
     getProjectFileSavePath,
     endProjectSession,
     whenProjectSaved,
+    saveProjectNow,
+    flushProject,
   };
 };

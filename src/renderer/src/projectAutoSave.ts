@@ -29,6 +29,12 @@ export interface ProjectAutoSaveOptions {
   onError: (err: unknown) => void,
 }
 
+/** A project file that `flush` could not write. */
+export interface ProjectSaveFailure {
+  path: string,
+  error: unknown,
+}
+
 interface OpenSession {
   id: number,
   /** What each project file holds, as far as this session knows: it loaded or wrote it. */
@@ -51,6 +57,9 @@ interface OpenSession {
  * to the session that made it and only updates what that session knows, so a write that finishes
  * after the file was closed cannot affect the next open of the file. Before reading a project,
  * wait for `whenSaved` so the read sees every earlier save.
+ *
+ * The app must not close while a change is still waiting for the delay or being written: call
+ * `flush` first, and do not close if it reports a failure the user has not accepted.
  */
 export default class ProjectAutoSave {
   private session: OpenSession | undefined;
@@ -63,6 +72,12 @@ export default class ProjectAutoSave {
   private timer: ReturnType<typeof setTimeout> | undefined;
 
   private queue = Promise.resolve();
+
+  /** While `flush` runs: the files whose latest write failed. They are reported by `flush`, not `onError`. */
+  private flushFailures: Map<string, ProjectSaveFailure> | undefined;
+
+  /** Writes that failed during a `flush`, so that the next `flush` (trying again) repeats them. */
+  private readonly retryOnFlush = new Map<string, { session: OpenSession, snapshot: ProjectSnapshot }>();
 
   private readonly options: ProjectAutoSaveOptions;
 
@@ -113,6 +128,59 @@ export default class ProjectAutoSave {
     return this.queue;
   }
 
+  /**
+   * Starts saving a change that is waiting for the delay, now. Does nothing when no change is
+   * waiting. For moments when the app may be terminated without closing normally, such as losing
+   * focus to an installer or the session ending.
+   */
+  saveNow() {
+    if (this.timer == null) return;
+    this.cancelTimer();
+    const { session } = this;
+    if (session != null && this.enabled) this.enqueue(session, session.latest);
+  }
+
+  /**
+   * Saves everything before the app closes, and resolves with the files that could not be saved.
+   *
+   * That is the open file's latest state, every save already started (such as the final save of a
+   * file closed just before), and the saves that failed in an earlier `flush`, which are tried
+   * again. The open file stays open. Failures are only reported here, not through `onError`.
+   */
+  async flush(): Promise<ProjectSaveFailure[]> {
+    const failures = new Map<string, ProjectSaveFailure>();
+    this.flushFailures = failures;
+    try {
+      for (const [path, { session, snapshot }] of this.retryOnFlush) {
+        // The open file's latest state supersedes what failed to save earlier.
+        if (session !== this.session) this.enqueue(session, snapshot);
+        else this.retryOnFlush.delete(path);
+      }
+      // A change made while saving is saved too (bounded, in case changes keep coming).
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        this.cancelTimer();
+        const { session } = this;
+        if (session != null && this.enabled) this.enqueue(session, session.latest);
+        // eslint-disable-next-line no-await-in-loop
+        await this.drain();
+        if (this.timer == null) break;
+      }
+    } finally {
+      this.flushFailures = undefined;
+    }
+    return [...failures.values()];
+  }
+
+  /** Waits until no write is queued, including writes queued while waiting. */
+  private async drain() {
+    let queue: Promise<void> | undefined;
+    while (queue !== this.queue) {
+      ({ queue } = this);
+      // eslint-disable-next-line no-await-in-loop
+      await queue;
+    }
+  }
+
   private schedule() {
     this.cancelTimer();
     const { session } = this;
@@ -129,19 +197,32 @@ export default class ProjectAutoSave {
     this.timer = undefined;
   }
 
-  private enqueue(session: OpenSession, { path, project, fileData }: ProjectSnapshot) {
+  private enqueue(session: OpenSession, snapshot: ProjectSnapshot) {
+    const { path, project, fileData } = snapshot;
     this.queue = this.queue.then(async () => {
       try {
         const saved = session.saved.get(path);
         const needsSave = saved != null ? !isEqual(saved, project) : session.hasProject || hasProjectEdits(project);
-        if (!needsSave) return;
-        console.log('Saving project file', path, fileData);
-        await this.options.write(path, fileData);
-        session.saved.set(path, project);
-        // eslint-disable-next-line no-param-reassign
-        session.hasProject = true;
+        if (needsSave) {
+          console.log('Saving project file', path, fileData);
+          await this.options.write(path, fileData);
+          session.saved.set(path, project);
+          // eslint-disable-next-line no-param-reassign
+          session.hasProject = true;
+        }
+        // A newer write of the file, or the failed session's own state found on disk, settles an
+        // earlier failure. Another session merely having nothing to save does not.
+        if (needsSave || this.retryOnFlush.get(path)?.session === session) {
+          this.flushFailures?.delete(path);
+          this.retryOnFlush.delete(path);
+        }
       } catch (err) {
-        this.options.onError(err);
+        if (this.flushFailures != null) {
+          this.flushFailures.set(path, { path, error: err });
+          this.retryOnFlush.set(path, { session, snapshot });
+        } else {
+          this.options.onError(err);
+        }
       }
     });
   }

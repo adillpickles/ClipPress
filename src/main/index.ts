@@ -38,6 +38,8 @@ import * as compatPlayer from './compatPlayer.js';
 import { downloadMediaUrl } from './ffmpeg.js';
 import type UpdateController from './updateController.js';
 import type { UpdateStatus } from '../common/updates.js';
+import CloseGuard from './closeGuard.js';
+import type { CloseDecision } from './closeGuard.js';
 
 
 electronUnhandled({ showDialog: true, logger: (err) => logger.error('electron-unhandled', err) });
@@ -71,6 +73,7 @@ let newVersion: string | undefined;
 let disableNetworking: boolean;
 let autoUpdatesPromise: Promise<UpdateController> | undefined;
 let updateCheckScheduled = false;
+let closeGuard: CloseGuard | undefined;
 
 function getAutoUpdates() {
   autoUpdatesPromise ??= import('./autoUpdates.js').then(({ default: createAutoUpdates }) => createAutoUpdates({
@@ -265,22 +268,6 @@ function createWindow() {
     apiActionRequests.clear();
   });
 
-  // https://stackoverflow.com/questions/39574636/prompt-to-save-quit-before-closing-window/47434365
-  mainWindow.on('close', (e) => {
-    if (!askBeforeClose) return;
-
-    assert(mainWindow);
-    const choice = electron.dialog.showMessageBoxSync(mainWindow, {
-      type: 'question',
-      buttons: ['Yes', 'No'],
-      title: i18n.t('Confirm quit'),
-      message: i18n.t('Are you sure you want to quit?'),
-    });
-    if (choice === 1) {
-      e.preventDefault();
-    }
-  });
-
   // TODO replace with `windowStatePersistence` in the future? https://github.com/electron/rfcs/pull/16
   const debouncedSaveWindowState = debounce(() => {
     if (!mainWindow || !configStore.get('storeWindowBounds')) return;
@@ -288,6 +275,60 @@ function createWindow() {
     const isMaximized = mainWindow.isMaximized();
     configStore.set('windowBounds', { x, y, width, height, isMaximized });
   }, 500);
+
+  const window = mainWindow;
+  const guard = new CloseGuard({
+    shouldConfirm: () => askBeforeClose,
+    confirm: async () => {
+      const { response } = await electron.dialog.showMessageBox(window, {
+        type: 'question',
+        buttons: ['Yes', 'No'],
+        defaultId: 0,
+        cancelId: 1,
+        title: i18n.t('Confirm quit'),
+        message: i18n.t('Are you sure you want to quit?'),
+      });
+      return response === 0;
+    },
+    canAskRenderer: () => rendererReady && !window.webContents.isDestroyed() && !window.webContents.isCrashed(),
+    askRenderer: (id) => window.webContents.send('close-requested', id),
+    showNotResponding: async (signal) => {
+      const { response } = await electron.dialog.showMessageBox(window, {
+        type: 'warning',
+        buttons: [i18n.t('Keep waiting'), i18n.t('Quit without saving')],
+        defaultId: 0,
+        cancelId: 0,
+        title: i18n.t('ClipPress is not responding'),
+        message: i18n.t('ClipPress is not responding, so it cannot make sure that your latest project changes are saved.'),
+        detail: i18n.t('You can keep waiting, or quit now and lose the changes that are not saved yet.'),
+        signal,
+      });
+      return response === 1 ? 'close' : 'wait';
+    },
+    close: () => { if (!window.isDestroyed()) window.close(); },
+    ackTimeoutMs: 5000,
+    onError: (err) => logger.error('Failed to get ready to close', err),
+  });
+  closeGuard = guard;
+
+  // The renderer saves the project before the window closes (see CloseGuard). This also keeps a
+  // downloaded update from being installed on quit before then, or at all if the user cancels.
+  mainWindow.on('close', (e) => {
+    if (guard.handleClose()) {
+      debouncedSaveWindowState.flush();
+      return;
+    }
+    e.preventDefault();
+  });
+  mainWindow.on('unresponsive', () => guard.onResponsiveChange(false));
+  mainWindow.on('responsive', () => guard.onResponsiveChange(true));
+  mainWindow.webContents.on('render-process-gone', () => guard.onRendererGone());
+
+  // Windows ends a session (shutdown, restart, sign-out) without closing windows or quitting, so
+  // the close above does not happen (and no update is installed). Save a waiting change at least.
+  const saveProjectNow = () => { if (!window.webContents.isDestroyed()) window.webContents.send('save-project-now'); };
+  mainWindow.on('query-session-end', saveProjectNow);
+  mainWindow.on('session-end', saveProjectNow);
 
   mainWindow.on('maximize', debouncedSaveWindowState);
   mainWindow.on('unmaximize', debouncedSaveWindowState);
@@ -452,6 +493,13 @@ async function init() {
 
     ipcMain.on('setAskBeforeClose', (_e, val) => {
       askBeforeClose = val;
+    });
+
+    ipcMain.on('close-request-ack', (e, id: number) => {
+      if (e.sender === mainWindow?.webContents) closeGuard?.onAcknowledged(id);
+    });
+    ipcMain.on('close-request-decision', (e, id: number, decision: CloseDecision) => {
+      if (e.sender === mainWindow?.webContents) closeGuard?.onDecision(id, decision);
     });
 
     ipcMain.on('setLanguage', (_e, newLanguage) => changeLanguage(newLanguage));

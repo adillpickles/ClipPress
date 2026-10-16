@@ -15,6 +15,8 @@ import { dangerColor, primaryColor, warningColor } from '../colors';
 import getSwal from '../swal';
 import isDev from '../isDev';
 import mainApi from '../mainApi';
+import type { ProjectSaveFailure } from '../projectAutoSave';
+import type { CloseDecision } from '../saveBeforeClose';
 
 const { lstat } = window.require('fs/promises');
 const remote = window.require('@electron/remote');
@@ -636,6 +638,62 @@ export async function deleteFiles({ paths, deleteIfTrashFails, signal }: { paths
   await pMap(failedToTrashFiles, async (path) => unlinkWithRetry(path, { signal }), { concurrency: 5 });
 }
 
+
+const savingBeforeClosePopupClass = 'clippress-saving-before-close';
+
+/** Shown while the project is still being saved when the window is closing. Closes itself when `signal` aborts. */
+export async function showSavingBeforeClose(signal: AbortSignal): Promise<CloseDecision> {
+  const { Swal } = getSwal();
+  const result = Swal.fire({
+    icon: 'info',
+    title: i18n.t('Saving your project'),
+    text: i18n.t('ClipPress will close as soon as your latest changes are saved.'),
+    showConfirmButton: false,
+    showDenyButton: true,
+    denyButtonText: i18n.t('Quit without saving'),
+    showCancelButton: true,
+    cancelButtonText: i18n.t('Cancel'),
+    allowOutsideClick: false,
+    customClass: { popup: savingBeforeClosePopupClass },
+  });
+  // Only close this notice, not a dialog that has replaced it meanwhile.
+  const onAbort = () => { if (Swal.getPopup()?.classList.contains(savingBeforeClosePopupClass)) Swal.close(); };
+  signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    const { isDenied } = await result;
+    return isDenied ? 'close' : 'cancel';
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
+/** Asks what to do when the project could not be saved while the window is closing. */
+export async function askAfterFailedSaveBeforeClose(failures: ProjectSaveFailure[]): Promise<CloseDecision | 'retry'> {
+  const { isConfirmed, isDenied } = await getSwal().ReactSwal.fire({
+    icon: 'error',
+    title: i18n.t('Your latest changes could not be saved'),
+    html: (
+      <div style={{ textAlign: 'left' }}>
+        <p>{i18n.t('ClipPress could not write the project file. You can try again, or cancel and keep working, for example after freeing up disk space.')}</p>
+        {failures.map(({ path, error }) => (
+          <p key={path} style={{ fontSize: '.85em', wordBreak: 'break-all' }}>
+            {path !== '' && <><b>{path}</b><br /></>}
+            {error instanceof Error ? error.message : String(error)}
+          </p>
+        ))}
+      </div>
+    ),
+    showDenyButton: true,
+    showCancelButton: true,
+    confirmButtonText: i18n.t('Try again'),
+    denyButtonText: i18n.t('Quit without saving'),
+    cancelButtonText: i18n.t('Cancel'),
+    allowOutsideClick: false,
+  });
+  if (isConfirmed) return 'retry';
+  if (isDenied) return 'close';
+  return 'cancel';
+}
 
 export function toastError(err: unknown) {
   console.error('toastError', err);

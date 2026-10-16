@@ -182,6 +182,8 @@ import {
   deleteFiles,
   mustDisallowVob,
   toastError,
+  showSavingBeforeClose,
+  askAfterFailedSaveBeforeClose,
 } from './dialogs';
 import { openSendReportDialog } from './reporting';
 import {
@@ -261,6 +263,8 @@ import useTimecode from './hooks/useTimecode';
 import useSegmentsAutoSave from './hooks/useSegmentsAutoSave';
 import { getProjectSegmentsToLoad } from './llcProject';
 import type { ProjectSession } from './projectAutoSave';
+import saveBeforeClose from './saveBeforeClose';
+import { setCloseRequestHandlers } from './closeRequests';
 import useThumbnails from './hooks/useThumbnails';
 import useSubtitles from './hooks/useSubtitles';
 import useStreamsMeta from './hooks/useStreamsMeta';
@@ -1147,7 +1151,7 @@ function App() {
     setEditingCropSegmentId(undefined);
   }, [filePath, speedControlsHistory]);
 
-  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved } = useSegmentsAutoSave({
+  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved, saveProjectNow, flushProject } = useSegmentsAutoSave({
     autoSaveProjectFile,
     storeProjectInWorkingDir,
     filePath,
@@ -1159,6 +1163,18 @@ function App() {
     paramsByStreamId,
     overlayClips,
   });
+
+  // The window (and with it the app, and a downloaded update's installation) only closes once
+  // the project is saved, or the user has chosen to close without saving.
+  useEffect(() => setCloseRequestHandlers({
+    onCloseRequest: () => saveBeforeClose({
+      flush: flushProject,
+      slowAfterMs: 2000,
+      showSaving: showSavingBeforeClose,
+      showFailed: askAfterFailedSaveBeforeClose,
+    }),
+    onSaveNow: saveProjectNow,
+  }), [flushProject, saveProjectNow]);
 
   const {
     nonCopiedExtraStreams,
