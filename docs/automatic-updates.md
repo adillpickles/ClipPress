@@ -31,6 +31,39 @@ mode. Development, offline sessions, other platforms, and portable copies do not
 run an installer. Enabling multiple instances cancels/pauses installation for the
 current session. Disable that setting and restart to resume automatic installation.
 
+## Closing and unsaved changes
+
+Projects save automatically shortly after each edit (Settings: **Auto save project
+file?**, on by default; with it off, nothing is saved for you). Closing ClipPress in any way
+(the window's close button, Alt+F4, **File > Exit**) first saves the open project,
+including an edit made just before closing and a save that is still being written.
+ClipPress also saves a waiting edit as soon as its window loses focus.
+
+If the project cannot be saved, for example because the disk is full, ClipPress
+stays open and offers **Try again**, **Quit without saving**, or **Cancel**. Saving
+that takes longer than two seconds shows a notice with the same way out. A
+downloaded update installs only after ClipPress has actually closed: a cancelled
+close keeps the current version running and the update waiting for the next close.
+
+Windows shutdown, restart, and sign-out end ClipPress without a normal exit, so
+they never start an update installation. ClipPress then saves a waiting edit if it
+can. A forced termination (Task Manager, a crash, power loss) can lose an edit made
+within the last half second, but never corrupts the project file already on disk.
+
+## Where your data is kept
+
+The installer owns the installation folder, `%LOCALAPPDATA%\Programs\clippress`.
+Every update and reinstall deletes and replaces it, including files that you put
+there. Updates keep everything else:
+
+- Settings stay in `%APPDATA%\ClipPress` (see [installation](installation.md) for a
+  `config.json` found next to an installed executable, which is moved there).
+- Projects are saved next to the media file, or in the working folder you chose.
+- Uninstalling keeps settings unless you delete the app-data folder yourself.
+
+Do not keep media, projects, exports, or a `--config-dir` folder inside the
+installation folder.
+
 ## Release notes
 
 The What's new dialog includes only nonempty ClipPress notes newer than the
@@ -59,7 +92,11 @@ a prerelease suffix are published as prereleases. Merging a PR does not publish.
 
 Before the next preview release:
 
-1. Complete manual editing/export QA and the update checks below.
+1. Complete manual editing/export QA and the update checks below. Run the
+   **Installer upgrade test** workflow on the release commit: in a disposable
+   GitHub-hosted Windows VM it installs the candidate, updates it through two
+   further versions in Automatic and Ask modes, and checks settings, projects,
+   closing, and the next launch. Never run it, or the installers, on your own PC.
 2. Set the intended package version and add matching notes in `versions/`.
 3. Build with `yarn pack-win`; keep the generated assets together.
 4. Publish the matching tag only after QA approval, then test discovery from the
@@ -79,6 +116,9 @@ The updater and NSIS behavior follow the [electron-builder auto-update guide](ht
 - In Automatic mode, keep editing while an update downloads. Close normally and
   reopen; confirm the new version and retained settings/projects.
 - In Ask mode, confirm no installer downloads before **Download update**.
+- With an update waiting, make an edit and close at once; reopen and confirm the
+  edit was saved. Make the project folder read-only, edit, close, and confirm
+  **Cancel** keeps ClipPress open and does not install the update.
 - Disable automatic checking and confirm it stays off after a restart.
 - Turn checking off with a downloaded update waiting; confirm installation pauses.
 - Disconnect during a check/download, reconnect, and use **Try again**.
