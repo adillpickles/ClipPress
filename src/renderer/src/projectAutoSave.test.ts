@@ -385,6 +385,25 @@ describe('ProjectAutoSave before the app closes', () => {
     expect(await flushWhile(t)).toEqual([]);
   });
 
+  // Closing again after cancelling a slow save starts a second flush while the first still waits.
+  it('reports a failure to every flush that is waiting for it', async () => {
+    const t = setup({ latencyMs: 1000 });
+    t.show({ id: 1 }, untouched);
+    t.show({ id: 1 }, withTrim);
+    t.setDiskFailing(true);
+    const first = t.autoSave.flush();
+    await t.wait(100);
+    const second = t.autoSave.flush();
+    await t.wait(5000);
+    expect(await first).toEqual([{ path, error: new Error('disk full') }]);
+    expect(await second).toEqual([{ path, error: new Error('disk full') }]);
+    expect(t.errors).toEqual([]);
+    // A failure after both have finished is reported as usual again.
+    t.show({ id: 1 }, withText);
+    await t.wait(delayMs + 1100);
+    expect(t.errors).toHaveLength(1);
+  });
+
   it('respects autosave being turned off', async () => {
     const t = setup();
     t.setEnabled(false);

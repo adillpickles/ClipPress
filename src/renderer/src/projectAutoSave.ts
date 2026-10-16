@@ -73,8 +73,12 @@ export default class ProjectAutoSave {
 
   private queue = Promise.resolve();
 
-  /** While `flush` runs: the files whose latest write failed. They are reported by `flush`, not `onError`. */
-  private flushFailures: Map<string, ProjectSaveFailure> | undefined;
+  /**
+   * One per `flush` running: the files whose latest write failed. They are reported by `flush`, not
+   * `onError`. Several can run at once (closing again while a slow save of the last attempt is still
+   * writing), and each must see every failure until it finishes.
+   */
+  private readonly flushFailures = new Set<Map<string, ProjectSaveFailure>>();
 
   /** Writes that failed during a `flush`, so that the next `flush` (trying again) repeats them. */
   private readonly retryOnFlush = new Map<string, { session: OpenSession, snapshot: ProjectSnapshot }>();
@@ -149,7 +153,7 @@ export default class ProjectAutoSave {
    */
   async flush(): Promise<ProjectSaveFailure[]> {
     const failures = new Map<string, ProjectSaveFailure>();
-    this.flushFailures = failures;
+    this.flushFailures.add(failures);
     try {
       for (const [path, { session, snapshot }] of this.retryOnFlush) {
         // The open file's latest state supersedes what failed to save earlier.
@@ -166,7 +170,7 @@ export default class ProjectAutoSave {
         if (this.timer == null) break;
       }
     } finally {
-      this.flushFailures = undefined;
+      this.flushFailures.delete(failures);
     }
     return [...failures.values()];
   }
@@ -213,12 +217,12 @@ export default class ProjectAutoSave {
         // A newer write of the file, or the failed session's own state found on disk, settles an
         // earlier failure. Another session merely having nothing to save does not.
         if (needsSave || this.retryOnFlush.get(path)?.session === session) {
-          this.flushFailures?.delete(path);
+          for (const failures of this.flushFailures) failures.delete(path);
           this.retryOnFlush.delete(path);
         }
       } catch (err) {
-        if (this.flushFailures != null) {
-          this.flushFailures.set(path, { path, error: err });
+        if (this.flushFailures.size > 0) {
+          for (const failures of this.flushFailures) failures.set(path, { path, error: err });
           this.retryOnFlush.set(path, { session, snapshot });
         } else {
           this.options.onError(err);
