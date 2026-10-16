@@ -35,9 +35,11 @@ App settings and keyboard shortcuts are stored in `config.json` inside the app-d
 
 ## Custom `config.json` path
 
-On Windows, if you create a `config.json` file with the contents `{}` next to the downloaded executable (`ClipPress-Windows-x64.exe`), ClipPress will read and store settings from that file instead of the default app-data location. For an installed app, use the default app-data folder or a custom directory outside the installation folder so settings survive replacement of installed files.
+On Windows, if you create a `config.json` file with the contents `{}` next to the portable executable (`ClipPress-Windows-x64.exe`), ClipPress will read and store settings from that file instead of the default app-data location.
 
-You can also specify a custom folder containing `config.json` with the CLI option `--config-dir`. Other temporary files may still be stored in the default app-data location.
+An installed copy never keeps settings next to its executable, because every update and reinstall replaces the installation folder (`%LOCALAPPDATA%\Programs\clippress`), including files you added to it. If it finds a `config.json` there, it moves those settings into the app-data folder at its next start: the file is renamed to `config.json.imported-<time>`, a copy is kept in the app-data folder, and the settings it replaces are kept as `config.json.before-import-<time>`. To use settings from a portable setup in the installed app, copy that `config.json` into the app-data folder while ClipPress is closed.
+
+You can also specify a custom folder containing `config.json` with the CLI option `--config-dir`. Other temporary files may still be stored in the default app-data location. For an installed copy, choose a folder outside the installation folder.
 
 ## How to uninstall
 

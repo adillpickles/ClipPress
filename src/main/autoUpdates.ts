@@ -1,11 +1,10 @@
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { app } from 'electron';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import semver from 'semver';
 import type { CancellationToken } from 'electron-updater';
 
 import * as configStore from './configStore.js';
+import { getInstallationDir } from './installation.js';
 import logger from './logger.js';
 import UpdateController from './updateController.js';
 import type { UpdateStatus } from '../common/updates.js';
@@ -19,7 +18,8 @@ export default function createAutoUpdates({ offline, storeBuild, onChange }: {
     if (offline) return 'offline';
     if (!app.isPackaged) return 'development';
     if (process.platform !== 'win32' || process.arch !== 'x64' || storeBuild) return 'platform';
-    if (process.env['PORTABLE_EXECUTABLE_DIR'] != null || !existsSync(join(process.resourcesPath, 'clippress-installed'))) return 'portable';
+    // Only a copy the installer installed can be replaced by the installer.
+    if (getInstallationDir() == null) return 'portable';
     if (configStore.get('allowMultipleInstances')) return 'multiple-instances';
     return undefined;
   };

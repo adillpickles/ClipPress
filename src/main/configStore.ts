@@ -8,6 +8,8 @@ import { copyFile } from 'node:fs/promises';
 import type { KeyBinding, Config } from '../common/types.js';
 import logger from './logger.js';
 import { preserveUnreadableConfig, readStoredConfigKeys } from './configFileRecovery.js';
+import { importInstallFolderConfig } from './installFolderConfig.js';
+import { getInstallationDir, isWindowsPathInside } from './installation.js';
 import { isWindows, pathExists } from './util.js';
 import { fallbackLng } from './i18nCommon.js';
 
@@ -205,6 +207,7 @@ const configFileName = 'config.json'; // note: this is also hard-coded inside el
 
 // look for a config.json file next to the executable
 // For portable app: https://github.com/mifi/lossless-cut/issues/645
+// Not for an installed copy, whose executable's folder is replaced by every update (see init).
 async function lookForNeighbourConfigFile() {
   try {
     // https://github.com/mifi/lossless-cut/issues/645#issuecomment-1001363314
@@ -312,9 +315,25 @@ async function preserveUnreadableConfigFile() {
   }
 }
 
+/** See importInstallFolderConfig. Never stops startup: the settings in app data are used regardless. */
+async function importSettingsFromInstallFolder(installDir: string) {
+  try {
+    const result = await importInstallFolderConfig({ installDir, configDir: app.getPath('userData'), now: new Date() });
+    if (result != null) logger.info('Moved the settings file out of the installation folder, which updates delete', result);
+  } catch (err) {
+    logger.error('Failed to move the settings file out of the installation folder', err);
+  }
+}
+
 export async function init({ customConfigDir }: { customConfigDir: string | undefined }) {
-  customStoragePath = customConfigDir ?? await lookForNeighbourConfigFile();
+  const installDir = getInstallationDir();
+  // An installed copy never keeps settings next to its executable: updates delete that folder.
+  if (installDir != null && customConfigDir == null) await importSettingsFromInstallFolder(installDir);
+  customStoragePath = customConfigDir ?? (installDir == null ? await lookForNeighbourConfigFile() : undefined);
   if (customStoragePath) logger.info('customStoragePath', customStoragePath);
+  if (installDir != null && customStoragePath != null && isWindowsPathInside(customStoragePath, installDir)) {
+    logger.warn('The settings folder given with --config-dir is inside the installation folder, which updates and reinstalls delete', customStoragePath);
+  }
 
   await preserveUnreadableConfigFile();
   const storedKeys = await readStoredConfigKeys(getConfigPath());
