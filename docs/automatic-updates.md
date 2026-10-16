@@ -47,8 +47,10 @@ close keeps the current version running and the update waiting for the next clos
 
 Windows shutdown, restart, and sign-out end ClipPress without a normal exit, so
 they never start an update installation. ClipPress then saves a waiting edit if it
-can. A forced termination (Task Manager, a crash, power loss) can lose an edit made
-within the last half second, but never corrupts the project file already on disk.
+can. A forced termination (Task Manager, a crash) can lose an edit made within the
+last half second; the project file already on disk stays intact, because a save
+replaces it only once the new file is complete. A power cut can lose that edit too,
+and in rare cases leave the file that was being saved damaged.
 
 ## Where your data is kept
 
