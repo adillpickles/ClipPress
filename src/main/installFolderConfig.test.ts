@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -23,10 +24,11 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     rename: faulty('rename', actual.rename, 1),
     writeFile: faulty('writeFile', actual.writeFile),
     readFile: faulty('readFile', actual.readFile),
+    access: faulty('access', actual.access),
   };
 });
 
-const { importInstallFolderConfig } = await import('./installFolderConfig');
+const { importInstallFolderConfig, moveSettingsOutOfInstallFolder } = await import('./installFolderConfig');
 
 const now = new Date('2026-10-16T12:34:56.789Z');
 const stamp = '2026-10-16T12-34-56-789Z';
@@ -218,5 +220,72 @@ describe('importInstallFolderConfig when an attempt fails or is interrupted', ()
     expect(await settingsInUse()).toBe('{"sizeLimitMb":37}');
     expect((await configFiles()).filter((name) => name.includes('.import'))).toEqual([`config.json.imported-${stamp}`, `config.json.imported-${laterStamp}`]);
     expect(await doImport()).toBeUndefined();
+  });
+});
+
+// PR #56 re-audit 2 finding 1: when the import failed before it could copy the settings, updates
+// went on being installed, and installing one deletes the installation folder with the only copy.
+describe('moveSettingsOutOfInstallFolder', () => {
+  const move = (at = now) => moveSettingsOutOfInstallFolder({ installDir, configDir, now: at, retryDelayMs: 1 });
+  const later = new Date('2026-10-17T08:00:00.000Z');
+
+  function failing(op: string, name: string, code = 'EBUSY') {
+    faults.failWith = (o, path) => (o === op && basename(path).startsWith(name) ? code : undefined);
+  }
+
+  it('leaves nothing behind without a settings file there', async () => {
+    expect(await move()).toEqual({ settingsLeft: false, imported: undefined });
+  });
+
+  it('leaves nothing behind once the settings are imported', async () => {
+    await writeFile(join(installDir, 'config.json'), '{"sizeLimitMb":37}');
+    expect(await move()).toMatchObject({ settingsLeft: false, imported: { adopted: true } });
+  });
+
+  it('says settings are left when the copy that would survive an update could not be made', async () => {
+    await writeFile(join(installDir, 'config.json'), '{"sizeLimitMb":37,"updateMode":"ask"}');
+    failing('copyFile', 'config.json.importing-', 'ENOSPC');
+    const outcome = await move();
+    expect(outcome).toMatchObject({ settingsLeft: true, error: expect.objectContaining({ code: 'ENOSPC' }) });
+    // The only copy is still where an update would delete it.
+    expect(await readdir(installDir)).toEqual(['config.json']);
+    expect(existsSync(configDir) ? await readdir(configDir) : []).toEqual([]);
+
+    // The next start, with room on the disk again.
+    faults.failWith = undefined;
+    expect(await move(later)).toMatchObject({ settingsLeft: false, imported: { adopted: true, resumed: false } });
+    expect(await read(join(configDir, 'config.json'))).toBe('{"sizeLimitMb":37,"updateMode":"ask"}');
+  });
+
+  it('says settings are left when the settings file cannot be read', async () => {
+    await writeFile(join(installDir, 'config.json'), '{"sizeLimitMb":37}');
+    failing('readFile', 'config.json', 'EACCES');
+    expect(await move()).toMatchObject({ settingsLeft: true });
+    expect(await readdir(installDir)).toEqual(['config.json']);
+  });
+
+  it('says settings are left until the copied settings are in use', async () => {
+    // The copy survives an update, but the settings in use (such as for updates) are not the user's yet.
+    await writeFile(join(installDir, 'config.json'), '{"sizeLimitMb":37}');
+    failing('writeFile', 'config.json.tmp-');
+    expect(await move()).toMatchObject({ settingsLeft: true });
+    faults.failWith = undefined;
+    expect(await move(later)).toMatchObject({ settingsLeft: false, imported: { resumed: true } });
+  });
+
+  it('says settings are left when a newer file is still there after finishing an earlier import', async () => {
+    await writeFile(join(installDir, 'config.json'), '{"sizeLimitMb":37}');
+    failing('rename', 'config.json.imported', 'EPERM');
+    expect(await move()).toMatchObject({ settingsLeft: true });
+    await writeFile(join(installDir, 'config.json'), '{"sizeLimitMb":50}');
+    faults.failWith = undefined;
+    expect(await move(later)).toMatchObject({ settingsLeft: true, imported: { resumed: true } });
+    expect(await move(new Date('2026-10-17T09:00:00.000Z'))).toMatchObject({ settingsLeft: false, imported: { resumed: false } });
+    expect(await read(join(configDir, 'config.json'))).toBe('{"sizeLimitMb":50}');
+  });
+
+  it('says settings may be left when it cannot tell whether the file is still there', async () => {
+    failing('access', 'config.json', 'EPERM');
+    expect(await move()).toMatchObject({ settingsLeft: true });
   });
 });

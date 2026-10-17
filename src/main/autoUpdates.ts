@@ -20,6 +20,8 @@ export default function createAutoUpdates({ offline, storeBuild, onChange }: {
     if (process.platform !== 'win32' || process.arch !== 'x64' || storeBuild) return 'platform';
     // Only a copy the installer installed can be replaced by the installer.
     if (getInstallationDir() == null) return 'portable';
+    // The installer deletes the installation folder, and with it settings that are still there.
+    if (configStore.areSettingsInInstallationFolder()) return 'settings-in-installation-folder';
     if (configStore.get('allowMultipleInstances')) return 'multiple-instances';
     return undefined;
   };

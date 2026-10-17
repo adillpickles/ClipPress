@@ -1,4 +1,4 @@
-import { constants, copyFile, mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
+import { access, constants, copyFile, mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
@@ -161,4 +161,32 @@ export async function importInstallFolderConfig({ installDir, configDir, now, re
   // Finished. Another instance finishing the same import at once has renamed it already.
   await ignoringMissing(() => retry(() => rename(copyPath, join(configDir, keptName))));
   return { keptCopyPath: join(configDir, keptName), adopted, replacedSettingsBackupPath, copiedFiles, resumed };
+}
+
+export type InstallFolderSettingsOutcome =
+  | { settingsLeft: false, imported: InstallFolderConfigImport | undefined }
+  | { settingsLeft: true, imported?: InstallFolderConfigImport | undefined, error?: unknown };
+
+/**
+ * Imports settings from the installation folder (importInstallFolderConfig), and says whether
+ * settings are still left there. Then installing an update would delete them, and with them,
+ * possibly the only copy of the user's settings: the import may have failed before it could make
+ * a copy, and until it finishes, the settings in use are not the user's either. Never throws.
+ */
+export async function moveSettingsOutOfInstallFolder(options: Parameters<typeof importInstallFolderConfig>[0]): Promise<InstallFolderSettingsOutcome> {
+  let imported: InstallFolderConfigImport | undefined;
+  try {
+    imported = await importInstallFolderConfig(options);
+  } catch (error) {
+    return { settingsLeft: true, error };
+  }
+  // A newer file put there after an earlier, unfinished import is imported at a later start.
+  try {
+    await access(join(options.installDir, configFileName));
+    return { settingsLeft: true, imported };
+  } catch (err) {
+    // Unless it is certainly gone, it may still be there.
+    if (isErrorCode(err, 'ENOENT')) return { settingsLeft: false, imported };
+    return { settingsLeft: true, imported, error: err };
+  }
 }
