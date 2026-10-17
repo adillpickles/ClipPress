@@ -31,6 +31,72 @@ mode. Development, offline sessions, other platforms, and portable copies do not
 run an installer. Enabling multiple instances cancels/pauses installation for the
 current session. Disable that setting and restart to resume automatic installation.
 
+Nor is an update installed while settings are in the installation folder, which
+installing deletes: a `config.json` there that ClipPress could not move to the
+app-data folder when it started (for example because the file was in use), or a
+`--config-dir` folder inside the installation folder, however its path is written
+(through a junction or link, a short name, a `\\?\` path, or a network path to the
+same drive). **Settings > App updates** says so. ClipPress tries the move again at
+its next start; a `--config-dir` folder you have to move yourself. Until you do,
+the installer refuses to run, too, even when you start it by hand.
+
+## Closing and unsaved changes
+
+Projects save automatically shortly after each edit (Settings: **Auto save project
+file?**, on by default; with it off, nothing is saved for you). A project file is
+the same file however its path is written (in another case, or through another
+name of its folder), so an older open of it can never write over a newer one. That
+holds even if its folder could not be reached for a while, like a network drive
+that was reconnecting: ClipPress looks again before such a save. Closing ClipPress in any way
+(the window's close button, Alt+F4, **File > Exit**) first saves the open project,
+including an edit made just before closing and a save that is still being written.
+ClipPress also saves a waiting edit as soon as its window loses focus.
+
+If the project cannot be saved, for example because the disk is full, ClipPress
+stays open and offers **Try again**, **Quit without saving**, or **Cancel**. That
+includes a save that failed earlier, such as the final save of a file you closed
+before: ClipPress keeps trying it until it succeeds. Reopening that file first
+tries the save again, so the reopened project has your changes if the disk works
+again; otherwise it shows what the file holds, and the failed changes are not
+written over it later. The clean-up after an export deletes the project file
+between saves: once it is gone, nothing from before brings it back, not even
+closing ClipPress while the clean-up is still running. That includes a failed save
+of it, and the state of the file if you keep it open (a later change saves it
+again). If deleting it fails or is cancelled, a failed save is kept and tried
+again like any other.
+Saving that takes longer than two seconds shows a notice
+with the same way out, and closing again while ClipPress is still busy saving
+offers to quit without saving after a few seconds. An edit made while the window is
+already closing is saved before it goes. A downloaded update installs only after
+ClipPress has actually closed: a cancelled close keeps the current version running
+and the update waiting for the next close.
+
+Windows shutdown, restart, and sign-out end ClipPress without a normal exit, so
+they never start an update installation. Once Windows starts ending the session,
+ClipPress also installs nothing when it closes in that run (the update installs on
+a later close instead), because an installer that Windows stops half-way could
+leave no working app. ClipPress then saves a waiting edit if it can. A forced termination (Task Manager, a crash) can lose an edit made within the
+last half second; the project file already on disk stays intact, because a save
+replaces it only once the new file is complete. A power cut can lose that edit too,
+and in rare cases leave the file that was being saved damaged.
+
+## Where your data is kept
+
+The installer owns the installation folder, `%LOCALAPPDATA%\Programs\clippress`.
+Every update and reinstall deletes and replaces it, including files that you put
+there. Updates keep everything else:
+
+- Settings stay in `%APPDATA%\ClipPress` (see [installation](installation.md) for a
+  `config.json` found next to an installed executable, which is moved there; the
+  installer also copies it, and the other settings files next to it, there before
+  it deletes the installation folder, and installs nothing if it cannot).
+- Projects are saved next to the media file, or in the working folder you chose.
+- Uninstalling keeps settings unless you delete the app-data folder yourself.
+
+Do not keep media, projects, exports, or a `--config-dir` folder inside the
+installation folder, and do not link folders into it: an update deletes whatever
+is reached through it, including what a junction inside it leads to.
+
 ## Release notes
 
 The What's new dialog includes only nonempty ClipPress notes newer than the
@@ -59,7 +125,12 @@ a prerelease suffix are published as prereleases. Merging a PR does not publish.
 
 Before the next preview release:
 
-1. Complete manual editing/export QA and the update checks below.
+1. Complete manual editing/export QA and the update checks below. Run the
+   **Installer upgrade test** workflow on the release commit: in a disposable
+   GitHub-hosted Windows VM it installs the candidate, updates it through two
+   further versions in Automatic and Ask modes, and checks settings, projects,
+   closing, a run that cannot move settings out of the installation folder, a
+   reinstall, and the next launch. Never run it, or the installers, on your own PC.
 2. Set the intended package version and add matching notes in `versions/`.
 3. Build with `yarn pack-win`; keep the generated assets together.
 4. Publish the matching tag only after QA approval, then test discovery from the
@@ -79,6 +150,9 @@ The updater and NSIS behavior follow the [electron-builder auto-update guide](ht
 - In Automatic mode, keep editing while an update downloads. Close normally and
   reopen; confirm the new version and retained settings/projects.
 - In Ask mode, confirm no installer downloads before **Download update**.
+- With an update waiting, make an edit and close at once; reopen and confirm the
+  edit was saved. Make the project folder read-only, edit, close, and confirm
+  **Cancel** keeps ClipPress open and does not install the update.
 - Disable automatic checking and confirm it stays off after a restart.
 - Turn checking off with a downloaded update waiting; confirm installation pauses.
 - Disconnect during a check/download, reconnect, and use **Try again**.

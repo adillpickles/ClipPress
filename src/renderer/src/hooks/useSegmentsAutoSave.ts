@@ -1,14 +1,30 @@
-import { useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 
 import isDev from '../isDev';
 import { buildLlcProjectData, writeLlcProject } from '../edlStore';
 import { encodeLlcProjectFile, getProjectSegmentsToSave } from '../llcProject';
 import ProjectAutoSave from '../projectAutoSave';
+import createProjectFilePathKey from '../projectFilePathKey';
 import type { ProjectSession, ProjectSnapshot } from '../projectAutoSave';
-import { getSuffixedOutPath } from '../util';
+import { getSuffixedOutPath, isWindows } from '../util';
 import type { CustomTagsByFile, OverlayClip, ParamsByStreamId, StateSegment } from '../types';
 import { errorToast } from '../swal';
 import i18n from '../i18n';
+
+const path = window.require('path');
+const { realpathSync, statSync } = window.require('fs');
+const { lstat } = window.require('fs/promises');
+
+/** Throws when it cannot tell, rather than saying that a file it cannot see is gone. */
+async function fileExists(filePath: string) {
+  try {
+    await lstat(filePath);
+    return true;
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) return false;
+    throw err;
+  }
+}
 
 
 export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, projectSession, customOutDir, fileDuration, cutSegments, customTagsByFile, paramsByStreamId, overlayClips }: {
@@ -31,13 +47,14 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
   const projectFileSavePath = useMemo(() => getProjectFileSavePath(storeProjectInWorkingDir), [getProjectFileSavePath, storeProjectInWorkingDir]);
 
   const [autoSave] = useState(() => new ProjectAutoSave({
-    // NOTE: Could lose a save if the app quits this soon after an edit (closing the file saves at once)
+    // Closing the file or the app saves at once (see `flushProject`), as does leaving the window.
     delayMs: isDev ? 2000 : 500,
     write: writeLlcProject,
     onError: (err) => {
       errorToast(i18n.t('Unable to save project file'));
       console.error('Failed to save project file', err);
     },
+    pathKey: createProjectFilePathKey({ path, caseInsensitive: isWindows, realpath: (dir) => realpathSync.native(dir), identity: (dir) => statSync(dir, { bigint: true }) }),
   }));
 
   const snapshot = useMemo<ProjectSnapshot | undefined>(() => {
@@ -51,8 +68,25 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
     autoSave.update(snapshot, { enabled: autoSaveProjectFile });
   }, [autoSave, autoSaveProjectFile, snapshot]);
 
+  // Losing focus or being hidden often comes right before the app is terminated without closing
+  // normally: an installer or Task Manager ending it, or the session ending. Save a waiting change now.
+  useEffect(() => {
+    const saveNow = () => autoSave.saveNow();
+    const saveNowIfHidden = () => { if (document.visibilityState === 'hidden') autoSave.saveNow(); };
+    window.addEventListener('blur', saveNow);
+    document.addEventListener('visibilitychange', saveNowIfHidden);
+    return () => {
+      window.removeEventListener('blur', saveNow);
+      document.removeEventListener('visibilitychange', saveNowIfHidden);
+    };
+  }, [autoSave]);
+
   const endProjectSession = useCallback(() => autoSave.endSession(), [autoSave]);
   const whenProjectSaved = useCallback(() => autoSave.whenSaved(), [autoSave]);
+  const saveProjectNow = useCallback(() => autoSave.saveNow(), [autoSave]);
+  const flushProject = useCallback(() => autoSave.flush(), [autoSave]);
+  const hasUnsavedProjectChanges = useCallback(() => autoSave.hasUnsavedChanges(), [autoSave]);
+  const deleteProjectFile = useCallback((projectPath: string, remove: () => Promise<void>) => autoSave.deleteFile(projectPath, { remove, exists: fileExists }), [autoSave]);
 
   return {
     getEdlFilePath,
@@ -60,5 +94,9 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
     getProjectFileSavePath,
     endProjectSession,
     whenProjectSaved,
+    saveProjectNow,
+    flushProject,
+    hasUnsavedProjectChanges,
+    deleteProjectFile,
   };
 };

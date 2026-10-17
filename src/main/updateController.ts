@@ -23,6 +23,9 @@ export default class UpdateController {
 
   private approved = false;
 
+  /** This run must not install an update when it quits (see holdInstallation). */
+  private held = false;
+
   private backend: UpdateBackend | undefined;
 
   private backendPromise: Promise<UpdateBackend> | undefined;
@@ -60,9 +63,26 @@ export default class UpdateController {
     this.publish({ supported: false, reason, phase: 'idle', version: undefined, percent: undefined, installOnQuit: false });
   }
 
+  /**
+   * Never installs an update when this run quits, for example because Windows is ending the
+   * session: an installer started then could be cut off half-way. A downloaded update stays
+   * downloaded, and a later run installs it.
+   */
+  holdInstallation() {
+    if (this.held) return;
+    this.held = true;
+    this.backend?.installOnQuit(false);
+    if (this.state.installOnQuit) this.publish({ installOnQuit: false });
+  }
+
   private publish(patch: Partial<UpdateStatus>) {
-    this.state = { ...this.state, ...patch };
+    this.state = { ...this.state, ...patch, ...(this.held ? { installOnQuit: false } : {}) };
     this.options.onChange(this.getStatus());
+  }
+
+  /** Arms or disarms installing on quit, unless installing is held for this run. */
+  private armInstallOnQuit(enabled: boolean) {
+    this.backend?.installOnQuit(enabled && !this.held);
   }
 
   private getBackend() {
@@ -90,7 +110,7 @@ export default class UpdateController {
     const installOnQuit = this.state.phase === 'ready' && shouldInstall;
     // Preserve the arm during an approved download. The backend registers its
     // quit handler when verification completes, before download() resolves.
-    this.backend?.installOnQuit(shouldInstall && ['ready', 'downloading'].includes(this.state.phase));
+    this.armInstallOnQuit(shouldInstall && ['ready', 'downloading'].includes(this.state.phase));
     this.publish({ installOnQuit });
     if (this.state.supported && this.state.phase === 'available' && preferences.enabled && preferences.mode === 'automatic') this.download(false);
   }
@@ -149,11 +169,11 @@ export default class UpdateController {
       // The updater verifies the downloaded artifact's SHA-512 before resolving.
       // Arm before download so electron-updater registers its normal-quit handler
       // when verification finishes. Failed/cancelled downloads are disarmed.
-      backend.installOnQuit(this.approved || (this.preferences.enabled && this.preferences.mode === 'automatic'));
+      this.armInstallOnQuit(this.approved || (this.preferences.enabled && this.preferences.mode === 'automatic'));
       await backend.download();
       if (generation !== this.generation) return this.getStatus();
       const installOnQuit = this.approved || (this.preferences.enabled && this.preferences.mode === 'automatic');
-      backend.installOnQuit(installOnQuit);
+      this.armInstallOnQuit(installOnQuit);
       this.publish({ phase: 'ready', percent: 100, installOnQuit });
     } catch (error) {
       if (generation === this.generation) {
@@ -168,7 +188,7 @@ export default class UpdateController {
   approveInstall() {
     if (this.state.phase === 'ready' && this.state.supported) {
       this.approved = true;
-      this.backend?.installOnQuit(true);
+      this.armInstallOnQuit(true);
       this.publish({ installOnQuit: true });
     }
     return this.getStatus();

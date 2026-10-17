@@ -3,11 +3,13 @@ import Store from 'electron-store';
 import electron from 'electron';
 import { join, dirname } from 'node:path';
 import assert from 'node:assert';
-import { copyFile } from 'node:fs/promises';
+import { access, copyFile } from 'node:fs/promises';
 
 import type { KeyBinding, Config } from '../common/types.js';
 import logger from './logger.js';
 import { preserveUnreadableConfig, readStoredConfigKeys } from './configFileRecovery.js';
+import { moveSettingsOutOfInstallFolder, noteSettingsFoldersForInstaller } from './installFolderConfig.js';
+import { getInstallationDir, isWindowsFolderInside } from './installation.js';
 import { isWindows, pathExists } from './util.js';
 import { fallbackLng } from './i18nCommon.js';
 
@@ -205,6 +207,7 @@ const configFileName = 'config.json'; // note: this is also hard-coded inside el
 
 // look for a config.json file next to the executable
 // For portable app: https://github.com/mifi/lossless-cut/issues/645
+// Not for an installed copy, whose executable's folder is replaced by every update (see init).
 async function lookForNeighbourConfigFile() {
   try {
     // https://github.com/mifi/lossless-cut/issues/645#issuecomment-1001363314
@@ -312,8 +315,90 @@ async function preserveUnreadableConfigFile() {
   }
 }
 
+/** Settings are kept in the installation folder of an installed copy, so installing an update would delete them. */
+let settingsInInstallationFolder = false;
+
+/** Whether installing an update now would delete settings (see init). Updates are then not installed. */
+export const areSettingsInInstallationFolder = () => settingsInInstallationFolder;
+
+/**
+ * See moveSettingsOutOfInstallFolder. Never stops startup: the settings in app data are used
+ * regardless, and an import that failed part-way is finished at the next start. Resolves with
+ * whether settings are still left in the installation folder.
+ */
+async function importSettingsFromInstallFolder(installDir: string) {
+  const outcome = await moveSettingsOutOfInstallFolder({ installDir, configDir: app.getPath('userData'), now: new Date() });
+  if (outcome.imported != null) logger.info('Moved the settings file out of the installation folder, which updates delete', outcome.imported);
+  if (outcome.settingsLeft) {
+    logger.error('Settings are still in the installation folder: not installing updates in this run, and trying again at the next start', outcome.error);
+  }
+  return outcome.settingsLeft;
+}
+
+/** Whether the folder `dir` is inside the installation folder. If that cannot be told, it may be. */
+async function isInInstallationFolder(dir: string, installDir: string) {
+  try {
+    return await isWindowsFolderInside(dir, installDir);
+  } catch (err) {
+    logger.error('Could not tell whether a settings folder is inside the installation folder, so taking it to be', dir, err);
+    return true;
+  }
+}
+
+/**
+ * For an installed copy: keeps its settings out of the installation folder, which every update and
+ * reinstall deletes, and resolves with whether settings are still in it (see areSettingsInInstallationFolder).
+ */
+async function keepSettingsOutOfInstallationFolder(installDir: string, customConfigDir: string | undefined) {
+  // The folder of the settings in use when given with --config-dir (the user's choice: never moved,
+  // but never deleted by an update either), and the app-data folder that settings are moved into.
+  // By what the folders are, not how their paths are written: through a junction, say.
+  let settingsDirInside: string | undefined;
+  for (const dir of [customConfigDir, app.getPath('userData')]) {
+    // eslint-disable-next-line no-await-in-loop
+    if (dir != null && await isInInstallationFolder(dir, installDir)) {
+      settingsDirInside = dir;
+      break;
+    }
+  }
+  // Also for an installer run by hand, which cannot know where --config-dir points (or pointed at
+  // an earlier start). The installer installs nothing while one of these folders has settings.
+  let noted: string[] = [];
+  try {
+    noted = await noteSettingsFoldersForInstaller({
+      installDir,
+      settingsDir: settingsDirInside,
+      stillHasSettings: async (dir) => {
+        try {
+          await access(join(dir, configFileName));
+        } catch (err) {
+          // Unless they are certainly gone (moved out, say), they may still be there.
+          if (err instanceof Error && 'code' in err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) return false;
+        }
+        return isInInstallationFolder(dir, installDir);
+      },
+    });
+  } catch (err) {
+    logger.error('Could not tell the installer about settings in the installation folder', settingsDirInside, err);
+  }
+  if (settingsDirInside != null) {
+    logger.warn('A settings folder is inside the installation folder, which updates and reinstalls delete: not installing updates', settingsDirInside);
+    return true;
+  }
+  // An installed copy never keeps settings next to its executable: updates delete that folder.
+  // Also with --config-dir: a later start without it uses them, and an update must not delete them.
+  const settingsLeft = await importSettingsFromInstallFolder(installDir);
+  if (noted.length > 0) {
+    logger.warn('Settings folders used at earlier starts are still inside the installation folder: not installing updates', noted);
+    return true;
+  }
+  return settingsLeft;
+}
+
 export async function init({ customConfigDir }: { customConfigDir: string | undefined }) {
-  customStoragePath = customConfigDir ?? await lookForNeighbourConfigFile();
+  const installDir = getInstallationDir();
+  if (installDir != null) settingsInInstallationFolder = await keepSettingsOutOfInstallationFolder(installDir, customConfigDir);
+  customStoragePath = customConfigDir ?? (installDir == null ? await lookForNeighbourConfigFile() : undefined);
   if (customStoragePath) logger.info('customStoragePath', customStoragePath);
 
   await preserveUnreadableConfigFile();
