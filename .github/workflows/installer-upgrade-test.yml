@@ -18,6 +18,7 @@ on:
       - 'src/renderer/src/saveBeforeClose.ts'
       - 'src/renderer/src/projectAutoSave.ts'
       - 'src/renderer/src/hooks/useSegmentsAutoSave.ts'
+      - 'src/renderer/src/projectFilePathKey.ts'
       - 'package.json'
       - 'yarn.lock'
 

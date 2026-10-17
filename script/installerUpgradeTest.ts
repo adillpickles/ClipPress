@@ -6,9 +6,12 @@
 //
 // It checks what users rely on: settings and projects survive, an edit made right before closing
 // is saved, a close cancelled after a failed save installs nothing, nor does a close after Windows
-// started ending the session, the installed version really changes, the app does not reopen by
-// itself, each next launch works, and uninstalling keeps settings. Only the network location of the update feed differs from production: the installed
-// app-update.yml points GitHub's provider at a local server with GitHub's URL layout.
+// started ending the session, nor a run that could not move settings out of the installation
+// folder, the installed version really changes, the app does not reopen by itself, each next
+// launch works, reinstalling copies settings out of the installation folder first, and
+// uninstalling keeps settings. Only the network location of the update feed differs from
+// production: the installed app-update.yml points GitHub's provider at a local server with
+// GitHub's URL layout.
 //
 // THIS INSTALLS AND UNINSTALLS SOFTWARE FOR THE CURRENT WINDOWS USER. It refuses to run anywhere
 // but a disposable GitHub-hosted runner.
@@ -53,6 +56,7 @@ const feedPort = 8934;
 const owner = 'adillpickles';
 const repo = 'ClipPress';
 const sizeLimitMarker = 37;
+const reinstallMarker = 41;
 
 const childEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'ELECTRON_RUN_AS_NODE'));
 
@@ -121,6 +125,32 @@ async function appProcesses() {
 
 async function readSettings() {
   return JSON.parse(await readFile(settingsPath, 'utf8')) as Record<string, unknown>;
+}
+
+/**
+ * Keeps `path` open without sharing, as a virus scanner or sync tool can, until the returned
+ * function is called. Nothing else can read it meanwhile.
+ */
+async function holdOpenExclusively(path: string) {
+  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `$f = [System.IO.File]::Open('${path}', 'Open', 'Read', 'None'); 'locked'; while ($true) { Start-Sleep -Seconds 1 }`], { stdio: ['ignore', 'pipe', 'inherit'], windowsHide: true });
+  const exited = new Promise<void>((resolveExit) => { child.on('exit', () => resolveExit()); });
+  await new Promise<void>((resolveLocked, reject) => {
+    let out = '';
+    child.stdout!.on('data', (data) => { out += String(data); if (out.includes('locked')) resolveLocked(); });
+    exited.then(() => reject(new Error(`Could not open ${path} exclusively: ${out}`)), reject);
+  });
+  return async () => {
+    child.kill();
+    await exited;
+  };
+}
+
+async function runInstaller(installer: string) {
+  return new Promise<number | null>((resolveExit, reject) => {
+    const child = spawn(installer, ['/S'], { stdio: 'ignore', env: childEnv });
+    child.on('error', reject);
+    child.on('exit', resolveExit);
+  });
 }
 
 async function projectSegments() {
@@ -381,12 +411,7 @@ async function main() {
     feed = await startFeed();
 
     await step(`Install ${a.version} with its installer`, async () => {
-      const code = await new Promise<number | null>((resolveExit, reject) => {
-        const child = spawn(a.installer, ['/S'], { stdio: 'ignore', env: childEnv });
-        child.on('error', reject);
-        child.on('exit', resolveExit);
-      });
-      assert.equal(code, 0);
+      assert.equal(await runInstaller(a.installer), 0);
       const installed = await waitForInstalled(a);
       assert.ok(installed.appAsarMatches, 'Installed files are not the built ones');
       assert.ok(existsSync(join(installDir, 'resources', 'clippress-installed')), 'Installer marker missing');
@@ -401,6 +426,40 @@ async function main() {
       await writeFile(join(installDir, 'config.json'), JSON.stringify({ sizeLimitMb: sizeLimitMarker, updateMode: 'automatic', enableUpdateCheck: true, storeProjectInWorkingDir: false, enableAskForFileOpenAction: false, askBeforeClose: false }));
       await useLocalFeed();
       feedReleases = [{ version: b.version, build: b }, { version: a.version, build: a }];
+    });
+
+    // Until the settings are out of the installation folder, they may exist only there, and
+    // installing an update deletes that folder. Moving them fails here because the file is busy.
+    await step(`A run of ${a.version} that cannot move the settings out of the installation folder installs no update`, async () => {
+      const settingsInInstallDir = join(installDir, 'config.json');
+      const original = await readFile(settingsInInstallDir, 'utf8');
+      const release = await holdOpenExclusively(settingsInInstallDir);
+      let status: Awaited<ReturnType<App['updateStatus']>>;
+      try {
+        // Without the user's settings, this run uses the defaults; only quitting must not ask.
+        app = await launchApp(exePath, { settingsJson: { askBeforeClose: false } });
+        assert.equal(await app.evaluate('window.require(\'@electron/remote\').app.getVersion()'), a.version);
+        status = await app.updateStatus();
+        assert.equal(status.supported, false);
+        assert.equal(status.reason, 'settings-in-installation-folder');
+        // Past the update check, which starts 8 s after the editor is ready.
+        await timers.setTimeout(20_000);
+        status = await app.updateStatus();
+        assert.equal(status.installOnQuit, false);
+        assert.deepEqual(downloadsOf(b.version), [], 'Downloaded an update it must not install');
+        await app.closeWindow();
+        const exit = await app.waitExit(60_000);
+        assert.ok(exit != null, 'The app did not close');
+        assert.equal(exit.code, 0);
+        await timers.setTimeout(15_000);
+        assert.deepEqual(await installerProcesses(), [], 'An installer started');
+        assert.equal(await registryVersion(), a.version, 'An update was installed');
+      } finally {
+        await release();
+      }
+      assert.equal(await readFile(settingsInInstallDir, 'utf8'), original, 'The settings file in the installation folder changed');
+      assert.ok(!(await readdir(settingsDir)).some((name) => name.startsWith('config.json.import')), 'Imported though the file was busy');
+      return { status };
     });
 
     const segmentsBefore = await step(`Automatic: ${a.version} imports the settings, downloads ${b.version}, and saves an edit made right before closing`, async () => {
@@ -583,6 +642,32 @@ async function main() {
       assert.equal(await registryVersion(), c.version);
     });
 
+    // The installer, too, keeps settings that are still in the installation folder, for example
+    // put there while ClipPress was closed, from being deleted with it.
+    await step(`Reinstalling ${c.version} first copies a settings file next to the executable out of the installation folder`, async () => {
+      const settings = { ...(await readSettings()), sizeLimitMb: reinstallMarker, enableUpdateCheck: false };
+      await writeFile(join(installDir, 'config.json'), JSON.stringify(settings));
+      assert.equal(await runInstaller(c.installer), 0);
+      const installed = await waitForInstalled(c);
+      assert.ok(installed.appAsarMatches);
+      await assertNotRunning();
+      assert.deepEqual((await readdir(installDir)).filter((name) => name.startsWith('config.json')), [], 'The installation folder was not replaced');
+      const copies = (await readdir(settingsDir)).filter((name) => name.startsWith('config.json.importing-') && name.endsWith('-installer'));
+      assert.equal(copies.length, 1, `Expected one copy made by the installer: ${copies.join(', ')}`);
+      const copy = copies[0]!;
+      assert.equal((JSON.parse(await readFile(join(settingsDir, copy), 'utf8')) as Record<string, unknown>)['sizeLimitMb'], reinstallMarker);
+
+      // The next start finishes importing it.
+      app = await launchApp(exePath);
+      assert.equal((await readSettings())['sizeLimitMb'], reinstallMarker);
+      assert.ok(existsSync(join(settingsDir, copy.replace('.importing-', '.imported-'))), 'The import was not finished');
+      assert.equal((await app.updateStatus()).supported, true);
+      await app.closeWindow();
+      const exit = await app.waitExit(60_000);
+      assert.ok(exit != null, 'The app did not close');
+      return { copy };
+    });
+
     await step('Uninstalling removes the app and keeps settings and projects', async () => {
       const code = await new Promise<number | null>((resolveExit, reject) => {
         const child = spawn(join(installDir, 'Uninstall ClipPress.exe'), ['/S'], { stdio: 'ignore', env: childEnv });
@@ -592,7 +677,7 @@ async function main() {
       assert.equal(code, 0);
       await waitFor('the uninstaller to finish', async () => (await registryVersion()) == null && (await installerProcesses()).length === 0, 120_000, 2000);
       assert.equal(existsSync(exePath), false);
-      assert.equal((await readSettings())['sizeLimitMb'], sizeLimitMarker);
+      assert.equal((await readSettings())['sizeLimitMb'], reinstallMarker);
       assert.equal(await projectSegments(), segmentsBefore.savedSegments + 3);
     });
   } finally {
