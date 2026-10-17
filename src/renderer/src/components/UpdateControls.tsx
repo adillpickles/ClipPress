@@ -45,7 +45,7 @@ export default function UpdateControls({ status }: { status: UpdateStatus | unde
     <div>
       <div role="status" aria-live="polite" style={{ fontSize: '.9em', marginBottom: 6 }}>{message}</div>
       {status.phase === 'available' && status.reason === 'settings-in-installation-folder' && (
-        <div style={{ fontSize: '.9em', marginBottom: 6 }}>{t('Installing it would delete the settings that are still in the installation folder. ClipPress tries to move them out again the next time it starts.')}</div>
+        <div style={{ fontSize: '.9em', marginBottom: 6 }}>{t('Installing it would delete the settings that are still in the installation folder. ClipPress tries to move a settings file there out again the next time it starts; move a settings folder chosen with --config-dir out yourself.')}</div>
       )}
       {status.phase === 'available' && (status.supported
         ? <Button onClick={() => invoke(() => mainApi.downloadUpdate())}>{t('Download update')}</Button>

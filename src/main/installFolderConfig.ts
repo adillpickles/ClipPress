@@ -1,5 +1,5 @@
-import { access, constants, copyFile, mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { access, constants, copyFile, mkdir, readFile, readdir, rename, rm, unlink, writeFile } from 'node:fs/promises';
+import { join, resolve, win32 } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import { getConfigFileState } from './configFileRecovery.js';
@@ -63,10 +63,10 @@ async function copyIfAbsent(from: string, to: string) {
 }
 
 /** Replaces `path` so that a crash leaves either the old or the new content, never a mix. */
-async function writeFileReplacing(path: string, content: string) {
+async function writeFileReplacing(path: string, content: string, encoding: BufferEncoding = 'utf8') {
   const tmpPath = `${path}.tmp-${process.pid}-${Date.now()}`;
   try {
-    await writeFile(tmpPath, content);
+    await writeFile(tmpPath, content, encoding);
     await rename(tmpPath, path);
   } catch (err) {
     await unlink(tmpPath).catch(() => undefined);
@@ -76,7 +76,10 @@ async function writeFileReplacing(path: string, content: string) {
 
 /**
  * The name of an unfinished import's copy in `configDir`, if an earlier start left one. Two at once
- * mean that two instances started together and imported the same file: only the newest is used.
+ * mean that two instances started together, or that the installer copied the file again
+ * (`config.json.importing-<time>-installer`) before a start could finish: only the newest is used,
+ * as the latest state of the file. Both the app and the installer name copies by the UTC time, so
+ * that the names sort by when they were made.
  */
 async function findUnfinishedImport(configDir: string) {
   const names = (await ignoringMissing(() => readdir(configDir)) ?? []).filter((name) => name.startsWith(importingPrefix)).sort();
@@ -161,6 +164,41 @@ export async function importInstallFolderConfig({ installDir, configDir, now, re
   // Finished. Another instance finishing the same import at once has renamed it already.
   await ignoringMissing(() => retry(() => rename(copyPath, join(configDir, keptName))));
   return { keptCopyPath: join(configDir, keptName), adopted, replacedSettingsBackupPath, copiedFiles, resumed };
+}
+
+/**
+ * In the installation folder, lists the settings folders that ClipPress has used from inside the
+ * installation folder (`--config-dir` folders there), one per line. The installer
+ * (script/installer.nsh) installs nothing while one of them has a `config.json`, because
+ * installing deletes the installation folder.
+ */
+export const settingsFoldersNoteFileName = 'clippress-settings-folders.txt';
+
+const sameWindowsPath = (a: string, b: string) => win32.resolve(a).toLowerCase() === win32.resolve(b).toLowerCase();
+
+/**
+ * Tells the installer about `settingsDir`, a settings folder in use inside the installation folder
+ * (or undefined: none is), on top of those it was told about before that still have settings
+ * there (`stillHasSettings`). The installer cannot know by itself where `--config-dir` points, nor
+ * where it pointed at another start: without this, running it by hand would delete those settings.
+ */
+export async function noteSettingsFoldersForInstaller({ installDir, settingsDir, stillHasSettings }: {
+  installDir: string,
+  settingsDir: string | undefined,
+  /** Whether a folder noted before still has settings inside the installation folder. Should say yes when it cannot tell. */
+  stillHasSettings: (dir: string) => Promise<boolean>,
+}) {
+  const notePath = join(installDir, settingsFoldersNoteFileName);
+  const noted = (await ignoringMissing(() => readFile(notePath, 'utf16le')) ?? '').split(/\r?\n/u).filter((line) => line !== '');
+  const folders: string[] = [];
+  for (const dir of noted) {
+    // eslint-disable-next-line no-await-in-loop
+    if (!folders.some((other) => sameWindowsPath(other, dir)) && await stillHasSettings(dir)) folders.push(dir);
+  }
+  if (settingsDir != null && !folders.some((other) => sameWindowsPath(other, settingsDir))) folders.push(resolve(settingsDir));
+  // UTF-16LE without a BOM, a line each, as the installer reads it (FileReadUTF16LE).
+  await (folders.length > 0 ? writeFileReplacing(notePath, folders.map((dir) => `${dir}\r\n`).join(''), 'utf16le') : rm(notePath, { force: true }));
+  return folders;
 }
 
 export type InstallFolderSettingsOutcome =

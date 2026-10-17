@@ -15,7 +15,7 @@ export default function UpdateSettings() {
   if (status?.supported) explanation = t('Updates download while you work and install only when you close ClipPress. No forced restart.');
   if (status?.reason === 'offline') explanation = t('Networking is disabled for this session.');
   if (status?.reason === 'multiple-instances') explanation = t('Automatic updates require single-instance mode.');
-  if (status?.reason === 'settings-in-installation-folder') explanation = t('Updates are not installed while settings are kept in the installation folder, because installing an update deletes that folder. ClipPress moves the settings out when it starts.');
+  if (status?.reason === 'settings-in-installation-folder') explanation = t('Updates are not installed while settings are kept in the installation folder, because installing an update deletes that folder. ClipPress moves a settings file it finds there out when it starts; move a settings folder chosen with --config-dir out yourself.');
   return (
     <tr>
       <td>

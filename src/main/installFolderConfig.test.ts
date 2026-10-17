@@ -28,7 +28,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
-const { importInstallFolderConfig, moveSettingsOutOfInstallFolder } = await import('./installFolderConfig');
+const { importInstallFolderConfig, moveSettingsOutOfInstallFolder, noteSettingsFoldersForInstaller, settingsFoldersNoteFileName } = await import('./installFolderConfig');
 
 const now = new Date('2026-10-16T12:34:56.789Z');
 const stamp = '2026-10-16T12-34-56-789Z';
@@ -220,6 +220,74 @@ describe('importInstallFolderConfig when an attempt fails or is interrupted', ()
     expect(await settingsInUse()).toBe('{"sizeLimitMb":37}');
     expect((await configFiles()).filter((name) => name.includes('.import'))).toEqual([`config.json.imported-${stamp}`, `config.json.imported-${laterStamp}`]);
     expect(await doImport()).toBeUndefined();
+  });
+
+  // PR #56 re-audit 3 finding 3: the installer named its copy by the local time and the app by
+  // UTC, so west of UTC an installer's copy made after an interrupted start sorted before it, and
+  // the older settings were imported. Both now use UTC, as the installer's names below do.
+  it.each([
+    ['the installer copied the file after an interrupted start', `config.json.importing-${stamp}`, 'config.json.importing-2026-10-16T12-35-10-installer'],
+    ['an interrupted start copied the file after the installer', 'config.json.importing-2026-10-16T12-34-56-installer', `config.json.importing-${laterStamp}`],
+    ['the installer copied it again within the same second', 'config.json.importing-2026-10-16T12-35-10-installer', 'config.json.importing-2026-10-16T12-35-10-installer-2'],
+    ['a start and the installer copied it within the same second', `config.json.importing-${stamp}`, 'config.json.importing-2026-10-16T12-34-56-installer'],
+  ])('uses the newer copy when %s', async (_when, older, newer) => {
+    await writeFile(join(configDir, older), '{"sizeLimitMb":36}');
+    await writeFile(join(configDir, newer), '{"sizeLimitMb":37}');
+    const keptName = newer.replace('.importing-', '.imported-');
+    expect(await doImport(later)).toMatchObject({ keptCopyPath: join(configDir, keptName), adopted: true, resumed: true });
+    expect(await settingsInUse()).toBe('{"sizeLimitMb":37}');
+    // The older copy is kept, and not imported again.
+    expect((await configFiles()).filter((name) => name.includes('.import')).sort()).toEqual([older.replace('.importing-', '.imported-'), keptName].sort());
+    expect(await read(join(configDir, older.replace('.importing-', '.imported-')))).toBe('{"sizeLimitMb":36}');
+    expect(await doImport()).toBeUndefined();
+  });
+});
+
+// Re-audit 3: with --config-dir, the installer cannot know where settings are, so the app tells it.
+describe('noteSettingsFoldersForInstaller', () => {
+  const notePath = () => join(installDir, settingsFoldersNoteFileName);
+  const note = (settingsDir: string | undefined, stillHasSettings: (dir: string) => Promise<boolean> = async () => true) => noteSettingsFoldersForInstaller({ installDir, settingsDir, stillHasSettings });
+
+  it('writes nothing while no settings folder is inside the installation folder', async () => {
+    expect(await note(undefined)).toEqual([]);
+    expect(existsSync(notePath())).toBe(false);
+  });
+
+  it('lists a settings folder inside it, a line each in UTF-16LE without a BOM, as the installer reads it', async () => {
+    const dir = join(installDir, 'settings');
+    expect(await note(dir)).toEqual([dir]);
+    const bytes = await readFile(notePath());
+    expect([...bytes.subarray(0, 2)]).not.toEqual([0xFF, 0xFE]);
+    expect(bytes.toString('utf16le')).toBe(`${dir}\r\n`);
+  });
+
+  it('keeps listing folders from earlier starts until they no longer have settings there', async () => {
+    const first = join(installDir, 'settings');
+    const second = join(installDir, 'other settings ü');
+    await note(first);
+    // A start with another folder, then one without any: both stay listed while they have settings.
+    expect(await note(second)).toEqual([first, second]);
+    expect(await note(undefined)).toEqual([first, second]);
+    // The first was moved out.
+    expect(await note(undefined, async (dir) => dir !== first)).toEqual([second]);
+    expect((await readFile(notePath())).toString('utf16le')).toBe(`${second}\r\n`);
+    expect(await note(undefined, async () => false)).toEqual([]);
+    expect(existsSync(notePath())).toBe(false);
+  });
+
+  it('lists a folder once, however its case is written', async () => {
+    const dir = join(installDir, 'settings');
+    await note(dir);
+    expect(await note(dir.toUpperCase())).toEqual([dir]);
+  });
+
+  it('keeps the note when writing a new one fails', async () => {
+    const dir = join(installDir, 'settings');
+    await note(dir);
+    faults.failWith = (op) => (op === 'writeFile' ? 'ENOSPC' : undefined);
+    await expect(note(join(installDir, 'more'))).rejects.toThrow('ENOSPC');
+    faults.failWith = undefined;
+    expect((await readFile(notePath())).toString('utf16le')).toBe(`${dir}\r\n`);
   });
 });
 
