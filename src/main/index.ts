@@ -292,15 +292,20 @@ function createWindow() {
     },
     canAskRenderer: () => rendererReady && !window.webContents.isDestroyed() && !window.webContents.isCrashed(),
     askRenderer: (id) => window.webContents.send('close-requested', id),
-    showNotResponding: async (signal) => {
-      logger.warn('The window is not responding to the request to close; offering to quit without saving');
+    showNotResponding: async (signal, reason) => {
+      logger.warn('Offering to quit without saving', { reason });
       const { response } = await electron.dialog.showMessageBox(window, {
         type: 'warning',
         buttons: [i18n.t('Keep waiting'), i18n.t('Quit without saving')],
         defaultId: 0,
         cancelId: 0,
-        title: i18n.t('ClipPress is not responding'),
-        message: i18n.t('ClipPress is not responding, so it cannot make sure that your latest project changes are saved.'),
+        ...(reason === 'unresponsive' ? {
+          title: i18n.t('ClipPress is not responding'),
+          message: i18n.t('ClipPress is not responding, so it cannot make sure that your latest project changes are saved.'),
+        } : {
+          title: i18n.t('ClipPress is still saving'),
+          message: i18n.t('ClipPress is still getting your project saved before it closes.'),
+        }),
         detail: i18n.t('You can keep waiting, or quit now and lose the changes that are not saved yet.'),
         signal,
       });
@@ -325,9 +330,27 @@ function createWindow() {
     }
     e.preventDefault();
   });
+  // The page refuses to unload while it has unsaved changes (see CloseGuard.onUnloadPrevented).
+  mainWindow.webContents.on('will-prevent-unload', (e) => {
+    if (guard.onUnloadPrevented()) {
+      logger.info('Unloading the page although it has unsaved changes: closing without saving');
+      e.preventDefault();
+    } else {
+      logger.info('The page has unsaved changes: not unloading it yet');
+    }
+  });
   mainWindow.on('unresponsive', () => guard.onResponsiveChange(false));
   mainWindow.on('responsive', () => guard.onResponsiveChange(true));
-  mainWindow.webContents.on('render-process-gone', () => guard.onRendererGone());
+  mainWindow.webContents.on('render-process-gone', () => {
+    rendererReady = false;
+    guard.onRendererGone();
+  });
+  // A new page replaced the old one (a reload). Not `did-start-navigation`: that is also emitted
+  // for navigations that `will-navigate` then blocks, which leave the page as it was.
+  mainWindow.webContents.on('did-navigate', () => {
+    rendererReady = false;
+    guard.onRendererNavigated();
+  });
 
   // Windows ends a session (shutdown, restart, sign-out) without closing windows or quitting, so
   // the close above does not happen (and no update is installed). Save a waiting change at least.

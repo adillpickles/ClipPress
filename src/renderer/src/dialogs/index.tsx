@@ -16,7 +16,7 @@ import getSwal from '../swal';
 import isDev from '../isDev';
 import mainApi from '../mainApi';
 import type { ProjectSaveFailure } from '../projectAutoSave';
-import type { CloseDecision } from '../saveBeforeClose';
+import type { UserCloseChoice } from '../saveBeforeClose';
 
 const { lstat } = window.require('fs/promises');
 const remote = window.require('@electron/remote');
@@ -642,7 +642,7 @@ export async function deleteFiles({ paths, deleteIfTrashFails, signal }: { paths
 const savingBeforeClosePopupClass = 'clippress-saving-before-close';
 
 /** Shown while the project is still being saved when the window is closing. Closes itself when `signal` aborts. */
-export async function showSavingBeforeClose(signal: AbortSignal): Promise<CloseDecision> {
+export async function showSavingBeforeClose(signal: AbortSignal): Promise<UserCloseChoice> {
   const { Swal } = getSwal();
   const result = Swal.fire({
     icon: 'info',
@@ -661,14 +661,14 @@ export async function showSavingBeforeClose(signal: AbortSignal): Promise<CloseD
   signal.addEventListener('abort', onAbort, { once: true });
   try {
     const { isDenied } = await result;
-    return isDenied ? 'close' : 'cancel';
+    return isDenied ? 'discard' : 'cancel';
   } finally {
     signal.removeEventListener('abort', onAbort);
   }
 }
 
 /** Asks what to do when the project could not be saved while the window is closing. */
-export async function askAfterFailedSaveBeforeClose(failures: ProjectSaveFailure[]): Promise<CloseDecision | 'retry'> {
+export async function askAfterFailedSaveBeforeClose(failures: ProjectSaveFailure[]): Promise<UserCloseChoice | 'retry'> {
   const { isConfirmed, isDenied } = await getSwal().ReactSwal.fire({
     icon: 'error',
     title: i18n.t('Your latest changes could not be saved'),
@@ -691,7 +691,7 @@ export async function askAfterFailedSaveBeforeClose(failures: ProjectSaveFailure
     allowOutsideClick: false,
   });
   if (isConfirmed) return 'retry';
-  if (isDenied) return 'close';
+  if (isDenied) return 'discard';
   return 'cancel';
 }
 

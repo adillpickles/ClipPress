@@ -1151,7 +1151,7 @@ function App() {
     setEditingCropSegmentId(undefined);
   }, [filePath, speedControlsHistory]);
 
-  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved, saveProjectNow, flushProject, discardFailedProjectSave } = useSegmentsAutoSave({
+  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved, saveProjectNow, flushProject, hasUnsavedProjectChanges, discardFailedProjectSave } = useSegmentsAutoSave({
     autoSaveProjectFile,
     storeProjectInWorkingDir,
     filePath,
@@ -1174,7 +1174,8 @@ function App() {
       showFailed: askAfterFailedSaveBeforeClose,
     }),
     onSaveNow: saveProjectNow,
-  }), [flushProject, saveProjectNow]);
+    hasUnsavedChanges: hasUnsavedProjectChanges,
+  }), [flushProject, hasUnsavedProjectChanges, saveProjectNow]);
 
   const {
     nonCopiedExtraStreams,

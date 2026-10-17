@@ -180,6 +180,8 @@
   "ClipPress could not write the project file. You can try again, or cancel and keep working, for example after freeing up disk space.": "ClipPress could not write the project file. You can try again, or cancel and keep working, for example after freeing up disk space.",
   "ClipPress is not responding": "ClipPress is not responding",
   "ClipPress is not responding, so it cannot make sure that your latest project changes are saved.": "ClipPress is not responding, so it cannot make sure that your latest project changes are saved.",
+  "ClipPress is still getting your project saved before it closes.": "ClipPress is still getting your project saved before it closes.",
+  "ClipPress is still saving": "ClipPress is still saving",
   "ClipPress is up to date.": "ClipPress is up to date.",
   "ClipPress kept one exported file's original name because the cleaner final name could not be applied.": "ClipPress kept one exported file's original name because the cleaner final name could not be applied.",
   "ClipPress never upscales. Auto follows a gaming-first ladder: it lowers resolution before it lowers FPS, and it never uses 1440p30 in Auto.": "ClipPress never upscales. Auto follows a gaming-first ladder: it lowers resolution before it lowers FPS, and it never uses 1440p30 in Auto.",

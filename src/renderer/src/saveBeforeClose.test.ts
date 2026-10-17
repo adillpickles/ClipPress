@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import saveBeforeClose from './saveBeforeClose';
-import type { CloseDecision, SaveBeforeCloseOptions } from './saveBeforeClose';
+import type { SaveBeforeCloseOptions, UserCloseChoice } from './saveBeforeClose';
 import type { ProjectSaveFailure } from './projectAutoSave';
 
 const failure: ProjectSaveFailure = { path: '/videos/clip-proj.llc', error: new Error('disk full') };
@@ -11,9 +11,9 @@ function setup({ flushResults, flushMs = 10, savingChoice, failedChoices = [] }:
   flushResults: ProjectSaveFailure[][],
   flushMs?: number,
   /** What the user chooses in the "still saving" notice (undefined: they do not choose). */
-  savingChoice?: { afterMs: number, decision: CloseDecision },
+  savingChoice?: { afterMs: number, decision: UserCloseChoice },
   /** What the user chooses after each failure, in turn. */
-  failedChoices?: (CloseDecision | 'retry')[],
+  failedChoices?: (UserCloseChoice | 'retry')[],
 }) {
   let flushes = 0;
   const savingNotices: { aborted: boolean }[] = [];
@@ -30,7 +30,7 @@ function setup({ flushResults, flushMs = 10, savingChoice, failedChoices = [] }:
       const notice = { aborted: false };
       savingNotices.push(notice);
       signal.addEventListener('abort', () => { notice.aborted = true; });
-      return new Promise<CloseDecision>((resolve) => {
+      return new Promise<UserCloseChoice>((resolve) => {
         if (savingChoice != null) setTimeout(() => resolve(savingChoice.decision), savingChoice.afterMs);
         else signal.addEventListener('abort', () => resolve('cancel'));
       });
@@ -72,8 +72,9 @@ describe('saveBeforeClose', () => {
   });
 
   it('closes after a failed save only when the user chooses to close without saving', async () => {
-    const t = setup({ flushResults: [[failure]], failedChoices: ['close'] });
-    expect(await run(t.options)).toBe('close');
+    const t = setup({ flushResults: [[failure]], failedChoices: ['discard'] });
+    // Not 'close': that would claim everything is saved.
+    expect(await run(t.options)).toBe('discard');
   });
 
   it('tries again for as long as the user asks, and closes once saving succeeds', async () => {
@@ -90,8 +91,8 @@ describe('saveBeforeClose', () => {
   });
 
   it('lets the user stop waiting for a save that hangs: close without saving', async () => {
-    const t = setup({ flushResults: [[]], flushMs: 10 * 60_000, savingChoice: { afterMs: 1000, decision: 'close' } });
-    expect(await run(t.options, 5000)).toBe('close');
+    const t = setup({ flushResults: [[]], flushMs: 10 * 60_000, savingChoice: { afterMs: 1000, decision: 'discard' } });
+    expect(await run(t.options, 5000)).toBe('discard');
   });
 
   it('lets the user stop waiting for a save that hangs: cancel and keep working', async () => {

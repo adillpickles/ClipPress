@@ -1,7 +1,13 @@
 import type { ProjectSaveFailure } from './projectAutoSave';
 
-/** What to do about a request to close the window. */
-export type CloseDecision = 'close' | 'cancel';
+/**
+ * What to do about a request to close the window: close because everything is saved, close
+ * without saving what could not be saved ('discard', only ever the user's choice), or stay open.
+ */
+export type CloseDecision = 'close' | 'discard' | 'cancel';
+
+/** What the user can choose instead of waiting for, or trying again, a save. */
+export type UserCloseChoice = Exclude<CloseDecision, 'close'>;
 
 export interface SaveBeforeCloseOptions {
   /** Saves everything now and resolves with what could not be saved (`ProjectAutoSave.flush`). */
@@ -12,12 +18,12 @@ export interface SaveBeforeCloseOptions {
    * Tells the user that saving is still in progress. Resolves with their choice to close without
    * waiting or to cancel. `signal` aborts once saving has finished; the result is then ignored.
    */
-  showSaving: (signal: AbortSignal) => Promise<CloseDecision>,
+  showSaving: (signal: AbortSignal) => Promise<UserCloseChoice>,
   /** Tells the user what could not be saved. They can try again, close anyway, or cancel. */
-  showFailed: (failures: ProjectSaveFailure[]) => Promise<CloseDecision | 'retry'>,
+  showFailed: (failures: ProjectSaveFailure[]) => Promise<UserCloseChoice | 'retry'>,
 }
 
-type Outcome = { failures: ProjectSaveFailure[], decision?: undefined } | { decision: CloseDecision };
+type Outcome = { failures: ProjectSaveFailure[], decision?: undefined } | { decision: UserCloseChoice };
 
 async function flushOrUserChoice({ flush, slowAfterMs, showSaving }: Omit<SaveBeforeCloseOptions, 'showFailed'>): Promise<Outcome> {
   const abort = new AbortController();

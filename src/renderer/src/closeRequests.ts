@@ -1,7 +1,7 @@
 import type { IpcRendererEvent } from 'electron';
 import i18n from 'i18next';
 
-import type { CloseDecision } from './saveBeforeClose';
+import type { CloseDecision, UserCloseChoice } from './saveBeforeClose';
 
 const { ipcRenderer } = window.require('electron');
 const remote = window.require('@electron/remote');
@@ -11,6 +11,8 @@ export interface CloseRequestHandlers {
   onCloseRequest: () => Promise<CloseDecision>,
   /** Saves a waiting change at once, because the app may be about to end without closing normally. */
   onSaveNow: () => void,
+  /** Whether anything is not saved yet, such as a change made after `onCloseRequest` saved everything. */
+  hasUnsavedChanges: () => boolean,
 }
 
 let handlers: CloseRequestHandlers | undefined;
@@ -27,7 +29,7 @@ export function setCloseRequestHandlers(next: CloseRequestHandlers) {
 }
 
 /** A last resort when getting ready failed unexpectedly: the user decides, through a native dialog. */
-function askAfterUnexpectedError(err: unknown): CloseDecision {
+function askAfterUnexpectedError(err: unknown): UserCloseChoice {
   const response = remote.dialog.showMessageBoxSync(remote.getCurrentWindow(), {
     type: 'error',
     buttons: [i18n.t('Quit without saving'), i18n.t('Cancel')],
@@ -37,7 +39,7 @@ function askAfterUnexpectedError(err: unknown): CloseDecision {
     message: i18n.t('ClipPress could not make sure that your project is saved.'),
     detail: err instanceof Error ? err.message : String(err),
   });
-  return response === 0 ? 'close' : 'cancel';
+  return response === 0 ? 'discard' : 'cancel';
 }
 
 /**
@@ -58,4 +60,18 @@ export function listenForCloseRequests() {
   });
 
   ipcRenderer.on('save-project-now', () => handlers?.onSaveNow());
+
+  // The window only goes away (or the page reloads) once the page lets it unload. The editor can
+  // still accept a change after it answered 'close' and before the window is gone: refusing then
+  // makes the main process ask again, which saves that change too (see CloseGuard). When the user
+  // chose to close without saving, the main process unloads the page regardless.
+  window.addEventListener('beforeunload', (event) => {
+    if (handlers == null || !handlers.hasUnsavedChanges()) return;
+    console.warn('Not unloading the page yet: the project has unsaved changes');
+    handlers.onSaveNow();
+    event.preventDefault();
+    // Electron cancels the unload reliably only with returnValue set.
+    // eslint-disable-next-line no-param-reassign
+    event.returnValue = '';
+  });
 }
