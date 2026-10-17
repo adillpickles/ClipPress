@@ -8,8 +8,11 @@
 // is saved, a close cancelled after a failed save installs nothing, nor does a close after Windows
 // started ending the session, nor a run that could not move settings out of the installation
 // folder, the installed version really changes, the app does not reopen by itself, each next
-// launch works, reinstalling copies settings out of the installation folder first, and
-// uninstalling keeps settings. Only the network location of the update feed differs from
+// launch works, a --config-dir folder inside the installation folder (through a junction) holds
+// updates and keeps the installer from running, reinstalling copies the settings files out of the
+// installation folder first (the settings file under a UTC name of its own, so that the newest
+// copy is imported), an installer that cannot copy them installs nothing, and uninstalling keeps
+// settings. Only the network location of the update feed differs from
 // production: the installed app-update.yml points GitHub's provider at a local server with
 // GitHub's URL layout.
 //
@@ -22,7 +25,7 @@ import { execFile, spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, openSync, closeSync } from 'node:fs';
-import { copyFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { Server } from 'node:http';
 import { join, resolve } from 'node:path';
@@ -158,6 +161,25 @@ async function projectSegments() {
   return project.cutSegments.length;
 }
 
+/** The UTC time as the installer writes it into the names of its copies: 2026-10-17T08-30-05. */
+const installerStamp = (date: Date) => date.toISOString().slice(0, 19).replaceAll(':', '-');
+/** The UTC time as the app writes it into the names of its copies: 2026-10-17T08-30-05-123Z. */
+const appStamp = (date: Date) => date.toISOString().replaceAll(/[:.]/gu, '-');
+/** When a copy named by the installer was made (UTC), from its name. */
+function installerCopyTime(name: string) {
+  const match = /^config\.json\.importing-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-installer(?:-\d)?$/u.exec(name);
+  assert(match, `Not a name the installer gives its copies: ${name}`);
+  return new Date(`${match[1]}T${match[2]}:${match[3]}:${match[4]}Z`);
+}
+
+/** Where the installed app lists settings folders inside the installation folder for the installer. */
+const settingsFoldersNotePath = join(installDir, 'clippress-settings-folders.txt');
+const appAsarTime = async () => (await stat(join(installDir, 'resources', 'app.asar'))).mtimeMs;
+
+async function setTimeZone(id: string) {
+  await execFileAsync('tzutil', ['/s', id]);
+}
+
 // --- Builds -------------------------------------------------------------------------------------
 
 interface Build { version: string, dir: string, installer: string, installerName: string, appAsarSha256: string }
@@ -265,7 +287,7 @@ interface CdpMessage { id?: number, result?: Record<string, unknown>, error?: { 
 
 let instanceCount = 0;
 
-async function launchApp(exe: string, { settingsJson }: { settingsJson?: Record<string, unknown> } = {}) {
+async function launchApp(exe: string, { settingsJson, configDir }: { settingsJson?: Record<string, unknown>, configDir?: string } = {}) {
   instanceCount += 1;
   const apiPort = 8180 + instanceCount;
   const cdpPort = 9330 + instanceCount;
@@ -276,6 +298,7 @@ async function launchApp(exe: string, { settingsJson }: { settingsJson?: Record<
     `--remote-debugging-port=${cdpPort}`,
     '--disable-features=CalculateNativeWinOcclusion',
     ...(settingsJson != null ? ['--settings-json', JSON.stringify(settingsJson)] : []),
+    ...(configDir != null ? ['--config-dir', configDir] : []),
   ], { stdio: ['ignore', logFd, logFd], env: childEnv });
   closeSync(logFd);
   let exit: { code: number | null, at: number } | undefined;
@@ -642,31 +665,136 @@ async function main() {
       assert.equal(await registryVersion(), c.version);
     });
 
+    // A settings folder given with --config-dir is used where it is, and the installer cannot know
+    // where that is. Inside the installation folder, reached here through a junction (another name
+    // the old check missed), it holds updates, and the app lists it for the installer, which then
+    // refuses to run rather than delete it.
+    await step(`A --config-dir folder inside the installation folder, through a junction, holds updates and keeps the installer of ${c.version} from deleting it`, async () => {
+      const settingsInside = join(installDir, 'settings');
+      const link = join(process.env['USERPROFILE']!, 'ClipPressSettingsLink');
+      const movedOut = join(process.env['USERPROFILE']!, 'ClipPressSettingsMovedOut');
+      const customSettings = JSON.stringify({ ...(await readSettings()), sizeLimitMb: 43 });
+      await mkdir(settingsInside, { recursive: true });
+      await writeFile(join(settingsInside, 'config.json'), customSettings);
+      await execFileAsync('cmd', ['/c', 'mklink', '/J', link, settingsInside]);
+
+      app = await launchApp(exePath, { configDir: link });
+      assert.equal(await app.evaluate('window.require(\'@electron/remote\').app.getVersion()'), c.version);
+      const status = await app.updateStatus();
+      assert.equal(status.supported, false);
+      assert.equal(status.reason, 'settings-in-installation-folder');
+      assert.equal((await readFile(settingsFoldersNotePath)).toString('utf16le'), `${link}\r\n`);
+      await app.closeWindow();
+      assert.ok(await app.waitExit(60_000), 'The app did not close');
+
+      const asarBefore = await appAsarTime();
+      const code = await runInstaller(c.installer);
+      assert.notEqual(code, 0, 'The installer ran though it would delete the settings');
+      await timers.setTimeout(5000);
+      assert.deepEqual(await installerProcesses(), []);
+      assert.equal(await readFile(join(settingsInside, 'config.json'), 'utf8'), customSettings, 'The settings in the installation folder changed');
+      assert.equal(await appAsarTime(), asarBefore, 'The installer replaced the installed files');
+      assert.ok(existsSync(settingsFoldersNotePath), 'The installation folder was replaced');
+
+      // Moved out, the folder no longer keeps anything from being installed.
+      await execFileAsync('cmd', ['/c', 'rmdir', link]);
+      await rename(settingsInside, movedOut);
+      app = await launchApp(exePath);
+      assert.notEqual((await app.updateStatus()).reason, 'settings-in-installation-folder');
+      assert.equal(existsSync(settingsFoldersNotePath), false, 'The note for the installer was kept');
+      await app.closeWindow();
+      assert.ok(await app.waitExit(60_000), 'The app did not close');
+      return { installerExitCode: code };
+    });
+
     // The installer, too, keeps settings that are still in the installation folder, for example
-    // put there while ClipPress was closed, from being deleted with it.
-    await step(`Reinstalling ${c.version} first copies a settings file next to the executable out of the installation folder`, async () => {
+    // put there while ClipPress was closed, from being deleted with it: the settings file under a
+    // name of its own (a file already there is not its copy), named by the UTC time like the app's
+    // own copies so that the newest is imported (here west of UTC, after an interrupted start of
+    // the app left an older copy), and the other settings files (backups) next to it.
+    await step(`Reinstalling ${c.version} first copies the settings files next to the executable out of the installation folder`, async () => {
       const settings = { ...(await readSettings()), sizeLimitMb: reinstallMarker, enableUpdateCheck: false };
       await writeFile(join(installDir, 'config.json'), JSON.stringify(settings));
-      assert.equal(await runInstaller(c.installer), 0);
+      const backupName = 'config.json.backup-v0.0.0-test-1-1760000000000';
+      await writeFile(join(installDir, backupName), '{"sizeLimitMb":7}');
+      const now = Date.now();
+      // An interrupted start of the app copied older settings a minute ago.
+      const olderCopy = `config.json.importing-${appStamp(new Date(now - 60_000))}`;
+      await writeFile(join(settingsDir, olderCopy), JSON.stringify({ ...settings, sizeLimitMb: 1 }));
+      // Files that happen to have the names the installer would give its copy over the next minutes.
+      const planted: string[] = [];
+      for (let s = -2; s <= 120; s += 1) {
+        const name = `config.json.importing-${installerStamp(new Date(now + s * 1000))}-installer`;
+        planted.push(name);
+        // eslint-disable-next-line no-await-in-loop
+        await writeFile(join(settingsDir, name), '{"planted":true}');
+      }
+
+      await setTimeZone('Pacific Standard Time');
+      let code: number | null;
+      try {
+        code = await runInstaller(c.installer);
+      } finally {
+        await setTimeZone('UTC');
+      }
+      assert.equal(code, 0);
       const installed = await waitForInstalled(c);
       assert.ok(installed.appAsarMatches);
       await assertNotRunning();
       assert.deepEqual((await readdir(installDir)).filter((name) => name.startsWith('config.json')), [], 'The installation folder was not replaced');
-      const copies = (await readdir(settingsDir)).filter((name) => name.startsWith('config.json.importing-') && name.endsWith('-installer'));
+
+      for (const name of planted) {
+        // eslint-disable-next-line no-await-in-loop
+        assert.equal(await readFile(join(settingsDir, name), 'utf8'), '{"planted":true}', `The installer wrote over ${name}`);
+      }
+      const copies = (await readdir(settingsDir)).filter((name) => name.startsWith('config.json.importing-') && name.includes('-installer') && !planted.includes(name));
       assert.equal(copies.length, 1, `Expected one copy made by the installer: ${copies.join(', ')}`);
       const copy = copies[0]!;
-      assert.match(copy, /^config\.json\.importing-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-installer$/);
+      assert.match(copy, /-installer-\d$/u, 'The copy did not get a name of its own');
+      const madeAt = installerCopyTime(copy).getTime();
+      assert.ok(madeAt >= now - 5000 && madeAt <= Date.now() + 5000, `The copy is not named by the UTC time: ${copy}`);
       assert.equal((JSON.parse(await readFile(join(settingsDir, copy), 'utf8')) as Record<string, unknown>)['sizeLimitMb'], reinstallMarker);
+      assert.equal(await readFile(join(settingsDir, backupName), 'utf8'), '{"sizeLimitMb":7}', 'The backup was not copied');
 
-      // The next start finishes importing it.
+      // Not there in real use: they would be imported themselves.
+      await Promise.all(planted.map(async (name) => rm(join(settingsDir, name))));
+      // The next start finishes importing the newest copy.
       app = await launchApp(exePath);
       assert.equal((await readSettings())['sizeLimitMb'], reinstallMarker);
       assert.ok(existsSync(join(settingsDir, copy.replace('.importing-', '.imported-'))), 'The import was not finished');
+      assert.ok(existsSync(join(settingsDir, olderCopy.replace('.importing-', '.imported-'))), 'The older copy was not kept');
       assert.equal((await app.updateStatus()).supported, true);
       await app.closeWindow();
       const exit = await app.waitExit(60_000);
       assert.ok(exit != null, 'The app did not close');
-      return { copy };
+      return { copy, olderCopy };
+    });
+
+    // Without a copy of the settings, nothing is installed: here the app-data folder refuses new files.
+    await step(`An installer of ${c.version} that cannot copy the settings out of the installation folder installs nothing`, async () => {
+      const settingsInInstallDir = join(installDir, 'config.json');
+      const content = JSON.stringify({ ...(await readSettings()), sizeLimitMb: 47 });
+      await writeFile(settingsInInstallDir, content);
+      const user = `${process.env['USERDOMAIN']}\\${process.env['USERNAME']}`;
+      const asarBefore = await appAsarTime();
+      const before = (await readdir(settingsDir)).sort();
+      // Only creating files and folders in it.
+      await execFileAsync('icacls', [settingsDir, '/deny', `${user}:(WD,AD)`]);
+      let code: number | null;
+      try {
+        code = await runInstaller(c.installer);
+      } finally {
+        await execFileAsync('icacls', [settingsDir, '/remove:d', user]);
+      }
+      assert.notEqual(code, 0, 'The installer ran without a copy of the settings');
+      await timers.setTimeout(5000);
+      assert.deepEqual(await installerProcesses(), []);
+      assert.equal(await readFile(settingsInInstallDir, 'utf8'), content, 'The settings in the installation folder are gone');
+      assert.equal(await appAsarTime(), asarBefore, 'The installer replaced the installed files');
+      assert.deepEqual((await readdir(settingsDir)).sort(), before);
+      // Leave things as the next step expects them.
+      await rm(settingsInInstallDir);
+      return { installerExitCode: code };
     });
 
     await step('Uninstalling removes the app and keeps settings and projects', async () => {
