@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, win32 } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { findInstallationDir, isWindowsFolderInside, isWindowsPathInside } from './installation';
 import type { FolderFs, InstallationFacts } from './installation';
@@ -131,38 +131,49 @@ describe('isWindowsFolderInside', () => {
   });
 });
 
+// The folders are made in beforeAll: vitest collects a skipped suite (elsewhere than Windows) too.
 describe.runIf(process.platform === 'win32')('isWindowsFolderInside on this Windows file system', () => {
-  const root = mkdtempSync(join(tmpdir(), 'clippress-folder-inside-long-name-'));
-  const install = join(root, 'Programs', 'clippress');
-  const settings = join(install, 'settings');
-  const outside = join(root, 'Roaming', 'ClipPress');
-  mkdirSync(settings, { recursive: true });
-  mkdirSync(outside, { recursive: true });
-  const linkToInstall = join(root, 'link-to-install');
-  const linkToOutside = join(root, 'link-to-outside');
-  symlinkSync(install, linkToInstall, 'junction');
-  symlinkSync(outside, linkToOutside, 'junction');
-  const shortRoot = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${root}').ShortPath`], { windowsHide: true }).toString().trim();
-  const adminShare = `\\\\localhost\\${settings[0]}$${settings.slice(2)}`;
+  let root = '';
+  let install = '';
+  let settings = '';
+  let outside = '';
+  let linkToInstall = '';
+  let linkToOutside = '';
+  let shortRoot = '';
+  beforeAll(() => {
+    root = mkdtempSync(join(tmpdir(), 'clippress-folder-inside-long-name-'));
+    install = join(root, 'Programs', 'clippress');
+    settings = join(install, 'settings');
+    outside = join(root, 'Roaming', 'ClipPress');
+    mkdirSync(settings, { recursive: true });
+    mkdirSync(outside, { recursive: true });
+    linkToInstall = join(root, 'link-to-install');
+    linkToOutside = join(root, 'link-to-outside');
+    symlinkSync(install, linkToInstall, 'junction');
+    symlinkSync(outside, linkToOutside, 'junction');
+    shortRoot = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${root}').ShortPath`], { windowsHide: true }).toString().trim();
+  });
   afterAll(() => {
-    rmSync(linkToInstall);
-    rmSync(linkToOutside);
-    rmSync(root, { recursive: true, force: true });
+    if (linkToInstall !== '') rmSync(linkToInstall, { force: true });
+    if (linkToOutside !== '') rmSync(linkToOutside, { force: true });
+    if (root !== '') rmSync(root, { recursive: true, force: true });
   });
 
   it.each([
-    ['as written', settings],
-    ['in another case', settings.toUpperCase()],
-    ['as an extended-length path', `\\\\?\\${settings}`],
-    ['as a device path', `\\\\.\\${settings}`],
-    ['through a junction', join(linkToInstall, 'settings')],
-    ['to be created through a junction', join(linkToInstall, 'new', 'deeper')],
-    ['by a short name', join(shortRoot, 'Programs', 'clippress', 'settings')],
-  ])('finds a folder inside %s', async (_name, path) => {
-    expect(await isWindowsFolderInside(path, install)).toBe(true);
+    ['as written', () => settings],
+    ['in another case', () => settings.toUpperCase()],
+    ['as an extended-length path', () => `\\\\?\\${settings}`],
+    ['as a device path', () => `\\\\.\\${settings}`],
+    ['through a junction', () => join(linkToInstall, 'settings')],
+    ['to be created through a junction', () => join(linkToInstall, 'new', 'deeper')],
+    ['by a short name', () => join(shortRoot, 'Programs', 'clippress', 'settings')],
+  ])('finds a folder inside %s', async (_name, pathOf) => {
+    expect(await isWindowsFolderInside(pathOf(), install)).toBe(true);
   });
 
-  it.runIf(existsSync(adminShare))('finds a folder inside through the administrative share', async () => {
+  it('finds a folder inside through the administrative share, where there is one', async (context) => {
+    const adminShare = `\\\\localhost\\${settings[0]}$${settings.slice(2)}`;
+    if (!existsSync(adminShare)) context.skip();
     expect(await isWindowsFolderInside(adminShare, install)).toBe(true);
   });
 
@@ -172,11 +183,11 @@ describe.runIf(process.platform === 'win32')('isWindowsFolderInside on this Wind
   });
 
   it.each([
-    ['the app-data folder', outside],
-    ['a junction to it', linkToOutside],
-    ['a folder next to the installation folder, whose name starts like it', `${install}-data`],
-    ['with a trailing dot (another folder to Node.js)', `${install}.\\settings`],
-  ])('keeps %s outside', async (_name, path) => {
-    expect(await isWindowsFolderInside(path, install)).toBe(false);
+    ['the app-data folder', () => outside],
+    ['a junction to it', () => linkToOutside],
+    ['a folder next to the installation folder, whose name starts like it', () => `${install}-data`],
+    ['with a trailing dot (another folder to Node.js)', () => `${install}.\\settings`],
+  ])('keeps %s outside', async (_name, pathOf) => {
+    expect(await isWindowsFolderInside(pathOf(), install)).toBe(false);
   });
 });
