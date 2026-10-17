@@ -315,13 +315,16 @@ async function preserveUnreadableConfigFile() {
   }
 }
 
-/** See importInstallFolderConfig. Never stops startup: the settings in app data are used regardless. */
+/**
+ * See importInstallFolderConfig. Never stops startup: the settings in app data are used regardless,
+ * and an import that failed part-way is finished at the next start.
+ */
 async function importSettingsFromInstallFolder(installDir: string) {
   try {
     const result = await importInstallFolderConfig({ installDir, configDir: app.getPath('userData'), now: new Date() });
     if (result != null) logger.info('Moved the settings file out of the installation folder, which updates delete', result);
   } catch (err) {
-    logger.error('Failed to move the settings file out of the installation folder', err);
+    logger.error('Failed to move the settings file out of the installation folder; trying again at the next start', err);
   }
 }
 

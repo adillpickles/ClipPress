@@ -1,9 +1,14 @@
 import { constants, copyFile, mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import { getConfigFileState } from './configFileRecovery.js';
 
 const configFileName = 'config.json';
+/** A copy of the installation folder's settings file, in the app-data folder, while it is imported. */
+const importingPrefix = `${configFileName}.importing-`;
+/** The same copy once the import has finished (and the name the original gets in the installation folder). */
+const importedPrefix = `${configFileName}.imported-`;
 
 export interface InstallFolderConfigImport {
   /** The copy of the imported file kept with the settings, under the name it now has in the installation folder. */
@@ -14,10 +19,37 @@ export interface InstallFolderConfigImport {
   replacedSettingsBackupPath: string | undefined,
   /** Other settings files (backups) that were copied out of the installation folder. */
   copiedFiles: string[],
+  /** Whether this finished an import that an earlier start began but could not finish. */
+  resumed: boolean,
 }
 
 function isErrorCode(err: unknown, code: string) {
   return err instanceof Error && 'code' in err && err.code === code;
+}
+
+const toStamp = (date: Date) => date.toISOString().replaceAll(/[:.]/gu, '-');
+
+/** Retries a step that Windows can fail for a moment, such as while a virus scanner reads the file. */
+async function retryBusy<T>(step: () => Promise<T>, delayMs: number): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      return await step();
+    } catch (err) {
+      if (attempt >= 3 || !['EBUSY', 'EPERM', 'EACCES'].some((code) => isErrorCode(err, code))) throw err;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(delayMs * attempt);
+  }
+}
+
+async function ignoringMissing<T>(step: () => Promise<T>) {
+  try {
+    return await step();
+  } catch (err) {
+    if (isErrorCode(err, 'ENOENT')) return undefined;
+    throw err;
+  }
 }
 
 async function copyIfAbsent(from: string, to: string) {
@@ -43,6 +75,19 @@ async function writeFileReplacing(path: string, content: string) {
 }
 
 /**
+ * The name of an unfinished import's copy in `configDir`, if an earlier start left one. Two at once
+ * mean that two instances started together and imported the same file: only the newest is used.
+ */
+async function findUnfinishedImport(configDir: string) {
+  const names = (await ignoringMissing(() => readdir(configDir)) ?? []).filter((name) => name.startsWith(importingPrefix)).sort();
+  for (const older of names.slice(0, -1)) {
+    // eslint-disable-next-line no-await-in-loop
+    await ignoringMissing(() => rename(join(configDir, older), join(configDir, `${importedPrefix}${older.slice(importingPrefix.length)}`)));
+  }
+  return names.at(-1);
+}
+
+/**
  * Moves settings out of the installation folder of an installed copy, into `configDir`.
  *
  * A `config.json` next to the executable makes ClipPress keep its settings in that file, which is
@@ -52,52 +97,68 @@ async function writeFileReplacing(path: string, content: string) {
  * to the executable instead of using it in place. That file held the settings in use, so it replaces
  * the app-data settings (which are kept as a backup).
  *
- * Nothing is deleted: the imported file is renamed (so it is imported only once), a copy of it is
- * kept in `configDir` under the same name, and other settings files there (backups the app made
- * next to it) are copied too. Throws if the file cannot be renamed, before changing any settings.
+ * Nothing is deleted. First the file is copied into `configDir` as `config.json.importing-<time>`;
+ * from then on, an import that fails or is interrupted (a locked file, a crash) is finished from
+ * that copy on a later start, rather than lost or repeated. Then the original is renamed (so it is
+ * not imported again), other settings files there (backups the app made next to it) are copied,
+ * and the settings are replaced. Last, the copy is renamed to `config.json.imported-<time>`, which
+ * marks the import as finished. Throws if a step fails; until then, the current settings stay.
  */
-export async function importInstallFolderConfig({ installDir, configDir, now }: {
+export async function importInstallFolderConfig({ installDir, configDir, now, retryDelayMs = 100 }: {
   installDir: string,
   configDir: string,
   now: Date,
+  /** How long to wait before retrying a step that the file being in use made fail. */
+  retryDelayMs?: number,
 }): Promise<InstallFolderConfigImport | undefined> {
+  const retry = <T>(step: () => Promise<T>) => retryBusy(step, retryDelayMs);
   const sourcePath = join(installDir, configFileName);
-  let content: string;
-  try {
-    content = await readFile(sourcePath, 'utf8');
-  } catch (err) {
-    if (isErrorCode(err, 'ENOENT')) return undefined;
-    throw err;
+
+  let copyName = await findUnfinishedImport(configDir);
+  const resumed = copyName != null;
+  if (copyName == null) {
+    if (await ignoringMissing(() => retry(() => readFile(sourcePath))) === undefined) return undefined;
+    await mkdir(configDir, { recursive: true });
+    const name = `${importingPrefix}${toStamp(now)}`;
+    // First a copy that survives the installation folder being deleted.
+    await retry(() => copyFile(sourcePath, join(configDir, name), constants.COPYFILE_EXCL));
+    copyName = name;
   }
+  const copyPath = join(configDir, copyName);
+  const keptName = `${importedPrefix}${copyName.slice(importingPrefix.length)}`;
+  const content = await retry(() => readFile(copyPath, 'utf8'));
 
-  await mkdir(configDir, { recursive: true });
-
-  const stamp = now.toISOString().replaceAll(/[:.]/gu, '-');
-  const keptName = `${configFileName}.imported-${stamp}`;
-  const keptCopyPath = join(configDir, keptName);
-  // First a copy that cannot be lost, then the rename that stops a second import.
-  await copyFile(sourcePath, keptCopyPath, constants.COPYFILE_EXCL);
-  await rename(sourcePath, join(installDir, keptName));
+  // Stop the original from being imported again. Unless an earlier attempt did, or it is a newer
+  // file (put there after that attempt), which a later start imports in turn.
+  const source = await ignoringMissing(() => retry(() => readFile(sourcePath, 'utf8')));
+  if (source === content) await ignoringMissing(() => retry(() => rename(sourcePath, join(installDir, keptName))));
 
   const copiedFiles: string[] = [];
-  const otherSettingsFiles = (await readdir(installDir)).filter((name) => name.startsWith(`${configFileName}.`) && name !== keptName);
+  const otherSettingsFiles = (await ignoringMissing(() => readdir(installDir)) ?? []).filter((name) => name.startsWith(`${configFileName}.`) && name !== keptName);
   for (const name of otherSettingsFiles) {
     // eslint-disable-next-line no-await-in-loop
-    if (await copyIfAbsent(join(installDir, name), join(configDir, name))) copiedFiles.push(name);
+    if (await retry(() => copyIfAbsent(join(installDir, name), join(configDir, name)))) copiedFiles.push(name);
   }
 
-  // An unreadable file is kept (copied above), but the current settings stay in use.
-  if (getConfigFileState(content) !== 'ok') return { keptCopyPath, adopted: false, replacedSettingsBackupPath: undefined, copiedFiles };
-
-  const destinationPath = join(configDir, configFileName);
-  let replacedSettingsBackupPath: string | undefined = `${destinationPath}.before-import-${stamp}`;
-  try {
-    // Exclusive: settings are never replaced without a backup of their own.
-    await copyFile(destinationPath, replacedSettingsBackupPath, constants.COPYFILE_EXCL);
-  } catch (err) {
-    if (!isErrorCode(err, 'ENOENT')) throw err;
-    replacedSettingsBackupPath = undefined;
+  // An unreadable file is kept, but the current settings stay in use.
+  const adopted = getConfigFileState(content) === 'ok';
+  let replacedSettingsBackupPath: string | undefined;
+  if (adopted) {
+    const destinationPath = join(configDir, configFileName);
+    const current = await ignoringMissing(() => retry(() => readFile(destinationPath, 'utf8')));
+    // Already in use when an earlier attempt got this far.
+    if (current !== content) {
+      if (current !== undefined) {
+        // Exclusive: settings are never replaced without a backup of their own.
+        const backupPath = `${destinationPath}.before-import-${toStamp(now)}`;
+        await retry(() => copyFile(destinationPath, backupPath, constants.COPYFILE_EXCL));
+        replacedSettingsBackupPath = backupPath;
+      }
+      await retry(() => writeFileReplacing(destinationPath, content));
+    }
   }
-  await writeFileReplacing(destinationPath, content);
-  return { keptCopyPath, adopted: true, replacedSettingsBackupPath, copiedFiles };
+
+  // Finished. Another instance finishing the same import at once has renamed it already.
+  await ignoringMissing(() => retry(() => rename(copyPath, join(configDir, keptName))));
+  return { keptCopyPath: join(configDir, keptName), adopted, replacedSettingsBackupPath, copiedFiles, resumed };
 }
