@@ -1151,7 +1151,7 @@ function App() {
     setEditingCropSegmentId(undefined);
   }, [filePath, speedControlsHistory]);
 
-  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved, saveProjectNow, flushProject } = useSegmentsAutoSave({
+  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved, saveProjectNow, flushProject, discardFailedProjectSave } = useSegmentsAutoSave({
     autoSaveProjectFile,
     storeProjectInWorkingDir,
     filePath,
@@ -2530,7 +2530,11 @@ function App() {
 
         const pathsToDelete: string[] = [];
         if (cleanupChoices2.trashTmpFiles && savedPaths.previewFilePath) pathsToDelete.push(savedPaths.previewFilePath);
-        if (cleanupChoices2.trashProjectFile && savedPaths.projectFilePath) pathsToDelete.push(savedPaths.projectFilePath);
+        if (cleanupChoices2.trashProjectFile && savedPaths.projectFilePath) {
+          // A save of it that failed must not bring it back later (when closing the app).
+          discardFailedProjectSave(savedPaths.projectFilePath);
+          pathsToDelete.push(savedPaths.projectFilePath);
+        }
         if (cleanupChoices2.trashSourceFile && savedPaths.sourceFilePath) pathsToDelete.push(savedPaths.sourceFilePath);
 
         await deleteFiles({
@@ -2543,6 +2547,7 @@ function App() {
     [
       batchListRemoveFile,
       clearSegments,
+      discardFailedProjectSave,
       filePath,
       previewFilePath,
       projectFileSavePath,

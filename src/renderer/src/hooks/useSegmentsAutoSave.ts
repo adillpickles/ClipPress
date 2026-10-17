@@ -68,6 +68,8 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
   const whenProjectSaved = useCallback(() => autoSave.whenSaved(), [autoSave]);
   const saveProjectNow = useCallback(() => autoSave.saveNow(), [autoSave]);
   const flushProject = useCallback(() => autoSave.flush(), [autoSave]);
+  const hasUnsavedProjectChanges = useCallback(() => autoSave.hasUnsavedChanges(), [autoSave]);
+  const discardFailedProjectSave = useCallback((path: string) => autoSave.discardFailedSave(path), [autoSave]);
 
   return {
     getEdlFilePath,
@@ -77,5 +79,7 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
     whenProjectSaved,
     saveProjectNow,
     flushProject,
+    hasUnsavedProjectChanges,
+    discardFailedProjectSave,
   };
 };

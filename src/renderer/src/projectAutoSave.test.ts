@@ -355,19 +355,183 @@ describe('ProjectAutoSave before the app closes', () => {
     expect(t.disk.get(path)).toEqual(withTrim);
   });
 
-  it('does not count another open of the file with nothing to save as saving a failed change', async () => {
+  // PR #56 re-audit finding 1: three rounds used to be the limit, with the last change left unsaved.
+  it('saves the changes made while it saves, however many, before resolving', async () => {
+    const t = setup({ latencyMs: 100 });
+    t.show({ id: 1 }, untouched);
+    t.show({ id: 1 }, contents({ cutSegments: [{ ...trimmed, start: 1 }] }));
+    let result: unknown;
+    const flushing = t.autoSave.flush().then((failures) => { result = failures; });
+    // A change arrives during each write (the user keeps editing, or an operation finishes).
+    for (let start = 2; start <= 6; start += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await t.wait(50);
+      t.show({ id: 1 }, contents({ cutSegments: [{ ...trimmed, start }] }));
+      // eslint-disable-next-line no-await-in-loop
+      await t.wait(50);
+      expect(result).toBeUndefined();
+    }
+    await t.wait(150);
+    await flushing;
+    expect(result).toEqual([]);
+    expect(t.disk.get(path)?.cutSegments[0]?.start).toBe(6);
+    expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+  });
+
+  it('stops at a failed save of the open file and reports it, even with changes still arriving', async () => {
+    const t = setup({ latencyMs: 100 });
+    t.show({ id: 1 }, untouched);
+    t.show({ id: 1 }, withTrim);
+    t.setDiskFailing(true);
+    const flushing = t.autoSave.flush();
+    await t.wait(50);
+    t.show({ id: 1 }, withText);
+    await t.wait(1000);
+    expect(await flushing).toEqual([{ path, error: new Error('disk full') }]);
+    // Nor is the change saved (and its failure shown) in the background while the user decides.
+    await t.wait(2000);
+    expect(t.writes).toHaveLength(1);
+    expect(t.errors).toEqual([]);
+    // Trying again saves the latest state.
+    t.setDiskFailing(false);
+    expect(await flushWhile(t)).toEqual([]);
+    expect(t.disk.get(path)?.overlayClips).toEqual([textClip]);
+  });
+
+  // PR #56 re-audit finding 4: a failure reported by onError before closing used to be forgotten.
+  describe('a final save that failed before the app closes', () => {
+    function closedWithFailedSave() {
+      const t = setup();
+      t.show({ id: 1 }, untouched);
+      t.show({ id: 1 }, withTrim);
+      t.setDiskFailing(true);
+      t.autoSave.endSession();
+      return t;
+    }
+
+    it('is reported when the app closes while saving still fails', async () => {
+      const t = closedWithFailedSave();
+      await t.wait(100);
+      expect(t.errors).toHaveLength(1);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+      expect(await flushWhile(t)).toEqual([{ path, error: new Error('disk full') }]);
+      expect(t.errors).toHaveLength(1);
+    });
+
+    it('is saved when the app closes once the disk works again', async () => {
+      const t = closedWithFailedSave();
+      await t.wait(100);
+      t.setDiskFailing(false);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(path)).toEqual(withTrim);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+    });
+
+    it('is still reported after another file was opened and closed in between', async () => {
+      const t = closedWithFailedSave();
+      await t.wait(100);
+      const other = '/videos/other-proj.llc';
+      t.show({ id: 2 }, untouched, { at: other });
+      t.autoSave.endSession();
+      await t.wait(2000);
+      expect((await flushWhile(t)).map((f) => f.path)).toEqual([path]);
+    });
+  });
+
+  // PR #56 re-audit finding 3: a later flush used to write the earlier open's state over the
+  // reopened file, while the reopened session still believed the file held what it had loaded.
+  describe('when a file whose save failed is opened again', () => {
+    async function failedThenReopened({ diskWorksBeforeReopen }: { diskWorksBeforeReopen: boolean }) {
+      const t = setup();
+      t.disk.set(path, untouched);
+      t.show({ id: 1, loadedProjectPath: path }, untouched);
+      t.show({ id: 1, loadedProjectPath: path }, withTrim);
+      t.setDiskFailing(true);
+      // Closing the app failed; the user cancelled, then closed the file, whose final save failed too.
+      expect(await flushWhile(t)).toHaveLength(1);
+      t.autoSave.endSession();
+      await t.wait(100);
+      t.setDiskFailing(!diskWorksBeforeReopen);
+      // Opening waits for earlier saves before reading the project file.
+      const saved = t.autoSave.whenSaved();
+      await t.wait(100);
+      await saved;
+      const read = t.disk.get(path)!;
+      t.show({ id: 2, loadedProjectPath: path }, read);
+      return { t, read };
+    }
+
+    it('tries the failed save again before the file is read, so the reopened project has it', async () => {
+      const { t, read } = await failedThenReopened({ diskWorksBeforeReopen: true });
+      expect(read).toEqual(withTrim);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(path)).toEqual(withTrim);
+    });
+
+    it('lets the reopened project supersede a failed save that still fails', async () => {
+      const { t, read } = await failedThenReopened({ diskWorksBeforeReopen: false });
+      expect(read).toEqual(untouched);
+      // The failure was reported again when trying before the read.
+      expect(t.errors).toHaveLength(2);
+      t.setDiskFailing(false);
+      // Closing the app does not write the earlier state over what the reopened project shows...
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(path)).toEqual(untouched);
+      // ...so its own saves stay correct: undoing back to what it loaded leaves nothing to fix.
+      t.show({ id: 2, loadedProjectPath: path }, withText);
+      await t.wait(delayMs + 20);
+      t.show({ id: 2, loadedProjectPath: path }, untouched);
+      await t.wait(delayMs + 20);
+      expect(t.disk.get(path)).toEqual(encodeLlcProjectFile(untouched, 8));
+    });
+
+    it('does not keep a failure of the earlier open that lands after the reopen', async () => {
+      const t = setup({ latencyMs: 300 });
+      t.show({ id: 1 }, untouched);
+      t.show({ id: 1 }, withTrim);
+      t.setDiskFailing(true);
+      // The new open reports before the earlier final save has finished (and then fails).
+      t.show({ id: 2 }, untouched);
+      await t.wait(1000);
+      expect(t.errors).toHaveLength(1);
+      t.setDiskFailing(false);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.has(path)).toBe(false);
+    });
+  });
+
+  it('does not write a discarded failed save again', async () => {
     const t = setup();
     t.show({ id: 1 }, untouched);
     t.show({ id: 1 }, withTrim);
     t.setDiskFailing(true);
     t.autoSave.endSession();
-    expect(await flushWhile(t)).toHaveLength(1);
-    // The file is opened again; the trim never reached the disk, so this open does not show it,
-    // and its own autosave finds nothing to save.
+    await t.wait(100);
+    // Like deleting the project file in the clean-up after an export.
+    t.autoSave.discardFailedSave(path);
     t.setDiskFailing(false);
-    t.show({ id: 2 }, untouched);
-    await t.wait(delayMs + 20);
+    expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+    expect(await flushWhile(t)).toEqual([]);
+    await t.autoSave.whenSaved();
     expect(t.disk.has(path)).toBe(false);
+  });
+
+  it('neither tries again nor reports failed saves while autosave is turned off', async () => {
+    const t = setup();
+    t.show({ id: 1 }, untouched);
+    t.show({ id: 1 }, withTrim);
+    t.setDiskFailing(true);
+    t.autoSave.endSession();
+    await t.wait(100);
+    t.setEnabled(false);
+    t.show({ id: 2 }, untouched, { at: '/videos/other-proj.llc' });
+    t.setDiskFailing(false);
+    expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+    expect(await flushWhile(t)).toEqual([]);
+    expect(t.disk.has(path)).toBe(false);
+    // Turned back on, the failed save is tried again when closing.
+    t.setEnabled(true);
+    t.show({ id: 2 }, untouched, { at: '/videos/other-proj.llc' });
     expect(await flushWhile(t)).toEqual([]);
     expect(t.disk.get(path)).toEqual(withTrim);
   });
@@ -420,6 +584,43 @@ describe('ProjectAutoSave before the app closes', () => {
     t.setDiskFailing(true);
     await t.wait(delayMs + 20);
     expect(t.errors).toHaveLength(1);
+  });
+
+  // What keeps the window from closing on a change accepted after `flush` resolved (re-audit finding 1).
+  describe('hasUnsavedChanges', () => {
+    it('is true while a change waits, while it is written, and after a failed save', async () => {
+      const t = setup({ latencyMs: 200 });
+      t.show({ id: 1, loadedProjectPath: path }, withTrim);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      t.show({ id: 1, loadedProjectPath: path }, withText);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+      await t.wait(delayMs + 100); // writing
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+      await t.wait(200);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      t.setDiskFailing(true);
+      t.show({ id: 1, loadedProjectPath: path }, withTrim);
+      await t.wait(delayMs + 300);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+    });
+
+    it('is false for a change that only went back to what is saved', async () => {
+      const t = setup();
+      t.show({ id: 1, loadedProjectPath: path }, withTrim);
+      t.show({ id: 1, loadedProjectPath: path }, withText);
+      t.show({ id: 1, loadedProjectPath: path }, withTrim);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+    });
+
+    it('is true again for a change made after flush resolved', async () => {
+      const t = setup();
+      t.show({ id: 1 }, untouched);
+      t.show({ id: 1 }, withTrim);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      t.show({ id: 1 }, withText);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+    });
   });
 
   describe('saveNow', () => {
