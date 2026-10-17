@@ -21,8 +21,11 @@ const untouched = contents();
 const withTrim = contents({ cutSegments: [trimmed] });
 const withText = contents({ overlayClips: [textClip] });
 
-/** A disk whose writes take `latencyMs`, and an autosave writing to it. */
-function setup({ latencyMs = 10 } = {}) {
+/**
+ * A disk whose writes take `latencyMs`, and an autosave writing to it. The disk stores each file
+ * under `pathKey(path)`: paths with the same key are the same file.
+ */
+function setup({ latencyMs = 10, pathKey }: { latencyMs?: number, pathKey?: (filePath: string) => string } = {}) {
   const disk = new Map<string, LlcProject>();
   const writes: { path: string, data: LlcProject }[] = [];
   const errors: unknown[] = [];
@@ -37,9 +40,10 @@ function setup({ latencyMs = 10 } = {}) {
         failNext = false;
         throw new Error('disk full');
       }
-      disk.set(writePath, data);
+      disk.set(pathKey?.(writePath) ?? writePath, data);
     },
     onError: (err) => errors.push(err),
+    ...(pathKey != null ? { pathKey } : {}),
   });
   let enabled = true;
   const show = (session: ProjectSession, project: LlcProject, { at = path, fileDuration = 8 }: { at?: string, fileDuration?: number } = {}) => {
@@ -497,6 +501,115 @@ describe('ProjectAutoSave before the app closes', () => {
       t.setDiskFailing(false);
       expect(await flushWhile(t)).toEqual([]);
       expect(t.disk.has(path)).toBe(false);
+    });
+  });
+
+  // PR #56 re-audit 2 finding 2: ownership went by how a path was written, so opening the same
+  // file through a path written differently (another case, on Windows) did not supersede an
+  // earlier open's failed save, which closing the app then wrote over the newer project.
+  describe('when the same project file is reached through a path written differently', () => {
+    const alias = '/Videos/Clip-proj.llc';
+    const sameFile = (filePath: string) => filePath.toUpperCase();
+
+    async function failedThenReopenedAs(reopenPath: string, pathKey?: (filePath: string) => string) {
+      const t = setup(pathKey != null ? { pathKey } : {});
+      const key = pathKey ?? ((filePath: string) => filePath);
+      t.disk.set(key(path), untouched);
+      t.show({ id: 1, loadedProjectPath: path }, untouched, { at: path });
+      t.show({ id: 1, loadedProjectPath: path }, withTrim, { at: path });
+      t.setDiskFailing(true);
+      t.autoSave.endSession();
+      await t.wait(100);
+      const saved = t.autoSave.whenSaved();
+      await t.wait(100);
+      await saved;
+      // Still failing: the reopened project shows what the file holds.
+      const read = t.disk.get(key(reopenPath))!;
+      expect(read).toEqual(untouched);
+      t.show({ id: 2, loadedProjectPath: reopenPath }, read, { at: reopenPath });
+      t.setDiskFailing(false);
+      // The reopened project is edited and saved.
+      t.show({ id: 2, loadedProjectPath: reopenPath }, withText, { at: reopenPath });
+      await t.wait(delayMs + 20);
+      return { t, key };
+    }
+
+    it('lets the reopened project supersede the failed save, rather than be overwritten by it', async () => {
+      const { t, key } = await failedThenReopenedAs(alias, sameFile);
+      expect(t.disk.get(key(path))).toEqual(encodeLlcProjectFile(withText, 8));
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(key(path))).toEqual(encodeLlcProjectFile(withText, 8));
+    });
+
+    it('was overwritten when paths were compared as written (what the key prevents)', async () => {
+      // The same scenario without a key for the file, on a disk where both paths are one file.
+      const disk = new Map<string, LlcProject>();
+      const failing = { value: false };
+      const autoSave = new ProjectAutoSave({
+        delayMs,
+        write: async (writePath, data) => {
+          if (failing.value) throw new Error('disk full');
+          disk.set(sameFile(writePath), data);
+        },
+        onError: () => undefined,
+      });
+      const show = (id: number, at: string, project: LlcProject) => autoSave.update({ session: { id, loadedProjectPath: at }, path: at, project, fileData: project }, { enabled: true });
+      disk.set(sameFile(path), untouched);
+      show(1, path, untouched);
+      show(1, path, withTrim);
+      failing.value = true;
+      autoSave.endSession();
+      await vi.advanceTimersByTimeAsync(100);
+      show(2, alias, untouched);
+      failing.value = false;
+      show(2, alias, withText);
+      await vi.advanceTimersByTimeAsync(delayMs + 20);
+      expect(disk.get(sameFile(path))).toEqual(withText);
+      await autoSave.flush();
+      expect(disk.get(sameFile(path))).toEqual(withTrim);
+    });
+
+    it('does not keep a failure of the earlier open that lands after the reopen', async () => {
+      const t = setup({ latencyMs: 300, pathKey: sameFile });
+      t.show({ id: 1 }, untouched);
+      t.show({ id: 1 }, withTrim);
+      t.setDiskFailing(true);
+      t.show({ id: 2 }, untouched, { at: alias });
+      await t.wait(1000);
+      t.setDiskFailing(false);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.has(sameFile(path))).toBe(false);
+    });
+
+    it('does not copy a project loaded through one path to another path of the same file', async () => {
+      const t = setup({ pathKey: sameFile });
+      t.disk.set(sameFile(path), withTrim);
+      t.show({ id: 1, loadedProjectPath: alias }, withTrim);
+      await t.wait(2000);
+      expect(t.writes).toEqual([]);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+    });
+
+    it('reports a failed save under the path it was written to', async () => {
+      const t = setup({ pathKey: sameFile });
+      t.show({ id: 1 }, untouched, { at: alias });
+      t.show({ id: 1 }, withTrim, { at: alias });
+      t.setDiskFailing(true);
+      expect(await flushWhile(t)).toEqual([{ path: alias, error: new Error('disk full') }]);
+    });
+
+    it('settles a failed save once the file is saved through another of its paths', async () => {
+      const t = setup({ pathKey: sameFile });
+      t.show({ id: 1 }, untouched);
+      t.show({ id: 1 }, withTrim);
+      t.setDiskFailing(true);
+      await t.wait(delayMs + 20);
+      t.setDiskFailing(false);
+      // The open file is now saved through another path of the same file (a changed setting).
+      t.show({ id: 1 }, withText, { at: alias });
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(sameFile(path))).toEqual(encodeLlcProjectFile(withText, 8));
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
     });
   });
 

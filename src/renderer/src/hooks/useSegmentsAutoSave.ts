@@ -4,11 +4,15 @@ import isDev from '../isDev';
 import { buildLlcProjectData, writeLlcProject } from '../edlStore';
 import { encodeLlcProjectFile, getProjectSegmentsToSave } from '../llcProject';
 import ProjectAutoSave from '../projectAutoSave';
+import createProjectFilePathKey from '../projectFilePathKey';
 import type { ProjectSession, ProjectSnapshot } from '../projectAutoSave';
-import { getSuffixedOutPath } from '../util';
+import { getSuffixedOutPath, isWindows } from '../util';
 import type { CustomTagsByFile, OverlayClip, ParamsByStreamId, StateSegment } from '../types';
 import { errorToast } from '../swal';
 import i18n from '../i18n';
+
+const path = window.require('path');
+const { realpathSync } = window.require('fs');
 
 
 export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, projectSession, customOutDir, fileDuration, cutSegments, customTagsByFile, paramsByStreamId, overlayClips }: {
@@ -38,6 +42,7 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
       errorToast(i18n.t('Unable to save project file'));
       console.error('Failed to save project file', err);
     },
+    pathKey: createProjectFilePathKey({ path, caseInsensitive: isWindows, realpath: (dir) => realpathSync.native(dir) }),
   }));
 
   const snapshot = useMemo<ProjectSnapshot | undefined>(() => {
@@ -69,7 +74,7 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
   const saveProjectNow = useCallback(() => autoSave.saveNow(), [autoSave]);
   const flushProject = useCallback(() => autoSave.flush(), [autoSave]);
   const hasUnsavedProjectChanges = useCallback(() => autoSave.hasUnsavedChanges(), [autoSave]);
-  const discardFailedProjectSave = useCallback((path: string) => autoSave.discardFailedSave(path), [autoSave]);
+  const discardFailedProjectSave = useCallback((projectPath: string) => autoSave.discardFailedSave(projectPath), [autoSave]);
 
   return {
     getEdlFilePath,

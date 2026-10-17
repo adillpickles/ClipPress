@@ -4,6 +4,7 @@ import { enableMapSet } from 'immer';
 import type * as Electron from 'electron';
 import type Remote from '@electron/remote';
 import type path from 'node:path';
+import type fs from 'node:fs';
 import type fsPromises from 'node:fs/promises';
 import type mimeTypes from 'mime-types';
 import type i18nextFsBackend from 'i18next-fs-backend';
@@ -39,6 +40,7 @@ declare global {
       T extends 'electron' ? typeof Electron :
       T extends 'path' ? typeof path :
       T extends 'node:path' ? typeof path :
+      T extends 'fs' ? typeof fs :
       T extends 'fs/promises' ? typeof fsPromises :
       T extends 'node:fs/promises' ? typeof fsPromises :
       T extends 'mime-types' ? typeof mimeTypes :
