@@ -72,8 +72,11 @@ let rendererReady = false;
 let newVersion: string | undefined;
 let disableNetworking: boolean;
 let autoUpdatesPromise: Promise<UpdateController> | undefined;
+let autoUpdates: UpdateController | undefined;
 let updateCheckScheduled = false;
 let closeGuard: CloseGuard | undefined;
+/** Windows asked to end the session (shutdown, restart, sign-out), or an app to close (Restart Manager). */
+let sessionEnding = false;
 
 function getAutoUpdates() {
   autoUpdatesPromise ??= import('./autoUpdates.js').then(({ default: createAutoUpdates }) => createAutoUpdates({
@@ -89,8 +92,26 @@ function getAutoUpdates() {
         updateMenu();
       }
     },
-  }));
+  })).then((updates) => {
+    autoUpdates = updates;
+    if (sessionEnding) updates.holdInstallation();
+    return updates;
+  });
   return autoUpdatesPromise;
+}
+
+/**
+ * Windows is ending the session, so this run must never start the installer of an update: it could
+ * be cut off half-way, after removing the installed app. A close that was already in progress
+ * still quits normally (the session ending does not by itself), which would otherwise install.
+ * A downloaded update is installed on a later quit instead.
+ */
+function holdUpdateInstallation() {
+  if (sessionEnding) return;
+  sessionEnding = true;
+  logger.info('The session is ending: not installing an update when this run quits');
+  // At once, before any later event can quit (or once loaded, see getAutoUpdates).
+  autoUpdates?.holdInstallation();
 }
 
 async function checkForUpdates() {
@@ -353,10 +374,13 @@ function createWindow() {
   });
 
   // Windows ends a session (shutdown, restart, sign-out) without closing windows or quitting, so
-  // the close above does not happen (and no update is installed). Save a waiting change at least.
-  const saveProjectNow = () => { if (!window.webContents.isDestroyed()) window.webContents.send('save-project-now'); };
-  mainWindow.on('query-session-end', saveProjectNow);
-  mainWindow.on('session-end', saveProjectNow);
+  // the close above does not happen. Save a waiting change at least, and install no update now.
+  const onSessionEnding = () => {
+    holdUpdateInstallation();
+    if (!window.webContents.isDestroyed()) window.webContents.send('save-project-now');
+  };
+  mainWindow.on('query-session-end', onSessionEnding);
+  mainWindow.on('session-end', onSessionEnding);
 
   mainWindow.on('maximize', debouncedSaveWindowState);
   mainWindow.on('unmaximize', debouncedSaveWindowState);

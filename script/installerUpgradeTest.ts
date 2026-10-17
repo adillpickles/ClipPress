@@ -5,9 +5,9 @@
 //   A (installed) --Automatic--> B --Ask--> C, which then still finds a newer release.
 //
 // It checks what users rely on: settings and projects survive, an edit made right before closing
-// is saved, a close cancelled after a failed save installs nothing, the installed version really
-// changes, the app does not reopen by itself, each next launch works, and uninstalling keeps
-// settings. Only the network location of the update feed differs from production: the installed
+// is saved, a close cancelled after a failed save installs nothing, nor does a close after Windows
+// started ending the session, the installed version really changes, the app does not reopen by
+// itself, each next launch works, and uninstalling keeps settings. Only the network location of the update feed differs from production: the installed
 // app-update.yml points GitHub's provider at a local server with GitHub's URL layout.
 //
 // THIS INSTALLS AND UNINSTALLS SOFTWARE FOR THE CURRENT WINDOWS USER. It refuses to run anywhere
@@ -299,6 +299,16 @@ $h = (Get-Process -Id ${child.pid}).MainWindowHandle
 if ($h -eq 0) { 'no-window' } else { [ClipPressTest.User32]::PostMessage($h, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) }`);
     assert.equal(result, 'True', `Could not post WM_CLOSE: ${result}`);
   };
+  /**
+   * Tells the window that Windows is ending the session (WM_QUERYENDSESSION, then WM_ENDSESSION), as
+   * a shutdown would. Only these messages: this VM is not shut down.
+   */
+  const endSession = async () => {
+    const result = await powershell(String.raw`Add-Type -Namespace ClipPressTest -Name User32Send -MemberDefinition '[DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);'
+$h = (Get-Process -Id ${child.pid}).MainWindowHandle
+if ($h -eq 0) { 'no-window' } else { "$([ClipPressTest.User32Send]::SendMessage($h, 0x11, [IntPtr]::Zero, [IntPtr]::Zero)) $([ClipPressTest.User32Send]::SendMessage($h, 0x16, [IntPtr]1, [IntPtr]::Zero))" }`);
+    assert.equal(result, '1 0', `Unexpected answers to the session-end messages: ${result}`);
+  };
   const waitExit = async (timeoutMs: number) => Promise.race([exited, timers.setTimeout(timeoutMs, undefined, { ref: false }).then(() => undefined)]);
   const screenshot = async (name: string) => {
     try {
@@ -320,7 +330,7 @@ if ($h -eq 0) { 'no-window' } else { [ClipPressTest.User32]::PostMessage($h, 0x1
     }
     await timers.setTimeout(1000);
   }
-  return { child, evaluate, fire, action, updateStatus, dialogText, clickDialogButton, closeWindow, waitExit, screenshot, kill, get exit() { return exit; } };
+  return { child, evaluate, fire, action, updateStatus, dialogText, clickDialogButton, closeWindow, endSession, waitExit, screenshot, kill, get exit() { return exit; } };
 }
 
 type App = Awaited<ReturnType<typeof launchApp>>;
@@ -484,9 +494,40 @@ async function main() {
       return { dialog: text };
     });
 
-    await step(`Ask: once saving works again, closing saves the edit and installs ${c.version}`, async () => {
+    // A close that completes after Windows started ending the session quits normally (exit code 0),
+    // which is when the updater installs. An installer started during a shutdown can be cut off
+    // after removing the installed app, so nothing is installed then.
+    await step('Ask: once Windows starts ending the session, closing saves the edits and installs nothing', async () => {
       assert(app);
       await execFileAsync('attrib', ['-R', projectPath]);
+      assert.equal((await app.updateStatus()).installOnQuit, true);
+      await app.endSession();
+      await waitFor('installing to be held', async () => (await app!.updateStatus()).installOnQuit === false, 10_000);
+      await app.action('addSegment');
+      await app.closeWindow();
+      const exit = await app.waitExit(60_000);
+      assert.ok(exit != null, 'The app did not close');
+      assert.equal(exit.code, 0);
+      await timers.setTimeout(15_000);
+      assert.deepEqual(await installerProcesses(), [], 'An installer started during the session end');
+      assert.equal(await registryVersion(), b.version, 'An update was installed during the session end');
+      assert.equal(await projectSegments(), segmentsBefore.savedSegments + 3, 'The edits were not saved');
+    });
+
+    await step(`Ask: the next run installs ${c.version} on closing, once approved again`, async () => {
+      app = await launchApp(exePath);
+      assert.equal(await app.evaluate('window.require(\'@electron/remote\').app.getVersion()'), b.version);
+      const available = await waitFor('the update to be found again', async () => {
+        const status = await app!.updateStatus();
+        return status.phase === 'available' || status.phase === 'ready' ? status : undefined;
+      }, 120_000, 1000);
+      assert.equal(available.version, c.version);
+      if (available.phase === 'available') await app.evaluate('void window.electron.downloadUpdate()');
+      const ready = await waitFor('the update to be ready', async () => {
+        const status = await app!.updateStatus();
+        return status.phase === 'ready' ? status : undefined;
+      }, 180_000, 1000);
+      assert.equal(ready.installOnQuit, true);
       await app.closeWindow();
       const exit = await app.waitExit(60_000);
       assert.ok(exit != null, 'The app did not close');
@@ -494,7 +535,7 @@ async function main() {
       const installed = await waitForInstalled(c);
       assert.ok(installed.appAsarMatches);
       await assertNotRunning();
-      assert.equal(await projectSegments(), segmentsBefore.savedSegments + 2, 'The edit was not saved');
+      assert.equal(await projectSegments(), segmentsBefore.savedSegments + 3);
     });
 
     await step(`${c.version} launches with settings and project intact, and still finds a newer release (${d})`, async () => {
@@ -506,7 +547,7 @@ async function main() {
       const settings = await readSettings();
       assert.equal(settings['sizeLimitMb'], sizeLimitMarker);
       assert.equal(settings['updateMode'], 'ask');
-      assert.equal(await projectSegments(), segmentsBefore.savedSegments + 2);
+      assert.equal(await projectSegments(), segmentsBefore.savedSegments + 3);
       const available = await waitFor('a newer release to be found', async () => {
         const status = await app!.updateStatus();
         return status.phase === 'available' ? status : undefined;
@@ -552,7 +593,7 @@ async function main() {
       await waitFor('the uninstaller to finish', async () => (await registryVersion()) == null && (await installerProcesses()).length === 0, 120_000, 2000);
       assert.equal(existsSync(exePath), false);
       assert.equal((await readSettings())['sizeLimitMb'], sizeLimitMarker);
-      assert.equal(await projectSegments(), segmentsBefore.savedSegments + 2);
+      assert.equal(await projectSegments(), segmentsBefore.savedSegments + 3);
     });
   } finally {
     if (app != null) {
