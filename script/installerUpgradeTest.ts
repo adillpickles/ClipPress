@@ -686,13 +686,16 @@ async function main() {
       assert.equal((await readFile(settingsFoldersNotePath)).toString('utf16le'), `${link}\r\n`);
       await app.closeWindow();
       assert.ok(await app.waitExit(60_000), 'The app did not close');
+      // As the app left them, having used them.
+      const settingsBefore = await readFile(join(settingsInside, 'config.json'), 'utf8');
+      assert.equal((JSON.parse(settingsBefore) as Record<string, unknown>)['sizeLimitMb'], 43, 'The app did not use the --config-dir settings');
 
       const asarBefore = await appAsarTime();
       const code = await runInstaller(c.installer);
       assert.notEqual(code, 0, 'The installer ran though it would delete the settings');
       await timers.setTimeout(5000);
       assert.deepEqual(await installerProcesses(), []);
-      assert.equal(await readFile(join(settingsInside, 'config.json'), 'utf8'), customSettings, 'The settings in the installation folder changed');
+      assert.equal(await readFile(join(settingsInside, 'config.json'), 'utf8'), settingsBefore, 'The settings in the installation folder changed');
       assert.equal(await appAsarTime(), asarBefore, 'The installer replaced the installed files');
       assert.ok(existsSync(settingsFoldersNotePath), 'The installation folder was replaced');
 
