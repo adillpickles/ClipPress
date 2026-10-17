@@ -15,6 +15,8 @@ import { dangerColor, primaryColor, warningColor } from '../colors';
 import getSwal from '../swal';
 import isDev from '../isDev';
 import mainApi from '../mainApi';
+import type { ProjectSaveFailure } from '../projectAutoSave';
+import type { UserCloseChoice } from '../saveBeforeClose';
 
 const { lstat } = window.require('fs/promises');
 const remote = window.require('@electron/remote');
@@ -606,14 +608,20 @@ export async function promptDownloadMediaUrl(outPath: string) {
 }
 
 
-export async function deleteFiles({ paths, deleteIfTrashFails, signal }: { paths: string[], deleteIfTrashFails?: boolean | undefined, signal: AbortSignal }) {
+export async function deleteFiles({ paths, deleteIfTrashFails, signal, runDeletion = async (_path, deletion) => deletion() }: {
+  paths: string[],
+  deleteIfTrashFails?: boolean | undefined,
+  signal: AbortSignal,
+  /** Runs each attempt to delete a file (moving it to the trash, or deleting it). By default, at once. */
+  runDeletion?: ((path: string, deletion: () => Promise<void>) => Promise<void>) | undefined,
+}) {
   const failedToTrashFiles: string[] = [];
 
   // eslint-disable-next-line no-restricted-syntax
   for (const path of paths) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      await trashFile(path);
+      await runDeletion(path, async () => trashFile(path));
       signal.throwIfAborted();
     } catch (err) {
       console.error(err);
@@ -633,9 +641,67 @@ export async function deleteFiles({ paths, deleteIfTrashFails, signal }: { paths
     if (!value) return;
   }
 
-  await pMap(failedToTrashFiles, async (path) => unlinkWithRetry(path, { signal }), { concurrency: 5 });
+  await pMap(failedToTrashFiles, async (path) => runDeletion(path, async () => {
+    await unlinkWithRetry(path, { signal });
+  }), { concurrency: 5 });
 }
 
+
+const savingBeforeClosePopupClass = 'clippress-saving-before-close';
+
+/** Shown while the project is still being saved when the window is closing. Closes itself when `signal` aborts. */
+export async function showSavingBeforeClose(signal: AbortSignal): Promise<UserCloseChoice> {
+  const { Swal } = getSwal();
+  const result = Swal.fire({
+    icon: 'info',
+    title: i18n.t('Saving your project'),
+    text: i18n.t('ClipPress will close as soon as your latest changes are saved.'),
+    showConfirmButton: false,
+    showDenyButton: true,
+    denyButtonText: i18n.t('Quit without saving'),
+    showCancelButton: true,
+    cancelButtonText: i18n.t('Cancel'),
+    allowOutsideClick: false,
+    customClass: { popup: savingBeforeClosePopupClass },
+  });
+  // Only close this notice, not a dialog that has replaced it meanwhile.
+  const onAbort = () => { if (Swal.getPopup()?.classList.contains(savingBeforeClosePopupClass)) Swal.close(); };
+  signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    const { isDenied } = await result;
+    return isDenied ? 'discard' : 'cancel';
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
+/** Asks what to do when the project could not be saved while the window is closing. */
+export async function askAfterFailedSaveBeforeClose(failures: ProjectSaveFailure[]): Promise<UserCloseChoice | 'retry'> {
+  const { isConfirmed, isDenied } = await getSwal().ReactSwal.fire({
+    icon: 'error',
+    title: i18n.t('Your latest changes could not be saved'),
+    html: (
+      <div style={{ textAlign: 'left' }}>
+        <p>{i18n.t('ClipPress could not write the project file. You can try again, or cancel and keep working, for example after freeing up disk space.')}</p>
+        {failures.map(({ path, error }) => (
+          <p key={path} style={{ fontSize: '.85em', wordBreak: 'break-all' }}>
+            {path !== '' && <><b>{path}</b><br /></>}
+            {error instanceof Error ? error.message : String(error)}
+          </p>
+        ))}
+      </div>
+    ),
+    showDenyButton: true,
+    showCancelButton: true,
+    confirmButtonText: i18n.t('Try again'),
+    denyButtonText: i18n.t('Quit without saving'),
+    cancelButtonText: i18n.t('Cancel'),
+    allowOutsideClick: false,
+  });
+  if (isConfirmed) return 'retry';
+  if (isDenied) return 'discard';
+  return 'cancel';
+}
 
 export function toastError(err: unknown) {
   console.error('toastError', err);

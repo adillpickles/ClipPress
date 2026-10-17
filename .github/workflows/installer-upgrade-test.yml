@@ -1,0 +1,89 @@
+name: Installer upgrade test
+
+# Installs ClipPress with its real Windows installer, then updates it twice through the app's own
+# updater (Automatic, then Ask), checking settings, projects, closing, and every next launch. This
+# installs and uninstalls software for the current Windows user, so it only ever runs in a
+# disposable GitHub-hosted VM (script/installerUpgradeTest.ts refuses to run anywhere else).
+# The test installers stay in the VM: only logs and results are uploaded.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/installer-upgrade-test.yml'
+      - 'script/installerUpgradeTest.ts'
+      - 'script/installer.nsh'
+      - 'src/main/**'
+      - 'src/renderer/src/closeRequests.ts'
+      - 'src/renderer/src/saveBeforeClose.ts'
+      - 'src/renderer/src/projectAutoSave.ts'
+      - 'src/renderer/src/hooks/useSegmentsAutoSave.ts'
+      - 'src/renderer/src/projectFilePathKey.ts'
+      - 'package.json'
+      - 'yarn.lock'
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade:
+    name: Install and update Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+      CLIPPRESS_DISPOSABLE_VM: '1'
+
+    steps:
+      # Windows fix. See https://github.com/actions/checkout/issues/226
+      - run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v6
+
+      - run: corepack enable
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: 'yarn'
+
+      - run: yarn install --immutable --network-timeout 1000000
+
+      - name: Download Windows x64 ffmpeg
+        run: yarn download-ffmpeg-win32-x64
+
+      - name: Build the app
+        run: |
+          yarn build
+          yarn generate-licenses
+
+      # The same build packaged as three consecutive versions: the release's version and the two
+      # after it. Only the version differs, as between two releases that change no updater code.
+      - name: Package three consecutive versions
+        shell: bash
+        run: |
+          versions=$(node -e "const s=require('semver');const a=require('./package.json').version;const b=s.inc(a,'prerelease');console.log([a,b,s.inc(b,'prerelease')].join(' '))")
+          echo "Versions: $versions"
+          for version in $versions; do
+            npx electron-builder --win nsis --x64 --publish never -c.extraMetadata.version="$version" -c.directories.output="dist-upgrade/$version"
+          done
+
+      # A crash of the app then leaves a minidump with the results.
+      - name: Keep crash dumps of ClipPress
+        run: |
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\ClipPress.exe'
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpFolder -PropertyType ExpandString -Value "$env:GITHUB_WORKSPACE\upgrade-results\crash-dumps" -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpType -PropertyType DWord -Value 1 -Force | Out-Null
+
+      - name: Install and update in this disposable VM
+        run: node script/installerUpgradeTest.ts dist-upgrade upgrade-results
+
+      - name: Upload results (no installers)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-upgrade-results
+          path: upgrade-results/
+          if-no-files-found: warn

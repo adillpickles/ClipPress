@@ -38,6 +38,8 @@ import * as compatPlayer from './compatPlayer.js';
 import { downloadMediaUrl } from './ffmpeg.js';
 import type UpdateController from './updateController.js';
 import type { UpdateStatus } from '../common/updates.js';
+import CloseGuard from './closeGuard.js';
+import type { CloseDecision } from './closeGuard.js';
 
 
 electronUnhandled({ showDialog: true, logger: (err) => logger.error('electron-unhandled', err) });
@@ -70,7 +72,11 @@ let rendererReady = false;
 let newVersion: string | undefined;
 let disableNetworking: boolean;
 let autoUpdatesPromise: Promise<UpdateController> | undefined;
+let autoUpdates: UpdateController | undefined;
 let updateCheckScheduled = false;
+let closeGuard: CloseGuard | undefined;
+/** Windows asked to end the session (shutdown, restart, sign-out), or an app to close (Restart Manager). */
+let sessionEnding = false;
 
 function getAutoUpdates() {
   autoUpdatesPromise ??= import('./autoUpdates.js').then(({ default: createAutoUpdates }) => createAutoUpdates({
@@ -86,8 +92,26 @@ function getAutoUpdates() {
         updateMenu();
       }
     },
-  }));
+  })).then((updates) => {
+    autoUpdates = updates;
+    if (sessionEnding) updates.holdInstallation();
+    return updates;
+  });
   return autoUpdatesPromise;
+}
+
+/**
+ * Windows is ending the session, so this run must never start the installer of an update: it could
+ * be cut off half-way, after removing the installed app. A close that was already in progress
+ * still quits normally (the session ending does not by itself), which would otherwise install.
+ * A downloaded update is installed on a later quit instead.
+ */
+function holdUpdateInstallation() {
+  if (sessionEnding) return;
+  sessionEnding = true;
+  logger.info('The session is ending: not installing an update when this run quits');
+  // At once, before any later event can quit (or once loaded, see getAutoUpdates).
+  autoUpdates?.holdInstallation();
 }
 
 async function checkForUpdates() {
@@ -265,22 +289,6 @@ function createWindow() {
     apiActionRequests.clear();
   });
 
-  // https://stackoverflow.com/questions/39574636/prompt-to-save-quit-before-closing-window/47434365
-  mainWindow.on('close', (e) => {
-    if (!askBeforeClose) return;
-
-    assert(mainWindow);
-    const choice = electron.dialog.showMessageBoxSync(mainWindow, {
-      type: 'question',
-      buttons: ['Yes', 'No'],
-      title: i18n.t('Confirm quit'),
-      message: i18n.t('Are you sure you want to quit?'),
-    });
-    if (choice === 1) {
-      e.preventDefault();
-    }
-  });
-
   // TODO replace with `windowStatePersistence` in the future? https://github.com/electron/rfcs/pull/16
   const debouncedSaveWindowState = debounce(() => {
     if (!mainWindow || !configStore.get('storeWindowBounds')) return;
@@ -288,6 +296,91 @@ function createWindow() {
     const isMaximized = mainWindow.isMaximized();
     configStore.set('windowBounds', { x, y, width, height, isMaximized });
   }, 500);
+
+  const window = mainWindow;
+  const guard = new CloseGuard({
+    shouldConfirm: () => askBeforeClose,
+    confirm: async () => {
+      const { response } = await electron.dialog.showMessageBox(window, {
+        type: 'question',
+        buttons: ['Yes', 'No'],
+        defaultId: 0,
+        cancelId: 1,
+        title: i18n.t('Confirm quit'),
+        message: i18n.t('Are you sure you want to quit?'),
+      });
+      return response === 0;
+    },
+    canAskRenderer: () => rendererReady && !window.webContents.isDestroyed() && !window.webContents.isCrashed(),
+    askRenderer: (id) => window.webContents.send('close-requested', id),
+    showNotResponding: async (signal, reason) => {
+      logger.warn('Offering to quit without saving', { reason });
+      const { response } = await electron.dialog.showMessageBox(window, {
+        type: 'warning',
+        buttons: [i18n.t('Keep waiting'), i18n.t('Quit without saving')],
+        defaultId: 0,
+        cancelId: 0,
+        ...(reason === 'unresponsive' ? {
+          title: i18n.t('ClipPress is not responding'),
+          message: i18n.t('ClipPress is not responding, so it cannot make sure that your latest project changes are saved.'),
+        } : {
+          title: i18n.t('ClipPress is still saving'),
+          message: i18n.t('ClipPress is still getting your project saved before it closes.'),
+        }),
+        detail: i18n.t('You can keep waiting, or quit now and lose the changes that are not saved yet.'),
+        signal,
+      });
+      logger.info('Not-responding dialog closed', { quitWithoutSaving: response === 1, withdrawn: signal.aborted });
+      return response === 1 ? 'close' : 'wait';
+    },
+    close: () => {
+      logger.info('Closing the main window');
+      if (!window.isDestroyed()) window.close();
+    },
+    ackTimeoutMs: 5000,
+    onError: (err) => logger.error('Failed to get ready to close', err),
+  });
+  closeGuard = guard;
+
+  // The renderer saves the project before the window closes (see CloseGuard). This also keeps a
+  // downloaded update from being installed on quit before then, or at all if the user cancels.
+  mainWindow.on('close', (e) => {
+    if (guard.handleClose()) {
+      debouncedSaveWindowState.flush();
+      return;
+    }
+    e.preventDefault();
+  });
+  // The page refuses to unload while it has unsaved changes (see CloseGuard.onUnloadPrevented).
+  mainWindow.webContents.on('will-prevent-unload', (e) => {
+    if (guard.onUnloadPrevented()) {
+      logger.info('Unloading the page although it has unsaved changes: closing without saving');
+      e.preventDefault();
+    } else {
+      logger.info('The page has unsaved changes: not unloading it yet');
+    }
+  });
+  mainWindow.on('unresponsive', () => guard.onResponsiveChange(false));
+  mainWindow.on('responsive', () => guard.onResponsiveChange(true));
+  mainWindow.webContents.on('render-process-gone', () => {
+    rendererReady = false;
+    guard.onRendererGone();
+  });
+  // A new page replaced the old one (a reload). Not `did-start-navigation`: that is also emitted
+  // for navigations that `will-navigate` then blocks, which leave the page as it was.
+  mainWindow.webContents.on('did-navigate', () => {
+    rendererReady = false;
+    guard.onRendererNavigated();
+  });
+
+  // Windows ends a session (shutdown, restart, sign-out) without closing windows or quitting, so
+  // the close above does not happen. Save a waiting change at least, and install no update now.
+  const onSessionEnding = () => {
+    holdUpdateInstallation();
+    if (!window.webContents.isDestroyed()) window.webContents.send('save-project-now');
+  };
+  mainWindow.on('query-session-end', onSessionEnding);
+  mainWindow.on('session-end', onSessionEnding);
 
   mainWindow.on('maximize', debouncedSaveWindowState);
   mainWindow.on('unmaximize', debouncedSaveWindowState);
@@ -452,6 +545,13 @@ async function init() {
 
     ipcMain.on('setAskBeforeClose', (_e, val) => {
       askBeforeClose = val;
+    });
+
+    ipcMain.on('close-request-ack', (e, id: number) => {
+      if (e.sender === mainWindow?.webContents) closeGuard?.onAcknowledged(id);
+    });
+    ipcMain.on('close-request-decision', (e, id: number, decision: CloseDecision) => {
+      if (e.sender === mainWindow?.webContents) closeGuard?.onDecision(id, decision);
     });
 
     ipcMain.on('setLanguage', (_e, newLanguage) => changeLanguage(newLanguage));

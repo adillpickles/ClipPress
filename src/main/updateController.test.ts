@@ -157,3 +157,46 @@ describe('update policy', () => {
     expect(controller.getStatus().phase).toBe('ready');
   });
 });
+
+// PR #56 re-audit: Windows ending the session does not stop a close already in progress from
+// quitting normally, which would start the installer during the shutdown.
+describe('holding installation for the rest of a run', () => {
+  it('disarms a ready update, and no later arming re-arms it', async () => {
+    const { controller, backend } = setup({ enabled: true, mode: 'ask' });
+    await controller.check();
+    await controller.download();
+    expect(backend.installOnQuit).toHaveBeenLastCalledWith(true);
+    controller.holdInstallation();
+    expect(backend.installOnQuit).toHaveBeenLastCalledWith(false);
+    expect(controller.getStatus()).toMatchObject({ phase: 'ready', installOnQuit: false });
+    const callsBefore = backend.installOnQuit.mock.calls.length;
+    controller.approveInstall();
+    controller.setPreferences({ enabled: true, mode: 'automatic' });
+    expect(backend.installOnQuit.mock.calls.slice(callsBefore)).toEqual([[false], [false]]);
+    expect(controller.getStatus().installOnQuit).toBe(false);
+  });
+
+  it('keeps an update downloaded during the hold from being armed', async () => {
+    const { controller, backend } = setup();
+    let finish: () => void = () => undefined;
+    backend.download.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const checking = controller.check();
+    await vi.waitFor(() => expect(backend.download).toHaveBeenCalledOnce());
+    // Armed before downloading (the updater registers its quit handler on verification).
+    expect(backend.installOnQuit).toHaveBeenLastCalledWith(true);
+    controller.holdInstallation();
+    const callsBefore = backend.installOnQuit.mock.calls.length;
+    finish();
+    await checking;
+    expect(controller.getStatus()).toMatchObject({ phase: 'ready', installOnQuit: false });
+    expect(backend.installOnQuit.mock.calls.slice(callsBefore - 1).every(([enabled]) => enabled === false)).toBe(true);
+  });
+
+  it('holds before the updater has even loaded', async () => {
+    const { controller, backend } = setup();
+    controller.holdInstallation();
+    await controller.check();
+    expect(controller.getStatus()).toMatchObject({ phase: 'ready', installOnQuit: false });
+    expect(backend.installOnQuit.mock.calls.every(([enabled]) => enabled === false)).toBe(true);
+  });
+});

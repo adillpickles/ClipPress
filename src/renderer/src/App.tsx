@@ -182,6 +182,8 @@ import {
   deleteFiles,
   mustDisallowVob,
   toastError,
+  showSavingBeforeClose,
+  askAfterFailedSaveBeforeClose,
 } from './dialogs';
 import { openSendReportDialog } from './reporting';
 import {
@@ -261,6 +263,8 @@ import useTimecode from './hooks/useTimecode';
 import useSegmentsAutoSave from './hooks/useSegmentsAutoSave';
 import { getProjectSegmentsToLoad } from './llcProject';
 import type { ProjectSession } from './projectAutoSave';
+import saveBeforeClose from './saveBeforeClose';
+import { setCloseRequestHandlers } from './closeRequests';
 import useThumbnails from './hooks/useThumbnails';
 import useSubtitles from './hooks/useSubtitles';
 import useStreamsMeta from './hooks/useStreamsMeta';
@@ -1147,7 +1151,7 @@ function App() {
     setEditingCropSegmentId(undefined);
   }, [filePath, speedControlsHistory]);
 
-  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved } = useSegmentsAutoSave({
+  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved, saveProjectNow, flushProject, hasUnsavedProjectChanges, deleteProjectFile } = useSegmentsAutoSave({
     autoSaveProjectFile,
     storeProjectInWorkingDir,
     filePath,
@@ -1159,6 +1163,19 @@ function App() {
     paramsByStreamId,
     overlayClips,
   });
+
+  // The window (and with it the app, and a downloaded update's installation) only closes once
+  // the project is saved, or the user has chosen to close without saving.
+  useEffect(() => setCloseRequestHandlers({
+    onCloseRequest: () => saveBeforeClose({
+      flush: flushProject,
+      slowAfterMs: 2000,
+      showSaving: showSavingBeforeClose,
+      showFailed: askAfterFailedSaveBeforeClose,
+    }),
+    onSaveNow: saveProjectNow,
+    hasUnsavedChanges: hasUnsavedProjectChanges,
+  }), [flushProject, hasUnsavedProjectChanges, saveProjectNow]);
 
   const {
     nonCopiedExtraStreams,
@@ -2514,19 +2531,26 @@ function App() {
 
         const pathsToDelete: string[] = [];
         if (cleanupChoices2.trashTmpFiles && savedPaths.previewFilePath) pathsToDelete.push(savedPaths.previewFilePath);
-        if (cleanupChoices2.trashProjectFile && savedPaths.projectFilePath) pathsToDelete.push(savedPaths.projectFilePath);
+        const { projectFilePath } = savedPaths;
+        if (cleanupChoices2.trashProjectFile && projectFilePath != null) pathsToDelete.push(projectFilePath);
         if (cleanupChoices2.trashSourceFile && savedPaths.sourceFilePath) pathsToDelete.push(savedPaths.sourceFilePath);
 
         await deleteFiles({
           paths: pathsToDelete,
           deleteIfTrashFails: cleanupChoices2.deleteIfTrashFails,
           signal: abortController.signal,
+          // The project file is deleted between its saves, so that no save from before (one that
+          // failed and is tried again when the app closes, say) brings it back once it is gone.
+          // While it is still there (deleting it failed or was cancelled), it holds an older
+          // state, and a failed save of it is kept and tried again.
+          runDeletion: (deletePath, deletion) => (deletePath === projectFilePath ? deleteProjectFile(deletePath, deletion) : deletion()),
         });
       }, i18n.t('Unable to delete file'));
     },
     [
       batchListRemoveFile,
       clearSegments,
+      deleteProjectFile,
       filePath,
       previewFilePath,
       projectFileSavePath,

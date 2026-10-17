@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildLlcProjectData, encodeLlcProjectFile, getProjectSegmentsToSave } from './llcProject';
 import ProjectAutoSave from './projectAutoSave';
 import type { ProjectSession } from './projectAutoSave';
+import type { ProjectFilePathKey } from './projectFilePathKey';
 import type { LlcProject, OverlayClip, StateSegment } from './types';
 
 const delayMs = 500;
@@ -21,24 +22,35 @@ const untouched = contents();
 const withTrim = contents({ cutSegments: [trimmed] });
 const withText = contents({ overlayClips: [textClip] });
 
-/** A disk whose writes take `latencyMs`, and an autosave writing to it. */
-function setup({ latencyMs = 10 } = {}) {
+/**
+ * A disk whose writes take `latencyMs`, and an autosave writing to it. The disk stores each file
+ * under `pathKey(path)`: paths with the same key are the same file. Autosave gets the same keys,
+ * or those of `fileKey`, which may not know a path's file yet.
+ */
+function setup({ latencyMs = 10, pathKey, fileKey }: {
+  latencyMs?: number,
+  pathKey?: (filePath: string) => string,
+  fileKey?: (filePath: string) => ProjectFilePathKey,
+} = {}) {
   const disk = new Map<string, LlcProject>();
   const writes: { path: string, data: LlcProject }[] = [];
   const errors: unknown[] = [];
   let failNext = false;
+  let failAll = false;
+  const keyOf = fileKey ?? (pathKey != null ? (filePath: string) => ({ key: pathKey(filePath), resolved: true }) : undefined);
   const autoSave = new ProjectAutoSave({
     delayMs,
     write: async (writePath, data) => {
       writes.push({ path: writePath, data });
       await new Promise((resolve) => { setTimeout(resolve, latencyMs); });
-      if (failNext) {
+      if (failNext || failAll) {
         failNext = false;
         throw new Error('disk full');
       }
-      disk.set(writePath, data);
+      disk.set(pathKey?.(writePath) ?? writePath, data);
     },
     onError: (err) => errors.push(err),
+    ...(keyOf != null ? { pathKey: keyOf } : {}),
   });
   let enabled = true;
   const show = (session: ProjectSession, project: LlcProject, { at = path, fileDuration = 8 }: { at?: string, fileDuration?: number } = {}) => {
@@ -52,6 +64,8 @@ function setup({ latencyMs = 10 } = {}) {
     show,
     setEnabled: (value: boolean) => { enabled = value; },
     failNextWrite: () => { failNext = true; },
+    /** Every write fails until this is turned off again. */
+    setDiskFailing: (value: boolean) => { failAll = value; },
     /** Lets time pass, running timers and the writes they start. */
     wait: (ms: number) => vi.advanceTimersByTimeAsync(ms),
   };
@@ -269,5 +283,767 @@ describe('ProjectAutoSave', () => {
     expect(t.disk.get(path)).toEqual(withTrim);
     await t.wait(2000);
     expect(t.writes).toHaveLength(1);
+  });
+});
+
+describe('ProjectAutoSave before the app closes', () => {
+  /** Runs `flush` while time passes, as it would while writes take their time. */
+  async function flushWhile(t: ReturnType<typeof setup>, ms = 3000) {
+    const flushing = t.autoSave.flush();
+    await t.wait(ms);
+    return flushing;
+  }
+
+  // Audit finding 1: an edit made right before closing used to wait for the delay and be lost.
+  it('saves an edit still waiting for the delay, and keeps the file open', async () => {
+    const t = setup();
+    t.show({ id: 1 }, untouched);
+    t.show({ id: 1 }, withTrim);
+    await t.wait(100);
+    expect(await flushWhile(t)).toEqual([]);
+    expect(t.disk.get(path)).toEqual(withTrim);
+    // Still the open session: later edits are saved as usual, and nothing is saved twice.
+    expect(t.writes).toHaveLength(1);
+    t.show({ id: 1 }, withText);
+    await t.wait(delayMs + 20);
+    expect(t.disk.get(path)?.overlayClips).toEqual([textClip]);
+  });
+
+  it('waits for a save that is already writing', async () => {
+    const t = setup({ latencyMs: 1500 });
+    t.show({ id: 1 }, untouched);
+    t.show({ id: 1 }, withTrim);
+    await t.wait(delayMs + 50); // writing
+    let done = false;
+    const flushing = t.autoSave.flush().then((failures) => { done = true; return failures; });
+    await t.wait(1000);
+    expect(done).toBe(false);
+    await t.wait(1000);
+    expect(await flushing).toEqual([]);
+    expect(t.disk.get(path)).toEqual(withTrim);
+    expect(t.writes).toHaveLength(1);
+  });
+
+  it('waits for the final save of a file closed just before', async () => {
+    const t = setup({ latencyMs: 400 });
+    t.show({ id: 1 }, untouched);
+    t.show({ id: 1 }, withTrim);
+    t.autoSave.endSession();
+    expect(await flushWhile(t)).toEqual([]);
+    expect(t.disk.get(path)).toEqual(withTrim);
+  });
+
+  it('writes nothing when nothing changed', async () => {
+    const t = setup();
+    t.show({ id: 1, loadedProjectPath: path }, withTrim);
+    expect(await flushWhile(t)).toEqual([]);
+    expect(t.writes).toEqual([]);
+  });
+
+  it('reports a failed save instead of passing it to onError, and saves it when tried again', async () => {
+    const t = setup();
+    t.show({ id: 1 }, untouched);
+    t.show({ id: 1 }, withTrim);
+    t.setDiskFailing(true);
+    const failures = await flushWhile(t);
+    expect(failures).toEqual([{ path, error: new Error('disk full') }]);
+    expect(t.errors).toEqual([]);
+    expect(t.disk.has(path)).toBe(false);
+    t.setDiskFailing(false);
+    expect(await flushWhile(t)).toEqual([]);
+    expect(t.disk.get(path)).toEqual(withTrim);
+  });
+
+  it('tries again the final save of a closed file that failed while closing', async () => {
+    const t = setup();
+    t.show({ id: 1 }, untouched);
+    t.show({ id: 1 }, withTrim);
+    t.setDiskFailing(true);
+    t.autoSave.endSession();
+    expect(await flushWhile(t)).toHaveLength(1);
+    t.setDiskFailing(false);
+    expect(await flushWhile(t)).toEqual([]);
+    expect(t.disk.get(path)).toEqual(withTrim);
+  });
+
+  // PR #56 re-audit finding 1: three rounds used to be the limit, with the last change left unsaved.
+  it('saves the changes made while it saves, however many, before resolving', async () => {
+    const t = setup({ latencyMs: 100 });
+    t.show({ id: 1 }, untouched);
+    t.show({ id: 1 }, contents({ cutSegments: [{ ...trimmed, start: 1 }] }));
+    let result: unknown;
+    const flushing = t.autoSave.flush().then((failures) => { result = failures; });
+    // A change arrives during each write (the user keeps editing, or an operation finishes).
+    for (let start = 2; start <= 6; start += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await t.wait(50);
+      t.show({ id: 1 }, contents({ cutSegments: [{ ...trimmed, start }] }));
+      // eslint-disable-next-line no-await-in-loop
+      await t.wait(50);
+      expect(result).toBeUndefined();
+    }
+    await t.wait(150);
+    await flushing;
+    expect(result).toEqual([]);
+    expect(t.disk.get(path)?.cutSegments[0]?.start).toBe(6);
+    expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+  });
+
+  it('stops at a failed save of the open file and reports it, even with changes still arriving', async () => {
+    const t = setup({ latencyMs: 100 });
+    t.show({ id: 1 }, untouched);
+    t.show({ id: 1 }, withTrim);
+    t.setDiskFailing(true);
+    const flushing = t.autoSave.flush();
+    await t.wait(50);
+    t.show({ id: 1 }, withText);
+    await t.wait(1000);
+    expect(await flushing).toEqual([{ path, error: new Error('disk full') }]);
+    // Nor is the change saved (and its failure shown) in the background while the user decides.
+    await t.wait(2000);
+    expect(t.writes).toHaveLength(1);
+    expect(t.errors).toEqual([]);
+    // Trying again saves the latest state.
+    t.setDiskFailing(false);
+    expect(await flushWhile(t)).toEqual([]);
+    expect(t.disk.get(path)?.overlayClips).toEqual([textClip]);
+  });
+
+  // PR #56 re-audit finding 4: a failure reported by onError before closing used to be forgotten.
+  describe('a final save that failed before the app closes', () => {
+    function closedWithFailedSave() {
+      const t = setup();
+      t.show({ id: 1 }, untouched);
+      t.show({ id: 1 }, withTrim);
+      t.setDiskFailing(true);
+      t.autoSave.endSession();
+      return t;
+    }
+
+    it('is reported when the app closes while saving still fails', async () => {
+      const t = closedWithFailedSave();
+      await t.wait(100);
+      expect(t.errors).toHaveLength(1);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+      expect(await flushWhile(t)).toEqual([{ path, error: new Error('disk full') }]);
+      expect(t.errors).toHaveLength(1);
+    });
+
+    it('is saved when the app closes once the disk works again', async () => {
+      const t = closedWithFailedSave();
+      await t.wait(100);
+      t.setDiskFailing(false);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(path)).toEqual(withTrim);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+    });
+
+    it('is still reported after another file was opened and closed in between', async () => {
+      const t = closedWithFailedSave();
+      await t.wait(100);
+      const other = '/videos/other-proj.llc';
+      t.show({ id: 2 }, untouched, { at: other });
+      t.autoSave.endSession();
+      await t.wait(2000);
+      expect((await flushWhile(t)).map((f) => f.path)).toEqual([path]);
+    });
+  });
+
+  // PR #56 re-audit finding 3: a later flush used to write the earlier open's state over the
+  // reopened file, while the reopened session still believed the file held what it had loaded.
+  describe('when a file whose save failed is opened again', () => {
+    async function failedThenReopened({ diskWorksBeforeReopen }: { diskWorksBeforeReopen: boolean }) {
+      const t = setup();
+      t.disk.set(path, untouched);
+      t.show({ id: 1, loadedProjectPath: path }, untouched);
+      t.show({ id: 1, loadedProjectPath: path }, withTrim);
+      t.setDiskFailing(true);
+      // Closing the app failed; the user cancelled, then closed the file, whose final save failed too.
+      expect(await flushWhile(t)).toHaveLength(1);
+      t.autoSave.endSession();
+      await t.wait(100);
+      t.setDiskFailing(!diskWorksBeforeReopen);
+      // Opening waits for earlier saves before reading the project file.
+      const saved = t.autoSave.whenSaved();
+      await t.wait(100);
+      await saved;
+      const read = t.disk.get(path)!;
+      t.show({ id: 2, loadedProjectPath: path }, read);
+      return { t, read };
+    }
+
+    it('tries the failed save again before the file is read, so the reopened project has it', async () => {
+      const { t, read } = await failedThenReopened({ diskWorksBeforeReopen: true });
+      expect(read).toEqual(withTrim);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(path)).toEqual(withTrim);
+    });
+
+    it('lets the reopened project supersede a failed save that still fails', async () => {
+      const { t, read } = await failedThenReopened({ diskWorksBeforeReopen: false });
+      expect(read).toEqual(untouched);
+      // The failure was reported again when trying before the read.
+      expect(t.errors).toHaveLength(2);
+      t.setDiskFailing(false);
+      // Closing the app does not write the earlier state over what the reopened project shows...
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(path)).toEqual(untouched);
+      // ...so its own saves stay correct: undoing back to what it loaded leaves nothing to fix.
+      t.show({ id: 2, loadedProjectPath: path }, withText);
+      await t.wait(delayMs + 20);
+      t.show({ id: 2, loadedProjectPath: path }, untouched);
+      await t.wait(delayMs + 20);
+      expect(t.disk.get(path)).toEqual(encodeLlcProjectFile(untouched, 8));
+    });
+
+    it('does not keep a failure of the earlier open that lands after the reopen', async () => {
+      const t = setup({ latencyMs: 300 });
+      t.show({ id: 1 }, untouched);
+      t.show({ id: 1 }, withTrim);
+      t.setDiskFailing(true);
+      await t.wait(delayMs + 50);
+      // The new open reports while the earlier save is still writing (and then fails).
+      t.show({ id: 2 }, untouched);
+      await t.wait(1000);
+      expect(t.errors).toHaveLength(1);
+      t.setDiskFailing(false);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.has(path)).toBe(false);
+    });
+
+    // PR #56 re-audit 3: what the ordering of opens guarantees (whenSaved before reading) is also
+    // enforced when a save runs, so a save of an older open never lands on a file a newer one read.
+    it('does not write a save of the earlier open that had not started when the file was reopened', async () => {
+      const t = setup({ latencyMs: 300 });
+      t.show({ id: 1 }, untouched);
+      t.show({ id: 1 }, withTrim);
+      // The new open reports at once, without waiting for the earlier open's final save.
+      t.show({ id: 2 }, untouched);
+      await t.wait(1000);
+      expect(t.writes).toEqual([]);
+      expect(t.errors).toEqual([]);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.has(path)).toBe(false);
+    });
+  });
+
+  // PR #56 re-audit 2 finding 2: ownership went by how a path was written, so opening the same
+  // file through a path written differently (another case, on Windows) did not supersede an
+  // earlier open's failed save, which closing the app then wrote over the newer project.
+  describe('when the same project file is reached through a path written differently', () => {
+    const alias = '/Videos/Clip-proj.llc';
+    const sameFile = (filePath: string) => filePath.toUpperCase();
+
+    async function failedThenReopenedAs(reopenPath: string, pathKey?: (filePath: string) => string) {
+      const t = setup(pathKey != null ? { pathKey } : {});
+      const key = pathKey ?? ((filePath: string) => filePath);
+      t.disk.set(key(path), untouched);
+      t.show({ id: 1, loadedProjectPath: path }, untouched, { at: path });
+      t.show({ id: 1, loadedProjectPath: path }, withTrim, { at: path });
+      t.setDiskFailing(true);
+      t.autoSave.endSession();
+      await t.wait(100);
+      const saved = t.autoSave.whenSaved();
+      await t.wait(100);
+      await saved;
+      // Still failing: the reopened project shows what the file holds.
+      const read = t.disk.get(key(reopenPath))!;
+      expect(read).toEqual(untouched);
+      t.show({ id: 2, loadedProjectPath: reopenPath }, read, { at: reopenPath });
+      t.setDiskFailing(false);
+      // The reopened project is edited and saved.
+      t.show({ id: 2, loadedProjectPath: reopenPath }, withText, { at: reopenPath });
+      await t.wait(delayMs + 20);
+      return { t, key };
+    }
+
+    it('lets the reopened project supersede the failed save, rather than be overwritten by it', async () => {
+      const { t, key } = await failedThenReopenedAs(alias, sameFile);
+      expect(t.disk.get(key(path))).toEqual(encodeLlcProjectFile(withText, 8));
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(key(path))).toEqual(encodeLlcProjectFile(withText, 8));
+    });
+
+    it('was overwritten when paths were compared as written (what the key prevents)', async () => {
+      // The same scenario without a key for the file, on a disk where both paths are one file.
+      const disk = new Map<string, LlcProject>();
+      const failing = { value: false };
+      const autoSave = new ProjectAutoSave({
+        delayMs,
+        write: async (writePath, data) => {
+          if (failing.value) throw new Error('disk full');
+          disk.set(sameFile(writePath), data);
+        },
+        onError: () => undefined,
+      });
+      const show = (id: number, at: string, project: LlcProject) => autoSave.update({ session: { id, loadedProjectPath: at }, path: at, project, fileData: project }, { enabled: true });
+      disk.set(sameFile(path), untouched);
+      show(1, path, untouched);
+      show(1, path, withTrim);
+      failing.value = true;
+      autoSave.endSession();
+      await vi.advanceTimersByTimeAsync(100);
+      show(2, alias, untouched);
+      failing.value = false;
+      show(2, alias, withText);
+      await vi.advanceTimersByTimeAsync(delayMs + 20);
+      expect(disk.get(sameFile(path))).toEqual(withText);
+      await autoSave.flush();
+      expect(disk.get(sameFile(path))).toEqual(withTrim);
+    });
+
+    it('does not keep a failure of the earlier open that lands after the reopen', async () => {
+      const t = setup({ latencyMs: 300, pathKey: sameFile });
+      t.show({ id: 1 }, untouched);
+      t.show({ id: 1 }, withTrim);
+      t.setDiskFailing(true);
+      t.show({ id: 2 }, untouched, { at: alias });
+      await t.wait(1000);
+      t.setDiskFailing(false);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.has(sameFile(path))).toBe(false);
+    });
+
+    it('does not copy a project loaded through one path to another path of the same file', async () => {
+      const t = setup({ pathKey: sameFile });
+      t.disk.set(sameFile(path), withTrim);
+      t.show({ id: 1, loadedProjectPath: alias }, withTrim);
+      await t.wait(2000);
+      expect(t.writes).toEqual([]);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+    });
+
+    it('reports a failed save under the path it was written to', async () => {
+      const t = setup({ pathKey: sameFile });
+      t.show({ id: 1 }, untouched, { at: alias });
+      t.show({ id: 1 }, withTrim, { at: alias });
+      t.setDiskFailing(true);
+      expect(await flushWhile(t)).toEqual([{ path: alias, error: new Error('disk full') }]);
+    });
+
+    it('settles a failed save once the file is saved through another of its paths', async () => {
+      const t = setup({ pathKey: sameFile });
+      t.show({ id: 1 }, untouched);
+      t.show({ id: 1 }, withTrim);
+      t.setDiskFailing(true);
+      await t.wait(delayMs + 20);
+      t.setDiskFailing(false);
+      // The open file is now saved through another path of the same file (a changed setting).
+      t.show({ id: 1 }, withText, { at: alias });
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(sameFile(path))).toEqual(encodeLlcProjectFile(withText, 8));
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+    });
+  });
+
+  // PR #56 re-audit 2 finding 3: the clean-up after an export forgot a failed save before it
+  // deleted the project file, so a deletion that failed or was cancelled lost the failed changes.
+  // Re-audit 3 finding 4: a try queued by closing the app while the clean-up deleted the file, or
+  // checked that it was gone, wrote it again afterwards. Deleting now runs between saves.
+  describe('a project file that the clean-up after an export deletes', () => {
+    async function closedWithFailedSave(t: ReturnType<typeof setup>) {
+      t.disk.set(path, untouched);
+      t.show({ id: 1, loadedProjectPath: path }, untouched);
+      t.show({ id: 1, loadedProjectPath: path }, withTrim);
+      t.setDiskFailing(true);
+      t.autoSave.endSession();
+      await t.wait(100);
+      // Clean-up waits for earlier saves first, which tries the failed one again.
+      const saved = t.autoSave.whenSaved();
+      await t.wait(100);
+      await saved;
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+    }
+    const existsOn = (t: ReturnType<typeof setup>) => async (filePath: string) => t.disk.has(filePath);
+    /** Deletes the file from the disk after `ms`, as moving it to the trash would. */
+    const removeAfter = (t: ReturnType<typeof setup>, ms = 0) => async () => {
+      if (ms > 0) await new Promise((resolve) => { setTimeout(resolve, ms); });
+      t.disk.delete(path);
+    };
+    const deleteFile = (t: ReturnType<typeof setup>, remove = removeAfter(t), exists = existsOn(t)) => t.autoSave.deleteFile(path, { remove, exists });
+
+    it('forgets a failed save once the file is gone, which then never comes back', async () => {
+      const t = setup();
+      await closedWithFailedSave(t);
+      await deleteFile(t);
+      t.setDiskFailing(false);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      expect(await flushWhile(t)).toEqual([]);
+      await t.autoSave.whenSaved();
+      expect(t.disk.has(path)).toBe(false);
+    });
+
+    it('keeps, reports and saves a failed save when deleting the file failed or was cancelled', async () => {
+      const t = setup();
+      await closedWithFailedSave(t);
+      // Moving it to the trash failed: the file is still there, with the state from before the failed save.
+      await expect(deleteFile(t, async () => { throw new Error('trash failed'); })).rejects.toThrow('trash failed');
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+      // So did deleting it, though it seemed to work.
+      await deleteFile(t, async () => undefined);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+      expect(await flushWhile(t)).toEqual([{ path, error: new Error('disk full') }]);
+      t.setDiskFailing(false);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(path)).toEqual(withTrim);
+    });
+
+    it('keeps a failed save when it cannot be told whether the file is gone', async () => {
+      const t = setup();
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      await closedWithFailedSave(t);
+      await deleteFile(t, removeAfter(t), async () => { throw new Error('EPERM'); });
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+    });
+
+    // The app can close at any moment of the clean-up, for example while it asks about another file.
+    it.each([
+      ['while it is moving the file to the trash', 300, 0],
+      ['while it checks that the file is gone', 0, 300],
+    ])('does not let closing the app %s bring the file back', async (_when, removeMs, checkMs) => {
+      const t = setup();
+      await closedWithFailedSave(t);
+      t.setDiskFailing(false);
+      const deleting = deleteFile(t, removeAfter(t, removeMs), async (filePath) => {
+        await new Promise((resolve) => { setTimeout(resolve, checkMs); });
+        return t.disk.has(filePath);
+      });
+      await t.wait(100);
+      // Closing tries the failed save again: after the deletion, when there is nothing left to save.
+      const flushing = t.autoSave.flush();
+      await t.wait(1000);
+      await deleting;
+      expect(await flushing).toEqual([]);
+      expect(t.disk.has(path)).toBe(false);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      // Nor does reopening the file (which tries failed saves before reading) or closing again.
+      await t.autoSave.whenSaved();
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.has(path)).toBe(false);
+    });
+
+    it('lets a try that was already writing finish first, then deletes the file', async () => {
+      const t = setup({ latencyMs: 300 });
+      t.disk.set(path, untouched);
+      t.show({ id: 1, loadedProjectPath: path }, untouched);
+      t.show({ id: 1, loadedProjectPath: path }, withTrim);
+      t.setDiskFailing(true);
+      t.autoSave.endSession();
+      await t.wait(400);
+      // Closing the app tries it again; meanwhile the clean-up deletes the file.
+      t.setDiskFailing(false);
+      const flushing = t.autoSave.flush();
+      await t.wait(50);
+      const deleting = deleteFile(t);
+      await t.wait(400);
+      await deleting;
+      // The try saved it, then it was deleted.
+      expect(t.writes).toHaveLength(2);
+      expect(await flushing).toEqual([]);
+      expect(t.disk.has(path)).toBe(false);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+    });
+
+    it('forgets a try that was still writing when the file was deleted, and failed', async () => {
+      const t = setup({ latencyMs: 300 });
+      t.disk.set(path, untouched);
+      t.show({ id: 1, loadedProjectPath: path }, untouched);
+      t.show({ id: 1, loadedProjectPath: path }, withTrim);
+      t.setDiskFailing(true);
+      t.autoSave.endSession();
+      await t.wait(400);
+      const flushing = t.autoSave.flush();
+      await t.wait(50);
+      const deleting = deleteFile(t);
+      await t.wait(400);
+      await deleting;
+      // Deleted after that try had failed (closing waits for the deletion): nothing is left to bring it back.
+      expect(await flushing).toEqual([]);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      t.setDiskFailing(false);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.has(path)).toBe(false);
+    });
+
+    // The clean-up can keep the file open (its "close the file" choice turned off).
+    describe('of the file that stays open', () => {
+      it('counts what the open file shows as saved, so closing does not bring the file back', async () => {
+        const t = setup();
+        t.disk.set(path, untouched);
+        t.show({ id: 1, loadedProjectPath: path }, untouched);
+        t.show({ id: 1, loadedProjectPath: path }, withTrim);
+        t.setDiskFailing(true);
+        await t.wait(delayMs + 20);
+        t.setDiskFailing(false);
+        // An edit just before the clean-up, still waiting for the delay.
+        t.show({ id: 1, loadedProjectPath: path }, withText);
+        await deleteFile(t);
+        expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+        await t.wait(2000);
+        expect(await flushWhile(t)).toEqual([]);
+        expect(t.disk.has(path)).toBe(false);
+      });
+
+      it('saves a change made after the file was deleted', async () => {
+        const t = setup();
+        t.disk.set(path, withTrim);
+        t.show({ id: 1, loadedProjectPath: path }, withTrim);
+        await deleteFile(t);
+        t.show({ id: 1, loadedProjectPath: path }, withText);
+        await t.wait(delayMs + 20);
+        expect(t.disk.get(path)).toEqual(encodeLlcProjectFile(withText, 8));
+      });
+    });
+
+    it('does not ask whether the file is gone when deleting it failed', async () => {
+      const t = setup();
+      const exists = vi.fn(existsOn(t));
+      t.show({ id: 1 }, untouched);
+      t.show({ id: 1 }, withTrim);
+      t.autoSave.endSession();
+      await t.wait(100);
+      await expect(deleteFile(t, async () => { throw new Error('in use'); }, exists)).rejects.toThrow('in use');
+      expect(exists).not.toHaveBeenCalled();
+      // Later saves still run.
+      t.show({ id: 2, loadedProjectPath: path }, withTrim);
+      t.show({ id: 2, loadedProjectPath: path }, withText);
+      await t.wait(delayMs + 20);
+      expect(t.disk.get(path)?.overlayClips).toEqual([textClip]);
+    });
+  });
+
+  // PR #56 re-audit 3 finding 2: a path whose folder could not be resolved kept the key it got as
+  // written, so a failed save made while a network drive was reconnecting never met a newer open
+  // of the same file through another of its paths, and closing the app wrote it over that open.
+  describe('when a path to the project file could not be resolved for a while', () => {
+    const viaDrive = String.raw`Z:\Clips\clip-proj.llc`;
+    const viaShare = String.raw`\\nas\share\Clips\clip-proj.llc`;
+    const sameFile = (filePath: string) => `FILE:${filePath.split(/[/\\]/u).at(-1)!.toUpperCase()}`;
+
+    /** Z: maps \\nas\share, whose folder resolves only while `reachable`. */
+    function setupShare() {
+      const reachable = { value: true };
+      const asked: string[] = [];
+      const t = setup({
+        pathKey: sameFile,
+        fileKey: (filePath) => {
+          asked.push(filePath);
+          return reachable.value ? { key: sameFile(filePath), resolved: true } : { key: filePath.toUpperCase(), resolved: false };
+        },
+      });
+      return { t, reachable, asked };
+    }
+
+    it.each([
+      ['the earlier open', viaDrive, viaShare],
+      ['the newer open', viaShare, viaDrive],
+    ])('lets a newer open supersede a failed save of the same file, when %s could not resolve its path', async (which, earlier, newer) => {
+      const { t, reachable } = setupShare();
+      const unresolvedFirst = which === 'the earlier open';
+      t.disk.set(sameFile(earlier), untouched);
+      reachable.value = !unresolvedFirst;
+      t.show({ id: 1, loadedProjectPath: earlier }, untouched, { at: earlier });
+      t.show({ id: 1, loadedProjectPath: earlier }, withTrim, { at: earlier });
+      t.setDiskFailing(true);
+      t.autoSave.endSession();
+      await t.wait(100);
+      const saved = t.autoSave.whenSaved();
+      await t.wait(100);
+      await saved;
+      // The reopened project shows what the file holds.
+      reachable.value = unresolvedFirst;
+      const read = t.disk.get(sameFile(newer))!;
+      t.show({ id: 2, loadedProjectPath: newer }, read, { at: newer });
+      reachable.value = true;
+      t.setDiskFailing(false);
+      t.show({ id: 2, loadedProjectPath: newer }, withText, { at: newer });
+      await t.wait(delayMs + 20);
+      expect(t.disk.get(sameFile(newer))).toEqual(encodeLlcProjectFile(withText, 8));
+      const writesBefore = t.writes.length;
+      // Closing the app does not write the earlier open's state over it.
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(sameFile(newer))).toEqual(encodeLlcProjectFile(withText, 8));
+      expect(t.writes).toHaveLength(writesBefore);
+    });
+
+    it('lets a newer open supersede a failed save whose path is resolved only when it is tried again', async () => {
+      const { t, reachable } = setupShare();
+      t.disk.set(sameFile(viaShare), untouched);
+      // The earlier open, through Z: while the share was down, could not save.
+      reachable.value = false;
+      t.show({ id: 1 }, untouched, { at: viaDrive });
+      t.show({ id: 1 }, withTrim, { at: viaDrive });
+      t.setDiskFailing(true);
+      t.autoSave.endSession();
+      await t.wait(100);
+      // The newer open (through the share's own path) neither waited for that try nor could resolve Z: when it opened.
+      t.setDiskFailing(false);
+      t.show({ id: 2, loadedProjectPath: viaShare }, untouched, { at: viaShare });
+      reachable.value = true;
+      // The share is back when the app closes, and Z: with it.
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(sameFile(viaShare))).toEqual(untouched);
+      expect(t.writes.filter(({ path: written }) => written === viaDrive)).toHaveLength(1);
+    });
+
+    it('still keeps, tries and reports the failed save of a file that is not open elsewhere', async () => {
+      const { t, reachable } = setupShare();
+      reachable.value = false;
+      t.show({ id: 1 }, untouched, { at: viaDrive });
+      t.show({ id: 1 }, withTrim, { at: viaDrive });
+      t.setDiskFailing(true);
+      t.autoSave.endSession();
+      await t.wait(100);
+      t.show({ id: 2 }, untouched, { at: '/videos/other-proj.llc' });
+      reachable.value = true;
+      expect(await flushWhile(t)).toEqual([{ path: viaDrive, error: new Error('disk full') }]);
+      t.setDiskFailing(false);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(sameFile(viaDrive))).toEqual(withTrim);
+    });
+
+    it('does not ask for keys again while saving the open file, only before a save could overwrite a newer open', async () => {
+      const { t, reachable, asked } = setupShare();
+      reachable.value = false;
+      t.show({ id: 1 }, untouched, { at: viaDrive });
+      for (let i = 0; i < 5; i += 1) {
+        t.show({ id: 1 }, i % 2 === 0 ? withTrim : withText, { at: viaDrive });
+        // eslint-disable-next-line no-await-in-loop
+        await t.wait(delayMs + 20);
+      }
+      expect(asked).toEqual([viaDrive]);
+    });
+  });
+
+  it('neither tries again nor reports failed saves while autosave is turned off', async () => {
+    const t = setup();
+    t.show({ id: 1 }, untouched);
+    t.show({ id: 1 }, withTrim);
+    t.setDiskFailing(true);
+    t.autoSave.endSession();
+    await t.wait(100);
+    t.setEnabled(false);
+    t.show({ id: 2 }, untouched, { at: '/videos/other-proj.llc' });
+    t.setDiskFailing(false);
+    expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+    expect(await flushWhile(t)).toEqual([]);
+    expect(t.disk.has(path)).toBe(false);
+    // Turned back on, the failed save is tried again when closing.
+    t.setEnabled(true);
+    t.show({ id: 2 }, untouched, { at: '/videos/other-proj.llc' });
+    expect(await flushWhile(t)).toEqual([]);
+    expect(t.disk.get(path)).toEqual(withTrim);
+  });
+
+  it('settles an earlier failure once a newer state of the open file is saved', async () => {
+    const t = setup();
+    t.show({ id: 1 }, untouched);
+    t.show({ id: 1 }, withTrim);
+    t.setDiskFailing(true);
+    expect(await flushWhile(t)).toHaveLength(1);
+    t.setDiskFailing(false);
+    t.show({ id: 1 }, withText);
+    expect(await flushWhile(t)).toEqual([]);
+    expect(t.disk.get(path)?.overlayClips).toEqual([textClip]);
+    expect(await flushWhile(t)).toEqual([]);
+  });
+
+  // Closing again after cancelling a slow save starts a second flush while the first still waits.
+  it('reports a failure to every flush that is waiting for it', async () => {
+    const t = setup({ latencyMs: 1000 });
+    t.show({ id: 1 }, untouched);
+    t.show({ id: 1 }, withTrim);
+    t.setDiskFailing(true);
+    const first = t.autoSave.flush();
+    await t.wait(100);
+    const second = t.autoSave.flush();
+    await t.wait(5000);
+    expect(await first).toEqual([{ path, error: new Error('disk full') }]);
+    expect(await second).toEqual([{ path, error: new Error('disk full') }]);
+    expect(t.errors).toEqual([]);
+    // A failure after both have finished is reported as usual again.
+    t.show({ id: 1 }, withText);
+    await t.wait(delayMs + 1100);
+    expect(t.errors).toHaveLength(1);
+  });
+
+  it('respects autosave being turned off', async () => {
+    const t = setup();
+    t.setEnabled(false);
+    t.show({ id: 1 }, untouched);
+    t.show({ id: 1 }, withTrim);
+    expect(await flushWhile(t)).toEqual([]);
+    expect(t.writes).toEqual([]);
+  });
+
+  it('reports failures outside of closing through onError, as before', async () => {
+    const t = setup();
+    t.show({ id: 1 }, untouched);
+    t.show({ id: 1 }, withTrim);
+    t.setDiskFailing(true);
+    await t.wait(delayMs + 20);
+    expect(t.errors).toHaveLength(1);
+  });
+
+  // What keeps the window from closing on a change accepted after `flush` resolved (re-audit finding 1).
+  describe('hasUnsavedChanges', () => {
+    it('is true while a change waits, while it is written, and after a failed save', async () => {
+      const t = setup({ latencyMs: 200 });
+      t.show({ id: 1, loadedProjectPath: path }, withTrim);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      t.show({ id: 1, loadedProjectPath: path }, withText);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+      await t.wait(delayMs + 100); // writing
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+      await t.wait(200);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      t.setDiskFailing(true);
+      t.show({ id: 1, loadedProjectPath: path }, withTrim);
+      await t.wait(delayMs + 300);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+    });
+
+    it('is false for a change that only went back to what is saved', async () => {
+      const t = setup();
+      t.show({ id: 1, loadedProjectPath: path }, withTrim);
+      t.show({ id: 1, loadedProjectPath: path }, withText);
+      t.show({ id: 1, loadedProjectPath: path }, withTrim);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+    });
+
+    it('is true again for a change made after flush resolved', async () => {
+      const t = setup();
+      t.show({ id: 1 }, untouched);
+      t.show({ id: 1 }, withTrim);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      t.show({ id: 1 }, withText);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+    });
+  });
+
+  describe('saveNow', () => {
+    it('starts a waiting save at once', async () => {
+      const t = setup();
+      t.show({ id: 1 }, untouched);
+      t.show({ id: 1 }, withTrim);
+      await t.wait(50);
+      t.autoSave.saveNow();
+      await t.wait(20);
+      expect(t.disk.get(path)).toEqual(withTrim);
+      await t.wait(2000);
+      expect(t.writes).toHaveLength(1);
+    });
+
+    it('does nothing when no save is waiting', async () => {
+      const t = setup();
+      t.show({ id: 1 }, untouched);
+      t.show({ id: 1 }, withTrim);
+      await t.wait(delayMs + 20);
+      t.autoSave.saveNow();
+      t.autoSave.saveNow();
+      await t.wait(2000);
+      expect(t.writes).toHaveLength(1);
+    });
   });
 });
