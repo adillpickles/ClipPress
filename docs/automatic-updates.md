@@ -31,10 +31,18 @@ mode. Development, offline sessions, other platforms, and portable copies do not
 run an installer. Enabling multiple instances cancels/pauses installation for the
 current session. Disable that setting and restart to resume automatic installation.
 
+Nor is an update installed while settings are in the installation folder, which
+installing deletes: a `config.json` there that ClipPress could not move to the
+app-data folder when it started (for example because the file was in use), or a
+`--config-dir` folder inside the installation folder. **Settings > App updates**
+says so. ClipPress tries the move again at its next start.
+
 ## Closing and unsaved changes
 
 Projects save automatically shortly after each edit (Settings: **Auto save project
-file?**, on by default; with it off, nothing is saved for you). Closing ClipPress in any way
+file?**, on by default; with it off, nothing is saved for you). A project file is
+the same file however its path is written (in another case, or through another
+name of its folder), so an older open of it can never write over a newer one. Closing ClipPress in any way
 (the window's close button, Alt+F4, **File > Exit**) first saves the open project,
 including an edit made just before closing and a save that is still being written.
 ClipPress also saves a waiting edit as soon as its window loses focus.
@@ -45,7 +53,10 @@ includes a save that failed earlier, such as the final save of a file you closed
 before: ClipPress keeps trying it until it succeeds. Reopening that file first
 tries the save again, so the reopened project has your changes if the disk works
 again; otherwise it shows what the file holds, and the failed changes are not
-written over it later. Saving that takes longer than two seconds shows a notice
+written over it later. When the clean-up after an export deletes the project
+file, a failed save of it is forgotten only once the file is gone; if deleting it
+fails or is cancelled, the failed save is kept and tried again like any other.
+Saving that takes longer than two seconds shows a notice
 with the same way out, and closing again while ClipPress is still busy saving
 offers to quit without saving after a few seconds. An edit made while the window is
 already closing is saved before it goes. A downloaded update installs only after
@@ -68,7 +79,9 @@ Every update and reinstall deletes and replaces it, including files that you put
 there. Updates keep everything else:
 
 - Settings stay in `%APPDATA%\ClipPress` (see [installation](installation.md) for a
-  `config.json` found next to an installed executable, which is moved there).
+  `config.json` found next to an installed executable, which is moved there; the
+  installer also copies it there before it deletes the installation folder, and
+  installs nothing if it cannot).
 - Projects are saved next to the media file, or in the working folder you chose.
 - Uninstalling keeps settings unless you delete the app-data folder yourself.
 
@@ -107,7 +120,8 @@ Before the next preview release:
    **Installer upgrade test** workflow on the release commit: in a disposable
    GitHub-hosted Windows VM it installs the candidate, updates it through two
    further versions in Automatic and Ask modes, and checks settings, projects,
-   closing, and the next launch. Never run it, or the installers, on your own PC.
+   closing, a run that cannot move settings out of the installation folder, a
+   reinstall, and the next launch. Never run it, or the installers, on your own PC.
 2. Set the intended package version and add matching notes in `versions/`.
 3. Build with `yarn pack-win`; keep the generated assets together.
 4. Publish the matching tag only after QA approval, then test discovery from the
