@@ -40,14 +40,23 @@ including an edit made just before closing and a save that is still being writte
 ClipPress also saves a waiting edit as soon as its window loses focus.
 
 If the project cannot be saved, for example because the disk is full, ClipPress
-stays open and offers **Try again**, **Quit without saving**, or **Cancel**. Saving
-that takes longer than two seconds shows a notice with the same way out. A
-downloaded update installs only after ClipPress has actually closed: a cancelled
-close keeps the current version running and the update waiting for the next close.
+stays open and offers **Try again**, **Quit without saving**, or **Cancel**. That
+includes a save that failed earlier, such as the final save of a file you closed
+before: ClipPress keeps trying it until it succeeds. Reopening that file first
+tries the save again, so the reopened project has your changes if the disk works
+again; otherwise it shows what the file holds, and the failed changes are not
+written over it later. Saving that takes longer than two seconds shows a notice
+with the same way out, and closing again while ClipPress is still busy saving
+offers to quit without saving after a few seconds. An edit made while the window is
+already closing is saved before it goes. A downloaded update installs only after
+ClipPress has actually closed: a cancelled close keeps the current version running
+and the update waiting for the next close.
 
 Windows shutdown, restart, and sign-out end ClipPress without a normal exit, so
-they never start an update installation. ClipPress then saves a waiting edit if it
-can. A forced termination (Task Manager, a crash) can lose an edit made within the
+they never start an update installation. Once Windows starts ending the session,
+ClipPress also installs nothing when it closes in that run (the update installs on
+a later close instead), because an installer that Windows stops half-way could
+leave no working app. ClipPress then saves a waiting edit if it can. A forced termination (Task Manager, a crash) can lose an edit made within the
 last half second; the project file already on disk stays intact, because a save
 replaces it only once the new file is complete. A power cut can lose that edit too,
 and in rare cases leave the file that was being saved damaged.
