@@ -152,7 +152,8 @@ describe.runIf(process.platform === 'win32')('isWindowsFolderInside on this Wind
     symlinkSync(install, linkToInstall, 'junction');
     symlinkSync(outside, linkToOutside, 'junction');
     shortRoot = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${root}').ShortPath`], { windowsHide: true }).toString().trim();
-  });
+    // Starting PowerShell can take longer than the default 10 s on a busy CI runner.
+  }, 60_000);
   afterAll(() => {
     if (linkToInstall !== '') rmSync(linkToInstall, { force: true });
     if (linkToOutside !== '') rmSync(linkToOutside, { force: true });
