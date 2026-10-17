@@ -608,12 +608,12 @@ export async function promptDownloadMediaUrl(outPath: string) {
 }
 
 
-export async function deleteFiles({ paths, deleteIfTrashFails, signal, onDeleted }: {
+export async function deleteFiles({ paths, deleteIfTrashFails, signal, runDeletion = async (_path, deletion) => deletion() }: {
   paths: string[],
   deleteIfTrashFails?: boolean | undefined,
   signal: AbortSignal,
-  /** Called for each file once it is in the trash or deleted (or was not there). */
-  onDeleted?: ((path: string) => void) | undefined,
+  /** Runs each attempt to delete a file (moving it to the trash, or deleting it). By default, at once. */
+  runDeletion?: ((path: string, deletion: () => Promise<void>) => Promise<void>) | undefined,
 }) {
   const failedToTrashFiles: string[] = [];
 
@@ -621,8 +621,7 @@ export async function deleteFiles({ paths, deleteIfTrashFails, signal, onDeleted
   for (const path of paths) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      await trashFile(path);
-      onDeleted?.(path);
+      await runDeletion(path, async () => trashFile(path));
       signal.throwIfAborted();
     } catch (err) {
       console.error(err);
@@ -642,10 +641,9 @@ export async function deleteFiles({ paths, deleteIfTrashFails, signal, onDeleted
     if (!value) return;
   }
 
-  await pMap(failedToTrashFiles, async (path) => {
+  await pMap(failedToTrashFiles, async (path) => runDeletion(path, async () => {
     await unlinkWithRetry(path, { signal });
-    onDeleted?.(path);
-  }, { concurrency: 5 });
+  }), { concurrency: 5 });
 }
 
 

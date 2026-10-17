@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildLlcProjectData, encodeLlcProjectFile, getProjectSegmentsToSave } from './llcProject';
 import ProjectAutoSave from './projectAutoSave';
 import type { ProjectSession } from './projectAutoSave';
+import type { ProjectFilePathKey } from './projectFilePathKey';
 import type { LlcProject, OverlayClip, StateSegment } from './types';
 
 const delayMs = 500;
@@ -23,14 +24,20 @@ const withText = contents({ overlayClips: [textClip] });
 
 /**
  * A disk whose writes take `latencyMs`, and an autosave writing to it. The disk stores each file
- * under `pathKey(path)`: paths with the same key are the same file.
+ * under `pathKey(path)`: paths with the same key are the same file. Autosave gets the same keys,
+ * or those of `fileKey`, which may not know a path's file yet.
  */
-function setup({ latencyMs = 10, pathKey }: { latencyMs?: number, pathKey?: (filePath: string) => string } = {}) {
+function setup({ latencyMs = 10, pathKey, fileKey }: {
+  latencyMs?: number,
+  pathKey?: (filePath: string) => string,
+  fileKey?: (filePath: string) => ProjectFilePathKey,
+} = {}) {
   const disk = new Map<string, LlcProject>();
   const writes: { path: string, data: LlcProject }[] = [];
   const errors: unknown[] = [];
   let failNext = false;
   let failAll = false;
+  const keyOf = fileKey ?? (pathKey != null ? (filePath: string) => ({ key: pathKey(filePath), resolved: true }) : undefined);
   const autoSave = new ProjectAutoSave({
     delayMs,
     write: async (writePath, data) => {
@@ -43,7 +50,7 @@ function setup({ latencyMs = 10, pathKey }: { latencyMs?: number, pathKey?: (fil
       disk.set(pathKey?.(writePath) ?? writePath, data);
     },
     onError: (err) => errors.push(err),
-    ...(pathKey != null ? { pathKey } : {}),
+    ...(keyOf != null ? { pathKey: keyOf } : {}),
   });
   let enabled = true;
   const show = (session: ProjectSession, project: LlcProject, { at = path, fileDuration = 8 }: { at?: string, fileDuration?: number } = {}) => {
@@ -494,11 +501,27 @@ describe('ProjectAutoSave before the app closes', () => {
       t.show({ id: 1 }, untouched);
       t.show({ id: 1 }, withTrim);
       t.setDiskFailing(true);
-      // The new open reports before the earlier final save has finished (and then fails).
+      await t.wait(delayMs + 50);
+      // The new open reports while the earlier save is still writing (and then fails).
       t.show({ id: 2 }, untouched);
       await t.wait(1000);
       expect(t.errors).toHaveLength(1);
       t.setDiskFailing(false);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.has(path)).toBe(false);
+    });
+
+    // PR #56 re-audit 3: what the ordering of opens guarantees (whenSaved before reading) is also
+    // enforced when a save runs, so a save of an older open never lands on a file a newer one read.
+    it('does not write a save of the earlier open that had not started when the file was reopened', async () => {
+      const t = setup({ latencyMs: 300 });
+      t.show({ id: 1 }, untouched);
+      t.show({ id: 1 }, withTrim);
+      // The new open reports at once, without waiting for the earlier open's final save.
+      t.show({ id: 2 }, untouched);
+      await t.wait(1000);
+      expect(t.writes).toEqual([]);
+      expect(t.errors).toEqual([]);
       expect(await flushWhile(t)).toEqual([]);
       expect(t.disk.has(path)).toBe(false);
     });
@@ -615,7 +638,9 @@ describe('ProjectAutoSave before the app closes', () => {
 
   // PR #56 re-audit 2 finding 3: the clean-up after an export forgot a failed save before it
   // deleted the project file, so a deletion that failed or was cancelled lost the failed changes.
-  describe('a failed save of a project file that the clean-up after an export deletes', () => {
+  // Re-audit 3 finding 4: a try queued by closing the app while the clean-up deleted the file, or
+  // checked that it was gone, wrote it again afterwards. Deleting now runs between saves.
+  describe('a project file that the clean-up after an export deletes', () => {
     async function closedWithFailedSave(t: ReturnType<typeof setup>) {
       t.disk.set(path, untouched);
       t.show({ id: 1, loadedProjectPath: path }, untouched);
@@ -630,12 +655,17 @@ describe('ProjectAutoSave before the app closes', () => {
       expect(t.autoSave.hasUnsavedChanges()).toBe(true);
     }
     const existsOn = (t: ReturnType<typeof setup>) => async (filePath: string) => t.disk.has(filePath);
+    /** Deletes the file from the disk after `ms`, as moving it to the trash would. */
+    const removeAfter = (t: ReturnType<typeof setup>, ms = 0) => async () => {
+      if (ms > 0) await new Promise((resolve) => { setTimeout(resolve, ms); });
+      t.disk.delete(path);
+    };
+    const deleteFile = (t: ReturnType<typeof setup>, remove = removeAfter(t), exists = existsOn(t)) => t.autoSave.deleteFile(path, { remove, exists });
 
-    it('is forgotten once the file is gone, and never brings it back', async () => {
+    it('forgets a failed save once the file is gone, which then never comes back', async () => {
       const t = setup();
       await closedWithFailedSave(t);
-      t.disk.delete(path);
-      await t.autoSave.forgetFailedSaveOfDeletedFile(path, existsOn(t));
+      await deleteFile(t);
       t.setDiskFailing(false);
       expect(t.autoSave.hasUnsavedChanges()).toBe(false);
       expect(await flushWhile(t)).toEqual([]);
@@ -643,11 +673,14 @@ describe('ProjectAutoSave before the app closes', () => {
       expect(t.disk.has(path)).toBe(false);
     });
 
-    it('is kept, reported and saved when deleting the file failed or was cancelled', async () => {
+    it('keeps, reports and saves a failed save when deleting the file failed or was cancelled', async () => {
       const t = setup();
       await closedWithFailedSave(t);
-      // The file is still there, with the state from before the failed save.
-      await t.autoSave.forgetFailedSaveOfDeletedFile(path, existsOn(t));
+      // Moving it to the trash failed: the file is still there, with the state from before the failed save.
+      await expect(deleteFile(t, async () => { throw new Error('trash failed'); })).rejects.toThrow('trash failed');
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+      // So did deleting it, though it seemed to work.
+      await deleteFile(t, async () => undefined);
       expect(t.autoSave.hasUnsavedChanges()).toBe(true);
       expect(await flushWhile(t)).toEqual([{ path, error: new Error('disk full') }]);
       t.setDiskFailing(false);
@@ -655,16 +688,41 @@ describe('ProjectAutoSave before the app closes', () => {
       expect(t.disk.get(path)).toEqual(withTrim);
     });
 
-    it('is kept when it cannot be told whether the file is gone', async () => {
+    it('keeps a failed save when it cannot be told whether the file is gone', async () => {
       const t = setup();
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       await closedWithFailedSave(t);
-      t.disk.delete(path);
-      await t.autoSave.forgetFailedSaveOfDeletedFile(path, async () => { throw new Error('EPERM'); });
+      await deleteFile(t, removeAfter(t), async () => { throw new Error('EPERM'); });
       expect(t.autoSave.hasUnsavedChanges()).toBe(true);
     });
 
-    it('is forgotten after a try that was still writing when the file was deleted, and failed', async () => {
+    // The app can close at any moment of the clean-up, for example while it asks about another file.
+    it.each([
+      ['while it is moving the file to the trash', 300, 0],
+      ['while it checks that the file is gone', 0, 300],
+    ])('does not let closing the app %s bring the file back', async (_when, removeMs, checkMs) => {
+      const t = setup();
+      await closedWithFailedSave(t);
+      t.setDiskFailing(false);
+      const deleting = deleteFile(t, removeAfter(t, removeMs), async (filePath) => {
+        await new Promise((resolve) => { setTimeout(resolve, checkMs); });
+        return t.disk.has(filePath);
+      });
+      await t.wait(100);
+      // Closing tries the failed save again: after the deletion, when there is nothing left to save.
+      const flushing = t.autoSave.flush();
+      await t.wait(1000);
+      await deleting;
+      expect(await flushing).toEqual([]);
+      expect(t.disk.has(path)).toBe(false);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      // Nor does reopening the file (which tries failed saves before reading) or closing again.
+      await t.autoSave.whenSaved();
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.has(path)).toBe(false);
+    });
+
+    it('lets a try that was already writing finish first, then deletes the file', async () => {
       const t = setup({ latencyMs: 300 });
       t.disk.set(path, untouched);
       t.show({ id: 1, loadedProjectPath: path }, untouched);
@@ -673,13 +731,33 @@ describe('ProjectAutoSave before the app closes', () => {
       t.autoSave.endSession();
       await t.wait(400);
       // Closing the app tries it again; meanwhile the clean-up deletes the file.
+      t.setDiskFailing(false);
       const flushing = t.autoSave.flush();
       await t.wait(50);
-      t.disk.delete(path);
-      const forgetting = t.autoSave.forgetFailedSaveOfDeletedFile(path, existsOn(t));
+      const deleting = deleteFile(t);
       await t.wait(400);
-      await forgetting;
-      // That try failed after the deletion; it is not left behind to bring the file back.
+      await deleting;
+      // The try saved it, then it was deleted.
+      expect(t.writes).toHaveLength(2);
+      expect(await flushing).toEqual([]);
+      expect(t.disk.has(path)).toBe(false);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+    });
+
+    it('forgets a try that was still writing when the file was deleted, and failed', async () => {
+      const t = setup({ latencyMs: 300 });
+      t.disk.set(path, untouched);
+      t.show({ id: 1, loadedProjectPath: path }, untouched);
+      t.show({ id: 1, loadedProjectPath: path }, withTrim);
+      t.setDiskFailing(true);
+      t.autoSave.endSession();
+      await t.wait(400);
+      const flushing = t.autoSave.flush();
+      await t.wait(50);
+      const deleting = deleteFile(t);
+      await t.wait(400);
+      await deleting;
+      // Deleted after that try had failed (closing waits for the deletion): nothing is left to bring it back.
       expect(await flushing).toEqual([]);
       expect(t.autoSave.hasUnsavedChanges()).toBe(false);
       t.setDiskFailing(false);
@@ -687,15 +765,153 @@ describe('ProjectAutoSave before the app closes', () => {
       expect(t.disk.has(path)).toBe(false);
     });
 
-    it('does nothing to a file without a failed save', async () => {
+    // The clean-up can keep the file open (its "close the file" choice turned off).
+    describe('of the file that stays open', () => {
+      it('counts what the open file shows as saved, so closing does not bring the file back', async () => {
+        const t = setup();
+        t.disk.set(path, untouched);
+        t.show({ id: 1, loadedProjectPath: path }, untouched);
+        t.show({ id: 1, loadedProjectPath: path }, withTrim);
+        t.setDiskFailing(true);
+        await t.wait(delayMs + 20);
+        t.setDiskFailing(false);
+        // An edit just before the clean-up, still waiting for the delay.
+        t.show({ id: 1, loadedProjectPath: path }, withText);
+        await deleteFile(t);
+        expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+        await t.wait(2000);
+        expect(await flushWhile(t)).toEqual([]);
+        expect(t.disk.has(path)).toBe(false);
+      });
+
+      it('saves a change made after the file was deleted', async () => {
+        const t = setup();
+        t.disk.set(path, withTrim);
+        t.show({ id: 1, loadedProjectPath: path }, withTrim);
+        await deleteFile(t);
+        t.show({ id: 1, loadedProjectPath: path }, withText);
+        await t.wait(delayMs + 20);
+        expect(t.disk.get(path)).toEqual(encodeLlcProjectFile(withText, 8));
+      });
+    });
+
+    it('does not ask whether the file is gone when deleting it failed', async () => {
       const t = setup();
       const exists = vi.fn(existsOn(t));
       t.show({ id: 1 }, untouched);
       t.show({ id: 1 }, withTrim);
       t.autoSave.endSession();
       await t.wait(100);
-      await t.autoSave.forgetFailedSaveOfDeletedFile(path, exists);
+      await expect(deleteFile(t, async () => { throw new Error('in use'); }, exists)).rejects.toThrow('in use');
       expect(exists).not.toHaveBeenCalled();
+      // Later saves still run.
+      t.show({ id: 2, loadedProjectPath: path }, withTrim);
+      t.show({ id: 2, loadedProjectPath: path }, withText);
+      await t.wait(delayMs + 20);
+      expect(t.disk.get(path)?.overlayClips).toEqual([textClip]);
+    });
+  });
+
+  // PR #56 re-audit 3 finding 2: a path whose folder could not be resolved kept the key it got as
+  // written, so a failed save made while a network drive was reconnecting never met a newer open
+  // of the same file through another of its paths, and closing the app wrote it over that open.
+  describe('when a path to the project file could not be resolved for a while', () => {
+    const viaDrive = String.raw`Z:\Clips\clip-proj.llc`;
+    const viaShare = String.raw`\\nas\share\Clips\clip-proj.llc`;
+    const sameFile = (filePath: string) => `FILE:${filePath.split(/[/\\]/u).at(-1)!.toUpperCase()}`;
+
+    /** Z: maps \\nas\share, whose folder resolves only while `reachable`. */
+    function setupShare() {
+      const reachable = { value: true };
+      const asked: string[] = [];
+      const t = setup({
+        pathKey: sameFile,
+        fileKey: (filePath) => {
+          asked.push(filePath);
+          return reachable.value ? { key: sameFile(filePath), resolved: true } : { key: filePath.toUpperCase(), resolved: false };
+        },
+      });
+      return { t, reachable, asked };
+    }
+
+    it.each([
+      ['the earlier open', viaDrive, viaShare],
+      ['the newer open', viaShare, viaDrive],
+    ])('lets a newer open supersede a failed save of the same file, when %s could not resolve its path', async (which, earlier, newer) => {
+      const { t, reachable } = setupShare();
+      const unresolvedFirst = which === 'the earlier open';
+      t.disk.set(sameFile(earlier), untouched);
+      reachable.value = !unresolvedFirst;
+      t.show({ id: 1, loadedProjectPath: earlier }, untouched, { at: earlier });
+      t.show({ id: 1, loadedProjectPath: earlier }, withTrim, { at: earlier });
+      t.setDiskFailing(true);
+      t.autoSave.endSession();
+      await t.wait(100);
+      const saved = t.autoSave.whenSaved();
+      await t.wait(100);
+      await saved;
+      // The reopened project shows what the file holds.
+      reachable.value = unresolvedFirst;
+      const read = t.disk.get(sameFile(newer))!;
+      t.show({ id: 2, loadedProjectPath: newer }, read, { at: newer });
+      reachable.value = true;
+      t.setDiskFailing(false);
+      t.show({ id: 2, loadedProjectPath: newer }, withText, { at: newer });
+      await t.wait(delayMs + 20);
+      expect(t.disk.get(sameFile(newer))).toEqual(encodeLlcProjectFile(withText, 8));
+      const writesBefore = t.writes.length;
+      // Closing the app does not write the earlier open's state over it.
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(sameFile(newer))).toEqual(encodeLlcProjectFile(withText, 8));
+      expect(t.writes).toHaveLength(writesBefore);
+    });
+
+    it('lets a newer open supersede a failed save whose path is resolved only when it is tried again', async () => {
+      const { t, reachable } = setupShare();
+      t.disk.set(sameFile(viaShare), untouched);
+      // The earlier open, through Z: while the share was down, could not save.
+      reachable.value = false;
+      t.show({ id: 1 }, untouched, { at: viaDrive });
+      t.show({ id: 1 }, withTrim, { at: viaDrive });
+      t.setDiskFailing(true);
+      t.autoSave.endSession();
+      await t.wait(100);
+      // The newer open (through the share's own path) neither waited for that try nor could resolve Z: when it opened.
+      t.setDiskFailing(false);
+      t.show({ id: 2, loadedProjectPath: viaShare }, untouched, { at: viaShare });
+      reachable.value = true;
+      // The share is back when the app closes, and Z: with it.
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(sameFile(viaShare))).toEqual(untouched);
+      expect(t.writes.filter(({ path: written }) => written === viaDrive)).toHaveLength(1);
+    });
+
+    it('still keeps, tries and reports the failed save of a file that is not open elsewhere', async () => {
+      const { t, reachable } = setupShare();
+      reachable.value = false;
+      t.show({ id: 1 }, untouched, { at: viaDrive });
+      t.show({ id: 1 }, withTrim, { at: viaDrive });
+      t.setDiskFailing(true);
+      t.autoSave.endSession();
+      await t.wait(100);
+      t.show({ id: 2 }, untouched, { at: '/videos/other-proj.llc' });
+      reachable.value = true;
+      expect(await flushWhile(t)).toEqual([{ path: viaDrive, error: new Error('disk full') }]);
+      t.setDiskFailing(false);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(sameFile(viaDrive))).toEqual(withTrim);
+    });
+
+    it('does not ask for keys again while saving the open file, only before a save could overwrite a newer open', async () => {
+      const { t, reachable, asked } = setupShare();
+      reachable.value = false;
+      t.show({ id: 1 }, untouched, { at: viaDrive });
+      for (let i = 0; i < 5; i += 1) {
+        t.show({ id: 1 }, i % 2 === 0 ? withTrim : withText, { at: viaDrive });
+        // eslint-disable-next-line no-await-in-loop
+        await t.wait(delayMs + 20);
+      }
+      expect(asked).toEqual([viaDrive]);
     });
   });
 

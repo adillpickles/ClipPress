@@ -1151,7 +1151,7 @@ function App() {
     setEditingCropSegmentId(undefined);
   }, [filePath, speedControlsHistory]);
 
-  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved, saveProjectNow, flushProject, hasUnsavedProjectChanges, forgetFailedSaveOfDeletedProject } = useSegmentsAutoSave({
+  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved, saveProjectNow, flushProject, hasUnsavedProjectChanges, deleteProjectFile } = useSegmentsAutoSave({
     autoSaveProjectFile,
     storeProjectInWorkingDir,
     filePath,
@@ -2532,35 +2532,25 @@ function App() {
         const pathsToDelete: string[] = [];
         if (cleanupChoices2.trashTmpFiles && savedPaths.previewFilePath) pathsToDelete.push(savedPaths.previewFilePath);
         const { projectFilePath } = savedPaths;
-        const deletingProjectFile = cleanupChoices2.trashProjectFile && projectFilePath != null;
-        if (deletingProjectFile) pathsToDelete.push(projectFilePath);
+        if (cleanupChoices2.trashProjectFile && projectFilePath != null) pathsToDelete.push(projectFilePath);
         if (cleanupChoices2.trashSourceFile && savedPaths.sourceFilePath) pathsToDelete.push(savedPaths.sourceFilePath);
 
-        // A save of the project file that failed must not bring it back later (when closing the
-        // app), once it is gone. But while it is still there (deleting it failed or was cancelled),
-        // it holds an older state, so the failed save is kept and tried again.
-        const forgetFailedSave = async () => {
-          if (deletingProjectFile) await forgetFailedSaveOfDeletedProject(projectFilePath);
-        };
-        try {
-          await deleteFiles({
-            paths: pathsToDelete,
-            deleteIfTrashFails: cleanupChoices2.deleteIfTrashFails,
-            signal: abortController.signal,
-            // At once: the user may close the app while asked about deleting another file.
-            onDeleted: (deletedPath) => {
-              if (deletedPath === projectFilePath) forgetFailedSave().catch((err: unknown) => console.error('Failed to settle a deleted project file', err));
-            },
-          });
-        } finally {
-          await forgetFailedSave();
-        }
+        await deleteFiles({
+          paths: pathsToDelete,
+          deleteIfTrashFails: cleanupChoices2.deleteIfTrashFails,
+          signal: abortController.signal,
+          // The project file is deleted between its saves, so that no save from before (one that
+          // failed and is tried again when the app closes, say) brings it back once it is gone.
+          // While it is still there (deleting it failed or was cancelled), it holds an older
+          // state, and a failed save of it is kept and tried again.
+          runDeletion: (deletePath, deletion) => (deletePath === projectFilePath ? deleteProjectFile(deletePath, deletion) : deletion()),
+        });
       }, i18n.t('Unable to delete file'));
     },
     [
       batchListRemoveFile,
       clearSegments,
-      forgetFailedSaveOfDeletedProject,
+      deleteProjectFile,
       filePath,
       previewFilePath,
       projectFileSavePath,

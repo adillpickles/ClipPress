@@ -12,7 +12,7 @@ import { errorToast } from '../swal';
 import i18n from '../i18n';
 
 const path = window.require('path');
-const { realpathSync } = window.require('fs');
+const { realpathSync, statSync } = window.require('fs');
 const { lstat } = window.require('fs/promises');
 
 /** Throws when it cannot tell, rather than saying that a file it cannot see is gone. */
@@ -54,7 +54,7 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
       errorToast(i18n.t('Unable to save project file'));
       console.error('Failed to save project file', err);
     },
-    pathKey: createProjectFilePathKey({ path, caseInsensitive: isWindows, realpath: (dir) => realpathSync.native(dir) }),
+    pathKey: createProjectFilePathKey({ path, caseInsensitive: isWindows, realpath: (dir) => realpathSync.native(dir), identity: (dir) => statSync(dir, { bigint: true }) }),
   }));
 
   const snapshot = useMemo<ProjectSnapshot | undefined>(() => {
@@ -86,7 +86,7 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
   const saveProjectNow = useCallback(() => autoSave.saveNow(), [autoSave]);
   const flushProject = useCallback(() => autoSave.flush(), [autoSave]);
   const hasUnsavedProjectChanges = useCallback(() => autoSave.hasUnsavedChanges(), [autoSave]);
-  const forgetFailedSaveOfDeletedProject = useCallback((projectPath: string) => autoSave.forgetFailedSaveOfDeletedFile(projectPath, fileExists), [autoSave]);
+  const deleteProjectFile = useCallback((projectPath: string, remove: () => Promise<void>) => autoSave.deleteFile(projectPath, { remove, exists: fileExists }), [autoSave]);
 
   return {
     getEdlFilePath,
@@ -97,6 +97,6 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
     saveProjectNow,
     flushProject,
     hasUnsavedProjectChanges,
-    forgetFailedSaveOfDeletedProject,
+    deleteProjectFile,
   };
 };
