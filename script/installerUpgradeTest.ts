@@ -655,6 +655,7 @@ async function main() {
       const copies = (await readdir(settingsDir)).filter((name) => name.startsWith('config.json.importing-') && name.endsWith('-installer'));
       assert.equal(copies.length, 1, `Expected one copy made by the installer: ${copies.join(', ')}`);
       const copy = copies[0]!;
+      assert.match(copy, /^config\.json\.importing-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-installer$/);
       assert.equal((JSON.parse(await readFile(join(settingsDir, copy), 'utf8')) as Record<string, unknown>)['sizeLimitMb'], reinstallMarker);
 
       // The next start finishes importing it.
