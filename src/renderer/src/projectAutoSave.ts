@@ -190,9 +190,30 @@ export default class ProjectAutoSave {
     return session != null && this.needsSave(session, session.latest);
   }
 
-  /** Forgets a failed save of `path`, whose project file is being deleted: it must not be written again. */
-  discardFailedSave(path: string) {
-    this.failed.delete(this.key(path));
+  /**
+   * For a project file that may have been deleted on purpose (the clean-up after an export), even
+   * if deleting it failed or was cancelled: forgets a failed save of it if the file is gone. If it
+   * is still there, it holds an older state than the failed save, which is kept, to be tried
+   * again and reported like any other. Runs after every save started so far, so none of them can
+   * bring the file back after the check, or fail and leave a failure behind.
+   */
+  async forgetFailedSaveOfDeletedFile(path: string, exists: (filePath: string) => Promise<boolean>) {
+    const key = this.key(path);
+    const check = this.queue.then(async () => {
+      if (!this.failed.has(key)) return;
+      try {
+        if (await exists(path)) {
+          console.warn('Keeping a failed save of a project file that was not deleted', path);
+          return;
+        }
+      } catch (err) {
+        console.error('Could not tell whether a project file was deleted; keeping its failed save', path, err);
+        return;
+      }
+      this.failed.delete(key);
+    });
+    this.queue = check;
+    await check;
   }
 
   /**

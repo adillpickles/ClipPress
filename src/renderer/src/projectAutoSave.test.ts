@@ -613,20 +613,90 @@ describe('ProjectAutoSave before the app closes', () => {
     });
   });
 
-  it('does not write a discarded failed save again', async () => {
-    const t = setup();
-    t.show({ id: 1 }, untouched);
-    t.show({ id: 1 }, withTrim);
-    t.setDiskFailing(true);
-    t.autoSave.endSession();
-    await t.wait(100);
-    // Like deleting the project file in the clean-up after an export.
-    t.autoSave.discardFailedSave(path);
-    t.setDiskFailing(false);
-    expect(t.autoSave.hasUnsavedChanges()).toBe(false);
-    expect(await flushWhile(t)).toEqual([]);
-    await t.autoSave.whenSaved();
-    expect(t.disk.has(path)).toBe(false);
+  // PR #56 re-audit 2 finding 3: the clean-up after an export forgot a failed save before it
+  // deleted the project file, so a deletion that failed or was cancelled lost the failed changes.
+  describe('a failed save of a project file that the clean-up after an export deletes', () => {
+    async function closedWithFailedSave(t: ReturnType<typeof setup>) {
+      t.disk.set(path, untouched);
+      t.show({ id: 1, loadedProjectPath: path }, untouched);
+      t.show({ id: 1, loadedProjectPath: path }, withTrim);
+      t.setDiskFailing(true);
+      t.autoSave.endSession();
+      await t.wait(100);
+      // Clean-up waits for earlier saves first, which tries the failed one again.
+      const saved = t.autoSave.whenSaved();
+      await t.wait(100);
+      await saved;
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+    }
+    const existsOn = (t: ReturnType<typeof setup>) => async (filePath: string) => t.disk.has(filePath);
+
+    it('is forgotten once the file is gone, and never brings it back', async () => {
+      const t = setup();
+      await closedWithFailedSave(t);
+      t.disk.delete(path);
+      await t.autoSave.forgetFailedSaveOfDeletedFile(path, existsOn(t));
+      t.setDiskFailing(false);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      expect(await flushWhile(t)).toEqual([]);
+      await t.autoSave.whenSaved();
+      expect(t.disk.has(path)).toBe(false);
+    });
+
+    it('is kept, reported and saved when deleting the file failed or was cancelled', async () => {
+      const t = setup();
+      await closedWithFailedSave(t);
+      // The file is still there, with the state from before the failed save.
+      await t.autoSave.forgetFailedSaveOfDeletedFile(path, existsOn(t));
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+      expect(await flushWhile(t)).toEqual([{ path, error: new Error('disk full') }]);
+      t.setDiskFailing(false);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.get(path)).toEqual(withTrim);
+    });
+
+    it('is kept when it cannot be told whether the file is gone', async () => {
+      const t = setup();
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      await closedWithFailedSave(t);
+      t.disk.delete(path);
+      await t.autoSave.forgetFailedSaveOfDeletedFile(path, async () => { throw new Error('EPERM'); });
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+    });
+
+    it('is forgotten after a try that was still writing when the file was deleted, and failed', async () => {
+      const t = setup({ latencyMs: 300 });
+      t.disk.set(path, untouched);
+      t.show({ id: 1, loadedProjectPath: path }, untouched);
+      t.show({ id: 1, loadedProjectPath: path }, withTrim);
+      t.setDiskFailing(true);
+      t.autoSave.endSession();
+      await t.wait(400);
+      // Closing the app tries it again; meanwhile the clean-up deletes the file.
+      const flushing = t.autoSave.flush();
+      await t.wait(50);
+      t.disk.delete(path);
+      const forgetting = t.autoSave.forgetFailedSaveOfDeletedFile(path, existsOn(t));
+      await t.wait(400);
+      await forgetting;
+      // That try failed after the deletion; it is not left behind to bring the file back.
+      expect(await flushing).toEqual([]);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      t.setDiskFailing(false);
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.disk.has(path)).toBe(false);
+    });
+
+    it('does nothing to a file without a failed save', async () => {
+      const t = setup();
+      const exists = vi.fn(existsOn(t));
+      t.show({ id: 1 }, untouched);
+      t.show({ id: 1 }, withTrim);
+      t.autoSave.endSession();
+      await t.wait(100);
+      await t.autoSave.forgetFailedSaveOfDeletedFile(path, exists);
+      expect(exists).not.toHaveBeenCalled();
+    });
   });
 
   it('neither tries again nor reports failed saves while autosave is turned off', async () => {

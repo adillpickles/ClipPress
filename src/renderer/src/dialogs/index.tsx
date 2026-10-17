@@ -608,7 +608,13 @@ export async function promptDownloadMediaUrl(outPath: string) {
 }
 
 
-export async function deleteFiles({ paths, deleteIfTrashFails, signal }: { paths: string[], deleteIfTrashFails?: boolean | undefined, signal: AbortSignal }) {
+export async function deleteFiles({ paths, deleteIfTrashFails, signal, onDeleted }: {
+  paths: string[],
+  deleteIfTrashFails?: boolean | undefined,
+  signal: AbortSignal,
+  /** Called for each file once it is in the trash or deleted (or was not there). */
+  onDeleted?: ((path: string) => void) | undefined,
+}) {
   const failedToTrashFiles: string[] = [];
 
   // eslint-disable-next-line no-restricted-syntax
@@ -616,6 +622,7 @@ export async function deleteFiles({ paths, deleteIfTrashFails, signal }: { paths
     try {
       // eslint-disable-next-line no-await-in-loop
       await trashFile(path);
+      onDeleted?.(path);
       signal.throwIfAborted();
     } catch (err) {
       console.error(err);
@@ -635,7 +642,10 @@ export async function deleteFiles({ paths, deleteIfTrashFails, signal }: { paths
     if (!value) return;
   }
 
-  await pMap(failedToTrashFiles, async (path) => unlinkWithRetry(path, { signal }), { concurrency: 5 });
+  await pMap(failedToTrashFiles, async (path) => {
+    await unlinkWithRetry(path, { signal });
+    onDeleted?.(path);
+  }, { concurrency: 5 });
 }
 
 

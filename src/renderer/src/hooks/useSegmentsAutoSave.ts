@@ -13,6 +13,18 @@ import i18n from '../i18n';
 
 const path = window.require('path');
 const { realpathSync } = window.require('fs');
+const { lstat } = window.require('fs/promises');
+
+/** Throws when it cannot tell, rather than saying that a file it cannot see is gone. */
+async function fileExists(filePath: string) {
+  try {
+    await lstat(filePath);
+    return true;
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) return false;
+    throw err;
+  }
+}
 
 
 export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, projectSession, customOutDir, fileDuration, cutSegments, customTagsByFile, paramsByStreamId, overlayClips }: {
@@ -74,7 +86,7 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
   const saveProjectNow = useCallback(() => autoSave.saveNow(), [autoSave]);
   const flushProject = useCallback(() => autoSave.flush(), [autoSave]);
   const hasUnsavedProjectChanges = useCallback(() => autoSave.hasUnsavedChanges(), [autoSave]);
-  const discardFailedProjectSave = useCallback((projectPath: string) => autoSave.discardFailedSave(projectPath), [autoSave]);
+  const forgetFailedSaveOfDeletedProject = useCallback((projectPath: string) => autoSave.forgetFailedSaveOfDeletedFile(projectPath, fileExists), [autoSave]);
 
   return {
     getEdlFilePath,
@@ -85,6 +97,6 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
     saveProjectNow,
     flushProject,
     hasUnsavedProjectChanges,
-    discardFailedProjectSave,
+    forgetFailedSaveOfDeletedProject,
   };
 };
