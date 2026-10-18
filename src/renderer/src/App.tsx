@@ -5978,6 +5978,21 @@ function App() {
     userOpenFiles,
   ]);
 
+  // Edit > Undo/Redo (see menu.ts): typing in a focused text field, otherwise the editor's changes.
+  useEffect(() => {
+    function onEditMenuUndoRedo(_event: IpcRendererEvent, command: 'undo' | 'redo') {
+      const focused = document.activeElement;
+      const isTextField = (focused instanceof HTMLInputElement && ['text', 'search', 'url', 'tel', 'email', 'password', 'number'].includes(focused.type))
+        || focused instanceof HTMLTextAreaElement
+        || (focused instanceof HTMLElement && focused.isContentEditable);
+      if (isTextField) document.execCommand(command);
+      else if (command === 'undo') editHistoryOrder.undo(editHistories);
+      else editHistoryOrder.redo(editHistories);
+    }
+    electron.ipcRenderer.on('editMenuUndoRedo', onEditMenuUndoRedo);
+    return () => { electron.ipcRenderer.off('editMenuUndoRedo', onEditMenuUndoRedo); };
+  }, [editHistories, editHistoryOrder]);
+
   const handleBatchFilesDrop = useCallback<DragEventHandler<HTMLDivElement>>(
     async (ev) => {
       ev.preventDefault();

@@ -87,6 +87,8 @@ const defaultKeyBindings: KeyBinding[] = [
   { keys: 'MetaLeft+KeyZ', action: 'undo' },
   { keys: 'ControlLeft+ShiftLeft+KeyZ', action: 'redo' },
   { keys: 'MetaLeft+ShiftLeft+KeyZ', action: 'redo' },
+  // The usual Windows redo, as in Edit > Redo.
+  { keys: 'ControlLeft+KeyY', action: 'redo' },
 
   { keys: 'KeyF', action: 'toggleFullscreenVideo' },
 
@@ -656,5 +658,13 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
       && !existingBindings.some((existing) => existing.keys === binding.keys || existing.action === binding.action));
     if (addedBindings.length > 0) set('keyBindings', [...existingBindings, ...addedBindings]);
     store.set('segmentSpeedShortcutsMigrated', true);
+  }
+
+  // Ctrl+Y redo for existing settings too, unless Ctrl+Y (either Ctrl key) already does something.
+  if (store.get('redoCtrlYShortcutMigrated') !== true) {
+    const existingBindings = store.get('keyBindings') as KeyBinding[];
+    const isCtrlY = (keys: string) => { const parts = keys.split('+'); return parts.length === 2 && parts.includes('KeyY') && (parts.includes('ControlLeft') || parts.includes('ControlRight')); };
+    if (!existingBindings.some((existing) => isCtrlY(existing.keys))) set('keyBindings', [...existingBindings, { keys: 'ControlLeft+KeyY', action: 'redo' }]);
+    store.set('redoCtrlYShortcutMigrated', true);
   }
 }

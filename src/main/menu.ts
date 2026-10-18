@@ -231,8 +231,16 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates }
       submenu: [
         // https://github.com/mifi/lossless-cut/issues/610
         // https://github.com/mifi/lossless-cut/issues/1183
-        { role: 'undo', label: esc(t('Undo')) },
-        { role: 'redo', label: esc(t('Redo')) },
+        // The undo/redo roles only undo typing in a text field. Elsewhere these undo and redo editor
+        // changes. Their keys are left to the page, so the editor's shortcuts and a text field's own
+        // undo keep working (and don't run twice).
+        ...(process.platform === 'darwin' ? [
+          { role: 'undo' as const, label: esc(t('Undo')) },
+          { role: 'redo' as const, label: esc(t('Redo')) },
+        ] : [
+          { label: esc(t('Undo')), accelerator: 'Ctrl+Z', registerAccelerator: false, click: () => mainWindow.webContents.send('editMenuUndoRedo', 'undo') },
+          { label: esc(t('Redo')), accelerator: 'Ctrl+Y', registerAccelerator: false, click: () => mainWindow.webContents.send('editMenuUndoRedo', 'redo') },
+        ]),
         { type: 'separator' },
         { role: 'cut', label: esc(t('Cut')) },
         { role: 'copy', label: esc(t('Copy')) },
