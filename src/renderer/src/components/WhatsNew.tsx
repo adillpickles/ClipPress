@@ -53,12 +53,7 @@ export default function WhatsNew() {
 
               return (
                 <div key={version} className={styles['version']}>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1em' }}>
-                    {!(isMasBuild && matchingVersions.length === 1) && <h2>v{version}</h2>}
-                    <Button onClick={() => shell.openExternal(getReleaseUrl(version))}><FaFile style={{ verticalAlign: 'middle' }} /> {t('All release notes')}</Button>
-                    <Button onClick={() => shell.openExternal(compareReleasesUrl(prevVersion, version))}><FaCode style={{ verticalAlign: 'middle' }} /> {t('All code changes')}</Button>
-                  </div>
-
+                  {!(isMasBuild && matchingVersions.length === 1) && <h2>v{version}</h2>}
 
                   {highlightsMd != null && (
                     <Markdown
@@ -73,6 +68,12 @@ export default function WhatsNew() {
                       {highlightsMd}
                     </Markdown>
                   )}
+
+                  {/* The highlights stay short; everything else is one click away. */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1em', marginTop: '.8em' }}>
+                    <Button onClick={() => shell.openExternal(getReleaseUrl(version))}><FaFile style={{ verticalAlign: 'middle' }} /> {t('All release notes')}</Button>
+                    <Button onClick={() => shell.openExternal(compareReleasesUrl(prevVersion, version))}><FaCode style={{ verticalAlign: 'middle' }} /> {t('All code changes')}</Button>
+                  </div>
                 </div>
               );
             })}
