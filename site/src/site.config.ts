@@ -1,7 +1,7 @@
 // Single source of truth for every release / download / link fact on this site.
 //
 // To publish a new preview:
-//   1. set `tag` to the published GitHub tag (e.g. "v0.1.0-beta.4")
+//   1. set `tag` to the published GitHub tag (e.g. "v0.1.0-beta.5")
 //   2. confirm `assetFileName` matches the uploaded asset exactly
 //   3. update `releaseLabel` and `assetSize` to match the release
 //   4. rebuild + redeploy
@@ -37,10 +37,10 @@ export const PREVIEW = {
   status: 'ready' as PreviewStatus,
   // Static no-JS fallback copy in index.html mirrors `tag`, `releaseLabel`,
   // `platform` and `assetFileName` — scripts/lint.mjs enforces the sync.
-  tag: 'v0.1.0-beta.4',
-  releaseLabel: 'v0.1.0 Beta 4',
-  assetFileName: 'ClipPress-Windows-x64.exe',
-  assetSize: '133 MB',
+  tag: 'v0.1.0-beta.5',
+  releaseLabel: 'v0.1.0 Beta 5',
+  assetFileName: 'ClipPress-Setup-0.1.0-beta.5.exe',
+  assetSize: '150 MB',
   platform: 'Windows 10/11 x64',
 } as const;
 
