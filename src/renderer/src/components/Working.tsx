@@ -1,10 +1,11 @@
 import { memo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Trans, useTranslation } from 'react-i18next';
+import { useTranslation } from 'react-i18next';
 import useInterval from 'react-use/lib/useInterval';
-import { FiActivity } from 'react-icons/fi';
+import { FiLoader } from 'react-icons/fi';
 
 import Button from './Button';
+import formatClockTime from '../util/clockTime';
 import styles from './Working.module.css';
 
 
@@ -36,15 +37,8 @@ function Working({ text, detailText, progress, onAbortClick }: {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 8 }}
       >
-        <div className={styles['iconBadge']}>
-          <FiActivity />
-        </div>
-
-        <div className={styles['eyebrow']}>
-          {t('Working')}
-        </div>
-
         <div className={styles['title']}>
+          <FiLoader aria-hidden className={`${styles['titleIcon']} spinner-animation`} />
           {text}
         </div>
 
@@ -56,7 +50,7 @@ function Working({ text, detailText, progress, onAbortClick }: {
 
         <div className={styles['metaRow']}>
           <div className={styles['elapsed']}>
-            {t('Elapsed: {{seconds}} seconds', { seconds: (elapsedMs / 1000).toFixed(1) })}
+            {t('{{time}} elapsed', { time: formatClockTime(elapsedMs / 1000) })}
           </div>
           {progressPercent != null && (
             <div className={styles['progressValue']}>
@@ -72,7 +66,7 @@ function Working({ text, detailText, progress, onAbortClick }: {
         )}
 
         <div className={styles['actions']}>
-          <Button onClick={onAbortClick} style={{ padding: '.35em .95em' }}><Trans>Abort</Trans></Button>
+          <Button onClick={onAbortClick}>{t('Cancel')}</Button>
         </div>
       </motion.div>
     </div>

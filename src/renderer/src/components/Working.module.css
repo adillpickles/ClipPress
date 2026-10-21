@@ -1,64 +1,40 @@
 .wrapper {
-  background: color-mix(in srgb, var(--white-a4) 68%, transparent);
-  backdrop-filter: blur(6px);
-}
-
-:global(.dark-theme) .wrapper {
-  background: color-mix(in srgb, var(--black-a6) 68%, transparent);
+  background: var(--black-a7);
 }
 
 .card {
-  width: min(28rem, calc(100vw - 2rem));
-  border-radius: 1.4rem;
-  padding: 1.35rem 1.35rem 1.1rem;
-  color: var(--gray-12);
-  font-size: 14px;
+  width: min(26rem, calc(100vw - 2rem));
+  box-sizing: border-box;
+  border-radius: var(--cp-radius-xl);
+  padding: 1.25rem 1.4rem 1.1rem;
+  color: var(--cp-text);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: .7rem;
-  text-align: center;
-  background:
-    radial-gradient(circle at top, color-mix(in srgb, var(--accent-8) 10%, transparent), transparent 44%),
-    linear-gradient(180deg, color-mix(in srgb, var(--gray-2) 92%, transparent), color-mix(in srgb, var(--gray-1) 95%, transparent));
-  box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  border: 1px solid color-mix(in srgb, var(--gray-8) 34%, transparent);
-  backdrop-filter: blur(16px);
-}
-
-.iconBadge {
-  width: 2.9rem;
-  height: 2.9rem;
-  border-radius: 1rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.2rem;
-  color: var(--accent-11);
-  background: color-mix(in srgb, var(--accent-4) 22%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent-8) 24%, transparent);
-}
-
-.eyebrow {
-  color: var(--gray-10);
-  font-size: .74rem;
-  font-weight: 800;
-  letter-spacing: .08em;
-  text-transform: uppercase;
+  align-items: stretch;
+  gap: .6rem;
+  background: var(--cp-panel);
+  border: 1px solid var(--cp-line);
+  box-shadow: var(--cp-shadow-dialog);
 }
 
 .title {
-  color: var(--gray-12);
-  font-size: 1.15rem;
-  font-weight: 800;
-  line-height: 1.2;
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  color: var(--cp-text);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.titleIcon {
+  flex-shrink: 0;
+  color: var(--cp-accent-text);
 }
 
 .detail {
-  color: var(--gray-11);
-  font-size: .92rem;
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
   line-height: 1.45;
   max-width: 100%;
   word-break: break-word;
@@ -67,11 +43,13 @@
 .metaRow {
   width: 100%;
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: .8rem;
-  color: var(--gray-10);
-  font-size: .86rem;
+  margin-top: .35rem;
+  color: var(--cp-text-subtle);
+  font-size: .8125rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .elapsed {
@@ -79,30 +57,30 @@
 }
 
 .progressValue {
-  color: var(--gray-12);
-  font-size: 1rem;
-  font-weight: 800;
+  color: var(--cp-text);
+  font-size: .9375rem;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 .progressTrack {
   width: 100%;
-  height: .5rem;
+  height: 6px;
   border-radius: 999px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--gray-4) 78%, transparent);
-  border: 1px solid color-mix(in srgb, var(--gray-8) 18%, transparent);
+  background: var(--cp-hover);
 }
 
 .progressFill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent-8), var(--accent-10));
+  background: var(--cp-accent);
   transition: width .18s ease-out;
 }
 
 .actions {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
   width: 100%;
+  margin-top: .4rem;
 }

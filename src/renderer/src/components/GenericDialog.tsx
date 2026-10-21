@@ -275,6 +275,14 @@ export function useDialog() {
     const response = await new Promise<boolean>((resolve) => {
       function ExportFinishedDialog() {
         const { onOpenChange } = useGenericDialogContext();
+        const showRef = useRef<HTMLButtonElement>(null);
+
+        // Start on the main action rather than on the first focusable thing (the Details toggle).
+        const handleOpenAutoFocus = useCallback((e: Event) => {
+          if (showRef.current == null) return;
+          e.preventDefault();
+          showRef.current.focus({ focusVisible: false } as FocusOptions);
+        }, []);
 
         const handleConfirmClick = useCallback<MouseEventHandler<HTMLButtonElement>>((e) => {
           e.preventDefault();
@@ -283,7 +291,7 @@ export function useDialog() {
         }, [onOpenChange]);
 
         return (
-          <Dialog.Content aria-describedby={undefined} style={{ width }}>
+          <Dialog.Content aria-describedby={undefined} style={{ width }} onOpenAutoFocus={handleOpenAutoFocus}>
             <Dialog.Title>{title ?? t('Success!')}</Dialog.Title>
 
             {children}
@@ -293,7 +301,7 @@ export function useDialog() {
                 <DialogButton>{t('Close')}</DialogButton>
               </Dialog.Close>
 
-              <DialogButton primary onClick={handleConfirmClick}>{t('Show')}</DialogButton>
+              <DialogButton primary ref={showRef} onClick={handleConfirmClick}>{t('Show in folder')}</DialogButton>
             </Dialog.ButtonRow>
           </Dialog.Content>
         );
@@ -474,27 +482,26 @@ export function useDialog() {
         }, []);
 
         return (
-          <Dialog.Content aria-describedby={undefined} style={{ width: '80vw' }} onOpenAutoFocus={handleOpenAutoFocus}>
+          <Dialog.Content aria-describedby={undefined} style={{ width: '32rem' }} onOpenAutoFocus={handleOpenAutoFocus}>
             <Dialog.Title>
-              {t('Cleanup files?')}
+              {t('Clean up files')}
             </Dialog.Title>
 
             <Dialog.Description>
-              {t('What do you want to do after exporting a file or when pressing the "delete source file" button?')}
+              {t('What happens after an export, or when you choose Clean up.')}
             </Dialog.Description>
 
-            <Checkbox label={t('Close currently opened file')} checked={closeFile} disabled={trashSourceFile || trashTmpFiles} onCheckedChange={(checked) => onChange('closeFile', checked)} />
-
-            <div style={{ marginBottom: '2em' }}>
-              <Checkbox label={t('Trash auto-generated files')} checked={trashTmpFiles} onCheckedChange={(checked) => onChange('trashTmpFiles', checked)} />
-              <Checkbox label={t('Trash original source file')} checked={trashSourceFile} onCheckedChange={(checked) => onChange('trashSourceFile', checked)} />
-              <Checkbox label={t('Trash project LLC file')} checked={trashProjectFile} onCheckedChange={(checked) => onChange('trashProjectFile', checked)} />
-              <Checkbox label={t('Permanently delete the files if trash fails?')} disabled={!(trashTmpFiles || trashProjectFile || trashSourceFile)} checked={deleteIfTrashFails} onCheckedChange={(checked) => onChange('deleteIfTrashFails', checked)} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '.55rem', marginBottom: '1.25rem' }}>
+              <Checkbox label={t('Close the recording')} checked={closeFile} disabled={trashSourceFile || trashTmpFiles} onCheckedChange={(checked) => onChange('closeFile', checked)} />
+              <Checkbox label={t('Move temporary preview files to the trash')} checked={trashTmpFiles} onCheckedChange={(checked) => onChange('trashTmpFiles', checked)} />
+              <Checkbox label={t('Move the original recording to the trash')} checked={trashSourceFile} onCheckedChange={(checked) => onChange('trashSourceFile', checked)} />
+              <Checkbox label={t('Move the project file (.llc) to the trash')} checked={trashProjectFile} onCheckedChange={(checked) => onChange('trashProjectFile', checked)} />
+              <Checkbox label={t('Delete permanently if the trash fails')} disabled={!(trashTmpFiles || trashProjectFile || trashSourceFile)} checked={deleteIfTrashFails} onCheckedChange={(checked) => onChange('deleteIfTrashFails', checked)} />
             </div>
 
-            <div style={{ marginBottom: '2em' }}>
-              <Checkbox label={t('Show this dialog every time?')} checked={askForCleanup} onCheckedChange={(checked) => onChange('askForCleanup', checked)} />
-              <Checkbox label={t('Do all of this automatically after exporting a file?')} checked={cleanupAfterExport} onCheckedChange={(checked) => onChange('cleanupAfterExport', checked)} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '.55rem', paddingTop: '1rem', borderTop: '1px solid var(--cp-line)' }}>
+              <Checkbox label={t('Do this automatically after each export')} checked={cleanupAfterExport} onCheckedChange={(checked) => onChange('cleanupAfterExport', checked)} />
+              <Checkbox label={t('Ask me each time')} checked={askForCleanup} onCheckedChange={(checked) => onChange('askForCleanup', checked)} />
             </div>
 
             <Dialog.ButtonRow>
