@@ -655,6 +655,11 @@ function App() {
     electron.ipcRenderer.send('setLanguage', language);
   }, [language]);
 
+  // The menus differ between simple and advanced mode.
+  useEffect(() => {
+    electron.ipcRenderer.send('setSimpleMode', simpleMode);
+  }, [simpleMode]);
+
   const isFileOpened = !!filePath;
 
   const onOutputFormatUserChange = useCallback(

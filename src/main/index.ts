@@ -388,9 +388,12 @@ function createWindow() {
   mainWindow.on('move', debouncedSaveWindowState);
 }
 
+// The renderer reports the interface mode (setSimpleMode); until then, the saved setting.
+let menuSimpleMode: boolean | undefined;
+
 function updateMenu() {
   assert(mainWindow);
-  menu({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates: () => { checkForUpdates().catch((error: unknown) => logger.warn('Update check failed', error)); } });
+  menu({ app, mainWindow, newVersion, isStoreBuild, simpleMode: menuSimpleMode ?? configStore.get('simpleMode'), onCheckForUpdates: () => { checkForUpdates().catch((error: unknown) => logger.warn('Update check failed', error)); } });
 }
 
 async function changeLanguage(language: string | null) {
@@ -555,6 +558,11 @@ async function init() {
     });
 
     ipcMain.on('setLanguage', (_e, newLanguage) => changeLanguage(newLanguage));
+    ipcMain.on('setSimpleMode', (_e, simpleMode: unknown) => {
+      if (typeof simpleMode !== 'boolean' || simpleMode === menuSimpleMode) return;
+      menuSimpleMode = simpleMode;
+      updateMenu();
+    });
 
     ipcMain.handle('tryTrashItem', async (_e, path) => {
       try {

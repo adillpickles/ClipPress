@@ -15,6 +15,16 @@ function AppChrome() {
   const { t } = useTranslation();
   const [isMaximized, setIsMaximized] = useState(false);
   const [isFocused, setIsFocused] = useState(true);
+  // Bumped when the main process rebuilds the menu (language or interface mode changed).
+  const [, setMenuVersion] = useState(0);
+
+  useEffect(() => {
+    if (!shouldUseCustomChrome) return undefined;
+    const { ipcRenderer } = window.require('electron');
+    const onMenuUpdated = () => setMenuVersion((v) => v + 1);
+    ipcRenderer.on('menuUpdated', onMenuUpdated);
+    return () => { ipcRenderer.removeListener('menuUpdated', onMenuUpdated); };
+  }, []);
 
   useEffect(() => {
     if (!shouldUseCustomChrome) return undefined;

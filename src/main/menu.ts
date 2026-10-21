@@ -14,10 +14,32 @@ const esc = (val: string) => val.replaceAll('&', '&&');
 
 const { Menu } = electron;
 
-export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates }: {
+export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, simpleMode }: {
   app: Electron.App, mainWindow: BrowserWindow, newVersion?: string | undefined, isStoreBuild: boolean,
   onCheckForUpdates: () => void,
+  /** Simple mode shows a short Clips menu and leaves the power tools to advanced mode. */
+  simpleMode: boolean,
 }) => {
+  const send = (channel: string) => () => mainWindow.webContents.send(channel);
+
+  // The everyday clip actions, as a menu (simple mode's replacement for the Segments menu).
+  const clipsMenu: MenuItemConstructorOptions = {
+    label: esc(t('Clips')),
+    submenu: [
+      { label: esc(t('New clip')), click: send('addSegment') },
+      { label: esc(t('Split clip at playhead')), click: send('splitCurrentSegment') },
+      { label: esc(t('Duplicate clip')), click: send('duplicateCurrentSegment') },
+      { label: esc(t('Rename clip…')), click: send('labelCurrentSegment') },
+      { label: esc(t('Remove clip')), click: send('removeCurrentSegment') },
+      { type: 'separator' },
+      { label: esc(t('Add text')), click: send('addTextOverlay') },
+      { label: esc(t('Zoom / crop clip…')), click: send('editCurrentSegmentCrop') },
+      { label: esc(t('Speed controls')), click: send('toggleSegmentSpeedControls') },
+      { type: 'separator' },
+      { label: esc(t('Clear all clips')), click: send('clearSegments') },
+    ],
+  };
+
   // todo TS mainWindow.webContents.send
   const menu: (MenuItemConstructorOptions | MenuItem)[] = [
     ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
@@ -52,143 +74,146 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates }
             mainWindow.webContents.send('closeCurrentFile');
           },
         },
-        {
-          label: esc(t('Close batch')),
-          async click() {
-            mainWindow.webContents.send('closeBatch');
+        // Batch lists and other project formats are advanced-mode tools; simple mode autosaves projects.
+        ...(simpleMode ? [] : [
+          {
+            label: esc(t('Close batch')),
+            async click() {
+              mainWindow.webContents.send('closeBatch');
+            },
           },
-        },
-        { type: 'separator' },
-        {
-          label: esc(t('Import project (LLC)...')),
-          click() {
-            mainWindow.webContents.send('importEdlFile', 'llc');
+          { type: 'separator' },
+          {
+            label: esc(t('Import project (LLC)...')),
+            click() {
+              mainWindow.webContents.send('importEdlFile', 'llc');
+            },
           },
-        },
-        {
-          label: esc(t('Export project (LLC)...')),
-          click() {
-            mainWindow.webContents.send('exportEdlFile', 'llc');
+          {
+            label: esc(t('Export project (LLC)...')),
+            click() {
+              mainWindow.webContents.send('exportEdlFile', 'llc');
+            },
           },
-        },
-        {
-          label: esc(t('Import project')),
-          submenu: [
-            {
-              label: esc(t('Times in seconds (CSV)')),
-              click() {
-                mainWindow.webContents.send('importEdlFile', 'csv');
+          {
+            label: esc(t('Import project')),
+            submenu: [
+              {
+                label: esc(t('Times in seconds (CSV)')),
+                click() {
+                  mainWindow.webContents.send('importEdlFile', 'csv');
+                },
               },
-            },
-            {
-              label: esc(t('Frame numbers (CSV)')),
-              click() {
-                mainWindow.webContents.send('importEdlFile', 'csv-frames');
+              {
+                label: esc(t('Frame numbers (CSV)')),
+                click() {
+                  mainWindow.webContents.send('importEdlFile', 'csv-frames');
+                },
               },
-            },
-            {
-              label: esc(t('Cutlist')),
-              click() {
-                mainWindow.webContents.send('importEdlFile', 'cutlist');
+              {
+                label: esc(t('Cutlist')),
+                click() {
+                  mainWindow.webContents.send('importEdlFile', 'cutlist');
+                },
               },
-            },
-            {
-              label: esc(t('EDL')),
-              click() {
-                mainWindow.webContents.send('importEdlFile', 'edl');
+              {
+                label: esc(t('EDL')),
+                click() {
+                  mainWindow.webContents.send('importEdlFile', 'edl');
+                },
               },
-            },
-            {
-              label: esc(t('Text chapters / YouTube')),
-              click() {
-                mainWindow.webContents.send('importEdlFile', 'youtube');
+              {
+                label: esc(t('Text chapters / YouTube')),
+                click() {
+                  mainWindow.webContents.send('importEdlFile', 'youtube');
+                },
               },
-            },
-            {
-              label: esc(t('DaVinci Resolve / Final Cut Pro XML')),
-              click() {
-                mainWindow.webContents.send('importEdlFile', 'xmeml');
+              {
+                label: esc(t('DaVinci Resolve / Final Cut Pro XML')),
+                click() {
+                  mainWindow.webContents.send('importEdlFile', 'xmeml');
+                },
               },
-            },
-            {
-              label: esc(t('Final Cut Pro FCPX / FCPXML')),
-              click() {
-                mainWindow.webContents.send('importEdlFile', 'fcpxml');
+              {
+                label: esc(t('Final Cut Pro FCPX / FCPXML')),
+                click() {
+                  mainWindow.webContents.send('importEdlFile', 'fcpxml');
+                },
               },
-            },
-            {
-              label: esc(t('CUE sheet file')),
-              click() {
-                mainWindow.webContents.send('importEdlFile', 'cue');
+              {
+                label: esc(t('CUE sheet file')),
+                click() {
+                  mainWindow.webContents.send('importEdlFile', 'cue');
+                },
               },
-            },
-            {
-              label: esc(t('PotPlayer Bookmarks (.pbf)')),
-              click() {
-                mainWindow.webContents.send('importEdlFile', 'pbf');
+              {
+                label: esc(t('PotPlayer Bookmarks (.pbf)')),
+                click() {
+                  mainWindow.webContents.send('importEdlFile', 'pbf');
+                },
               },
-            },
-            {
-              label: esc(t('Subtitles (SRT)')),
-              click() {
-                mainWindow.webContents.send('importEdlFile', 'srt');
+              {
+                label: esc(t('Subtitles (SRT)')),
+                click() {
+                  mainWindow.webContents.send('importEdlFile', 'srt');
+                },
               },
-            },
-            {
-              label: esc(t('DV Analyzer Summary.txt')),
-              click() {
-                mainWindow.webContents.send('importEdlFile', 'dv-analyzer-summary-txt');
+              {
+                label: esc(t('DV Analyzer Summary.txt')),
+                click() {
+                  mainWindow.webContents.send('importEdlFile', 'dv-analyzer-summary-txt');
+                },
               },
-            },
-            {
-              label: esc(t('OpenTimelineIO')),
-              click() {
-                mainWindow.webContents.send('importEdlFile', 'otio');
+              {
+                label: esc(t('OpenTimelineIO')),
+                click() {
+                  mainWindow.webContents.send('importEdlFile', 'otio');
+                },
               },
-            },
-          ],
-        },
-        {
-          label: esc(t('Export project')),
-          submenu: [
-            {
-              label: esc(t('Times in seconds (CSV)')),
-              click() {
-                mainWindow.webContents.send('exportEdlFile', 'csv');
+            ],
+          },
+          {
+            label: esc(t('Export project')),
+            submenu: [
+              {
+                label: esc(t('Times in seconds (CSV)')),
+                click() {
+                  mainWindow.webContents.send('exportEdlFile', 'csv');
+                },
               },
-            },
-            {
-              label: esc(t('Timestamps (CSV)')),
-              click() {
-                mainWindow.webContents.send('exportEdlFile', 'csv-human');
+              {
+                label: esc(t('Timestamps (CSV)')),
+                click() {
+                  mainWindow.webContents.send('exportEdlFile', 'csv-human');
+                },
               },
-            },
-            {
-              label: esc(t('Frame numbers (CSV)')),
-              click() {
-                mainWindow.webContents.send('exportEdlFile', 'csv-frames');
+              {
+                label: esc(t('Frame numbers (CSV)')),
+                click() {
+                  mainWindow.webContents.send('exportEdlFile', 'csv-frames');
+                },
               },
-            },
-            {
-              label: esc(t('Timestamps (TSV/TXT)')),
-              click() {
-                mainWindow.webContents.send('exportEdlFile', 'tsv-human');
+              {
+                label: esc(t('Timestamps (TSV/TXT)')),
+                click() {
+                  mainWindow.webContents.send('exportEdlFile', 'tsv-human');
+                },
               },
-            },
-            {
-              label: esc(t('Subtitles (SRT)')),
-              click() {
-                mainWindow.webContents.send('exportEdlFile', 'srt');
+              {
+                label: esc(t('Subtitles (SRT)')),
+                click() {
+                  mainWindow.webContents.send('exportEdlFile', 'srt');
+                },
               },
-            },
-            {
-              label: esc(t('Start times as YouTube Chapters')),
-              click() {
-                mainWindow.webContents.send('exportYouTube');
+              {
+                label: esc(t('Start times as YouTube Chapters')),
+                click() {
+                  mainWindow.webContents.send('exportYouTube');
+                },
               },
-            },
-          ],
-        },
+            ],
+          },
+        ] satisfies MenuItemConstructorOptions[]),
         { type: 'separator' },
         {
           label: esc(t('Convert to supported format')),
@@ -267,7 +292,7 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates }
       ],
     },
 
-    {
+    simpleMode ? clipsMenu : {
       label: esc(t('Segments')),
       submenu: [
         {
@@ -513,6 +538,8 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates }
   }
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(menu));
+  // The custom title bar (AppChrome) draws the menu's top level itself, so tell it to redraw.
+  if (!mainWindow.isDestroyed()) mainWindow.webContents.send('menuUpdated');
 
   if (process.platform !== 'darwin') {
     mainWindow.setAutoHideMenuBar(true);
