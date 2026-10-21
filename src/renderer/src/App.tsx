@@ -1710,6 +1710,8 @@ function App() {
     showGenericDialog,
   });
 
+  const makeSmoothPreviewCopy = useCallback(() => userHtml5ifyCurrentFile({ speed: hasAudio || !hasVideo ? 'slow-audio' : 'slow' }), [hasAudio, hasVideo, userHtml5ifyCurrentFile]);
+
   const compatPlayerRequired = (
     // if user selected an explicit video or audio stream, and the html5 player does not have any track index corresponding to the selected stream index
     ((activeVideoStreamIndex != null || activeAudioStreamIndexes.size === 1)
@@ -6298,6 +6300,7 @@ function App() {
                               masterVideoRef={videoRef}
                               mediaSourceQuality={mediaSourceQuality}
                               ffmpegHwaccel={ffmpegHwaccel}
+                              onMakePreviewCopy={makeSmoothPreviewCopy}
                             />
                             )}
                           </SegmentCropPreview>

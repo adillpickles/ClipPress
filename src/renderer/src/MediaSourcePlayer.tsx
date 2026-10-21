@@ -3,6 +3,8 @@ import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
 import invariant from 'tiny-invariant';
 import debounce from 'lodash/debounce.js';
 import { FaVideo } from 'react-icons/fa';
+import { FiAlertTriangle } from 'react-icons/fi';
+import { useTranslation } from 'react-i18next';
 
 import isDev from './isDev';
 import type { ChromiumHTMLVideoElement } from './types';
@@ -10,6 +12,8 @@ import type { FFprobeStream } from '../../common/ffprobe';
 import { getFrameDuration } from './util';
 import { normalizeRotation } from './textOverlays';
 import type { FfmpegHwAccel } from '../../common/types';
+import Button from './components/Button';
+import styles from './MediaSourcePlayer.module.css';
 
 const { compatPlayer: { createMediaSourceStream } } = window.require('@electron/remote').require('./index.js');
 
@@ -333,7 +337,7 @@ async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, 
   processChunk();
 }
 
-function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioGainByStreamId, masterVideoRef, mediaSourceQuality, ffmpegHwaccel }: {
+function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioGainByStreamId, masterVideoRef, mediaSourceQuality, ffmpegHwaccel, onMakePreviewCopy }: {
   rotate: number | undefined,
   filePath: string,
   videoStream: FFprobeStream | undefined,
@@ -342,11 +346,14 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
   masterVideoRef: RefObject<HTMLVideoElement>,
   mediaSourceQuality: number,
   ffmpegHwaccel: FfmpegHwAccel,
+  onMakePreviewCopy?: (() => void) | undefined,
 }) {
+  const { t } = useTranslation();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [loading, setLoading] = useState(true);
   const [showCanvas, setShowCanvas] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   const onVideoError = useCallback<ReactEventHandler<HTMLVideoElement>>((error) => {
     console.error('video error', error);
@@ -367,12 +374,15 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
     let abortController: AbortController | undefined;
     let disposed = false;
     let startDebounced: ReturnType<typeof debounce>;
+    let failedAt: number | undefined;
 
     const start = async () => {
       if (disposed) return;
       abortController?.abort();
       const controller = new AbortController();
       abortController = controller;
+      failedAt = undefined;
+      setFailed(false);
 
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
@@ -420,16 +430,31 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
           ffmpegHwaccel,
         });
       } catch (err) {
-        if (!controller.signal.aborted) console.error('Preview failed', err);
+        if (!controller.signal.aborted) {
+          console.error('Preview failed', err);
+          failedAt = seekTo;
+          setLoading(false);
+          // There may simply be no frames left to decode at the very end, so don't call that a failure.
+          if (!(masterVideo.duration - seekTo < 1)) setFailed(true);
+        }
         controller.abort();
       }
     };
 
     startDebounced = debounce(start, 500, { leading: true, trailing: true });
 
+    // A failed start no longer follows the playhead, so try again from wherever the user seeks to.
+    // Some recordings only fail to decode from certain points, such as the very start (#68).
+    const onMasterSeeked = () => {
+      if (failedAt == null || masterVideo.currentTime === failedAt) return;
+      startDebounced();
+    };
+    masterVideo.addEventListener('seeked', onMasterSeeked);
+
     startDebounced();
 
     return () => {
+      masterVideo.removeEventListener('seeked', onMasterSeeked);
       disposed = true;
       startDebounced.cancel();
       abortController?.abort();
@@ -467,6 +492,23 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
       {loading && (
         <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
           <FaVideo className="loading-animation" style={{ padding: '1em', background: 'rgba(0,0,0,0.2)', borderRadius: '50%' }} />
+        </div>
+      )}
+
+      {failed && (
+        <div className={styles['failedWrapper']}>
+          <div className={styles['failed']} role="status">
+            <div className={styles['failedTitle']}>
+              <FiAlertTriangle aria-hidden className={styles['failedIcon']} />
+              {t('Can\'t preview this part')}
+            </div>
+            <div className={styles['failedText']}>
+              {t('FFmpeg couldn\'t decode the recording from this point. Try moving the playhead further in, or make a preview copy instead.')}
+            </div>
+            {onMakePreviewCopy != null && (
+              <Button variant="primary" size="sm" onClick={onMakePreviewCopy} className={styles['failedButton']}>{t('Make a preview copy')}</Button>
+            )}
+          </div>
         </div>
       )}
     </div>

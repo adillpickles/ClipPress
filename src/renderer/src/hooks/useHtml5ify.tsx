@@ -161,11 +161,12 @@ export default function useHtml5ify({ filePath, hasVideo, hasAudio, workingRef, 
     return response;
   }, [showGenericDialog]);
 
-  const userHtml5ifyCurrentFile = useCallback(async ({ ignoreRememberedValue }: { ignoreRememberedValue?: boolean } = {}) => {
+  const userHtml5ifyCurrentFile = useCallback(async ({ ignoreRememberedValue, speed }: { ignoreRememberedValue?: boolean, speed?: Html5ifyMode } = {}) => {
     if (!filePath) return;
 
-    let selectedOption = rememberConvertToSupportedFormat;
-    if (selectedOption == null || ignoreRememberedValue) {
+    // An explicit speed (e.g. from the preview's error state) skips the dialog.
+    let selectedOption = speed ?? rememberConvertToSupportedFormat;
+    if (selectedOption == null || (speed == null && ignoreRememberedValue)) {
       let allowedOptions: Html5ifyMode[] = [];
       if (hasAudio && hasVideo) allowedOptions = ['fastest', 'fast-audio-remux', 'fast-audio', 'fast', 'slow', 'slow-audio', 'slowest'];
       else if (hasAudio) allowedOptions = ['fast-audio-remux', 'slow-audio', 'slowest'];
