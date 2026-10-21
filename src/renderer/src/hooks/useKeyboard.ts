@@ -164,6 +164,24 @@ export default ({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfi
     };
   }, [keyBindings]);
 
+  // Shortcuts only run while nothing has focus (see above), but a button clicked with the mouse
+  // keeps focus, so the next shortcut would do nothing (#60). Give focus back to the page after a
+  // mouse click on a control in the main window. Keyboard activation (detail 0) keeps focus where
+  // the user put it, and dialogs and menus manage their own focus.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (e.detail === 0) return;
+      const { activeElement } = document;
+      if (!(activeElement instanceof HTMLElement) || activeElement === document.body) return;
+      if (!(e.target instanceof Node) || !activeElement.contains(e.target)) return;
+      if (!activeElement.matches('button, [role="button"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"]')) return;
+      if (activeElement.closest('[role="dialog"], [role="alertdialog"], [role="menu"], .swal2-container')) return;
+      activeElement.blur();
+    };
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, []);
+
   const updateKeyboardLayout = useCallback(async () => {
     setKeyboardLayoutMap(await navigator.keyboard.getLayoutMap());
   }, [setKeyboardLayoutMap]);

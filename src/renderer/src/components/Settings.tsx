@@ -1,10 +1,10 @@
-import type { CSSProperties, ChangeEventHandler, TdHTMLAttributes } from 'react';
-import { memo, useCallback, useMemo } from 'react';
-import { FaYinYang, FaKeyboard, FaGlobe, FaBroom, FaCogs, FaHashtag, FaClock, FaFolder, FaFile, FaTimes } from 'react-icons/fa';
+import type { ChangeEventHandler } from 'react';
+import { memo, useCallback, useId, useMemo, useState } from 'react';
+import { FiFolder, FiX } from 'react-icons/fi';
+import { FaRegKeyboard } from 'react-icons/fa';
 import { useTranslation } from 'react-i18next';
 import invariant from 'tiny-invariant';
 
-import Row from './AnimatedTr';
 import CaptureFormatButton from './CaptureFormatButton';
 import AutoExportToggler from './AutoExportToggler';
 import Switch from './Switch';
@@ -16,48 +16,27 @@ import type { SupportedLanguage } from '../../../common/i18n';
 import { langNames } from '../../../common/i18n';
 import type { Config, EnableImportChapters, ModifierKey, TimecodeFormat } from '../../../common/types.js';
 import styles from './Settings.module.css';
-import type { SelectProps } from './Select';
-import SelectRaw from './Select';
-import type { ButtonProps } from './Button';
-import ButtonRaw from './Button';
+import Select from './Select';
+import Button from './Button';
 import { getModifierKeyNames } from '../hooks/useTimelineScroll';
 import type { TunerType } from '../types';
-import Truncated from './Truncated';
-import { dangerColor } from '../colors';
 import OutDirSelector from './OutDirSelector.js';
+import SettingRow from './SettingRow';
 
-// eslint-disable-next-line react/jsx-props-no-spreading
-const Button = ({ style, ...props }: ButtonProps) => <ButtonRaw style={{ padding: '.5em .9em', ...style }} {...props} />;
-
-// eslint-disable-next-line react/jsx-props-no-spreading
-const Select = ({ style, ...props }: SelectProps) => <SelectRaw style={{ padding: '.5em 1.9em .5em .9em', maxWidth: '15em', ...style }} {...props} />;
-
-
-// eslint-disable-next-line react/jsx-props-no-spreading
-const KeyCell = (props: TdHTMLAttributes<HTMLTableCellElement>) => <td {...props} />;
-
-const Header = ({ title }: { title: string }) => (
-  <Row className={styles['header']}>
-    <th>{title}</th>
-    <th />
-  </Row>
-);
-
-function ModifierKeySetting({ text, value, setValue }: { text: string, value: ModifierKey, setValue: (v: ModifierKey) => void }) {
+function ModifierKeySetting({ label, description, value, setValue }: { label: string, description?: string, value: ModifierKey, setValue: (v: ModifierKey) => void }) {
+  const id = useId();
   return (
-    <Row>
-      <KeyCell>{text}</KeyCell>
-      <td>
-        <Select value={value} onChange={(e) => setValue(e.target.value as ModifierKey)}>
-          {Object.entries(getModifierKeyNames()).map(([key, name]) => (
-            <option key={key} value={key}>{name}</option>
-          ))}
-        </Select>
-      </td>
-    </Row>
+    <SettingRow label={label} description={description} controlId={id}>
+      <Select id={id} value={value} onChange={(e) => setValue(e.target.value as ModifierKey)}>
+        {Object.entries(getModifierKeyNames()).map(([key, name]) => (
+          <option key={key} value={key}>{name}</option>
+        ))}
+      </Select>
+    </SettingRow>
   );
 }
-const detailsStyle: CSSProperties = { opacity: 0.75, fontSize: '.9em', marginTop: '.3em' };
+
+type Category = 'general' | 'interface' | 'editing' | 'export' | 'snapshots' | 'input' | 'projects' | 'updates' | 'advanced';
 
 function Settings({
   onTunerRequested,
@@ -75,6 +54,7 @@ function Settings({
   setShowAdvancedSettings: (v: boolean) => void,
 }) {
   const { t } = useTranslation();
+  const [category, setCategory] = useState<Category>('general');
 
   const { customOutDir, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, invertTimelineScroll, setInvertTimelineScroll, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, storeProjectInWorkingDir, mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey, setSegmentMouseModifierKey, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration } = useUserSettings();
 
@@ -91,16 +71,6 @@ function Settings({
     timecodeWithFramesFraction: t('Frame fractions'),
   }), [t]);
 
-  const onTimecodeFormatClick = useCallback(() => {
-    const keys = Object.keys(timecodeFormatOptions) as TimecodeFormat[];
-    let index = keys.indexOf(timecodeFormat);
-    if (index === -1 || index >= keys.length - 1) index = 0;
-    else index += 1;
-    const newKey = keys[index];
-    invariant(newKey != null);
-    setTimecodeFormat(newKey);
-  }, [setTimecodeFormat, timecodeFormat, timecodeFormatOptions]);
-
   const changeCustomFfPath = useCallback(async () => {
     const newCustomFfPath = await askForFfPath(customFfPath);
     if (newCustomFfPath == null) return;
@@ -111,467 +81,422 @@ function Settings({
     setCustomFfPath(undefined);
   }, [setCustomFfPath]);
 
-  return (
-    <table className={styles['settings']}>
-      <thead>
-        <tr className={styles['header']}>
-          <th>{t('Setting')}</th>
-          <th style={{ maxWidth: '15em' }}>{t('Current setting')}</th>
-        </tr>
-      </thead>
+  const categories = useMemo(() => ([
+    { id: 'general', label: t('General') },
+    { id: 'interface', label: t('Appearance') },
+    { id: 'editing', label: t('Editing') },
+    { id: 'export', label: t('Export') },
+    { id: 'snapshots', label: t('Snapshots') },
+    { id: 'input', label: t('Keyboard & mouse') },
+    { id: 'projects', label: t('Projects') },
+    ...(!isStoreBuild ? [{ id: 'updates' as const, label: t('Updates') }] : []),
+    ...(showAdvancedSettings ? [{ id: 'advanced' as const, label: t('Advanced') }] : []),
+  ] satisfies { id: Category, label: string }[]), [showAdvancedSettings, t]);
 
-      <tbody>
-        <Row>
-          <KeyCell><FaGlobe style={{ verticalAlign: 'middle', fontSize: '1.2em', marginRight: '.3em' }} /> App language</KeyCell>
-          <td>
-            <Select value={language ?? ''} onChange={onLangChange} style={{ fontSize: '1em' }}>
-              <option key="" value="">{t('System language')}</option>
-              {Object.keys(langNames).map((lang) => <option key={lang} value={lang}>{langNames[lang as keyof typeof langNames]}</option>)}
-            </Select>
-          </td>
-        </Row>
+  const activeCategory = categories.some((c) => c.id === category) ? category : 'general';
+  const activeLabel = categories.find((c) => c.id === activeCategory)?.label;
+  invariant(activeLabel != null);
 
-        <Row>
-          <KeyCell>
-            {t('Show advanced settings')}
-            <div style={detailsStyle}>
-              {!showAdvancedSettings && t('Advanced settings are currently not visible.')}
-            </div>
-          </KeyCell>
-          <td>
-            <Switch checked={showAdvancedSettings} onCheckedChange={setShowAdvancedSettings} />
-          </td>
-        </Row>
+  const languageId = useId();
+  const reducedMotionId = useId();
+  const timecodeId = useId();
+  const outputDateId = useId();
+  const sourceDateId = useId();
+  const chaptersId = useId();
+  const advancedToggleId = useId();
 
-        <Row>
-          <KeyCell>
-            {t('Show export options screen before exporting?')}
-            <div style={detailsStyle}>
-              {t('This gives you an overview of the export and allows you to customise more parameters before exporting, like changing the output file name.')}
-            </div>
-          </KeyCell>
-          <td>
-            <Switch checked={exportConfirmEnabled} onCheckedChange={toggleExportConfirmEnabled} />
-          </td>
-        </Row>
-
-        {showAdvancedSettings && (
-          <Row>
-            <KeyCell>
-              {t('Auto save project file?')}<br />
-            </KeyCell>
-            <td>
-              <Switch checked={autoSaveProjectFile} onCheckedChange={setAutoSaveProjectFile} />
-            </td>
-          </Row>
-        )}
-
-        {showAdvancedSettings && (
-          <Row>
-            <KeyCell>{t('Store project file (.llc) in the working directory or next to loaded media file?')}</KeyCell>
-            <td>
-              <Button disabled={!autoSaveProjectFile} onClick={toggleStoreProjectInWorkingDir}>
-                {storeProjectInWorkingDir ? <FaFolder style={{ verticalAlign: 'middle', fontSize: '1.1em', marginRight: '.3em' }} /> : <FaFile style={{ verticalAlign: 'middle', fontSize: '1.1em', marginRight: '.3em' }} />}
-                {storeProjectInWorkingDir ? t('Store in working directory') : t('Store next to media file')}
-              </Button>
-            </td>
-          </Row>
-        )}
-
-        {showAdvancedSettings && !isMasBuild && (
-          <Row>
-            <KeyCell>
-              {t('Custom FFmpeg directory (experimental)')}<br />
-              <div style={detailsStyle}>
-                {t('This allows you to specify custom FFmpeg and FFprobe binaries to use. Make sure the "ffmpeg" and "ffprobe" executables exist in the same directory, and then select the directory.')}
-              </div>
-            </KeyCell>
-            <td>
-              <Truncated maxWidth="15em">{customFfPath}</Truncated>
-              <Button onClick={changeCustomFfPath}>
-                <FaCogs style={{ verticalAlign: 'middle', marginRight: '.4em' }} />{customFfPath ? t('Using external ffmpeg') : t('Using built-in ffmpeg')}
-              </Button>
-              {customFfPath && (
-                <Button onClick={clearCustomFfPath} title={t('Clear')}>
-                  <FaTimes />
-                </Button>
-              )}
-            </td>
-          </Row>
-        )}
-
-        {!isStoreBuild && <UpdateSettings />}
-
-        {showAdvancedSettings && (
-          <Row>
-            <KeyCell>{t('Allow multiple instances of ClipPress to run concurrently? (experimental)')}</KeyCell>
-            <td>
-              <Switch checked={allowMultipleInstances} onCheckedChange={setAllowMultipleInstances} />
-            </td>
-          </Row>
-        )}
-
-
-        <Header title={t('Options affecting exported files')} />
-
-        <Row>
-          <KeyCell>
-            {t('Choose cutting mode: Remove or keep selected segments from video when exporting?')}<br />
-            <div style={detailsStyle}>
-              {invertCutSegments ? (
-                <><b>{t('Remove')}</b>: {t('The video inside segments will be discarded, while the video surrounding them will be kept.')}</>
-              ) : (
-                <><b>{t('Keep')}</b>: {t('The video inside segments will be kept, while the video outside will be discarded.')}</>
-              )}
-            </div>
-          </KeyCell>
-          <td>
-            <Button onClick={() => setInvertCutSegments((v) => !v)}>
-              <FaYinYang style={{ verticalAlign: 'middle', marginRight: '.3em', color: invertCutSegments ? dangerColor : undefined }} /> {invertCutSegments ? t('Remove') : t('Keep')}
-            </Button>
-          </td>
-        </Row>
-
-        <Row>
-          <KeyCell>
-            {t('Use the GPU to speed up exports')}<br />
-            <div style={detailsStyle}>
-              {t('Decodes video on the graphics card (NVIDIA, AMD or Intel) and re-encodes regular exports with its H.264 encoder. ClipPress switches to the CPU automatically if the GPU fails. Size-limited exports pick their encoder from the preset.')}
-            </div>
-          </KeyCell>
-          <td>
-            <Switch checked={exportGpuAcceleration} onCheckedChange={setExportGpuAcceleration} />
-          </td>
-        </Row>
-
-        <Row>
-          <KeyCell>
-            {t('Working directory')}<br />
-            <div style={detailsStyle}>
-              {t('This is where working files and exported files are stored.')}
-            </div>
-          </KeyCell>
-          <td>
-            <Truncated maxWidth="15em">{customOutDir}</Truncated>
-            <OutDirSelector>
-              <Button>
-                {customOutDir ? <FaFolder style={{ marginRight: '.3em', verticalAlign: 'middle' }} /> : <FaFile style={{ marginRight: '.3em', verticalAlign: 'middle' }} />}
-                {customOutDir ? t('Custom working directory') : t('Same directory as input file')}...
-              </Button>
-            </OutDirSelector>
-          </td>
-        </Row>
-
-        {showAdvancedSettings && (
-          <Row>
-            <KeyCell>{t('Set file modification date/time of output files to:')}</KeyCell>
-            <td>
-              <Select value={typeof treatOutputFileModifiedTimeAsStart === 'boolean' ? String(treatOutputFileModifiedTimeAsStart) : 'disabled'} onChange={(e) => setTreatOutputFileModifiedTimeAsStart(e.target.value === 'disabled' ? null : (e.target.value === 'true'))}>
-                <option value="disabled">{t('Current time')}</option>
-                <option value="true">{t('Source file\'s time plus segment start cut time')}</option>
-                <option value="false">{t('Source file\'s time minus segment end cut time')}</option>
+  function renderCategory() {
+    switch (activeCategory) {
+      case 'general': {
+        return (
+          <>
+            <SettingRow label={t('Language')} controlId={languageId}>
+              <Select id={languageId} value={language ?? ''} onChange={onLangChange}>
+                <option key="" value="">{t('System language')}</option>
+                {Object.keys(langNames).map((lang) => <option key={lang} value={lang}>{langNames[lang as keyof typeof langNames]}</option>)}
               </Select>
-            </td>
-          </Row>
-        )}
+            </SettingRow>
 
-        {showAdvancedSettings && (
-          <Row>
-            <KeyCell>{t('Treat source file modification date/time as:')}</KeyCell>
-            <td>
-              <Select disabled={treatOutputFileModifiedTimeAsStart == null} value={String(treatInputFileModifiedTimeAsStart)} onChange={(e) => setTreatInputFileModifiedTimeAsStart((e.target.value === 'true'))}>
-                <option value="true">{t('Start of video')}</option>
-                <option value="false">{t('End of video')}</option>
-              </Select>
-            </td>
-          </Row>
-        )}
+            <SettingRow
+              label={t('Review before exporting')}
+              description={t('Show the export options each time you export.')}
+              details={t('The export options let you choose the quality or file size, how clips are saved and what they are called. Without them, Export uses your last choices straight away.')}
+            >
+              <Switch checked={exportConfirmEnabled} onCheckedChange={toggleExportConfirmEnabled} aria-label={t('Review before exporting')} />
+            </SettingRow>
 
-        {showAdvancedSettings && (
-        <Row>
-          <KeyCell>
-            {t('Keyframe cut mode')}<br />
-            <div style={detailsStyle}>
-              {keyframeCut ? (
-                <>
-                  <b>{t('Keyframe cut')}</b>: {t('Cut at the preceding keyframe (not accurate time.) Equiv to')}:<br />
-                  <code className="highlighted">ffmpeg -ss N -i input.mp4</code>
-                </>
-              ) : (
-                <>
-                  <b>{t('Normal cut')}</b>: {t('Accurate time but could leave an empty portion at the beginning of the video. Equiv to')}:<br />
-                  <code className="highlighted">ffmpeg -i input -ss N</code>
-                </>
-              )}
-            </div>
-          </KeyCell>
-          <td>
-            <Switch checked={keyframeCut} onCheckedChange={() => toggleKeyframeCut()} />
-          </td>
-        </Row>
-        )}
+            <SettingRow label={t('System notifications')} description={t('Tell me when an export finishes.')}>
+              <Switch checked={!hideOsNotifications} onCheckedChange={(v) => setHideOsNotifications(v ? undefined : 'all')} aria-label={t('System notifications')} />
+            </SettingRow>
 
-        <Row>
-          <KeyCell>{t('Cleanup files after export?')}</KeyCell>
-          <td>
-            <Button onClick={askForCleanupChoices}><FaBroom style={{ verticalAlign: 'middle', marginRight: '.3em' }} />{t('Change preferences')}</Button>
-          </td>
-        </Row>
+            <SettingRow label={t('In-app messages')} description={t('Short messages about what just happened.')}>
+              <Switch checked={!hideNotifications} onCheckedChange={(v) => setHideNotifications(v ? undefined : 'all')} aria-label={t('In-app messages')} />
+            </SettingRow>
 
-        {showAdvancedSettings && (
-          <Row>
-            <KeyCell>
-              {t('Extract unprocessable tracks to separate files or discard them?')}<br />
-              <div style={detailsStyle}>
-                {t('(data tracks such as GoPro GPS, telemetry etc. are not copied over by default because ffmpeg cannot cut them, thus they will cause the media duration to stay the same after cutting video/audio)')}
-              </div>
-            </KeyCell>
-            <td>
-              <AutoExportToggler />
-            </td>
-          </Row>
-        )}
+            <SettingRow label={t('Confirm before closing')} description={t('Ask before closing ClipPress or a recording.')}>
+              <Switch checked={askBeforeClose} onCheckedChange={setAskBeforeClose} aria-label={t('Confirm before closing')} />
+            </SettingRow>
 
+            {showAdvancedSettings && (
+              <SettingRow label={t('Ask when opening another file')} description={t('Choose what happens when a file is opened while another is open.')}>
+                <Switch checked={enableAskForFileOpenAction} onCheckedChange={setEnableAskForFileOpenAction} aria-label={t('Ask when opening another file')} />
+              </SettingRow>
+            )}
 
-        <Header title={t('Snapshots and frame extraction')} />
+            {showAdvancedSettings && (
+              <SettingRow label={t('Remember window size and position')}>
+                <Switch checked={storeWindowBounds} onCheckedChange={setStoreWindowBounds} aria-label={t('Remember window size and position')} />
+              </SettingRow>
+            )}
+          </>
+        );
+      }
 
-        <Row>
-          <KeyCell>
-            {t('Snapshot capture format')}
-          </KeyCell>
-          <td>
-            <CaptureFormatButton showIcon style={{ padding: '.5em 1em' }} />
-          </td>
-        </Row>
+      case 'interface': {
+        return (
+          <>
+            <SettingRow label={t('Stronger colors')} description={t('More saturated colors for clips on the timeline.')}>
+              <Switch checked={preferStrongColors} onCheckedChange={setPreferStrongColors} aria-label={t('Stronger colors')} />
+            </SettingRow>
 
-        {showAdvancedSettings && (
-          <Row>
-            <KeyCell>
-              {t('Snapshot capture method')}
-              <div style={detailsStyle}>{t('FFmpeg capture method might sometimes capture more correct colors, but the captured snapshot might be off by one or more frames, relative to the preview.')}</div>
-            </KeyCell>
-            <td>
-              <Button onClick={() => setCaptureFrameMethod((existing) => (existing === 'ffmpeg' ? 'videotag' : 'ffmpeg'))}>
-                {captureFrameMethod === 'ffmpeg' ? t('FFmpeg') : t('HTML video tag')}
-              </Button>
-            </td>
-          </Row>
-        )}
-
-        <Row>
-          <KeyCell>{t('Snapshot capture quality')}</KeyCell>
-          <td>
-            <input type="range" min={1} max={1000} style={{ width: 200 }} value={Math.round(captureFrameQuality * 1000)} onChange={(e) => setCaptureFrameQuality(Math.max(Math.min(1, parseInt(e.target.value, 10) / 1000), 0))} /><br />
-            {Math.round(captureFrameQuality * 100)}%
-          </td>
-        </Row>
-
-        {showAdvancedSettings && (
-          <Row>
-            <KeyCell>
-              {t('File names of extracted video frames')}
-              <div style={detailsStyle}>{t('Note that this only applies when extracting multiple frames. When "Frame number" is selected, frame numbers are relative to the start of the segment (starting from 1).')}</div>
-            </KeyCell>
-            <td>
-              <Button onClick={() => setCaptureFrameFileNameFormat((existing) => (existing === 'timestamp' ? 'index' : 'timestamp'))}>
-                {captureFrameFileNameFormat === 'timestamp' ? <FaClock style={{ verticalAlign: 'middle', marginRight: '.3em' }} /> : <FaHashtag style={{ verticalAlign: 'middle', marginRight: '.3em' }} />}
-                {captureFrameFileNameFormat === 'timestamp' ? t('Frame timestamp') : t('Frame number')}
-              </Button>
-            </td>
-          </Row>
-        )}
-
-
-        <Header title={t('Keyboard, mouse and input')} />
-
-        <Row>
-          <KeyCell>{t('Keyboard & mouse shortcuts')}</KeyCell>
-          <td>
-            <Button onClick={onKeyboardShortcutsDialogRequested}><FaKeyboard style={{ verticalAlign: 'middle', marginRight: '.3em' }} /> {t('Keyboard & mouse shortcuts')}</Button>
-          </td>
-        </Row>
-
-        <ModifierKeySetting text={t('Segment manipulation mouse modifier key')} value={segmentMouseModifierKey} setValue={setSegmentMouseModifierKey} />
-        <ModifierKeySetting text={t('Mouse wheel zoom modifier key')} value={mouseWheelZoomModifierKey} setValue={setMouseWheelZoomModifierKey} />
-        <ModifierKeySetting text={t('Mouse wheel frame seek modifier key')} value={mouseWheelFrameSeekModifierKey} setValue={setMouseWheelFrameSeekModifierKey} />
-        <ModifierKeySetting text={t('Mouse wheel keyframe seek modifier key')} value={mouseWheelKeyframeSeekModifierKey} setValue={setMouseWheelKeyframeSeekModifierKey} />
-
-        <Row>
-          <KeyCell>{t('Timeline trackpad/wheel sensitivity')}</KeyCell>
-          <td>
-            <Button onClick={() => onTunerRequested('wheelSensitivity')}>{t('Adjust')}</Button>
-          </td>
-        </Row>
-
-        <Row>
-          <KeyCell>{t('Timeline keyboard seek interval')}</KeyCell>
-          <td>
-            <Button onClick={() => onTunerRequested('keyboardNormalSeekSpeed')}>{t('Adjust')}</Button>
-          </td>
-        </Row>
-
-        <Row>
-          <KeyCell>{t('Timeline keyboard seek interval (longer)')}</KeyCell>
-          <td>
-            <Button onClick={() => onTunerRequested('keyboardSeekSpeed2')}>{t('Adjust')}</Button>
-          </td>
-        </Row>
-
-        <Row>
-          <KeyCell>{t('Timeline keyboard seek interval (longest)')}</KeyCell>
-          <td>
-            <Button onClick={() => onTunerRequested('keyboardSeekSpeed3')}>{t('Adjust')}</Button>
-          </td>
-        </Row>
-
-        <Row>
-          <KeyCell>{t('Timeline keyboard seek acceleration')}</KeyCell>
-          <td>
-            <Button onClick={() => onTunerRequested('keyboardSeekAccFactor')}>{t('Adjust')}</Button>
-          </td>
-        </Row>
-
-        <Row>
-          <KeyCell>{t('Invert timeline trackpad/wheel direction?')}</KeyCell>
-          <td>
-            <Switch checked={invertTimelineScroll ?? false} onCheckedChange={setInvertTimelineScroll} />
-          </td>
-        </Row>
-
-
-        <Header title={t('User interface')} />
-
-        {showAdvancedSettings && (
-          <Row>
-            <KeyCell>{t('Remember window size and position')}</KeyCell>
-            <td>
-              <Switch checked={storeWindowBounds} onCheckedChange={setStoreWindowBounds} />
-            </td>
-          </Row>
-        )}
-
-        {showAdvancedSettings && (
-          <Row>
-            <KeyCell>{t('Waveform height')}</KeyCell>
-            <td>
-              <Button onClick={() => onTunerRequested('waveformHeight')}>{t('Adjust')}</Button>
-            </td>
-          </Row>
-        )}
-
-        {showAdvancedSettings && (
-          <Row>
-            <KeyCell>{t('Auto load timecode from file as an offset in the timeline?')}</KeyCell>
-            <td>
-              <Switch checked={autoLoadTimecode} onCheckedChange={setAutoLoadTimecode} />
-            </td>
-          </Row>
-        )}
-
-        {showAdvancedSettings && (
-          <Row>
-            <KeyCell>{t('Try to automatically convert to supported format when opening unsupported file?')}</KeyCell>
-            <td>
-              <Switch checked={enableAutoHtml5ify} onCheckedChange={setEnableAutoHtml5ify} />
-            </td>
-          </Row>
-        )}
-
-        <Row>
-          <KeyCell>{t('Prefer strong colors')}</KeyCell>
-          <td>
-            <Switch checked={preferStrongColors} onCheckedChange={setPreferStrongColors} />
-          </td>
-        </Row>
-
-        <Row>
-          <KeyCell>{t('Reduce motion in user interface')}</KeyCell>
-          <td>
-            <Select value={reducedMotion} onChange={(e) => setReducedMotion(e.target.value as Config['reducedMotion'])}>
-              {Object.entries({ user: t('System default'), always: t('Yes'), never: t('No') } satisfies Record<Config['reducedMotion'], string>).map(([key, value]) => (
-                <option key={key} value={key}>{value}</option>
-              ))}
-            </Select>
-          </td>
-        </Row>
-
-        <Row>
-          <KeyCell>{t('In timecode show')}</KeyCell>
-          <td>
-            <Button onClick={onTimecodeFormatClick}>
-              {timecodeFormat === 'frameCount'
-                ? <FaHashtag style={{ verticalAlign: 'middle', marginRight: '.3em' }} />
-                : <FaClock style={{ verticalAlign: 'middle', marginRight: '.3em' }} />}{timecodeFormatOptions[timecodeFormat]}
-            </Button>
-          </td>
-        </Row>
-
-
-        <Header title={t('Prompts and dialogs')} />
-
-        <Row>
-          <KeyCell>{t('Show notifications')}</KeyCell>
-          <td>
-            <Switch checked={!hideOsNotifications} onCheckedChange={(v) => setHideOsNotifications(v ? undefined : 'all')} />
-          </td>
-        </Row>
-
-        <Row>
-          <KeyCell>{t('Show informational in-app notifications')}</KeyCell>
-          <td>
-            <Switch checked={!hideNotifications} onCheckedChange={(v) => setHideNotifications(v ? undefined : 'all')} />
-          </td>
-        </Row>
-
-        <Row>
-          <KeyCell>{t('Ask for confirmation when closing app or file?')}</KeyCell>
-          <td>
-            <Switch checked={askBeforeClose} onCheckedChange={setAskBeforeClose} />
-          </td>
-        </Row>
-
-        {showAdvancedSettings && (
-          <Row>
-            <KeyCell>{t('Ask about what to do when opening a new file when another file is already already open?')}</KeyCell>
-            <td>
-              <Switch checked={enableAskForFileOpenAction} onCheckedChange={setEnableAskForFileOpenAction} />
-            </td>
-          </Row>
-        )}
-
-        {showAdvancedSettings && (
-          <Row>
-            <KeyCell>{t('Import chapters to segments when opening file')}</KeyCell>
-            <td>
-              <Select value={enableImportChapters} onChange={(e) => setEnableImportChapters(e.target.value as EnableImportChapters)}>
-                {Object.entries(getEnableImportChaptersOptions() satisfies Record<EnableImportChapters, string>).map(([key, name]) => (
-                  <option key={key} value={key}>{name}</option>
+            <SettingRow label={t('Reduce motion')} description={t('Turn off animations.')} controlId={reducedMotionId}>
+              <Select id={reducedMotionId} value={reducedMotion} onChange={(e) => setReducedMotion(e.target.value as Config['reducedMotion'])}>
+                {Object.entries({ user: t('System default'), always: t('Yes'), never: t('No') } satisfies Record<Config['reducedMotion'], string>).map(([key, value]) => (
+                  <option key={key} value={key}>{value}</option>
                 ))}
               </Select>
-            </td>
-          </Row>
-        )}
+            </SettingRow>
 
-        {showAdvancedSettings && (
-          <>
-            <Header title={t('Other')} />
-            <Row>
-              <KeyCell>{t('Enable HEVC / H265 hardware decoding (you may need to turn this off if you have problems with HEVC files)')}</KeyCell>
-              <td>
-                <Switch checked={enableNativeHevc} onCheckedChange={setEnableNativeHevc} />
-              </td>
-            </Row>
+            <SettingRow label={t('Time format')} description={t('How times are shown in advanced mode.')} controlId={timecodeId}>
+              <Select id={timecodeId} value={timecodeFormat} onChange={(e) => setTimecodeFormat(e.target.value as TimecodeFormat)}>
+                {Object.entries(timecodeFormatOptions).map(([key, value]) => (
+                  <option key={key} value={key}>{value}</option>
+                ))}
+              </Select>
+            </SettingRow>
 
-            <Row>
-              <KeyCell>{t('Enable FFmpeg `-hwaccel auto` flag. This can improve performance segment auto detection and FFmpeg-assisted playback speed.')}</KeyCell>
-              <td>
-                <Switch checked={ffmpegHwaccel === 'auto'} onCheckedChange={(v) => setFfmpegHwaccel(v ? 'auto' : 'none')} />
-              </td>
-            </Row>
+            {showAdvancedSettings && (
+              <SettingRow label={t('Waveform height')}>
+                <Button onClick={() => onTunerRequested('waveformHeight')}>{t('Adjust')}</Button>
+              </SettingRow>
+            )}
           </>
-        )}
-      </tbody>
-    </table>
+        );
+      }
+
+      case 'editing': {
+        return (
+          <>
+            <SettingRow
+              label={t('Clips are')}
+              description={invertCutSegments ? t('Removed: the export keeps everything except the clips.') : t('Kept: the export contains only the clips.')}
+              details={t('"Keep" is the usual way to make clips. "Remove" cuts the marked parts out of the recording instead, for example to drop a pause or a loading screen.')}
+            >
+              <Select value={invertCutSegments ? 'remove' : 'keep'} onChange={(e) => setInvertCutSegments(e.target.value === 'remove')} aria-label={t('Clips are')}>
+                <option value="keep">{t('Kept')}</option>
+                <option value="remove">{t('Removed')}</option>
+              </Select>
+            </SettingRow>
+
+            {showAdvancedSettings && (
+              <SettingRow label={t('Convert unsupported files')} description={t('Make a playable preview when a file cannot be played directly.')}>
+                <Switch checked={enableAutoHtml5ify} onCheckedChange={setEnableAutoHtml5ify} aria-label={t('Convert unsupported files')} />
+              </SettingRow>
+            )}
+
+            {showAdvancedSettings && (
+              <SettingRow label={t('Use the file\'s timecode')} description={t('Start the timeline at the timecode stored in the file.')}>
+                <Switch checked={autoLoadTimecode} onCheckedChange={setAutoLoadTimecode} aria-label={t('Use the file\'s timecode')} />
+              </SettingRow>
+            )}
+
+            {showAdvancedSettings && (
+              <SettingRow label={t('Chapters as clips')} description={t('Turn a file\'s chapters into clips when opening it.')} controlId={chaptersId}>
+                <Select id={chaptersId} value={enableImportChapters} onChange={(e) => setEnableImportChapters(e.target.value as EnableImportChapters)}>
+                  {Object.entries(getEnableImportChaptersOptions() satisfies Record<EnableImportChapters, string>).map(([key, name]) => (
+                    <option key={key} value={key}>{name}</option>
+                  ))}
+                </Select>
+              </SettingRow>
+            )}
+          </>
+        );
+      }
+
+      case 'export': {
+        return (
+          <>
+            <SettingRow
+              label={t('Use the GPU')}
+              description={t('Faster exports on NVIDIA, AMD or Intel graphics.')}
+              details={t('Decodes video on the graphics card (NVIDIA, AMD or Intel) and re-encodes regular exports with its H.264 encoder. ClipPress switches to the CPU automatically if the GPU fails. Size-limited exports pick their encoder from the preset.')}
+            >
+              <Switch checked={exportGpuAcceleration} onCheckedChange={setExportGpuAcceleration} aria-label={t('Use the GPU')} />
+            </SettingRow>
+
+            <SettingRow
+              label={t('Save exports to')}
+              description={customOutDir ?? t('The same folder as the recording.')}
+            >
+              <OutDirSelector>
+                <Button>
+                  <FiFolder aria-hidden />
+                  {t('Change…')}
+                </Button>
+              </OutDirSelector>
+            </SettingRow>
+
+            <SettingRow
+              label={t('After exporting')}
+              description={t('Close the recording, or move files to the trash.')}
+            >
+              <Button onClick={askForCleanupChoices}>{t('Change…')}</Button>
+            </SettingRow>
+
+            {showAdvancedSettings && (
+              <SettingRow
+                label={t('Keyframe cut')}
+                description={keyframeCut ? t('Cut at the keyframe before the start (lossless exports).') : t('Cut at the exact time (lossless exports).')}
+                details={keyframeCut ? (
+                  <>
+                    {t('Cut at the preceding keyframe (not accurate time.) Equiv to')}: <code className="highlighted">ffmpeg -ss N -i input.mp4</code>
+                  </>
+                ) : (
+                  <>
+                    {t('Accurate time but could leave an empty portion at the beginning of the video. Equiv to')}: <code className="highlighted">ffmpeg -i input -ss N</code>
+                  </>
+                )}
+              >
+                <Switch checked={keyframeCut} onCheckedChange={() => toggleKeyframeCut()} aria-label={t('Keyframe cut')} />
+              </SettingRow>
+            )}
+
+            {showAdvancedSettings && (
+              <SettingRow
+                label={t('Tracks that cannot be cut')}
+                description={t('Data tracks such as GoPro GPS or telemetry.')}
+                details={t('(data tracks such as GoPro GPS, telemetry etc. are not copied over by default because ffmpeg cannot cut them, thus they will cause the media duration to stay the same after cutting video/audio)')}
+              >
+                <AutoExportToggler />
+              </SettingRow>
+            )}
+
+            {showAdvancedSettings && (
+              <SettingRow label={t('Date of exported files')} controlId={outputDateId}>
+                <Select id={outputDateId} value={typeof treatOutputFileModifiedTimeAsStart === 'boolean' ? String(treatOutputFileModifiedTimeAsStart) : 'disabled'} onChange={(e) => setTreatOutputFileModifiedTimeAsStart(e.target.value === 'disabled' ? null : (e.target.value === 'true'))}>
+                  <option value="disabled">{t('Current time')}</option>
+                  <option value="true">{t('Source file\'s time plus segment start cut time')}</option>
+                  <option value="false">{t('Source file\'s time minus segment end cut time')}</option>
+                </Select>
+              </SettingRow>
+            )}
+
+            {showAdvancedSettings && (
+              <SettingRow label={t('Treat source file modification date/time as:')} controlId={sourceDateId}>
+                <Select id={sourceDateId} disabled={treatOutputFileModifiedTimeAsStart == null} value={String(treatInputFileModifiedTimeAsStart)} onChange={(e) => setTreatInputFileModifiedTimeAsStart((e.target.value === 'true'))}>
+                  <option value="true">{t('Start of video')}</option>
+                  <option value="false">{t('End of video')}</option>
+                </Select>
+              </SettingRow>
+            )}
+          </>
+        );
+      }
+
+      case 'snapshots': {
+        return (
+          <>
+            <SettingRow label={t('Image format')} description={t('For frames captured from the video.')}>
+              <CaptureFormatButton showIcon />
+            </SettingRow>
+
+            <SettingRow label={t('Image quality')} description={`${Math.round(captureFrameQuality * 100)}%`}>
+              <input
+                type="range"
+                className={styles['range']}
+                aria-label={t('Image quality')}
+                min={1}
+                max={1000}
+                value={Math.round(captureFrameQuality * 1000)}
+                onChange={(e) => setCaptureFrameQuality(Math.max(Math.min(1, parseInt(e.target.value, 10) / 1000), 0))}
+              />
+            </SettingRow>
+
+            {showAdvancedSettings && (
+              <SettingRow
+                label={t('Capture method')}
+                details={t('FFmpeg capture method might sometimes capture more correct colors, but the captured snapshot might be off by one or more frames, relative to the preview.')}
+              >
+                <Select value={captureFrameMethod} onChange={(e) => setCaptureFrameMethod(e.target.value as typeof captureFrameMethod)} aria-label={t('Capture method')}>
+                  <option value="videotag">{t('HTML video tag')}</option>
+                  <option value="ffmpeg">{t('FFmpeg')}</option>
+                </Select>
+              </SettingRow>
+            )}
+
+            {showAdvancedSettings && (
+              <SettingRow
+                label={t('Names of extracted frames')}
+                details={t('Note that this only applies when extracting multiple frames. When "Frame number" is selected, frame numbers are relative to the start of the segment (starting from 1).')}
+              >
+                <Select value={captureFrameFileNameFormat} onChange={(e) => setCaptureFrameFileNameFormat(e.target.value as typeof captureFrameFileNameFormat)} aria-label={t('Names of extracted frames')}>
+                  <option value="timestamp">{t('Frame timestamp')}</option>
+                  <option value="index">{t('Frame number')}</option>
+                </Select>
+              </SettingRow>
+            )}
+          </>
+        );
+      }
+
+      case 'input': {
+        return (
+          <>
+            <SettingRow label={t('Keyboard shortcuts')} description={t('See and change every shortcut.')}>
+              <Button onClick={onKeyboardShortcutsDialogRequested}>
+                <FaRegKeyboard aria-hidden />
+                {t('Open…')}
+              </Button>
+            </SettingRow>
+
+            <ModifierKeySetting label={t('Move or resize a clip')} description={t('Hold this key and drag a clip\'s edge on the timeline.')} value={segmentMouseModifierKey} setValue={setSegmentMouseModifierKey} />
+            <ModifierKeySetting label={t('Zoom with the wheel')} value={mouseWheelZoomModifierKey} setValue={setMouseWheelZoomModifierKey} />
+            <ModifierKeySetting label={t('Step frames with the wheel')} value={mouseWheelFrameSeekModifierKey} setValue={setMouseWheelFrameSeekModifierKey} />
+            <ModifierKeySetting label={t('Jump keyframes with the wheel')} value={mouseWheelKeyframeSeekModifierKey} setValue={setMouseWheelKeyframeSeekModifierKey} />
+
+            <SettingRow label={t('Reverse wheel direction')} description={t('On the timeline.')}>
+              <Switch checked={invertTimelineScroll ?? false} onCheckedChange={setInvertTimelineScroll} aria-label={t('Reverse wheel direction')} />
+            </SettingRow>
+
+            <SettingRow label={t('Wheel and trackpad sensitivity')}>
+              <Button onClick={() => onTunerRequested('wheelSensitivity')}>{t('Adjust')}</Button>
+            </SettingRow>
+
+            <SettingRow label={t('Arrow key seek step')} description={t('How far the arrow keys move.')}>
+              <Button onClick={() => onTunerRequested('keyboardNormalSeekSpeed')}>{t('Adjust')}</Button>
+            </SettingRow>
+
+            <SettingRow label={t('Longer seek step')}>
+              <Button onClick={() => onTunerRequested('keyboardSeekSpeed2')}>{t('Adjust')}</Button>
+            </SettingRow>
+
+            <SettingRow label={t('Longest seek step')}>
+              <Button onClick={() => onTunerRequested('keyboardSeekSpeed3')}>{t('Adjust')}</Button>
+            </SettingRow>
+
+            <SettingRow label={t('Seek acceleration')} description={t('How quickly holding a seek key speeds up.')}>
+              <Button onClick={() => onTunerRequested('keyboardSeekAccFactor')}>{t('Adjust')}</Button>
+            </SettingRow>
+          </>
+        );
+      }
+
+      case 'projects': {
+        return (
+          <>
+            <SettingRow
+              label={t('Save edits automatically')}
+              description={t('Your clips, text and settings are kept in a project file (.llc).')}
+              details={t('Opening the same recording again brings your edits back. The project file is named after the recording, with "-proj.llc" at the end.')}
+            >
+              <Switch checked={autoSaveProjectFile} onCheckedChange={setAutoSaveProjectFile} aria-label={t('Save edits automatically')} />
+            </SettingRow>
+
+            <SettingRow
+              label={t('Project file location')}
+              description={storeProjectInWorkingDir ? t('In the export folder.') : t('Next to the recording.')}
+            >
+              <Button disabled={!autoSaveProjectFile} onClick={toggleStoreProjectInWorkingDir}>
+                {storeProjectInWorkingDir ? t('Store next to the recording') : t('Store in the export folder')}
+              </Button>
+            </SettingRow>
+          </>
+        );
+      }
+
+      case 'updates': {
+        return <UpdateSettings />;
+      }
+
+      case 'advanced': {
+        return (
+          <>
+            {!isMasBuild && (
+              <SettingRow
+                label={t('Custom FFmpeg')}
+                description={customFfPath ?? t('Using the FFmpeg that comes with ClipPress.')}
+                details={t('This allows you to specify custom FFmpeg and FFprobe binaries to use. Make sure the "ffmpeg" and "ffprobe" executables exist in the same directory, and then select the directory.')}
+              >
+                <div className={styles['controlGroup']}>
+                  <Button onClick={changeCustomFfPath}>{t('Choose…')}</Button>
+                  {customFfPath && (
+                    <Button variant="ghost" onClick={clearCustomFfPath} title={t('Use the built-in FFmpeg')} aria-label={t('Use the built-in FFmpeg')}>
+                      <FiX aria-hidden />
+                    </Button>
+                  )}
+                </div>
+              </SettingRow>
+            )}
+
+            <SettingRow
+              label={t('HEVC hardware decoding')}
+              description={t('Turn off if H.265 recordings show problems.')}
+            >
+              <Switch checked={enableNativeHevc} onCheckedChange={setEnableNativeHevc} aria-label={t('HEVC hardware decoding')} />
+            </SettingRow>
+
+            <SettingRow
+              label={t('FFmpeg hardware acceleration')}
+              description={t('-hwaccel auto, for detection and assisted playback.')}
+            >
+              <Switch checked={ffmpegHwaccel === 'auto'} onCheckedChange={(v) => setFfmpegHwaccel(v ? 'auto' : 'none')} aria-label={t('FFmpeg hardware acceleration')} />
+            </SettingRow>
+
+            <SettingRow
+              label={t('Allow several windows')}
+              description={t('Run more than one ClipPress at a time (experimental).')}
+            >
+              <Switch checked={allowMultipleInstances} onCheckedChange={setAllowMultipleInstances} aria-label={t('Allow several windows')} />
+            </SettingRow>
+          </>
+        );
+      }
+
+      default: {
+        return null;
+      }
+    }
+  }
+
+  return (
+    <div className={styles['layout']}>
+      <nav className={styles['nav']} aria-label={t('Settings categories')}>
+        <div className={styles['navList']} role="tablist" aria-orientation="vertical">
+          {categories.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              role="tab"
+              aria-selected={c.id === activeCategory}
+              className={[styles['navItem'], ...(c.id === activeCategory ? [styles['navItemActive']] : [])].join(' ')}
+              onClick={() => setCategory(c.id)}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+
+        <div className={styles['advancedToggle']}>
+          <Switch id={advancedToggleId} checked={showAdvancedSettings} onCheckedChange={setShowAdvancedSettings} />
+          <label htmlFor={advancedToggleId}>{t('Show advanced options')}</label>
+        </div>
+      </nav>
+
+      <div className={`consistent-scrollbar ${styles['content']}`} role="tabpanel" aria-label={activeLabel}>
+        <h2 className={styles['contentTitle']}>{activeLabel}</h2>
+        {renderCategory()}
+      </div>
+    </div>
   );
 }
 

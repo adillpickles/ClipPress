@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { FiCheckCircle, FiX } from 'react-icons/fi';
 
 import useUpdateStatus from '../hooks/useUpdateStatus';
 import { isStoreBuild } from '../util';
 import UpdateControls from './UpdateControls';
+import Spinner from './Spinner';
+import styles from './UpdateNotice.module.css';
 
 const { ipcRenderer } = window.require('electron');
+
+/** How long "ClipPress is up to date" stays after a manual check. */
+const upToDateDisplayMs = 4000;
 
 export default function UpdateNotice({ visible }: { visible: boolean }) {
   const { t } = useTranslation();
@@ -17,12 +23,33 @@ export default function UpdateNotice({ visible }: { visible: boolean }) {
     ipcRenderer.on('showUpdates', show);
     return () => { ipcRenderer.removeListener('showUpdates', show); };
   }, []);
+
+  // A manual check that finds nothing only needs a brief confirmation (#62).
+  const isUpToDate = status?.phase === 'up-to-date';
+  useEffect(() => {
+    if (!isUpToDate) return undefined;
+    const timeout = setTimeout(() => setDismissedPhase(phaseKey), upToDateDisplayMs);
+    return () => clearTimeout(timeout);
+  }, [isUpToDate, phaseKey]);
+
   if (!visible || isStoreBuild || status == null || dismissedPhase === phaseKey || status.phase === 'idle'
     || (!status.manual && !['available', 'ready'].includes(status.phase))) return null;
+
+  if (status.phase === 'checking' || status.phase === 'up-to-date') {
+    return (
+      <div className={styles['toast']} role="status" aria-live="polite">
+        {status.phase === 'checking' ? <Spinner /> : <FiCheckCircle aria-hidden className={styles['ok']} />}
+        {status.phase === 'checking' ? t('Checking for updates…') : t('ClipPress is up to date.')}
+      </div>
+    );
+  }
+
   return (
-    <div aria-label={t('App update')} style={{ position: 'fixed', right: 20, bottom: 20, zIndex: 100, width: 420, maxWidth: 'calc(100vw - 40px)', padding: '16px 40px 16px 16px', boxSizing: 'border-box', borderRadius: 12, border: '1px solid var(--accent-8)', background: 'var(--gray-2)', color: 'var(--gray-12)', boxShadow: '0 5px 24px #0006' }}>
-      <button type="button" aria-label={t('Dismiss update notice')} onClick={() => setDismissedPhase(phaseKey)} style={{ position: 'absolute', right: 10, top: 8, border: 0, background: 'transparent', color: 'inherit', cursor: 'pointer', fontSize: 20 }}>×</button>
-      <UpdateControls status={status} />
+    <div aria-label={t('App update')} className={styles['card']}>
+      <button type="button" className={styles['dismiss']} aria-label={t('Dismiss update notice')} title={t('Dismiss')} onClick={() => setDismissedPhase(phaseKey)}>
+        <FiX aria-hidden />
+      </button>
+      <UpdateControls status={status} showCheckButton={false} />
     </div>
   );
 }

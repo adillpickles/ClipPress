@@ -239,7 +239,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 
 .spinner-animation {
-  animation: pulse 1s ease-in-out infinite;
+  animation: spin .9s linear infinite;
 }
 
 .loading-animation {

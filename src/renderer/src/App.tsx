@@ -6680,23 +6680,21 @@ function App() {
                 <Dialog.Portal>
                   <Dialog.Overlay />
                   <Dialog.Content
+                    aria-describedby={undefined}
                     style={{
-                      width: '60em',
+                      width: 'min(52rem, 92vw)',
+                      height: 'min(38rem, 86vh)',
+                      padding: 0,
                       overflow: 'hidden',
                       display: 'flex',
                       flexDirection: 'column',
                     }}
                   >
                     <div className={styles['settingsDialogHeader']}>
-                      <Dialog.Title>{t('Settings')}</Dialog.Title>
-                      <Dialog.Description>
-                        {t(
-                          'Hover mouse over buttons in the main interface to see which function they have',
-                        )}
-                      </Dialog.Description>
+                      <Dialog.Title style={{ margin: 0 }}>{t('Settings')}</Dialog.Title>
                     </div>
 
-                    <div className={`consistent-scrollbar ${styles['settingsDialogBody']}`}>
+                    <div className={styles['settingsDialogBody']}>
                       <Settings
                         onTunerRequested={onTunerRequested}
                         onKeyboardShortcutsDialogRequested={

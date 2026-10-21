@@ -586,7 +586,11 @@ function Timeline({
   const showWaveformHint = waveformEnabled && !shouldShowWaveform;
   const showWaveforms = waveformEnabled && shouldShowWaveform && (waveforms.length > 0 || overviewWaveform != null);
   const lanePx = scrollerWidth * (laneWidthPercent / 100);
-  const visibleEnd = zoomWindowEndTime ?? fileDurationNonZero;
+  // The visible stretch of the lane, in source time. Retimed clips stretch or squeeze the lane, so
+  // this is mapped from lane time rather than taken as a fixed share of the file.
+  const visibleEnd = lanePx > 0
+    ? timelineMap.toSource(Math.min(laneDuration, timelineMap.toDisplay(zoomWindowStartTime) + (scrollerWidth / lanePx) * laneDuration))
+    : (zoomWindowEndTime ?? fileDurationNonZero);
 
   const hoverLabel = useMemo(() => {
     if (!showHoverTime || hoveringTime == null) return undefined;
