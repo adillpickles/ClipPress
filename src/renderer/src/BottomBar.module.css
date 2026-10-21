@@ -1,0 +1,94 @@
+.transport {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: .75rem;
+  min-height: 2.5rem;
+}
+
+.transportLeft,
+.transportRight {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  min-width: 0;
+}
+
+.transportRight {
+  justify-content: flex-end;
+}
+
+.transportCenter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+}
+
+.timeDisplay {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+  padding: .25rem .45rem;
+  margin-left: -.45rem;
+  border-radius: var(--cp-radius-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.timeDisplay:hover {
+  background: var(--cp-hover);
+}
+
+.timeDisplay:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.timeCurrent {
+  color: var(--cp-text);
+  font-size: .9375rem;
+  font-weight: 600;
+}
+
+.timeDuration {
+  color: var(--cp-text-subtle);
+  font-size: .8125rem;
+  font-weight: 400;
+  white-space: pre;
+}
+
+.playButton {
+  all: unset;
+  box-sizing: border-box;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  background: var(--cp-accent);
+  color: var(--accent-contrast);
+  transition: background-color .14s ease, box-shadow .14s ease, transform .1s ease;
+}
+
+.playButton:hover {
+  background: var(--cp-accent-hover);
+}
+
+.playButton:active {
+  transform: scale(.96);
+}
+
+.playButton:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.markButton {
+  min-width: 4.6rem;
+}

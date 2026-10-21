@@ -1,0 +1,198 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--cp-text-muted);
+  background: var(--cp-panel);
+  border: 1px solid var(--cp-line);
+  border-radius: var(--cp-radius-lg);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .75rem;
+  padding: .7rem .6rem .6rem .9rem;
+}
+
+.headerTitle {
+  color: var(--cp-text);
+  font-size: .9375rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.headerSubtitle {
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+  line-height: 1.35;
+  margin-top: .1rem;
+}
+
+.headerClose {
+  all: unset;
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--cp-radius-sm);
+  color: var(--cp-text-subtle);
+  cursor: pointer;
+}
+
+.headerClose:hover {
+  background: var(--cp-hover);
+  color: var(--cp-text);
+}
+
+.headerClose:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.clip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  box-sizing: border-box;
+  padding: .5rem .5rem .5rem .55rem;
+  border-radius: var(--cp-radius);
+  border: 1px solid transparent;
+  transition: background-color .12s ease, border-color .12s ease;
+}
+
+.clip:hover {
+  background: var(--cp-hover);
+}
+
+.clipActive,
+.clipActive:hover {
+  background: var(--cp-raised);
+  border-color: var(--gray-8);
+}
+
+.clipDragging {
+  background: var(--cp-raised);
+  border-color: var(--gray-8);
+  box-shadow: var(--cp-shadow-popover);
+}
+
+.clipBody {
+  flex-grow: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+}
+
+.clipBadge {
+  flex-shrink: 0;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 .3rem;
+  box-sizing: border-box;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gray-6);
+  color: #fff;
+  font-size: .75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+}
+
+.clipText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+}
+
+.clipTitle {
+  color: var(--cp-text);
+  font-size: .875rem;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.clipDetails {
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.clipExcluded .clipBadge,
+.clipExcluded .clipText {
+  opacity: .5;
+}
+
+.clipExcluded .clipTitle {
+  text-decoration: line-through;
+  text-decoration-color: var(--gray-9);
+}
+
+.includeToggle {
+  all: unset;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 4px;
+  border: 1.5px solid var(--gray-8);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .8rem;
+  cursor: pointer;
+  transition: background-color .12s ease, border-color .12s ease;
+}
+
+.includeToggle:hover {
+  border-color: var(--gray-10);
+}
+
+.includeToggle:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.includeToggleOn,
+.includeToggleOn:hover {
+  background: var(--cp-accent);
+  border-color: var(--cp-accent);
+  color: var(--accent-contrast);
+}
+
+.footer {
+  padding: .65rem .9rem;
+  box-sizing: border-box;
+  border-top: 1px solid var(--cp-line);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.footerLabel {
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+}
+
+.footerValue {
+  color: var(--cp-text);
+  font-size: .9375rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

@@ -1442,8 +1442,8 @@ function App() {
       getSegColor: (seg: SegmentColorIndex | undefined) => {
         const color = getSegColor(seg);
         return preferStrongColors
-          ? color.desaturate(0.2)
-          : color.desaturate(0.6);
+          ? color
+          : color.desaturate(0.25);
       },
       nextSegColorIndex: isInitialSegment(cutSegments)
         ? segColorCounter
@@ -1628,7 +1628,8 @@ function App() {
     }
   }, [renderOverviewWaveform, setWorking, t, working]);
 
-  const shouldShowKeyframes = keyframesEnabled && hasVideo && calcShouldShowKeyframes(zoomedDuration);
+  // Keyframe lines only matter for lossless cuts, an advanced-mode concern (#59).
+  const shouldShowKeyframes = !simpleMode && keyframesEnabled && hasVideo && calcShouldShowKeyframes(zoomedDuration);
   const shouldShowWaveform = calcShouldShowWaveform(zoomedDuration) || overviewWaveform != null;
 
   const areWeCutting = useMemo(
@@ -6143,8 +6144,7 @@ function App() {
       flexDirection: 'column',
       height: '100vh',
       transition: darkModeTransition,
-      background:
-        'linear-gradient(180deg, color-mix(in srgb, var(--gray-1) 96%, transparent), color-mix(in srgb, var(--gray-2) 98%, transparent))',
+      background: 'var(--cp-bg)',
     }),
     [baseColorStyle],
   );
@@ -6169,7 +6169,6 @@ function App() {
                   onOpenFiles={openFilesDialog}
                   onExportPress={onExportPress}
                   segmentsToExport={segmentsToExport}
-                  areWeCutting={areWeCutting}
                 />
               )}
 
@@ -6197,6 +6196,7 @@ function App() {
                     <div className={styles['emptyStateShell']}>
                       <NoFileLoaded
                         onClick={openFilesDialog}
+                        onOpenFolderClick={openDirDialog}
                         keyBindingByAction={keyBindingByAction}
                       />
                     </div>
@@ -6435,6 +6435,11 @@ function App() {
                           onAddTextOverlay={addTextOverlay}
                           onEditSegmentCrop={() => editSegmentCrop(currentSegIndexSafe)}
                           canEditSegmentCrop={!invertCutSegments && currentCutSeg?.end != null}
+                          relevantTime={relevantTime}
+                          fileDuration={fileDuration}
+                          goToTimecode={goToTimecode}
+                          formatTimeAndFrames={formatTimeAndFrames}
+                          keyBindingByAction={keyBindingByAction}
                         />
 
                         <Timeline
@@ -6483,6 +6488,7 @@ function App() {
                           onEditSegmentCrop={editSegmentCrop}
                           onToggleSegmentSpeedControls={toggleSpeedControlsForSegment}
                           onRemoveSegmentSpeed={removeSegmentSpeed}
+                          hasVideo={hasVideo}
                         />
                       </div>
                     </>

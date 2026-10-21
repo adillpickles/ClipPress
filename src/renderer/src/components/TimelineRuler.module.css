@@ -1,0 +1,59 @@
+.ruler {
+  position: relative;
+  overflow: hidden;
+  pointer-events: none;
+  border-bottom: 1px solid var(--cp-line);
+}
+
+.major,
+.minor {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+}
+
+.major {
+  height: 9px;
+  background: var(--gray-9);
+}
+
+.minor {
+  height: 4px;
+  background: var(--gray-8);
+}
+
+.label {
+  position: absolute;
+  bottom: 7px;
+  left: 4px;
+  font-size: 10.5px;
+  line-height: 1;
+  color: var(--cp-text-subtle);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hover {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--gray-11);
+}
+
+.hoverLabel {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--gray-12);
+  color: var(--gray-1);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  z-index: 1;
+}

@@ -183,7 +183,7 @@ function renderNoticeIcon(
         flexShrink: '0',
         fontSize: '.8em',
         verticalAlign: 'baseline',
-        color: 'var(--blue-10)',
+        color: 'var(--accent-10)',
         ...style,
       }}
     />
@@ -1428,7 +1428,6 @@ function ExportConfirm({
       renderButton={() => (
         <ExportButton
           segmentsToExport={segmentsToExport}
-          areWeCutting={areWeCutting}
           label={exportActionLabel}
           titleOverride={exportActionLabel}
           onClick={withBlur(() => onExportConfirm())}

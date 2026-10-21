@@ -1,31 +1,47 @@
+import type { ReactNode } from 'react';
 import { Fragment, memo, useState } from 'react';
 import { motion } from 'motion/react';
-import { useTranslation, Trans } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
+import { FiFolder, FiShare, FiType } from 'react-icons/fi';
 
 import type { KeyBinding } from '../../common/types';
-import { splitKeyboardKeys } from './util';
+import { isMac, splitKeyboardKeys } from './util';
 import Kbd from './components/Kbd';
+import Button from './components/Button';
+import ClipPressMark from './components/ClipPressMark';
 import styles from './NoFileLoaded.module.css';
 
 function Keys({ keys }: { keys: string | undefined }) {
-  if (keys == null || keys === '') {
-    return <kbd>UNBOUND</kbd>;
-  }
+  if (keys == null || keys === '') return null;
   const split = splitKeyboardKeys(keys);
   return split.map((key, i) => (
-    <Fragment key={key}><Kbd code={key} />{i < split.length - 1 && <span style={{ fontSize: '.7em', marginLeft: '-.2em', marginRight: '-.2em' }}>{' + '}</span>}</Fragment>
+    <Fragment key={key}><Kbd code={key} />{i < split.length - 1 && <span className={styles['plus']}>+</span>}</Fragment>
   ));
 }
 
-function NoFileLoaded({ onClick, keyBindingByAction }: {
+function Step({ icon, title, children }: { icon: ReactNode, title: string, children: ReactNode }) {
+  return (
+    <div className={styles['step']}>
+      <div className={styles['stepIcon']}>{icon}</div>
+      <div className={styles['stepTitle']}>{title}</div>
+      <div className={styles['stepText']}>{children}</div>
+    </div>
+  );
+}
+
+function NoFileLoaded({ onClick, onOpenFolderClick, keyBindingByAction, children }: {
   onClick: () => void,
+  onOpenFolderClick: () => void,
   keyBindingByAction: Record<string, KeyBinding>,
+  /** Shown under the steps (recent recordings). */
+  children?: ReactNode,
 }) {
   const { t } = useTranslation();
   const [dragging, setDragging] = useState(false);
 
   return (
     <motion.div
+      initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       onDragEnter={(e) => {
         e.preventDefault();
@@ -43,8 +59,6 @@ function NoFileLoaded({ onClick, keyBindingByAction }: {
         e.preventDefault();
         setDragging(false);
       }}
-      role="button"
-      onClick={onClick}
       className={[
         'no-user-select',
         styles['dropzone'],
@@ -52,13 +66,39 @@ function NoFileLoaded({ onClick, keyBindingByAction }: {
       ].join(' ')}
     >
       <div className={styles['content']}>
-        <div className={styles['title']}>{t('Drop a clip to get started')}</div>
-
-        <div className={styles['instructions']}>
-          <p className={styles['instruction']}><Trans>Drop in a clip or click anywhere here to browse.</Trans></p>
-          <p className={styles['instruction']}><Trans>Press <Keys keys={keyBindingByAction['setCutStart']?.keys} /> for the start and <Keys keys={keyBindingByAction['setCutEnd']?.keys} /> for the end.</Trans></p>
-          <p className={styles['instruction']}><Trans>Optionally add text or adjust gain, then export.</Trans></p>
+        <div className={styles['mark']}>
+          <ClipPressMark size="100%" />
         </div>
+
+        <h1 className={styles['title']}>{dragging ? t('Drop to open') : t('Open a recording to start clipping')}</h1>
+        <p className={styles['subtitle']}>{t('Drag a video anywhere into this window, or choose one.')}</p>
+
+        <div className={styles['actions']}>
+          <Button variant="primary" size="lg" onClick={onClick}>
+            {t('Open recording…')}
+            <span className={styles['buttonKeys']}><kbd>{isMac ? '⌘' : 'Ctrl'}</kbd><span className={styles['plus']}>+</span><kbd>O</kbd></span>
+          </Button>
+          <Button variant="ghost" size="lg" onClick={onOpenFolderClick}>
+            <FiFolder aria-hidden />
+            {t('Open folder')}
+          </Button>
+        </div>
+
+        <div className={styles['steps']}>
+          <Step icon={<span className={styles['bracketIcon']}>[ ]</span>} title={t('Mark the moment')}>
+            {keyBindingByAction['setCutStart'] != null && keyBindingByAction['setCutEnd'] != null ? (
+              <Trans>Press <Keys keys={keyBindingByAction['setCutStart'].keys} /> for the start and <Keys keys={keyBindingByAction['setCutEnd'].keys} /> for the end. Add as many clips as you like.</Trans>
+            ) : t('Set a start and an end for each clip.')}
+          </Step>
+          <Step icon={<FiType aria-hidden />} title={t('Polish it')}>
+            {t('Add text, slow down or speed up a clip, zoom in, or adjust the volume.')}
+          </Step>
+          <Step icon={<FiShare aria-hidden />} title={t('Export to size')}>
+            {t('Keep the original quality, or pick a file size like 10 MB for Discord.')}
+          </Step>
+        </div>
+
+        {children}
       </div>
     </motion.div>
   );

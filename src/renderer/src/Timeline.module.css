@@ -1,19 +1,155 @@
-.time-wrapper {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+.timeline {
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--cp-radius);
+  border: 1px solid var(--cp-line);
+  background: var(--cp-bg);
+  overflow: hidden;
+}
+
+.gutter {
+  flex-shrink: 0;
+  width: 3.5rem;
+  border-right: 1px solid var(--cp-line);
+  display: flex;
+  flex-direction: column;
+}
+
+.laneLabel {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding: 0 .55rem;
+  border-top: 1px solid var(--cp-line);
+  color: var(--cp-text-subtle);
+  font-size: .6875rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.tracks {
+  position: relative;
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.waveformHint {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: .6rem;
+  color: var(--cp-text-subtle);
+  font-size: .8125rem;
+  border-bottom: 1px solid var(--cp-line);
+}
+
+.lane {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  border-top: 1px solid var(--cp-line);
+}
+
+.clipLane {
+  background: color-mix(in srgb, var(--gray-3) 55%, transparent);
+}
+
+.textClip {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--gray-12) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gray-12) 22%, transparent);
+  color: var(--cp-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: grab;
+}
+
+.textClipSelected {
+  background: var(--cp-accent-soft);
+  border-color: var(--accent-9);
+}
+
+.textClipLabel {
+  flex-grow: 1;
+  min-width: 0;
+  margin-left: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   pointer-events: none;
 }
-.time {
-  background: rgba(0,0,0,0.4);
-  border-radius: 3px;
-  padding: 2px 4px;
-  color: rgba(255, 255, 255, 0.8);
-  transition: opacity 0.2s;
+
+.textClipHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  border: none;
+  padding: 0;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+.textClipHandleStart {
+  left: -2px;
+}
+
+.textClipHandleEnd {
+  right: -2px;
+}
+
+.textClipSelected .textClipHandle::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent-9);
+}
+
+/* The time the user asked for (seek target): accent line across every lane with a handle in the ruler. */
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--cp-accent);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.playheadHandle {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 11px;
+  height: 12px;
+  transform: translateX(-50%);
+  background: var(--cp-accent);
+  clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%);
+  border-radius: 2px 2px 0 0;
+}
+
+/* Where playback actually is; normally under the playhead, visible while seeking catches up. */
+.playerTime {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--gray-12) 55%, transparent);
+  pointer-events: none;
+  z-index: 1;
 }
 
 @keyframes background-animation {

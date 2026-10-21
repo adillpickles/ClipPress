@@ -3,7 +3,6 @@ import { memo, useRef, useMemo, useCallback, useEffect, useState } from 'react';
 import { motion, useMotionValue, useSpring } from 'motion/react';
 import debounce from 'lodash/debounce';
 import { useTranslation } from 'react-i18next';
-import { FaCaretDown, FaCaretUp } from 'react-icons/fa';
 import invariant from 'tiny-invariant';
 
 import TimelineSeg from './TimelineSeg';
@@ -14,7 +13,7 @@ import useUserSettings from './hooks/useUserSettings';
 import styles from './Timeline.module.css';
 
 
-import { timelineBackground, darkModeTransition } from './colors';
+import { darkModeTransition } from './colors';
 import type { Frame } from './ffmpeg';
 import type { FormatTimecode, InverseCutSegment, OverviewWaveform, OverlayClip, RenderableWaveform, WaveformSlice, StateSegment, Thumbnail } from './types';
 import Button from './components/Button';
@@ -23,6 +22,8 @@ import { keyMap } from './hooks/useTimelineScroll';
 import { minTextOverlayDuration } from './textOverlays';
 import SegmentRetimeBar from './components/SegmentRetimeBar';
 import LaneDeleteButton from './components/LaneDeleteButton';
+import TimelineRuler from './components/TimelineRuler';
+import formatClockTime from './util/clockTime';
 import { getSegmentOutputDuration, getSegmentSpeed, getSpeedForOutputDuration } from './segmentSpeed';
 import { createTimelineMap, getRetimeAutoScrollStep, getWarpedImageSpans } from './timelineMap';
 import type { TimelineMap } from './timelineMap';
@@ -30,8 +31,6 @@ import type { TimelineMap } from './timelineMap';
 const remote = window.require('@electron/remote');
 const { Menu } = remote;
 
-
-const currentTimeWidth = 1;
 
 // eslint-disable-next-line react/display-name
 const Waveform = memo(({ waveform, timelineMap, laneDuration, fileDurationNonZero, darkMode }: {
@@ -57,10 +56,9 @@ const Waveform = memo(({ waveform, timelineMap, laneDuration, fileDurationNonZer
 });
 
 // eslint-disable-next-line react/display-name
-const Waveforms = memo(({ timelineMap, laneDuration, laneWidthPercent, fileDurationNonZero, waveforms, overviewWaveform, zoom, darkMode, height }: {
+const Waveforms = memo(({ timelineMap, laneDuration, fileDurationNonZero, waveforms, overviewWaveform, zoom, darkMode, height }: {
   timelineMap: TimelineMap,
   laneDuration: number,
-  laneWidthPercent: number,
   fileDurationNonZero: number,
   waveforms: WaveformSlice[],
   overviewWaveform: OverviewWaveform | undefined,
@@ -68,7 +66,7 @@ const Waveforms = memo(({ timelineMap, laneDuration, laneWidthPercent, fileDurat
   darkMode: boolean,
   height: number,
 }) => (
-  <div style={{ height, width: `${laneWidthPercent}%`, position: 'relative' }}>
+  <div style={{ height, width: '100%', position: 'relative' }}>
     {zoom === 1 && overviewWaveform != null ? (
       <Waveform waveform={overviewWaveform} timelineMap={timelineMap} laneDuration={laneDuration} fileDurationNonZero={fileDurationNonZero} darkMode={darkMode} />
     ) : waveforms.map((waveform) => (
@@ -78,36 +76,19 @@ const Waveforms = memo(({ timelineMap, laneDuration, laneWidthPercent, fileDurat
 ));
 
 // eslint-disable-next-line react/display-name
-const CommandedTime = memo(({ commandedTimePercent }: { commandedTimePercent: string }) => {
-  const color = 'var(--gray-12)';
-  const commonStyle: CSSProperties = { left: commandedTimePercent, position: 'absolute', pointerEvents: 'none' };
-  return (
-    <>
-      <FaCaretDown style={{ ...commonStyle, top: 0, color, fontSize: 14, marginLeft: -7, marginTop: -6 }} />
-      <div style={{ ...commonStyle, bottom: 0, top: 0, backgroundColor: color, width: currentTimeWidth }} />
-      <FaCaretUp style={{ ...commonStyle, bottom: 0, color, fontSize: 14, marginLeft: -7, marginBottom: -5 }} />
-    </>
-  );
-});
+const CommandedTime = memo(({ commandedTimePercent }: { commandedTimePercent: string }) => (
+  <div className={styles['playhead']} style={{ left: commandedTimePercent }}>
+    <div className={styles['playheadHandle']} />
+  </div>
+));
 
-const timelineHeight = 36;
-const textLaneHeight = 24;
+const rulerHeight = 22;
+const clipLaneHeight = 44;
+const textLaneHeight = 28;
 const retimeLaneHeight = 38;
+const thumbnailsHeight = 63;
 /** Extra lane space (fraction of the visible width) kept past the end while retiming. */
 const retimeTrailingSpace = 0.15;
-const laneLabelStyle: CSSProperties = {
-  position: 'absolute',
-  left: 8,
-  top: 4,
-  color: 'var(--gray-11)',
-  fontSize: 11,
-  textTransform: 'uppercase',
-  letterSpacing: '.06em',
-  pointerEvents: 'none',
-  fontWeight: 700,
-};
-
-const timeWrapperStyle: CSSProperties = { height: timelineHeight };
 
 function Timeline({
   fileDurationNonZero,
@@ -155,6 +136,7 @@ function Timeline({
   onEditSegmentCrop,
   onToggleSegmentSpeedControls,
   onRemoveSegmentSpeed,
+  hasVideo,
 } : {
   fileDurationNonZero: number,
   startTimeOffset: number,
@@ -201,10 +183,12 @@ function Timeline({
   onEditSegmentCrop: (index: number) => void,
   onToggleSegmentSpeedControls: (segmentId: string) => void,
   onRemoveSegmentSpeed: (segmentId: string) => void,
+  /** Media with video can have text: its lane is then always shown, so adding text doesn't resize the preview. */
+  hasVideo: boolean,
 }) {
   const { t } = useTranslation();
 
-  const { invertCutSegments, springAnimation, segmentMouseModifierKey } = useUserSettings();
+  const { invertCutSegments, springAnimation, segmentMouseModifierKey, simpleMode } = useUserSettings();
 
   const timelineScrollerRef = useRef<HTMLDivElement>(null);
   const timelineScrollerSkipEventRef = useRef<boolean>(false);
@@ -213,8 +197,7 @@ function Timeline({
 
   const [hoveringTime, setHoveringTime] = useState<number>();
 
-  const displayTime = (hoveringTime != null && isFileOpened && !playing ? hoveringTime : relevantTime) + startTimeOffset;
-  const displayTimePercent = useMemo(() => `${Math.round((displayTime / fileDurationNonZero) * 100)}%`, [displayTime, fileDurationNonZero]);
+  const showHoverTime = hoveringTime != null && isFileOpened && !playing;
 
   const isZoomed = zoom > 1;
 
@@ -337,6 +320,16 @@ function Timeline({
     return () => {
       scroller.removeEventListener('wheel', cancelWheel);
     };
+  }, []);
+
+  const [scrollerWidth, setScrollerWidth] = useState(0);
+  useEffect(() => {
+    const scroller = timelineScrollerRef.current;
+    invariant(scroller != null);
+    const observer = new ResizeObserver(() => setScrollerWidth(scroller.offsetWidth));
+    observer.observe(scroller);
+    setScrollerWidth(scroller.offsetWidth);
+    return () => observer.disconnect();
   }, []);
 
   const onTimelineScroll = useCallback(() => {
@@ -569,22 +562,7 @@ function Timeline({
     menu.popup({ window: remote.getCurrentWindow() });
   }, [onDeleteOverlayClip, onSelectOverlay, t]);
 
-  const timeRef = useRef<HTMLDivElement>(null);
-  const timeFadeTimeoutRef = useRef<NodeJS.Timeout>();
-
   const onMouseMove = useCallback<MouseEventHandler<HTMLDivElement>>((e) => {
-    // need to manually check, because we cannot use css :hover when pointer-events: none
-    // and we need pointer-events: none on time because we want to be able to click through it to segments behind (and they are not parent)
-    const rect = timeRef.current?.getBoundingClientRect();
-    const isInBounds = rect && e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
-    const showHide = (show: boolean) => timeRef.current?.style.setProperty('opacity', show ? '0.2' : '1');
-    if (isInBounds != null) showHide(isInBounds);
-    // console.log('isInBounds', isInBounds);
-
-    // https://github.com/mifi/lossless-cut/issues/2592#issuecomment-3476211496
-    if (timeFadeTimeoutRef.current) clearTimeout(timeFadeTimeoutRef.current);
-    timeFadeTimeoutRef.current = setTimeout(() => showHide(false), 1000);
-
     if (!mouseDownRef.current) { // no button pressed
       setHoveringTime(getMouseTimelinePos(e.nativeEvent));
     }
@@ -604,206 +582,214 @@ function Timeline({
     onGenerateOverviewWaveformClick();
   }, [onGenerateOverviewWaveformClick]);
 
+  const showTextLane = hasVideo || overlayClips.length > 0;
+  const showWaveformHint = waveformEnabled && !shouldShowWaveform;
+  const showWaveforms = waveformEnabled && shouldShowWaveform && (waveforms.length > 0 || overviewWaveform != null);
+  const lanePx = scrollerWidth * (laneWidthPercent / 100);
+  const visibleEnd = zoomWindowEndTime ?? fileDurationNonZero;
+
+  const hoverLabel = useMemo(() => {
+    if (!showHoverTime || hoveringTime == null) return undefined;
+    const time = hoveringTime + startTimeOffset;
+    return simpleMode ? formatClockTime(time, { decimals: 2, showHours: fileDurationNonZero >= 3600 }) : formatTimeAndFrames(time);
+  }, [fileDurationNonZero, formatTimeAndFrames, hoveringTime, showHoverTime, simpleMode, startTimeOffset]);
+
   return (
-    // eslint-disable-next-line jsx-a11y/no-static-element-interactions,jsx-a11y/mouse-events-have-key-events
-    <div
-      style={{ position: 'relative', borderTop: '1px solid var(--gray-7)', borderBottom: '1px solid var(--gray-7)' }}
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      // eslint-disable-next-line jsx-a11y/mouse-events-have-key-events
-      onMouseOut={onMouseOut}
-    >
-      {(waveformEnabled && !shouldShowWaveform) && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: timelineHeight, bottom: timelineHeight, left: 0, right: 0, color: 'var(--gray-11)' }}>
-          {t('Zoom in more to view waveform')}
-          <Button onClick={onGenerateOverviewWaveformClick2} style={{ marginLeft: '.5em' }}>{t('Load overview')}</Button>
-        </div>
-      )}
+    <div className={styles['timeline']}>
+      <div className={styles['gutter']} aria-hidden>
+        {showWaveformHint && <div style={{ height: clipLaneHeight }} />}
+        <div style={{ height: rulerHeight }} />
+        {showWaveforms && <div className={styles['laneLabel']} style={{ height: waveformHeight }}>{t('Audio')}</div>}
+        {showThumbnails && <div style={{ height: thumbnailsHeight }} />}
+        {showTextLane && <div className={styles['laneLabel']} style={{ height: textLaneHeight }}>{t('Text')}</div>}
+        {retimeSegments.length > 0 && <div className={styles['laneLabel']} style={{ height: retimeLaneHeight }}>{t('Speed')}</div>}
+        <div className={styles['laneLabel']} style={{ height: clipLaneHeight }}>{simpleMode ? t('Clips') : t('Segments')}</div>
+      </div>
 
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions,jsx-a11y/mouse-events-have-key-events */}
       <div
-        style={{ overflowX: 'scroll', overflowY: 'hidden' }}
-        className="hide-scrollbar"
-        onWheel={onWheel}
-        onScroll={onTimelineScroll}
-        ref={timelineScrollerRef}
+        className={styles['tracks']}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        // eslint-disable-next-line jsx-a11y/mouse-events-have-key-events
+        onMouseOut={onMouseOut}
       >
-        {waveformEnabled && shouldShowWaveform && (waveforms.length > 0 || overviewWaveform != null) && (
-          <Waveforms
-            timelineMap={timelineMap}
-            laneDuration={laneDuration}
-            laneWidthPercent={laneWidthPercent}
-            fileDurationNonZero={fileDurationNonZero}
-            waveforms={waveforms}
-            overviewWaveform={overviewWaveform}
-            zoom={zoom}
-            darkMode={darkMode}
-            height={waveformHeight}
-          />
-        )}
-
-        {showThumbnails && (
-          <div style={{ height: 60, width: `${laneWidthPercent}%`, position: 'relative', marginBottom: 3 }}>
-            {thumbnails.map((thumbnail, i) => {
-              const leftPercent = toLanePercent(thumbnail.time);
-              const nextThumbnail = thumbnails[i + 1];
-              const nextThumbTime = nextThumbnail ? nextThumbnail.time : fileDurationNonZero;
-              const maxWidthPercent = (toLanePercent(nextThumbTime) - leftPercent) * 0.9;
-              return (
-                <img key={thumbnail.url} src={thumbnail.url} alt="" style={{ position: 'absolute', left: `${leftPercent}%`, height: '100%', boxSizing: 'border-box', maxWidth: `${maxWidthPercent}%`, objectFit: 'cover', border: '1px solid rgba(255, 255, 255, 0.5)', borderBottomRightRadius: 15, borderTopLeftRadius: 15, borderTopRightRadius: 15, pointerEvents: 'none' }} />
-              );
-            })}
+        {showWaveformHint && (
+          <div className={styles['waveformHint']} style={{ height: clipLaneHeight }}>
+            {t('Zoom in more to view waveform')}
+            <Button size="sm" onClick={onGenerateOverviewWaveformClick2}>{t('Load overview')}</Button>
           </div>
         )}
 
-        {overlayClips.length > 0 && (
-          <div style={{ height: textLaneHeight, width: `${laneWidthPercent}%`, position: 'relative', backgroundColor: 'var(--gray-3)', borderTop: '1px solid var(--gray-7)' }}>
-            <div style={laneLabelStyle}>Text</div>
+        <div
+          style={{ overflowX: 'scroll', overflowY: 'hidden' }}
+          className="hide-scrollbar"
+          onWheel={onWheel}
+          onScroll={onTimelineScroll}
+          ref={timelineScrollerRef}
+        >
+          <div style={{ width: `${laneWidthPercent}%`, position: 'relative' }}>
+            <TimelineRuler
+              toLanePercent={toLanePercent}
+              lanePx={lanePx}
+              laneDuration={laneDuration}
+              visibleStart={zoomWindowStartTime}
+              visibleEnd={visibleEnd}
+              fileDuration={fileDurationNonZero}
+              hoverTime={showHoverTime ? hoveringTime : undefined}
+              hoverLabel={hoverLabel}
+              height={rulerHeight}
+            />
 
-            {overlayClips.map((overlayClip) => {
-              const left = calculateTimelinePercent(overlayClip.start);
-              const width = `${Math.max(toLanePercent(overlayClip.end) - toLanePercent(overlayClip.start), 0.5)}%`;
-              const selected = overlayClip.overlayId === selectedOverlayId;
+            {showWaveforms && (
+              <Waveforms
+                timelineMap={timelineMap}
+                laneDuration={laneDuration}
+                fileDurationNonZero={fileDurationNonZero}
+                waveforms={waveforms}
+                overviewWaveform={overviewWaveform}
+                zoom={zoom}
+                darkMode={darkMode}
+                height={waveformHeight}
+              />
+            )}
 
-              return (
-                <div
-                  key={overlayClip.overlayId}
-                  role="button"
-                  tabIndex={-1}
-                  onMouseDown={onOverlayMouseDown(overlayClip, 'move')}
-                  onContextMenu={onOverlayContextMenu(overlayClip)}
-                  style={{
-                    position: 'absolute',
-                    left,
-                    width,
-                    top: 3,
-                    bottom: 3,
-                    background: selected ? 'rgba(76, 191, 255, 0.22)' : 'rgba(255, 255, 255, 0.12)',
-                    border: selected ? '1px solid rgba(76, 191, 255, 0.92)' : '1px solid rgba(255, 255, 255, 0.22)',
-                    borderRadius: 6,
-                    color: 'var(--gray-12)',
-                    fontSize: 12,
-                    display: 'flex',
-                    alignItems: 'center',
-                    overflow: 'hidden',
-                    boxSizing: 'border-box',
-                    cursor: 'grab',
-                    boxShadow: selected ? '0 0 0 1px rgba(76, 191, 255, 0.18), 0 8px 18px rgba(12, 18, 26, 0.18)' : undefined,
-                  }}
-                >
-                  <button
-                    type="button"
-                    onMouseDown={onOverlayMouseDown(overlayClip, 'start')}
-                    style={{ position: 'absolute', left: -4, top: 0, bottom: 0, width: 14, cursor: 'ew-resize', border: 'none', background: selected ? 'linear-gradient(90deg, rgba(76, 191, 255, 0.24), transparent)' : 'transparent' }}
+            {showThumbnails && (
+              <div style={{ height: thumbnailsHeight - 3, width: '100%', position: 'relative', marginBottom: 3 }}>
+                {thumbnails.map((thumbnail, i) => {
+                  const leftPercent = toLanePercent(thumbnail.time);
+                  const nextThumbnail = thumbnails[i + 1];
+                  const nextThumbTime = nextThumbnail ? nextThumbnail.time : fileDurationNonZero;
+                  const maxWidthPercent = (toLanePercent(nextThumbTime) - leftPercent) * 0.9;
+                  return (
+                    <img key={thumbnail.url} src={thumbnail.url} alt="" style={{ position: 'absolute', left: `${leftPercent}%`, height: '100%', boxSizing: 'border-box', maxWidth: `${maxWidthPercent}%`, objectFit: 'cover', borderRadius: 4, pointerEvents: 'none' }} />
+                  );
+                })}
+              </div>
+            )}
+
+            {showTextLane && (
+              <div className={styles['lane']} style={{ height: textLaneHeight }}>
+                {overlayClips.map((overlayClip) => {
+                  const left = calculateTimelinePercent(overlayClip.start);
+                  const width = `${Math.max(toLanePercent(overlayClip.end) - toLanePercent(overlayClip.start), 0.5)}%`;
+                  const selected = overlayClip.overlayId === selectedOverlayId;
+
+                  return (
+                    <div
+                      key={overlayClip.overlayId}
+                      role="button"
+                      tabIndex={-1}
+                      className={[styles['textClip'], ...(selected ? [styles['textClipSelected']] : [])].join(' ')}
+                      title={overlayClip.text}
+                      onMouseDown={onOverlayMouseDown(overlayClip, 'move')}
+                      onContextMenu={onOverlayContextMenu(overlayClip)}
+                      style={{ left, width }}
+                    >
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        aria-label={t('Change when the text starts')}
+                        className={[styles['textClipHandle'], styles['textClipHandleStart']].join(' ')}
+                        onMouseDown={onOverlayMouseDown(overlayClip, 'start')}
+                      />
+                      <div className={styles['textClipLabel']} style={{ marginRight: selected ? 28 : 8 }}>{overlayClip.text || t('Text')}</div>
+                      {selected && (
+                        <LaneDeleteButton title={t('Delete text clip')} onDelete={() => onDeleteOverlayClip(overlayClip.overlayId)} />
+                      )}
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        aria-label={t('Change when the text ends')}
+                        className={[styles['textClipHandle'], styles['textClipHandleEnd']].join(' ')}
+                        onMouseDown={onOverlayMouseDown(overlayClip, 'end')}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {retimeSegments.length > 0 && (
+              <div className={styles['lane']} style={{ height: retimeLaneHeight, isolation: 'isolate', overflow: 'hidden' }}>
+                {retimeSegments.map(({ seg, index }) => {
+                  const left = toLanePercent(seg.start);
+                  const dragging = retimeDrag?.segId === seg.segId;
+                  const speed = dragging ? retimeDrag.speed : getSegmentSpeed(seg);
+                  return (
+                    <SegmentRetimeBar
+                      key={seg.segId}
+                      left={`${left}%`}
+                      width={`${toLanePercent(seg.end) - left}%`}
+                      speed={speed}
+                      committedSpeed={getSegmentSpeed(seg)}
+                      outputDuration={getSegmentOutputDuration({ ...seg, speed })}
+                      isActive={index === currentSegIndexSafe}
+                      dragging={dragging}
+                      formatTimecode={formatTimecode}
+                      onHandleMouseDown={onRetimeHandleMouseDown(seg, index)}
+                      onSelect={() => setCurrentSegIndex(index)}
+                      onChange={(nextSpeed) => onChangeSegmentSpeed(seg.segId, nextSpeed)}
+                      onEdit={() => onEditSegmentSpeed(index)}
+                      onRemove={() => onRemoveSegmentSpeed(seg.segId)}
+                      onHide={() => onToggleSegmentSpeedControls(seg.segId)}
+                    />
+                  );
+                })}
+              </div>
+            )}
+
+            <div
+              className={[styles['lane'], styles['clipLane']].join(' ')}
+              style={{ height: clipLaneHeight, transition: darkModeTransition }}
+              ref={timelineWrapperRef}
+            >
+              {inverseCutSegments.map((seg) => (
+                <BetweenSegments
+                  key={seg.segId}
+                  left={toLanePercent(seg.start)}
+                  width={toLanePercent(seg.end) - toLanePercent(seg.start)}
+                  instant={retimeDragging}
+                  invertCutSegments={invertCutSegments}
+                />
+              ))}
+
+              {cutSegments.map((seg, i) => {
+                const selected = invertCutSegments || seg.selected;
+
+                return (
+                  <TimelineSeg
+                    key={seg.segId}
+                    seg={seg}
+                    segNum={i}
+                    onSegClick={setCurrentSegIndex}
+                    isActive={i === currentSegIndexSafe}
+                    toLanePercent={toLanePercent}
+                    instant={retimeDragging}
+                    invertCutSegments={invertCutSegments}
+                    formatTimecode={formatTimecode}
+                    selected={selected}
+                    speedControlsVisible={speedControlsSegmentIds.has(seg.segId)}
+                    onEditSpeed={onEditSegmentSpeed}
+                    onRemoveSpeed={onRemoveSegmentSpeed}
+                    onToggleSpeedControls={onToggleSegmentSpeedControls}
+                    onEditCrop={onEditSegmentCrop}
                   />
-                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', pointerEvents: 'none', margin: selected ? '0 36px 0 10px' : '0 10px', width: '100%', fontWeight: selected ? 700 : 600 }}>{overlayClip.text || 'Text'}</div>
-                  {selected && (
-                    <LaneDeleteButton title={t('Delete text clip')} onDelete={() => onDeleteOverlayClip(overlayClip.overlayId)} />
-                  )}
-                  <button
-                    type="button"
-                    onMouseDown={onOverlayMouseDown(overlayClip, 'end')}
-                    style={{ position: 'absolute', right: -4, top: 0, bottom: 0, width: 14, cursor: 'ew-resize', border: 'none', background: selected ? 'linear-gradient(270deg, rgba(76, 191, 255, 0.24), transparent)' : 'transparent' }}
-                  />
-                </div>
-              );
-            })}
+                );
+              })}
+
+              {shouldShowKeyframes && !areKeyframesTooClose && keyFramesInZoomWindow.map((f) => (
+                <div key={f.time} style={{ position: 'absolute', top: 0, bottom: 0, left: `${toLanePercent(f.time)}%`, marginLeft: -1, width: 1, background: 'var(--gray-10)', pointerEvents: 'none' }} />
+              ))}
+            </div>
 
             {currentTimePercent !== undefined && (
-              <motion.div transition={springAnimation} animate={{ left: currentTimePercent }} style={{ position: 'absolute', bottom: 0, top: 0, backgroundColor: 'var(--gray-12)', width: currentTimeWidth, pointerEvents: 'none' }} />
+              <motion.div transition={springAnimation} animate={{ left: currentTimePercent }} className={styles['playerTime']} style={{ top: rulerHeight }} />
             )}
             {commandedTimePercent !== undefined && (
               <CommandedTime commandedTimePercent={commandedTimePercent} />
             )}
           </div>
-        )}
-
-        {retimeSegments.length > 0 && (
-          <div style={{ height: retimeLaneHeight, width: `${laneWidthPercent}%`, position: 'relative', isolation: 'isolate', overflow: 'hidden', backgroundColor: 'var(--gray-2)', borderTop: '1px solid var(--gray-7)' }}>
-            <div style={laneLabelStyle}>Speed</div>
-
-            {retimeSegments.map(({ seg, index }) => {
-              const left = toLanePercent(seg.start);
-              const dragging = retimeDrag?.segId === seg.segId;
-              const speed = dragging ? retimeDrag.speed : getSegmentSpeed(seg);
-              return (
-                <SegmentRetimeBar
-                  key={seg.segId}
-                  left={`${left}%`}
-                  width={`${toLanePercent(seg.end) - left}%`}
-                  speed={speed}
-                  committedSpeed={getSegmentSpeed(seg)}
-                  outputDuration={getSegmentOutputDuration({ ...seg, speed })}
-                  isActive={index === currentSegIndexSafe}
-                  dragging={dragging}
-                  formatTimecode={formatTimecode}
-                  onHandleMouseDown={onRetimeHandleMouseDown(seg, index)}
-                  onSelect={() => setCurrentSegIndex(index)}
-                  onChange={(nextSpeed) => onChangeSegmentSpeed(seg.segId, nextSpeed)}
-                  onEdit={() => onEditSegmentSpeed(index)}
-                  onRemove={() => onRemoveSegmentSpeed(seg.segId)}
-                  onHide={() => onToggleSegmentSpeedControls(seg.segId)}
-                />
-              );
-            })}
-          </div>
-        )}
-
-        <div
-          style={{ height: timelineHeight, width: `${laneWidthPercent}%`, position: 'relative', backgroundColor: timelineBackground, transition: darkModeTransition, borderTop: overlayClips.length > 0 ? '1px solid var(--gray-7)' : undefined }}
-          ref={timelineWrapperRef}
-        >
-          <div style={laneLabelStyle}>Video</div>
-
-          {inverseCutSegments.map((seg) => (
-            <BetweenSegments
-              key={seg.segId}
-              left={toLanePercent(seg.start)}
-              width={toLanePercent(seg.end) - toLanePercent(seg.start)}
-              instant={retimeDragging}
-              invertCutSegments={invertCutSegments}
-            />
-          ))}
-
-          {cutSegments.map((seg, i) => {
-            const selected = invertCutSegments || seg.selected;
-
-            return (
-              <TimelineSeg
-                key={seg.segId}
-                seg={seg}
-                segNum={i}
-                onSegClick={setCurrentSegIndex}
-                isActive={i === currentSegIndexSafe}
-                toLanePercent={toLanePercent}
-                instant={retimeDragging}
-                invertCutSegments={invertCutSegments}
-                formatTimecode={formatTimecode}
-                selected={selected}
-                speedControlsVisible={speedControlsSegmentIds.has(seg.segId)}
-                onEditSpeed={onEditSegmentSpeed}
-                onRemoveSpeed={onRemoveSegmentSpeed}
-                onToggleSpeedControls={onToggleSegmentSpeedControls}
-                onEditCrop={onEditSegmentCrop}
-              />
-            );
-          })}
-
-          {shouldShowKeyframes && !areKeyframesTooClose && keyFramesInZoomWindow.map((f) => (
-            <div key={f.time} style={{ position: 'absolute', top: 0, bottom: 0, left: `${toLanePercent(f.time)}%`, marginLeft: -1, width: 1, background: 'var(--gray-10)', pointerEvents: 'none' }} />
-          ))}
-
-          {currentTimePercent !== undefined && (
-            <motion.div transition={springAnimation} animate={{ left: currentTimePercent }} style={{ position: 'absolute', bottom: 0, top: 0, backgroundColor: 'var(--gray-12)', width: currentTimeWidth, pointerEvents: 'none' }} />
-          )}
-          {commandedTimePercent !== undefined && (
-            <CommandedTime commandedTimePercent={commandedTimePercent} />
-          )}
-        </div>
-      </div>
-
-      <div style={timeWrapperStyle} className={styles['time-wrapper']}>
-        <div className={styles['time']} ref={timeRef}>
-          {formatTimeAndFrames(displayTime)}{isZoomed ? ` ${displayTimePercent}` : ''}
         </div>
       </div>
     </div>

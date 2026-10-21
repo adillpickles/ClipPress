@@ -1,6 +1,7 @@
 import type { SetStateAction, Dispatch, MouseEventHandler, CSSProperties } from 'react';
 import { memo, useMemo, useRef, useCallback, useState, useEffect } from 'react';
-import { FaYinYang, FaSave, FaPlus, FaMinus, FaTag, FaSortNumericDown, FaRegCheckCircle, FaRegCircle, FaTimes } from 'react-icons/fa';
+import { FaYinYang, FaSave, FaPlus, FaMinus, FaTag, FaSortNumericDown, FaRegCheckCircle, FaRegCircle } from 'react-icons/fa';
+import { FiCheck, FiX } from 'react-icons/fi';
 import { AiOutlineSplitCells } from 'react-icons/ai';
 import { motion } from 'motion/react';
 import { useTranslation, Trans } from 'react-i18next';
@@ -15,9 +16,10 @@ import prettyBytes from 'pretty-bytes';
 
 import useContextMenu from './hooks/useContextMenu';
 import useUserSettings from './hooks/useUserSettings';
-import { saveColor, controlsBackground, primaryTextColor, darkModeTransition } from './colors';
+import { saveColor, primaryTextColor, darkModeTransition } from './colors';
 import { useSegColors } from './contexts';
 import { getSegmentsTotalDuration, getSegmentTags } from './segments';
+import formatClockTime from './util/clockTime';
 import TagEditor from './components/TagEditor';
 import type { ContextMenuTemplate, DefiniteSegmentBase, FormatTimecode, GetFrameCount, InverseCutSegment, SegmentBase, SegmentColorIndex, SegmentTags, StateSegment } from './types';
 import type { UseSegments } from './hooks/useSegments';
@@ -25,6 +27,7 @@ import * as Dialog from './components/Dialog';
 import { DialogButton } from './components/Button';
 import getSwal from './swal';
 import { getSegmentOutputDuration, getSegmentSpeed } from './segmentSpeed';
+import styles from './SegmentList.module.css';
 
 
 const buttonBaseStyle: CSSProperties = {
@@ -34,22 +37,8 @@ const buttonBaseStyle: CSSProperties = {
 const disabledButtonStyle = { color: 'var(--gray-10)', backgroundColor: 'var(--gray-6)' };
 const neutralButtonColor = 'var(--gray-9)';
 
-function padSimpleTime(value: number) {
-  return String(value).padStart(2, '0');
-}
-
-function formatSimpleTimestamp(seconds: number) {
-  const totalSeconds = Math.max(0, Math.floor(seconds));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const secs = totalSeconds % 60;
-
-  if (hours > 0) return `${hours}:${padSimpleTime(minutes)}:${padSimpleTime(secs)}`;
-  return `${padSimpleTime(minutes)}:${padSimpleTime(secs)}`;
-}
-
 function formatSimpleDuration(seconds: number) {
-  if (seconds < 60) return `${seconds.toFixed(1)} sec`;
+  if (seconds < 60) return `${seconds.toFixed(1)} s`;
 
   const roundedSeconds = Math.round(seconds);
   const hours = Math.floor(roundedSeconds / 3600);
@@ -141,6 +130,35 @@ const Segment = memo(({
 
     const updateOrder = (dir: number) => updateSegOrder(index, index + dir);
 
+    if (simpleMode) {
+      return [
+        { label: t('Jump to start time'), click: () => jumpSegStart(index) },
+        { label: t('Jump to end time'), click: () => jumpSegEnd(index) },
+
+        { type: 'separator' },
+
+        { label: t('Rename clip…'), click: () => onLabelPress(index) },
+        { label: t('Duplicate clip'), click: () => onDuplicateSegmentClick(seg) },
+        { label: t('Change speed…'), enabled: seg.end != null, click: () => onEditSpeed(index) },
+        { label: t('Zoom / Crop…'), enabled: seg.end != null, click: () => onEditCrop(index) },
+
+        { type: 'separator' },
+
+        { label: t('Include in export'), type: 'checkbox', checked: selected === true, click: () => onToggleSegmentSelected(seg) },
+        { label: t('Export only this clip'), click: () => onSelectSingleSegment(seg) },
+        { label: t('Include all clips'), click: () => onSelectAllSegments() },
+
+        { type: 'separator' },
+
+        { label: t('Move up'), enabled: index > 0, click: () => updateOrder(-1) },
+        { label: t('Move down'), click: () => updateOrder(1) },
+
+        { type: 'separator' },
+
+        { label: t('Remove clip'), click: () => onRemovePress(index) },
+      ];
+    }
+
     return [
       { label: t('Jump to start time'), click: () => jumpSegStart(index) },
       { label: t('Jump to end time'), click: () => jumpSegEnd(index) },
@@ -182,7 +200,7 @@ const Segment = memo(({
       { label: t('Segment tags'), click: () => onEditSegmentTags(index) },
       { label: t('Extract frames as image files'), click: () => onExtractSegmentsFramesAsImages([seg]) },
     ];
-  }, [invertCutSegments, t, addSegment, onLabelSelectedSegments, onRemoveSelected, onExtractSelectedSegmentsFramesAsImages, updateSegOrder, index, jumpSegStart, jumpSegEnd, onLabelPress, onRemovePress, onDuplicateSegmentClick, seg, onSelectSingleSegment, onSelectAllSegments, onDeselectAllSegments, onSelectAllMarkers, onSelectSegmentsByLabel, onSelectSegmentsByExpr, onInvertSelectedSegments, onMutateSegmentsByExpr, onReorderPress, onEditSegmentTags, onExtractSegmentsFramesAsImages, onEditSpeed, onEditCrop]);
+  }, [invertCutSegments, simpleMode, selected, onToggleSegmentSelected, t, addSegment, onLabelSelectedSegments, onRemoveSelected, onExtractSelectedSegmentsFramesAsImages, updateSegOrder, index, jumpSegStart, jumpSegEnd, onLabelPress, onRemovePress, onDuplicateSegmentClick, seg, onSelectSingleSegment, onSelectAllSegments, onDeselectAllSegments, onSelectAllMarkers, onSelectSegmentsByLabel, onSelectSegmentsByExpr, onInvertSelectedSegments, onMutateSegmentsByExpr, onReorderPress, onEditSegmentTags, onExtractSegmentsFramesAsImages, onEditSpeed, onEditCrop]);
 
   useContextMenu(ref, contextMenuTemplate);
 
@@ -192,8 +210,8 @@ const Segment = memo(({
   const timeStr = useMemo(() => (
     simpleMode
       ? (seg.end == null
-        ? formatSimpleTimestamp(seg.start)
-        : `${formatSimpleTimestamp(seg.start)} - ${formatSimpleTimestamp(seg.end)}`)
+        ? formatClockTime(seg.start)
+        : `${formatClockTime(seg.start)}–${formatClockTime(seg.end)}`)
       : (seg.end == null
         ? formatTimecode({ seconds: seg.start })
         : `${formatTimecode({ seconds: seg.start })} - ${formatTimecode({ seconds: seg.end })}`)
@@ -201,8 +219,8 @@ const Segment = memo(({
 
   const simpleSegColor = useMemo(() => {
     if (!simpleMode || invertCutSegments || !('segColorIndex' in seg)) return undefined;
-    return getSegColor(seg).desaturate(0.45).lightness(darkMode ? 50 : 56);
-  }, [darkMode, getSegColor, invertCutSegments, seg, simpleMode]);
+    return getSegColor(seg);
+  }, [getSegColor, invertCutSegments, seg, simpleMode]);
 
   function renderNumber() {
     if (simpleMode) {
@@ -296,6 +314,67 @@ const Segment = memo(({
     sortable.setNodeRef(node);
     ref.current = node;
   }, [sortable]);
+
+  if (simpleMode && !invertCutSegments) {
+    const name = 'name' in seg ? seg.name : '';
+    const speed = getSegmentSpeed(seg);
+    const details = [
+      ...(name ? [timeStr] : []),
+      ...(duration != null ? [formatSimpleDuration(duration)] : []),
+      ...(speed !== 1 ? [`${Math.round(speed * 100)}%`] : []),
+    ];
+    const sizeStr = estimatedSize != null ? prettyBytes(estimatedSize, { space: true, maximumFractionDigits: 1, minimumFractionDigits: 0 }) : undefined;
+    const tooltip = [
+      ...(name ? [name] : []),
+      timeStr,
+      ...(duration != null ? [`${t('Length')}: ${formatSimpleDuration(duration)}${speed !== 1 ? ` (${Math.round(speed * 100)}%)` : ''}`] : []),
+      ...(sizeStr != null ? [`${t('Size at source quality')}: ~${sizeStr}`] : []),
+    ].join('\n');
+    const included = selected !== false;
+    return (
+      <div
+        ref={setRef}
+        role="button"
+        onClick={handleSegmentClick}
+        onDoubleClick={onDoubleClick}
+        style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition ?? undefined, visibility: sortable.isDragging ? 'hidden' : undefined }}
+        className={[styles['clip'], ...(isActive ? [styles['clipActive']] : []), ...(!included ? [styles['clipExcluded']] : []), ...(dragging ? [styles['clipDragging']] : [])].join(' ')}
+      >
+        <div
+          // eslint-disable-next-line react/jsx-props-no-spreading
+          {...sortable.attributes}
+          // eslint-disable-next-line react/jsx-props-no-spreading
+          {...sortable.listeners}
+          role="button"
+          tabIndex={-1}
+          className={styles['clipBody']}
+          style={{ cursor }}
+          title={tooltip}
+          onClick={handleDraggableClick}
+        >
+          <span className={styles['clipBadge']} style={{ background: simpleSegColor?.saturationl(Math.min(simpleSegColor.saturationl(), 72)).lightness(darkMode ? 44 : 60).string() }}>{index + 1}</span>
+          <span className={styles['clipText']}>
+            <span className={styles['clipTitle']}>{name || timeStr}</span>
+            {details.length > 0 && <span className={styles['clipDetails']}>{details.join(' · ')}</span>}
+          </span>
+        </div>
+
+        {selected != null && (
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={included}
+            className={[styles['includeToggle'], ...(included ? [styles['includeToggleOn']] : [])].join(' ')}
+            title={included ? t('Included in the export. Click to leave this clip out.') : t('Left out of the export. Click to include this clip.')}
+            aria-label={t('Include in export')}
+            onClick={onToggleSegmentSelectedClick}
+          >
+            {included && <FiCheck aria-hidden />}
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -479,9 +558,12 @@ function SegmentList({
     }
 
     if (segmentsOrInverse.every((s) => s.end == null)) {
-      return t('{{count}} markers ready', { count: segmentsOrInverse.length });
+      return t('{{count}} markers', { count: segmentsOrInverse.length });
     }
-    return t('{{count}} clips ready', { count: segmentsOrInverse.length });
+    if (!invertCutSegments && selectedSegments.length < segmentsOrInverse.length) {
+      return t('{{selected}} of {{count}} in the export', { selected: selectedSegments.length, count: segmentsOrInverse.length });
+    }
+    return t('{{count}} clips', { count: segmentsOrInverse.length });
   }
 
   const onReorderSegs = useCallback(async (index: number) => {
@@ -565,9 +647,9 @@ function SegmentList({
           </div>
         )}
 
-        <div style={{ padding: '.8rem 1rem .85rem', boxSizing: 'border-box', borderBottom: '1px solid var(--gray-6)', borderTop: '1px solid var(--gray-6)', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '1rem', fontSize: '.8em', background: 'color-mix(in srgb, var(--gray-2) 76%, transparent)' }}>
-          <div style={{ color: 'var(--gray-10)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em' }}>{t('Segments total')}</div>
-          <div style={{ color: 'var(--gray-12)', fontWeight: 800, fontVariantNumeric: 'tabular-nums', fontSize: '.98rem', lineHeight: 1 }}>{formatTimecode({ seconds: segmentsTotal })}</div>
+        <div className={styles['footer']}>
+          <div className={styles['footerLabel']}>{simpleMode ? t('Export length') : t('Segments total')}</div>
+          <div className={styles['footerValue']}>{simpleMode ? formatClockTime(segmentsTotal, { decimals: 1 }) : formatTimecode({ seconds: segmentsTotal })}</div>
         </div>
       </>
     );
@@ -608,9 +690,9 @@ function SegmentList({
 
   const rowVirtualizer = useVirtualizer({
     count: sortableList.length,
-    gap: 7,
+    gap: simpleMode ? 4 : 7,
     getScrollElement: () => scrollerRef.current,
-    estimateSize: () => 66, // todo this probably needs to be changed if the segment height changes
+    estimateSize: () => (simpleMode ? 52 : 66), // measured afterwards; only the first layout uses this
     overscan: 5,
     getItemKey: (index) => sortableList[index]!.id,
   });
@@ -707,29 +789,27 @@ function SegmentList({
       </Dialog.Root>
 
       <motion.div
-        style={{ width, background: controlsBackground, borderLeft: '1px solid var(--gray-7)', color: 'var(--gray-11)', transition: darkModeTransition, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '1.6rem', border: '1px solid color-mix(in srgb, var(--gray-8) 36%, transparent)', boxShadow: '0 18px 42px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.05)' }}
+        className={styles['panel']}
+        style={{ width, transition: darkModeTransition }}
         initial={{ x: width }}
         animate={{ x: 0 }}
         exit={{ x: width }}
         transition={springAnimation}
       >
-        <div style={{ padding: '.9rem 1rem .7rem', color: 'var(--gray-12)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '.8rem' }} className="no-user-select">
-          <div>
-            <div style={{ color: 'var(--gray-12)', fontSize: '1rem', fontWeight: 800, lineHeight: 1.15 }}>{t('Clips')}</div>
-            <div style={{ color: 'var(--gray-10)', fontSize: '.8rem', lineHeight: 1.35, marginTop: '.18rem' }}>{getHeader()}</div>
+        <div className={`no-user-select ${styles['header']}`}>
+          <div style={{ minWidth: 0 }}>
+            <div className={styles['headerTitle']}>{simpleMode ? t('Clips') : t('Segments')}</div>
+            <div className={styles['headerSubtitle']}>{getHeader()}</div>
           </div>
 
-          <FaTimes
-            title={t('Close clips panel')}
-            style={{ fontSize: '1.1em', verticalAlign: 'middle', color: 'var(--gray-11)', cursor: 'pointer', padding: '.4em', borderRadius: '999px', background: 'color-mix(in srgb, var(--gray-3) 70%, transparent)' }}
-            role="button"
-            onClick={toggleSegmentsList}
-          />
+          <button type="button" className={styles['headerClose']} title={t('Hide the clips panel')} aria-label={t('Hide the clips panel')} onClick={toggleSegmentsList}>
+            <FiX aria-hidden />
+          </button>
         </div>
 
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} onDragStart={handleDragStart} modifiers={[restrictToVerticalAxis]}>
           <SortableContext items={sortableList} strategy={verticalListSortingStrategy}>
-            <div ref={scrollerRef} style={{ padding: '0 .6rem .4rem .7rem', overflowX: 'hidden', overflowY: 'scroll', flexGrow: 1 }} className="consistent-scrollbar">
+            <div ref={scrollerRef} style={{ padding: '0 .4rem .4rem .5rem', overflowX: 'hidden', overflowY: 'auto', flexGrow: 1 }} className="consistent-scrollbar">
               <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative', overflow: 'hidden' }}>
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                   const { id, seg } = sortableList[virtualRow.index]!;

@@ -20,14 +20,13 @@ import {
   FaImages,
   FaKey,
 } from 'react-icons/fa';
-import { FiScissors } from 'react-icons/fi';
+import { FiCrop, FiScissors, FiType } from 'react-icons/fi';
 import { GiSoundWaves } from 'react-icons/gi';
 // import useTraceUpdate from 'use-trace-update';
 import invariant from 'tiny-invariant';
 
 import {
   primaryTextColor,
-  primaryColor,
   darkModeTransition,
   dangerColor,
 } from './colors';
@@ -36,11 +35,14 @@ import SetCutpointButton from './components/SetCutpointButton';
 import CaptureFormatButton from './components/CaptureFormatButton';
 import Select from './components/Select';
 import Button from './components/Button';
+import styles from './BottomBar.module.css';
+import formatClockTime from './util/clockTime';
+import { withShortcut } from './util/keyNames';
+import { useAppContext, useSegColors } from './contexts';
 
 import { withBlur, mirrorTransform } from './util';
 import getSwal from './swal';
 import { getSegColor as getSegColorRaw } from './util/colors';
-import { useSegColors } from './contexts';
 import { isExactDurationMatch } from './util/duration';
 import useUserSettings from './hooks/useUserSettings';
 import { askForPlaybackRate, checkAppPath } from './dialogs';
@@ -51,7 +53,7 @@ import type {
   SegmentColorIndex,
   StateSegment,
 } from './types';
-import type { WaveformMode } from '../../common/types';
+import type { KeyBinding, WaveformMode } from '../../common/types';
 import type { Frame } from './ffmpeg';
 
 const { clipboard } = window.require('electron');
@@ -60,7 +62,14 @@ const zoomOptions = Array.from({ length: 13 })
   .fill(undefined)
   .map((_unused, z) => 2 ** z);
 
-const leftRightWidth = 100;
+/** A trim bracket, as in the ClipPress mark: `[` for a clip's start, `]` for its end. */
+function BracketIcon({ side }: { side: 'start' | 'end' }) {
+  return (
+    <svg viewBox="0 0 16 16" width="0.95em" height="0.95em" aria-hidden focusable="false" style={{ flexShrink: 0 }}>
+      <path d={side === 'start' ? 'M9.5 2.5H5.5V13.5H9.5' : 'M6.5 2.5H10.5V13.5H6.5'} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 // eslint-disable-next-line react/display-name
 const InvertCutModeButton = memo(
@@ -380,6 +389,11 @@ function BottomBar({
   onAddTextOverlay,
   onEditSegmentCrop,
   canEditSegmentCrop,
+  relevantTime,
+  fileDuration,
+  goToTimecode,
+  formatTimeAndFrames,
+  keyBindingByAction,
 }: {
   zoom: number;
   setZoom: (fn: (z: number) => number) => void;
@@ -429,9 +443,16 @@ function BottomBar({
   onAddTextOverlay: () => void;
   onEditSegmentCrop: () => void;
   canEditSegmentCrop: boolean;
+  relevantTime: number;
+  fileDuration: number | undefined;
+  goToTimecode: () => void;
+  formatTimeAndFrames: (seconds: number) => string;
+  keyBindingByAction: Record<string, KeyBinding>;
 }) {
   const { t } = useTranslation();
   const { getSegColor } = useSegColors();
+  const { keyboardLayoutMap } = useAppContext();
+  const shortcutTitle = useCallback((label: string, action: string) => withShortcut(label, keyBindingByAction[action]?.keys, keyboardLayoutMap), [keyBindingByAction, keyboardLayoutMap]);
 
   const playStyle = useMemo<CSSProperties>(
     () => ({
@@ -559,7 +580,6 @@ function BottomBar({
     );
   }
 
-  const PlayPause = playing ? FaPause : FaPlay;
   const PlayPauseMode = playing
     && (playbackMode === 'play-selected-segments'
       || playbackMode === 'loop-selected-segments')
@@ -571,23 +591,41 @@ function BottomBar({
     [currentCutSeg],
   );
 
+  const showHours = (fileDuration ?? 0) >= 3600;
+  const currentTimeLabel = simpleMode
+    ? formatClockTime(relevantTime + startTimeOffset, { decimals: 2, showHours })
+    : formatTimeAndFrames(relevantTime + startTimeOffset);
+  const durationLabel = fileDuration != null
+    ? (simpleMode ? formatClockTime(fileDuration + startTimeOffset, { decimals: 2, showHours }) : formatTimecode({ seconds: fileDuration + startTimeOffset }))
+    : undefined;
+
+  const PlayPauseIcon = playing ? FaPause : FaPlay;
+  const playButton = (
+    <button
+      type="button"
+      className={styles['playButton']}
+      onClick={() => togglePlay()}
+      title={shortcutTitle(playing ? t('Pause') : t('Play'), 'togglePlayResetSpeed')}
+      aria-label={playing ? t('Pause') : t('Play')}
+    >
+      <PlayPauseIcon style={{ fontSize: '.8rem', marginLeft: playing ? 0 : '.12em' }} />
+    </button>
+  );
+
   return (
     <>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          opacity: isFileOpened ? 1 : 0.5,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            flexBasis: leftRightWidth,
-          }}
-        >
+      <div className={styles['transport']} style={{ opacity: isFileOpened ? 1 : 0.5 }}>
+        <div className={styles['transportLeft']}>
+          <button
+            type="button"
+            className={styles['timeDisplay']}
+            onClick={goToTimecode}
+            title={shortcutTitle(t('Go to a time'), 'goToTimecode')}
+          >
+            <span className={styles['timeCurrent']}>{currentTimeLabel}</span>
+            {durationLabel != null && <span className={styles['timeDuration']}>{` / ${durationLabel}`}</span>}
+          </button>
+
           {!simpleMode && (
             <>
               {hasAudio && (
@@ -625,9 +663,22 @@ function BottomBar({
           )}
         </div>
 
-        <div style={{ flexGrow: 1 }} />
+        <div className={styles['transportCenter']}>
+          {simpleMode && (
+          <>
+            <Button size="sm" className={styles['markButton']} onClick={setCutStart} title={shortcutTitle(t('Start the clip here'), 'setCutStart')}>
+              <BracketIcon side="start" />
+              {t('Start')}
+            </Button>
+            {playButton}
+            <Button size="sm" className={styles['markButton']} onClick={setCutEnd} title={shortcutTitle(t('End the clip here'), 'setCutEnd')}>
+              {t('End')}
+              <BracketIcon side="end" />
+            </Button>
+          </>
+          )}
 
-        {!simpleMode && (
+          {!simpleMode && (
           <>
             <FaStepBackward
               size={16}
@@ -648,17 +699,19 @@ function BottomBar({
               style={{ marginRight: 5 }}
             />
           </>
-        )}
+          )}
 
-        <SetCutpointButton
-          currentCutSeg={currentCutSegOrDefault}
-          side="start"
-          onClick={setCutStart}
-          title={simpleMode ? t('Mark In (I)') : t('Start current segment at current time')}
-          style={{ marginRight: 5 }}
-        />
+          {!simpleMode && (
+          <SetCutpointButton
+            currentCutSeg={currentCutSegOrDefault}
+            side="start"
+            onClick={setCutStart}
+            title={shortcutTitle(t('Start current segment at current time'), 'setCutStart')}
+            style={{ marginRight: 5 }}
+          />
+          )}
 
-        {!simpleMode && (
+          {!simpleMode && (
           <CutTimeInput
             disabled={!isFileOpened}
             darkMode={darkMode}
@@ -671,9 +724,9 @@ function BottomBar({
             formatTimecode={formatTimecode}
             parseTimecode={parseTimecode}
           />
-        )}
+          )}
 
-        {!simpleMode && keyframesEnabled && (
+          {!simpleMode && keyframesEnabled && (
           <IoMdKey
             size={25}
             role="button"
@@ -686,9 +739,9 @@ function BottomBar({
             }}
             onClick={() => seekClosestKeyframe(-1)}
           />
-        )}
+          )}
 
-        {!simpleMode && (
+          {!simpleMode && (
           <FaCaretLeft
             style={{ flexShrink: 0, marginLeft: -6, marginRight: -4 }}
             size={28}
@@ -696,21 +749,11 @@ function BottomBar({
             title={t('One frame back')}
             onClick={() => shortStep(-1)}
           />
-        )}
+          )}
 
-        <div
-          role="button"
-          onClick={() => togglePlay()}
-          style={{
-            ...playStyle,
-            margin: '.1em .1em 0 .2em',
-            background: primaryColor,
-          }}
-        >
-          <PlayPause style={{ fontSize: '.9em' }} />
-        </div>
+          {!simpleMode && playButton}
 
-        {!simpleMode && (
+          {!simpleMode && (
           <FaCaretRight
             style={{ flexShrink: 0, marginRight: -6, marginLeft: -4 }}
             size={28}
@@ -718,9 +761,9 @@ function BottomBar({
             title={t('One frame forward')}
             onClick={() => shortStep(1)}
           />
-        )}
+          )}
 
-        {!simpleMode && keyframesEnabled && (
+          {!simpleMode && keyframesEnabled && (
           <IoMdKey
             style={{ flexShrink: 0, marginLeft: 2, ...keyframeStyle }}
             size={25}
@@ -728,9 +771,9 @@ function BottomBar({
             title={t('Seek next keyframe')}
             onClick={() => seekClosestKeyframe(1)}
           />
-        )}
+          )}
 
-        {!simpleMode && (
+          {!simpleMode && (
           <CutTimeInput
             disabled={!isFileOpened}
             darkMode={darkMode}
@@ -742,17 +785,19 @@ function BottomBar({
             formatTimecode={formatTimecode}
             parseTimecode={parseTimecode}
           />
-        )}
+          )}
 
-        <SetCutpointButton
-          currentCutSeg={currentCutSeg}
-          side="end"
-          onClick={setCutEnd}
-          title={simpleMode ? t('Mark Out (O)') : t('End current segment at current time')}
-          style={{ marginLeft: 5 }}
-        />
+          {!simpleMode && (
+          <SetCutpointButton
+            currentCutSeg={currentCutSeg}
+            side="end"
+            onClick={setCutEnd}
+            title={shortcutTitle(t('End current segment at current time'), 'setCutEnd')}
+            style={{ marginLeft: 5 }}
+          />
+          )}
 
-        {!simpleMode && (
+          {!simpleMode && (
           <>
             <SegmentCutpointButton
               currentCutSeg={currentCutSeg}
@@ -773,16 +818,20 @@ function BottomBar({
               onClick={jumpTimelineEnd}
             />
           </>
-        )}
+          )}
 
-        <div style={{ flexGrow: 1 }} />
+        </div>
 
-        <div style={{ flexBasis: leftRightWidth, display: 'flex', justifyContent: 'flex-end', gap: 8, whiteSpace: 'nowrap' }}>
+        <div className={styles['transportRight']}>
           {hasVideo && (
-            <Button onClick={onEditSegmentCrop} disabled={!canEditSegmentCrop} style={{ minHeight: '2rem', padding: '0 .82rem' }}>{t('Zoom / Crop')}</Button>
+            <Button size="sm" onClick={onEditSegmentCrop} disabled={!canEditSegmentCrop} title={t('Zoom in on part of the picture for this clip')}>
+              <FiCrop aria-hidden />
+              {t('Zoom / Crop')}
+            </Button>
           )}
           {hasVideo && (
-            <Button onClick={onAddTextOverlay} style={{ minHeight: '2rem', padding: '0 .82rem' }}>
+            <Button size="sm" onClick={onAddTextOverlay} title={t('Add a caption at the current time')}>
+              <FiType aria-hidden />
               {t('Add Text')}
             </Button>
           )}

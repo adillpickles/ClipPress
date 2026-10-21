@@ -15,8 +15,8 @@ video.video::-webkit-media-text-track-display {
 .mainArea {
   flex-grow: 1;
   display: flex;
-  gap: 1rem;
-  padding: 0 1rem 1rem;
+  gap: .75rem;
+  padding: 0 .75rem .75rem;
   overflow: hidden;
 }
 
@@ -25,7 +25,7 @@ video.video::-webkit-media-text-track-display {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: .75rem;
 }
 
 .emptyStateShell {
@@ -40,30 +40,21 @@ video.video::-webkit-media-text-track-display {
 .previewCard {
   position: relative;
   flex-grow: 1;
-  min-height: clamp(18rem, 42vh, 34rem);
+  min-height: clamp(14rem, 38vh, 30rem);
   overflow: hidden;
-  border-radius: 1.6rem;
-  border: 1px solid color-mix(in srgb, var(--gray-8) 36%, transparent);
-  background:
-    radial-gradient(circle at top, color-mix(in srgb, var(--blue-9) 11%, transparent), transparent 42%),
-    linear-gradient(180deg, color-mix(in srgb, var(--gray-2) 94%, transparent), color-mix(in srgb, var(--gray-1) 96%, transparent));
-  box-shadow:
-    0 18px 46px rgba(0, 0, 0, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border-radius: var(--cp-radius-lg);
+  border: 1px solid var(--cp-line);
+  background: #000;
 }
 
 .editorCard {
   display: flex;
   flex-direction: column;
-  gap: .9rem;
-  padding: .95rem 1rem 1rem;
-  border-radius: 1.6rem;
-  border: 1px solid color-mix(in srgb, var(--gray-8) 36%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--gray-2) 94%, transparent), color-mix(in srgb, var(--gray-1) 96%, transparent));
-  box-shadow:
-    0 18px 42px rgba(0, 0, 0, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  gap: .6rem;
+  padding: .6rem .75rem .75rem;
+  border-radius: var(--cp-radius-lg);
+  border: 1px solid var(--cp-line);
+  background: var(--cp-panel);
 }
 
 .editorHeader {
@@ -161,27 +152,27 @@ video.video::-webkit-media-text-track-display {
 
 .gainSlider {
   width: 12rem;
-  accent-color: var(--blue-9);
+  accent-color: var(--accent-9);
 }
 
 .previewNotice {
   position: absolute;
-  top: 1rem;
-  left: 1rem;
+  top: .75rem;
+  left: .75rem;
   display: flex;
   align-items: center;
   gap: .45rem;
-  padding: .45rem .7rem;
-  border-radius: 999px;
-  color: var(--gray-12);
-  background: color-mix(in srgb, var(--gray-1) 65%, transparent);
-  border: 1px solid color-mix(in srgb, var(--gray-12) 12%, transparent);
-  opacity: .8;
+  padding: .3rem .65rem;
+  border-radius: var(--cp-radius);
+  color: #fff;
+  font-size: .8125rem;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
 .sidebarToggle {
   margin-right: .75rem;
-  color: var(--gray-12);
+  color: #fff;
   opacity: .8;
   cursor: pointer;
 }

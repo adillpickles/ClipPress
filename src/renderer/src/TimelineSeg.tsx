@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo } from 'react';
 import type { MotionStyle } from 'motion/react';
 import { motion, AnimatePresence } from 'motion/react';
-import { FaSave, FaTrashAlt } from 'react-icons/fa';
+import { FaTrashAlt } from 'react-icons/fa';
 import { useTranslation } from 'react-i18next';
 import type { ColorInstance } from 'color';
 
@@ -105,33 +105,16 @@ function Segment({
   const { name } = seg;
   const speed = getSegmentSpeed(seg);
 
-  const border = useMemo(() => {
-    const horizontalBorderWidth = '1px';
-    const verticalBorderWidth = '1.5px';
-
-    if (isActive) {
-      const horizontalColor = darkMode ? color.desaturate(0.1).lightness(60) : color.desaturate(0.2).lightness(40);
-      const verticalColor = darkMode ? color.desaturate(0.1).lightness(90) : color.desaturate(0.2).lightness(10);
-      return {
-        horizontal: `${horizontalBorderWidth} solid ${horizontalColor.string()}`,
-        vertical: `${verticalBorderWidth} solid ${verticalColor.string()}`,
-      };
-    }
-
-    return {
-      horizontal: `${horizontalBorderWidth} solid transparent`,
-      vertical: `${verticalBorderWidth} solid transparent`,
-    };
-  }, [darkMode, isActive, color]);
-
   const backgroundColor = useMemo(() => {
-    // we use both transparency and lightness, so that segments can be visible when overlapping
-    if (invertCutSegments || !selected) return darkMode ? color.desaturate(0.3).lightness(30).alpha(0.5).string() : color.desaturate(0.3).lightness(70).alpha(0.5).string();
-    if (isActive) return darkMode ? color.saturate(0.2).lightness(60).alpha(0.7).string() : color.saturate(0.2).lightness(40).alpha(0.8).string();
-    return darkMode ? color.desaturate(0.2).lightness(50).alpha(0.7).string() : color.lightness(35).alpha(0.6).string();
+    // Same hue at a fixed tone, so every clip reads clearly whatever its palette colour. Excluded
+    // clips (and all segments when cutting them away) stay faint; see also the hatching below.
+    const base = color.saturationl(Math.min(color.saturationl(), 72));
+    if (invertCutSegments || !selected) return darkMode ? base.lightness(34).alpha(0.4).string() : base.lightness(78).alpha(0.6).string();
+    if (isActive) return darkMode ? base.lightness(54).alpha(0.95).string() : base.lightness(58).alpha(0.95).string();
+    return darkMode ? base.lightness(44).alpha(0.88).string() : base.lightness(66).alpha(0.9).string();
   }, [darkMode, invertCutSegments, isActive, color, selected]);
 
-  const vertBorderRadius = 5;
+  const excluded = invertCutSegments || !selected;
 
   const title = useMemo(() => {
     const parts = [
@@ -146,30 +129,26 @@ function Segment({
     const cutSectionWidth = `calc(${getTimePercent(seg.end)} - ${getTimePercent(seg.start)})`;
     return {
       position: 'absolute',
-      top: 0,
-      bottom: 0,
+      top: 5,
+      bottom: 5,
       left: getTimePercent(seg.start),
       width: cutSectionWidth,
       display: 'flex',
       alignItems: 'center',
-      justifyContent: 'space-between',
+      gap: 6,
+      padding: '0 6px',
       originX: 0,
       boxSizing: 'border-box',
-      color: 'white',
+      color: darkMode || excluded ? 'var(--gray-12)' : 'rgba(0, 0, 0, 0.82)',
       overflow: 'hidden',
-
-      borderLeft: border.vertical,
-      borderTopLeftRadius: vertBorderRadius,
-      borderBottomLeftRadius: vertBorderRadius,
-
-      borderRight: border.vertical,
-      borderTopRightRadius: vertBorderRadius,
-      borderBottomRightRadius: vertBorderRadius,
-
-      borderTop: border.horizontal,
-      borderBottom: border.horizontal,
+      borderRadius: 6,
+      cursor: 'pointer',
+      backgroundImage: excluded ? `repeating-linear-gradient(135deg, ${darkMode ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.06)'} 0 5px, transparent 5px 10px)` : undefined,
+      boxShadow: isActive
+        ? `inset 0 0 0 2px ${darkMode ? 'rgba(255, 255, 255, 0.92)' : 'rgba(0, 0, 0, 0.7)'}`
+        : `inset 0 0 0 1px ${darkMode ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)'}`,
     };
-  }, [getTimePercent, seg.end, seg.start, border]);
+  }, [getTimePercent, seg.end, seg.start, darkMode, excluded, isActive]);
 
   return (
     <motion.div
@@ -198,7 +177,7 @@ function Segment({
       }}
       title={title}
     >
-      <div style={{ alignSelf: 'flex-start', flexShrink: 0, fontSize: 10, minWidth: 0, letterSpacing: '-.1em' }}>{segNum + 1}</div>
+      <div style={{ flexShrink: 0, minWidth: 16, height: 18, padding: '0 4px', boxSizing: 'border-box', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums', background: darkMode ? 'rgba(0, 0, 0, 0.28)' : 'rgba(255, 255, 255, 0.55)' }}>{segNum + 1}</div>
 
       <AnimatePresence>
         {invertCutSegments && (
@@ -206,28 +185,16 @@ function Segment({
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             exit={{ scale: 0 }}
-            style={{ flexShrink: 1 }}
+            style={{ flexShrink: 1, display: 'flex' }}
           >
-            <FaTrashAlt style={{ display: 'block', width: '100%', minWidth: '.4em', color: 'white', marginRight: '.1em' }} />
-          </motion.div>
-        )}
-        {!invertCutSegments && !seg.name && (
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            exit={{ scale: 0 }}
-            style={{ flexShrink: 1 }}
-          >
-            <FaSave style={{ display: 'block', width: '100%', minWidth: '.4em', color: 'white', marginRight: '.1em' }} />
+            <FaTrashAlt style={{ display: 'block', minWidth: '.4em', fontSize: 11 }} />
           </motion.div>
         )}
       </AnimatePresence>
 
-      {name && <div style={{ flexBasis: 4, flexShrink: 1 }} />}
+      {name && <div style={{ flexShrink: 1, fontSize: 12, fontWeight: 600, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{name}</div>}
 
-      {name && <div style={{ flexShrink: 1, fontSize: 11, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>{name}</div>}
-
-      <div style={{ flexGrow: 1 }} />
+      {speed !== 1 && <div style={{ flexShrink: 0, marginLeft: 'auto', fontSize: 11, fontWeight: 600, opacity: 0.85, fontVariantNumeric: 'tabular-nums' }}>{`${Math.round(speed * 100)}%`}</div>}
     </motion.div>
   );
 }

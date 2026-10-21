@@ -1,6 +1,5 @@
 import { memo, useCallback, useMemo, useState } from 'react';
-import { IoIosSettings } from 'react-icons/io';
-import { FaFolderOpen, FaList } from 'react-icons/fa';
+import { FiEdit2, FiFolder, FiList, FiSettings } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import Button from './components/Button';
 
@@ -21,7 +20,6 @@ function TopMenu({
   onOpenFiles,
   onExportPress,
   segmentsToExport,
-  areWeCutting,
 }: {
   filePath: string | undefined,
   currentClipName: string | undefined,
@@ -33,7 +31,6 @@ function TopMenu({
   onOpenFiles: () => void,
   onExportPress: () => void,
   segmentsToExport: SegmentToExport[],
-  areWeCutting: boolean,
 }) {
   const { t } = useTranslation();
   const { simpleMode } = useUserSettings();
@@ -54,71 +51,66 @@ function TopMenu({
   return (
     <div className={`no-user-select ${styles['wrapper']}`}>
       <div className={styles['primary']}>
-        <Button onClick={onOpenFiles} className={styles['secondaryAction']}>
-          <span className={styles['secondaryActionLabel']}>
-            <FaFolderOpen style={{ fontSize: '.85em' }} />
-            {t('Open another clip')}
-          </span>
+        <Button onClick={onOpenFiles} title={t('Open another recording')}>
+          <FiFolder aria-hidden />
+          {t('Open')}
         </Button>
 
         {fileName != null && (
           <div className={styles['fileChip']}>
-            <div className={styles['fileLabel']}>{t('Export name')}</div>
-            <div className={styles['fileNameShell']}>
-              {isRenaming ? (
-                <input
-                  className={styles['fileNameInput']}
-                  value={draftName}
-                  title={fileName}
-                  onChange={(e) => setRenameDraft(e.target.value)}
-                  onBlur={commitRename}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitRename();
-                    if (e.key === 'Escape') {
-                      setRenameDraft(fileName ?? '');
-                      setIsRenaming(false);
-                    }
-                  }}
-                />
-              ) : (
-                <button
-                  type="button"
-                  className={styles['fileNameButton']}
-                  title={fileName}
-                  onClick={() => {
-                    if (fileName == null) return;
-                    setRenameDraft(fileName);
-                    setIsRenaming(true);
-                  }}
-                >
-                  <span className={styles['fileName']}>{fileName}</span>
-                </button>
-              )}
-            </div>
+            {isRenaming ? (
+              <input
+                // eslint-disable-next-line jsx-a11y/no-autofocus
+                autoFocus
+                className={styles['fileNameInput']}
+                value={draftName}
+                aria-label={t('Export name')}
+                onChange={(e) => setRenameDraft(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') {
+                    setRenameDraft(fileName ?? '');
+                    setIsRenaming(false);
+                  }
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                className={styles['fileNameButton']}
+                title={`${fileName}\n${t('Click to rename what the exported clip is called')}`}
+                onClick={() => {
+                  if (fileName == null) return;
+                  setRenameDraft(fileName);
+                  setIsRenaming(true);
+                }}
+              >
+                <span className={styles['fileName']}>{fileName}</span>
+                <FiEdit2 aria-hidden className={styles['fileNameEdit']} />
+              </button>
+            )}
           </div>
         )}
       </div>
 
       <div className={styles['actions']}>
         {!simpleMode && (
-          <Button onClick={() => setStreamsSelectorShown(true)} className={styles['secondaryAction']}>
-            <span className={styles['secondaryActionLabel']}>
-              <FaList style={{ fontSize: '.82em' }} />
-              {t('Tracks kept')} ({numStreamsToCopy}/{numStreamsTotal})
-            </span>
+          <Button onClick={() => setStreamsSelectorShown(true)} title={t('Choose which tracks to keep')}>
+            <FiList aria-hidden />
+            {t('Tracks kept')} ({numStreamsToCopy}/{numStreamsTotal})
           </Button>
         )}
 
         <SimpleModeButton />
 
-        <Button onClick={toggleSettings} className={styles['settingsAction']}>
-          <span className={styles['secondaryActionLabel']}>
-            <IoIosSettings style={{ fontSize: '1.1em' }} />
-            {t('Settings')}
-          </span>
+        <Button variant="ghost" onClick={toggleSettings} title={t('Settings')}>
+          <FiSettings aria-hidden />
+          {t('Settings')}
         </Button>
 
-        <ExportButton segmentsToExport={segmentsToExport} areWeCutting={areWeCutting} onClick={onExportPress} />
+        <ExportButton segmentsToExport={segmentsToExport} onClick={onExportPress} />
       </div>
     </div>
   );

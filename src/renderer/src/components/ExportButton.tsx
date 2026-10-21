@@ -1,10 +1,8 @@
 import type { CSSProperties, MouseEventHandler } from 'react';
 import { forwardRef } from 'react';
-import { FiScissors } from 'react-icons/fi';
-import { FaFileExport } from 'react-icons/fa';
+import { FiShare } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 
-import { primaryColor } from '../colors';
 import useUserSettings from '../hooks/useUserSettings';
 import type { SegmentToExport } from '../types';
 import styles from './ExportButton.module.css';
@@ -12,7 +10,6 @@ import styles from './ExportButton.module.css';
 
 interface Props {
   segmentsToExport: SegmentToExport[],
-  areWeCutting: boolean,
   onClick: MouseEventHandler<HTMLButtonElement>,
   style?: CSSProperties,
   label?: string,
@@ -22,14 +19,11 @@ interface Props {
 // eslint-disable-next-line react/display-name
 const ExportButton = forwardRef<HTMLButtonElement, Props>(({
   segmentsToExport,
-  areWeCutting,
   onClick,
   style,
   label,
   titleOverride,
 }, ref) => {
-  const CutIcon = areWeCutting ? FiScissors : FaFileExport;
-
   const { t } = useTranslation();
 
   const { autoMerge, simpleMode } = useUserSettings();
@@ -48,13 +42,11 @@ const ExportButton = forwardRef<HTMLButtonElement, Props>(({
       ref={ref}
       type="button"
       className={[...(simpleMode ? ['export-animation'] : []), styles['exportButton']].join(' ')}
-      style={{ backgroundColor: primaryColor, ...style }}
+      style={style}
       onClick={onClick}
       title={title}
     >
-      <CutIcon
-        style={{ verticalAlign: 'middle', marginRight: '.2em' }}
-      />
+      <FiShare aria-hidden style={{ fontSize: '1em', flexShrink: 0 }} />
       {text}
     </button>
   );
