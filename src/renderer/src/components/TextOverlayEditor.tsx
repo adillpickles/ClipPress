@@ -19,7 +19,8 @@ import {
 const moveHandleHeight = 20;
 const edgeHandleWidth = 10;
 const cornerHandleSize = 16;
-const accent = 'rgba(88, 200, 255, 0.95)';
+// Brand teal, fixed rather than themed: it is drawn over the video.
+const accent = 'rgba(79, 195, 204, 0.95)';
 
 type InteractionMode = 'move' | 'width' | 'scale';
 

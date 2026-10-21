@@ -1,6 +1,6 @@
 /* Shares the text box editor's look (TextOverlayEditor): cyan accent, label tab, round handles. */
 .wrapper {
-  --crop-accent: rgba(88, 200, 255, .95);
+  --crop-accent: rgba(79, 195, 204, .95); /* brand teal, fixed: drawn over the video in both themes */
   --crop-ink: rgba(5, 12, 20, .9);
   position: absolute;
   inset: 0;
