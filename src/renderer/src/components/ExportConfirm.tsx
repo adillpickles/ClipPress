@@ -1707,22 +1707,21 @@ function ExportConfirm({
             <section className={styles['section']}>
               <div className={styles['sectionHeading']}>{t('Files')}</div>
 
-              {effectiveExportMode === 'segments_to_chapters' ? (
+              {effectiveExportMode === 'segments_to_chapters' && (
                 <div className={styles['fieldHint']}>
-                  {t('Chapters-only export is on: the recording is kept whole, with chapters made from the clips. Change it in More options.')}
+                  {t('Chapters-only export is on: the recording is kept whole, with chapters made from the clips. Pick one of these to export clips instead.')}
                 </div>
-              ) : (
-                <SegmentedControl<'separate' | 'merge' | 'merge+separate'>
-                  ariaLabel={t('Files')}
-                  value={effectiveExportMode}
-                  onChange={handleQuickExportModeChange}
-                  options={[
-                    { value: 'separate', label: t('One file per clip') },
-                    { value: 'merge', label: t('One merged file'), disabled: segmentsOrInverse.selected.length < 2, title: segmentsOrInverse.selected.length < 2 ? t('Needs two or more clips') : t('Joins the clips into one video, in the order of the clips list') },
-                    { value: 'merge+separate', label: t('Both'), disabled: segmentsOrInverse.selected.length < 2, title: segmentsOrInverse.selected.length < 2 ? t('Needs two or more clips') : t('One file per clip, plus one merged file') },
-                  ]}
-                />
               )}
+              <SegmentedControl<'separate' | 'merge' | 'merge+separate'>
+                ariaLabel={t('Files')}
+                value={effectiveExportMode === 'segments_to_chapters' ? undefined : effectiveExportMode}
+                onChange={handleQuickExportModeChange}
+                options={[
+                  { value: 'separate', label: t('One file per clip') },
+                  { value: 'merge', label: t('One merged file'), disabled: segmentsOrInverse.selected.length < 2, title: segmentsOrInverse.selected.length < 2 ? t('Needs two or more clips') : t('Joins the clips into one video, in the order of the clips list') },
+                  { value: 'merge+separate', label: t('Both'), disabled: segmentsOrInverse.selected.length < 2, title: segmentsOrInverse.selected.length < 2 ? t('Needs two or more clips') : t('One file per clip, plus one merged file') },
+                ]}
+              />
 
               <div className={styles['fileNames']}>
                 {(!willMerge || canEditSegTemplate) && separateFileName}
