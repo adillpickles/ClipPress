@@ -49,6 +49,8 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ captureFormat }), [captureFormat]);
   const [recentCustomOutDirs, setRecentCustomOutDirs] = useState(safeGetConfigInitial('recentCustomOutDirs'));
   useEffect(() => safeSetConfig({ recentCustomOutDirs }), [recentCustomOutDirs]);
+  const [recentFiles, setRecentFiles] = useState(safeGetConfigInitial('recentFiles'));
+  useEffect(() => safeSetConfig({ recentFiles }), [recentFiles]);
   const [enableCustomOutDir, setEnableCustomOutDir] = useState(safeGetConfigInitial('enableCustomOutDir'));
   useEffect(() => safeSetConfig({ enableCustomOutDir }), [enableCustomOutDir]);
   const [keyframeCut, setKeyframeCut] = useState(safeGetConfigInitial('keyframeCut'));
@@ -477,6 +479,10 @@ export default function useUserSettingsRoot() {
     springAnimation,
     customOutDir,
 
+    // Kept out of `settings`, which is attached to error reports: these are file paths.
+    recentFiles,
+    setRecentFiles,
+
     // setters
     setLastAppVersion,
     setCaptureFormat,
@@ -574,7 +580,7 @@ export default function useUserSettingsRoot() {
     setSizeLimitMergedNamingMode,
     setSizeLimitCutFileTemplate,
     setSizeLimitCutMergedFileTemplate,
-  }), [settings, springAnimation, customOutDir, setCustomOutDir, resetKeyBindings, toggleDarkMode, prefersReducedMotion]);
+  }), [settings, springAnimation, customOutDir, setCustomOutDir, resetKeyBindings, toggleDarkMode, prefersReducedMotion, recentFiles]);
 }
 
 export type UserSettingsRoot = ReturnType<typeof useUserSettingsRoot>;

@@ -108,6 +108,7 @@ const defaults: Config = {
   captureFormat: 'jpeg',
   enableCustomOutDir: false,
   recentCustomOutDirs: [],
+  recentFiles: [],
   keyframeCut: true,
   autoMerge: false,
   autoDeleteMergedSegments: true,

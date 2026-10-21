@@ -47,12 +47,20 @@ export type SizeLimitAdvancedH264CpuPreset = 'ultrafast' | 'superfast' | 'veryfa
 
 export type SizeLimitNamingMode = 'auto' | 'custom_template';
 
+export interface RecentFile {
+  path: string,
+  /** Milliseconds since the epoch. */
+  openedAt: number,
+}
+
 export interface Config {
   version: number,
   lastAppVersion: string,
   captureFormat: CaptureFormat,
   enableCustomOutDir: boolean,
   recentCustomOutDirs: string[],
+  /** Recordings opened lately, newest first, for the welcome screen. */
+  recentFiles: RecentFile[],
   keyframeCut: boolean,
   autoMerge: boolean,
   autoDeleteMergedSegments: boolean,

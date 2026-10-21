@@ -3,8 +3,6 @@
   inset: 0;
   margin: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
   overflow-y: auto;
   text-align: center;
   color: var(--cp-text);
@@ -21,6 +19,8 @@
 }
 
 .content {
+  /* Centred while it fits; scrolls from the top when it doesn't. */
+  margin: auto;
   width: min(100%, 44rem);
   padding: 2.5rem 1.5rem;
   display: flex;

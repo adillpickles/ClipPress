@@ -42,6 +42,7 @@ import type {
 import { UserSettingsContext, SegColorsContext, AppContext } from './contexts';
 
 import NoFileLoaded from './NoFileLoaded';
+import RecentFiles from './components/RecentFiles';
 import AppChrome from './AppChrome';
 import MediaSourcePlayer from './MediaSourcePlayer';
 import TopMenu from './TopMenu';
@@ -155,10 +156,13 @@ import {
   moveExportWithRetry,
   shootConfetti,
   isMasBuild,
+  isMac,
+  isWindows,
   readFileStats,
   makeSourceFileAccessError,
 } from './util';
 import getSwal, { errorToast, showPlaybackFailedMessage } from './swal';
+import { addRecentFile, removeRecentFile } from './util/recentFiles';
 import { assertOutPathsNotSource, getMergeProtectedPaths, isSourcePath, makeSafeOutFileNames } from './util/sourceProtection';
 import type { SourceSafeFileNameAdjustment } from './util/sourceProtection';
 import { adjustRate } from './util/rate-calculator';
@@ -520,6 +524,8 @@ function App() {
     setKeyframesEnabled,
     prefersReducedMotion,
     customOutDir,
+    recentFiles,
+    setRecentFiles,
   } = allUserSettings;
 
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(!simpleMode);
@@ -4594,6 +4600,7 @@ function App() {
         if (isStale()) return;
         // Autosave compares later changes with the state opened here.
         setProjectSession({ id: generation, loadedProjectPath });
+        setRecentFiles((list) => addRecentFile(list, fp, Date.now(), isWindows || isMac));
         // This needs to be last, because it triggers <video> to load the video
         // If not, onVideoError might be triggered before setWorking() has been cleared.
         // https://github.com/mifi/lossless-cut/issues/515
@@ -4635,6 +4642,7 @@ function App() {
       showNotNativelySupportedMessage,
       loadProjectIntoState,
       whenProjectSaved,
+      setRecentFiles,
     ],
   );
 
@@ -6206,7 +6214,16 @@ function App() {
                         onClick={openFilesDialog}
                         onOpenFolderClick={openDirDialog}
                         keyBindingByAction={keyBindingByAction}
-                      />
+                        showSteps={recentFiles.length === 0}
+                      >
+                        <RecentFiles
+                          files={recentFiles}
+                          customOutDir={customOutDir}
+                          onOpen={(path) => userOpenFiles([path])}
+                          onRemove={(path) => setRecentFiles((list) => removeRecentFile(list, path, isWindows || isMac))}
+                          onClear={() => setRecentFiles([])}
+                        />
+                      </NoFileLoaded>
                     </div>
                   ) : (
                     <>

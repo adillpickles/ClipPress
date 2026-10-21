@@ -29,11 +29,13 @@ function Step({ icon, title, children }: { icon: ReactNode, title: string, child
   );
 }
 
-function NoFileLoaded({ onClick, onOpenFolderClick, keyBindingByAction, children }: {
+function NoFileLoaded({ onClick, onOpenFolderClick, keyBindingByAction, showSteps, children }: {
   onClick: () => void,
   onOpenFolderClick: () => void,
   keyBindingByAction: Record<string, KeyBinding>,
-  /** Shown under the steps (recent recordings). */
+  /** The three steps of making a clip, for people who haven't opened anything yet. */
+  showSteps: boolean,
+  /** Shown under the buttons (recent recordings). */
   children?: ReactNode,
 }) {
   const { t } = useTranslation();
@@ -84,6 +86,7 @@ function NoFileLoaded({ onClick, onOpenFolderClick, keyBindingByAction, children
           </Button>
         </div>
 
+        {showSteps && (
         <div className={styles['steps']}>
           <Step icon={<span className={styles['bracketIcon']}>[ ]</span>} title={t('Mark the moment')}>
             {keyBindingByAction['setCutStart'] != null && keyBindingByAction['setCutEnd'] != null ? (
@@ -97,6 +100,7 @@ function NoFileLoaded({ onClick, onOpenFolderClick, keyBindingByAction, children
             {t('Keep the original quality, or pick a file size like 10 MB for Discord.')}
           </Step>
         </div>
+        )}
 
         {children}
       </div>
