@@ -5109,7 +5109,11 @@ function App() {
           newFilePaths = await readVideoTs(firstNewFilePath);
         }
 
-        if (workingRef.current) return;
+        if (workingRef.current) {
+          // Say why nothing happened, instead of ignoring the file (#60).
+          showNotification({ icon: 'info', text: i18n.t('ClipPress is busy. Open the file again when the current task has finished.') });
+          return;
+        }
         try {
           setWorking({ text: i18n.t('Loading file') });
 
@@ -5222,6 +5226,7 @@ function App() {
       userOpenSingleFile,
       addStreamSourceFile,
       filePath,
+      showNotification,
     ],
   );
 
