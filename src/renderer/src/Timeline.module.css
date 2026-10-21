@@ -9,7 +9,7 @@
 
 .gutter {
   flex-shrink: 0;
-  width: 3.5rem;
+  width: 4.25rem;
   border-right: 1px solid var(--cp-line);
   display: flex;
   flex-direction: column;

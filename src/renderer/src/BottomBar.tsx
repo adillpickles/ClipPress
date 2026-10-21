@@ -475,7 +475,6 @@ function BottomBar({
     alignItems: 'center',
     justifyContent: 'center',
     gap: '.42rem',
-    borderRadius: '999px',
   }), []);
 
   // ok this is a bit over-engineered but what the hell!
@@ -626,41 +625,6 @@ function BottomBar({
             {durationLabel != null && <span className={styles['timeDuration']}>{` / ${durationLabel}`}</span>}
           </button>
 
-          {!simpleMode && (
-            <>
-              {hasAudio && (
-                <Button title={t('Show waveform')} onClick={() => toggleWaveformMode()} style={utilityButtonStyle}>
-                  <GiSoundWaves
-                    style={{
-                      fontSize: '1.2em',
-                      color: waveformMode != null ? primaryTextColor : undefined,
-                    }}
-                  />
-                </Button>
-              )}
-              {hasVideo && (
-                <>
-                  <Button title={t('Show thumbnails')} onClick={toggleShowThumbnails} style={utilityButtonStyle}>
-                    <FaImages
-                      style={{
-                        fontSize: '1em',
-                        color: showThumbnails ? primaryTextColor : undefined,
-                      }}
-                    />
-                  </Button>
-
-                  <Button title={t('Show keyframes')} onClick={toggleShowKeyframes} style={utilityButtonStyle}>
-                    <FaKey
-                      style={{
-                        fontSize: '.95em',
-                        color: keyframesEnabled ? primaryTextColor : undefined,
-                      }}
-                    />
-                  </Button>
-                </>
-              )}
-            </>
-          )}
         </div>
 
         <div className={styles['transportCenter']}>
@@ -850,6 +814,38 @@ function BottomBar({
             height: '2em',
           }}
         >
+          {hasAudio && (
+            <Button title={t('Show waveform')} onClick={() => toggleWaveformMode()} style={utilityButtonStyle}>
+              <GiSoundWaves
+                style={{
+                  fontSize: '1.2em',
+                  color: waveformMode != null ? primaryTextColor : undefined,
+                }}
+              />
+            </Button>
+          )}
+          {hasVideo && (
+            <>
+              <Button title={t('Show thumbnails')} onClick={toggleShowThumbnails} style={utilityButtonStyle}>
+                <FaImages
+                  style={{
+                    fontSize: '1em',
+                    color: showThumbnails ? primaryTextColor : undefined,
+                  }}
+                />
+              </Button>
+
+              <Button title={t('Show keyframes')} onClick={toggleShowKeyframes} style={utilityButtonStyle}>
+                <FaKey
+                  style={{
+                    fontSize: '.95em',
+                    color: keyframesEnabled ? primaryTextColor : undefined,
+                  }}
+                />
+              </Button>
+            </>
+          )}
+
           <InvertCutModeButton
             invertCutSegments={invertCutSegments}
             setInvertCutSegments={setInvertCutSegments}
@@ -866,7 +862,7 @@ function BottomBar({
               </div>
 
               <Select
-                style={{ width: '4.5em' }}
+                style={{ width: '7em' }}
                 value={zoomOptions.includes(zoom) ? zoom.toString() : ''}
                 title={t('Zoom')}
                 onChange={withBlur((e) => setZoom(() => parseInt(e.target.value, 10)))}
