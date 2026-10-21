@@ -1,4 +1,4 @@
-import { FaTimes } from 'react-icons/fa';
+import { FiX } from 'react-icons/fi';
 import type { DetailedHTMLProps, ButtonHTMLAttributes } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -11,7 +11,7 @@ export default function CloseButton({ type = 'button', ...props }: DetailedHTMLP
   return (
     // eslint-disable-next-line react/jsx-props-no-spreading, react/button-has-type
     <button type={type} className={styles['close-button']} title={t('Close')} aria-label={t('Close')} {...props}>
-      <FaTimes />
+      <FiX size={18} />
     </button>
   );
 }

@@ -1,7 +1,7 @@
 $swal2-outline-color: var(--gray-5) !default;
 
 // see colors.ts primaryColor
-$swal2-confirm-button-background-color: var(--cyan-9);
+$swal2-confirm-button-background-color: var(--accent-9);
 
 $myswal-background: var(--gray-1);
 $myswal-foreground: var(--gray-12);
@@ -62,9 +62,10 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
 }
 
 .clippress-toast {
-  border-radius: .95rem !important;
-  border: 1px solid color-mix(in srgb, var(--gray-8) 28%, transparent) !important;
-  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.16) !important;
+  border-radius: var(--cp-radius-lg) !important;
+  border: 1px solid var(--cp-line) !important;
+  background: var(--cp-raised) !important;
+  box-shadow: var(--cp-shadow-popover) !important;
   padding: .7rem .85rem !important;
   pointer-events: auto !important;
 }
@@ -110,20 +111,10 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
   width: min(34rem, 92vw) !important;
   max-width: min(34rem, 92vw) !important;
   box-sizing: border-box !important;
-  border-radius: 1.35rem !important;
-  border: 1px solid color-mix(in srgb, var(--gray-8) 36%, transparent) !important;
-  background:
-    radial-gradient(circle at top, color-mix(in srgb, var(--blue-8) 10%, transparent), transparent 44%),
-    linear-gradient(180deg, color-mix(in srgb, var(--gray-2) 94%, transparent), color-mix(in srgb, var(--gray-1) 96%, transparent)) !important;
-  box-shadow: 0 26px 72px rgba(0, 0, 0, 0.26) !important;
-  padding: 1.2rem 1.2rem 1rem !important;
   overflow-x: hidden !important;
 }
 
 .clippress-choice-popup .swal2-title {
-  font-size: 1.2rem !important;
-  font-weight: 800 !important;
-  letter-spacing: -.02em;
   margin-bottom: .45rem !important;
 }
 
@@ -159,22 +150,26 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
   display: flex;
   align-items: center;
   gap: .7rem;
-  padding: .9rem 1rem;
-  border-radius: 1rem;
-  border: 1px solid color-mix(in srgb, var(--gray-8) 30%, transparent);
-  background: color-mix(in srgb, var(--gray-1) 88%, transparent);
-  color: var(--gray-12);
+  padding: .8rem .95rem;
+  border-radius: var(--cp-radius-lg);
+  border: 1px solid var(--cp-line);
+  background: var(--cp-raised);
+  color: var(--cp-text);
   box-sizing: border-box;
+  cursor: pointer;
   transition:
-    border-color .15s ease,
-    background-color .15s ease,
-    transform .15s ease;
+    border-color .14s ease,
+    background-color .14s ease;
 }
 
 .clippress-choice-action:hover {
-  border-color: color-mix(in srgb, var(--blue-8) 45%, transparent);
-  background: color-mix(in srgb, var(--blue-4) 14%, transparent);
-  transform: translateY(-1px);
+  border-color: var(--accent-8);
+  background: var(--cp-accent-soft);
+}
+
+.clippress-choice-action:focus-visible {
+  outline: none;
+  box-shadow: var(--cp-focus-ring);
 }
 
 .clippress-choice-action-cancel:hover {
@@ -192,8 +187,8 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
 }
 
 .clippress-choice-action-label {
-  font-size: .95rem;
-  font-weight: 700;
+  font-size: .9rem;
+  font-weight: 600;
   line-height: 1.35;
 }
 
@@ -222,3 +217,108 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
 }
 
 @import 'sweetalert2/src/sweetalert2.scss';
+
+// Match ClipPress dialogs (components/Dialog.module.css). Declared after the library so these win.
+.swal2-popup:not(.swal2-toast) {
+  border-radius: var(--cp-radius-xl) !important;
+  border: 1px solid var(--cp-line) !important;
+  background: var(--cp-panel) !important;
+  color: var(--cp-text) !important;
+  box-shadow: var(--cp-shadow-dialog) !important;
+  padding: 1.25rem 1.5rem 1.4rem !important;
+  font-family: var(--cp-font) !important;
+}
+
+.swal2-popup:not(.swal2-toast) .swal2-title {
+  font-size: 1.0625rem !important;
+  font-weight: 700 !important;
+  text-align: left !important;
+  padding: 0 2rem 0 0 !important;
+  margin: 0 0 .5rem !important;
+  color: var(--cp-text) !important;
+}
+
+.swal2-popup:not(.swal2-toast) .swal2-html-container {
+  text-align: left !important;
+  font-size: .9rem !important;
+  line-height: 1.5 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  color: var(--cp-text-muted) !important;
+}
+
+.swal2-popup:not(.swal2-toast) .swal2-actions {
+  justify-content: flex-end !important;
+  width: 100% !important;
+  margin: 1.25rem 0 0 !important;
+  gap: .5rem;
+}
+
+.swal2-popup .swal2-styled {
+  margin: 0 !important;
+  min-height: 2.25rem;
+  padding: 0 1.25rem !important;
+  border-radius: var(--cp-radius) !important;
+  font-family: var(--cp-font) !important;
+  font-size: .875rem !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
+  border: 1px solid var(--cp-line) !important;
+  background: var(--cp-raised) !important;
+  color: var(--cp-text) !important;
+}
+
+.swal2-popup .swal2-styled:hover {
+  background: var(--cp-hover) !important;
+  background-image: none !important;
+}
+
+.swal2-popup .swal2-styled:focus-visible {
+  box-shadow: var(--cp-focus-ring) !important;
+}
+
+.swal2-popup .swal2-styled.swal2-confirm {
+  background: var(--cp-accent) !important;
+  border-color: transparent !important;
+  color: var(--accent-contrast) !important;
+}
+
+.swal2-popup .swal2-styled.swal2-confirm:hover {
+  background: var(--cp-accent-hover) !important;
+}
+
+.swal2-popup .swal2-input,
+.swal2-popup .swal2-textarea,
+.swal2-popup .swal2-select {
+  font-family: var(--cp-font) !important;
+  font-size: .9rem !important;
+  border-radius: var(--cp-radius) !important;
+  border: 1px solid var(--cp-line-strong) !important;
+  background: var(--cp-bg) !important;
+  color: var(--cp-text) !important;
+  box-shadow: none !important;
+  margin: .75rem 0 0 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.swal2-popup .swal2-input:focus,
+.swal2-popup .swal2-textarea:focus {
+  border-color: var(--accent-8) !important;
+  box-shadow: 0 0 0 1px var(--accent-8) !important;
+}
+
+.swal2-popup .swal2-close {
+  color: var(--cp-text-muted) !important;
+  border-radius: var(--cp-radius) !important;
+  font-family: var(--cp-font) !important;
+}
+
+.swal2-popup .swal2-close:hover {
+  background: var(--cp-hover) !important;
+  color: var(--cp-text) !important;
+}
+
+.swal2-container.swal2-backdrop-show {
+  background: var(--black-a8) !important;
+}

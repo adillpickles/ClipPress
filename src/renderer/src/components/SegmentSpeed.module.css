@@ -7,7 +7,7 @@
 .speedField > span:first-child { flex: 1; }
 .presets { display: flex; gap: .35rem; flex-wrap: wrap; }
 .presets button { flex: 1; padding: .35rem .5rem; font-size: .8rem; }
-.presets button[aria-pressed="true"] { border-color: var(--blue-9); background: var(--blue-4); }
+.presets button[aria-pressed="true"] { border-color: var(--accent-9); background: var(--accent-4); }
 .durations {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -22,7 +22,7 @@
 .durations > span { color: var(--gray-11); }
 .error { color: var(--red-11); font-size: .85rem; margin-top: .6rem; }
 .retimeBar {
-  --retime-color: var(--blue-9);
+  --retime-color: var(--accent-9);
   position: absolute;
   top: 3px;
   bottom: 3px;

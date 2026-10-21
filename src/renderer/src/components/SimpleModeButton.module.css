@@ -1,34 +1,41 @@
 .segmented {
   display: inline-flex;
   align-items: center;
-  gap: .2rem;
-  padding: .2rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--gray-3) 82%, transparent);
-  border: 1px solid color-mix(in srgb, var(--gray-8) 44%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--cp-radius);
+  background: var(--cp-bg);
+  border: 1px solid var(--cp-line);
 }
 
 .option {
   all: unset;
   cursor: pointer;
-  min-width: 5.25rem;
-  min-height: 2rem;
-  padding: 0 .85rem;
-  border-radius: 999px;
-  color: var(--gray-11);
-  font-size: .8rem;
-  font-weight: 700;
+  min-width: 4.5rem;
+  min-height: 1.75rem;
+  padding: 0 .75rem;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--cp-text-subtle);
+  font-size: .8125rem;
+  font-weight: 600;
   text-align: center;
-  transition: background-color .18s ease, color .18s ease, box-shadow .18s ease;
+  transition: background-color .14s ease, color .14s ease, box-shadow .14s ease;
 }
 
 .option:hover {
-  color: var(--gray-12);
+  color: var(--cp-text);
+}
+
+.option:focus-visible {
+  box-shadow: var(--cp-focus-ring);
 }
 
 .active {
-  color: white;
-  background: var(--blue-9);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--blue-9) 24%, transparent);
+  color: var(--cp-text);
+  background: var(--cp-hover);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
