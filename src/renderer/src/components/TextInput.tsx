@@ -1,13 +1,11 @@
-import type { CSSProperties } from 'react';
 import { forwardRef } from 'react';
 
-
-const inputStyle: CSSProperties = { borderRadius: '.4em', flexGrow: 1, fontFamily: 'inherit', fontSize: '.8em', backgroundColor: 'var(--gray-3)', color: 'var(--gray-12)', border: '1px solid var(--gray-7)', appearance: 'none' };
+import styles from './TextInput.module.css';
 
 // eslint-disable-next-line react/display-name
-const TextInput = forwardRef<HTMLInputElement, JSX.IntrinsicElements['input']>(({ style, ...props }, forwardedRef) => (
+const TextInput = forwardRef<HTMLInputElement, JSX.IntrinsicElements['input']>(({ className, ...props }, forwardedRef) => (
   // eslint-disable-next-line react/jsx-props-no-spreading
-  <input type="text" ref={forwardedRef} style={{ ...inputStyle, ...style }} {...props} />
+  <input type="text" ref={forwardedRef} className={[styles['input'], ...(className ? [className] : [])].join(' ')} {...props} />
 ));
 
 export default TextInput;

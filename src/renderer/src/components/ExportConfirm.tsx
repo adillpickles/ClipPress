@@ -14,6 +14,7 @@ import {
 import i18n from 'i18next';
 import { useTranslation, Trans } from 'react-i18next';
 import { IoIosHelpCircle, IoIosSettings } from 'react-icons/io';
+import { FiChevronDown, FiChevronRight } from 'react-icons/fi';
 import type { SweetAlertIcon } from 'sweetalert2';
 import { getSegmentOutputDuration, getSegmentSpeed } from '../segmentSpeed';
 import { hasSegmentCrop } from '../segmentCrop';
@@ -25,6 +26,7 @@ import HighlightedText from './HighlightedText';
 import Select from './Select';
 import Switch from './Switch';
 import Button from './Button';
+import SegmentedControl from './SegmentedControl';
 
 import { primaryTextColor, warningColor } from '../colors';
 import { withBlur } from '../util';
@@ -70,6 +72,7 @@ import { planSizeLimitedEncode } from '../sizeLimitedPlanner';
 import { getSizeLimitedEncoderCapabilities } from '../sizeLimitedExport';
 import { resolveSizeLimitedStrategy } from '../sizeLimitedStrategy';
 import { gpuVendorLabels, pickGpuEncoder } from '../gpuEncoders';
+import formatClockTime from '../util/clockTime';
 import {
   getSizeLimitedSimpleFpsOptions,
   getSizeLimitedSimpleResolutionOptions,
@@ -79,9 +82,7 @@ import {
 const remote = window.require('@electron/remote');
 const { shell } = remote;
 
-const noticeStyle: CSSProperties = { marginBottom: '.5em' };
-const infoStyle: CSSProperties = { ...noticeStyle, color: primaryTextColor };
-const warningStyle: CSSProperties = { ...noticeStyle, color: 'var(--orange-11)' };
+const sizeLimitQuickPicksMb = [10, 20, 25, 50, 100];
 
 const rightIconStyle: CSSProperties = {
   fontSize: '1.2em',
@@ -211,16 +212,11 @@ function renderNotice(
   return (
     <div
       key={typeof notice.text === 'string' ? notice.text : undefined}
-      style={{
-        ...(warning ? warningStyle : infoStyle),
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0 .5em',
-        ...style,
-      }}
+      className={[styles['notice'], warning ? styles['noticeWarning'] : styles['noticeInfo']].join(' ')}
+      style={style}
     >
-      {renderNoticeIcon({ warning }, { fontSize: '1em', flexShrink: 0 })}{' '}
-      <span style={{ fontSize: '.9em' }}>{text}</span>
+      {renderNoticeIcon({ warning }, { fontSize: '1em', flexShrink: 0, marginTop: '.15em' })}
+      <span style={{ flexGrow: 1 }}>{text}</span>
       {url != null && (
         <IoIosHelpCircle
           style={{
@@ -279,45 +275,29 @@ function AutoNamePreview({
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '.75rem', marginBottom: '.45rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '.75rem', marginBottom: '.4rem' }}>
         <div className={styles['summaryLabel']}>{title}</div>
-        {simpleMode && (
-          <div className={styles['autoNamePill']}>{t('Auto filename')}</div>
+        {simpleMode ? (
+          <Button size="sm" variant="ghost" onClick={onCustomize}>
+            {t('Use custom filename')}
+          </Button>
+        ) : (
+          <Button size="sm" onClick={onCustomize}>
+            {t('Edit filename')}
+          </Button>
         )}
       </div>
-      <div style={{ marginBottom: simpleMode ? 0 : '.4rem' }}>
+      <div>
         {/*
           Deliberately not clickable. This reads as a label showing the name that will be
           used, and making it a customise trigger meant a click to inspect the name
           silently switched naming off automatic for good. Customising is the explicit
           button below.
         */}
-        <HighlightedText
-          style={{
-            width: '100%',
-            display: 'block',
-            padding: '.85rem .95rem',
-            borderRadius: '1rem',
-            border: '1px solid color-mix(in srgb, var(--gray-8) 30%, transparent)',
-            background: 'color-mix(in srgb, var(--gray-1) 86%, transparent)',
-            textAlign: 'left',
-            wordBreak: 'break-word',
-          }}
-        >
+        <div className={styles['fileNamePreview']} title={previewName}>
           {previewName ?? t('Generating preview...')}
-        </HighlightedText>
-      </div>
-      {simpleMode ? (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '.7rem' }}>
-          <Button onClick={onCustomize} style={{ padding: '.35rem .7rem' }}>
-            {t('Use custom filename')}
-          </Button>
         </div>
-      ) : (
-        <Button onClick={onCustomize} style={{ padding: '.25em .7em' }}>
-          {t('Edit filename')}
-        </Button>
-      )}
+      </div>
     </div>
   );
 }
@@ -1415,15 +1395,138 @@ function ExportConfirm({
   const exportActionLabel = useMemo(() => {
     if (effectiveExportMode === 'merge') return t('Export merged clip');
     if (effectiveExportMode === 'merge+separate') return t('Export all');
+    if (effectiveExportMode === 'separate' && areWeCutting) return t('Export {{count}} clips', { count: segmentsToExport.length });
     return t('Export');
-  }, [effectiveExportMode, t]);
+  }, [areWeCutting, effectiveExportMode, segmentsToExport.length, t]);
+
+  const exportSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (areWeCutting) {
+      parts.push(segmentsOrInverse.selected.length !== segmentsOrInverse.all.length
+        ? t('{{selected}} of {{count}} clips', { selected: segmentsToExport.length, count: segmentsOrInverse.all.length })
+        : t('{{count}} clips', { count: segmentsToExport.length }));
+    } else {
+      parts.push(t('The whole recording'));
+    }
+    const totalDuration = segmentsToExport.reduce((sum, segment) => sum + getSegmentOutputDuration(segment, outputPlaybackRate), 0);
+    if (totalDuration > 0) parts.push(formatClockTime(totalDuration, { decimals: 1 }));
+    if (isSizeLimited) {
+      parts.push(willMerge || segmentsToExport.length <= 1
+        ? t('under {{size}} MB', { size: sizeLimitMb })
+        : t('each under {{size}} MB', { size: sizeLimitMb }));
+    } else {
+      parts.push(t('original quality'));
+    }
+    return parts.join(' · ');
+  }, [areWeCutting, isSizeLimited, outputPlaybackRate, segmentsOrInverse.all.length, segmentsOrInverse.selected.length, segmentsToExport, sizeLimitMb, t, willMerge]);
+
+  const advancedEncoderLabel = useMemo(() => ({
+    av1_cpu: t('AV1 CPU (SVT-AV1)'),
+    av1_nvenc: gpuAv1Encoder != null ? t('AV1 GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuAv1Encoder.vendor] }) : t('AV1 GPU'),
+    h264_cpu: t('H.264 CPU (x264)'),
+    h264_nvenc: gpuH264Encoder != null ? t('H.264 GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuH264Encoder.vendor] }) : t('H.264 GPU'),
+  })[sizeLimitAdvancedEncoder], [gpuAv1Encoder, gpuH264Encoder, sizeLimitAdvancedEncoder, t]);
+
+  const isCustomSizeLimit = sizeLimitControlMode === 'advanced';
+  const presetChoice = isCustomSizeLimit ? 'custom' : sizeLimitPreset;
+
+  const handlePresetChoice = useCallback((value: SizeLimitPreset | 'custom') => {
+    if (value === 'custom') {
+      setSizeLimitControlMode('advanced');
+      setShowAdvancedOverride(true);
+      return;
+    }
+    setSizeLimitControlMode('simple');
+    setSizeLimitPreset(value);
+  }, [setSizeLimitControlMode, setSizeLimitPreset]);
   const shouldRenderAdvancedTable = !simpleMode || showAdvanced;
+
+  const separateFileName = (
+    isSizeLimited
+      && sizeLimitSeparateNamingMode === 'auto'
+      && generateAutoCutFileNames != null
+      && !showSeparateNameEditor ? (
+        <AutoNamePreview
+          title={willMerge && canEditSegTemplate ? t('Clip file names') : t('File name')}
+          generateFileNames={generateAutoCutFileNames}
+          currentSegIndexSafe={currentSegIndexSafe}
+          onCustomize={openSeparateNameEditor}
+        />
+      ) : (
+        <FileNameTemplateEditor
+          mode="separate"
+          template={
+            isSizeLimited
+              ? (sizeLimitCutFileTemplate ?? defaultSizeLimitedCutFileTemplate)
+              : (cutFileTemplate ?? defaultCutFileTemplate)
+          }
+          setTemplate={isSizeLimited ? setSizeLimitCutFileTemplate : setCutFileTemplate}
+          defaultTemplate={
+            isSizeLimited
+              ? defaultSizeLimitedCutFileTemplate
+              : defaultCutFileTemplate
+          }
+          generateFileNames={generateCutFileNames}
+          currentSegIndexSafe={currentSegIndexSafe}
+          onReset={
+            isSizeLimited
+              ? () => {
+                setSizeLimitSeparateNamingMode('auto');
+                setShowSeparateNameEditor(false);
+              }
+              : undefined
+          }
+          resetLabel={isSizeLimited ? t('Use auto naming') : undefined}
+        />
+      )
+  );
+
+  const mergedFileName = willMerge ? (
+    isSizeLimited
+      && sizeLimitMergedNamingMode === 'auto'
+      && generateAutoCutMergedFileNames != null
+      && !showMergedNameEditor ? (
+        <AutoNamePreview
+          title={t('Merged file name')}
+          generateFileNames={generateAutoCutMergedFileNames}
+          onCustomize={openMergedNameEditor}
+        />
+      ) : (
+        <FileNameTemplateEditor
+          mode="merge-segments"
+          template={
+            isSizeLimited
+              ? (sizeLimitCutMergedFileTemplate
+                ?? defaultSizeLimitedCutMergedFileTemplate)
+              : (cutMergedFileTemplate
+                ?? defaultCutMergedFileTemplate)
+          }
+          setTemplate={isSizeLimited ? setSizeLimitCutMergedFileTemplate : setCutMergedFileTemplate}
+          defaultTemplate={
+            isSizeLimited
+              ? defaultSizeLimitedCutMergedFileTemplate
+              : defaultCutMergedFileTemplate
+          }
+          generateFileNames={generateCutMergedFileNames}
+          onReset={
+            isSizeLimited
+              ? () => {
+                setSizeLimitMergedNamingMode('auto');
+                setShowMergedNameEditor(false);
+              }
+              : undefined
+          }
+          resetLabel={isSizeLimited ? t('Use auto naming') : undefined}
+        />
+      )
+  ) : null;
 
   return (
     <ExportSheet
-      width="58em"
+      width={simpleMode ? '40rem' : '58em'}
       visible={visible}
-      title={t('Export options')}
+      title={t('Export')}
+      subtitle={exportSummary}
       onClosePress={handleClosePress}
       renderButton={() => (
         <ExportButton
@@ -1431,7 +1534,7 @@ function ExportConfirm({
           label={exportActionLabel}
           titleOverride={exportActionLabel}
           onClick={withBlur(() => onExportConfirm())}
-          style={{ fontSize: '1.3em' }}
+          style={{ minHeight: '2.5rem' }}
         />
       )}
       renderBottom={() => (notices.totalNum > 0 ? (
@@ -1442,158 +1545,117 @@ function ExportConfirm({
       ) : null)}
     >
       <div className={styles['sheetContent']}>
-        <div className={styles['noticeStack']}>
-          {notices.generic.map((notice) => renderNotice(notice, {}))}
-        </div>
-
-        {segmentsOrInverse.selected.length !== segmentsOrInverse.all.length && (
-          <div className={styles['selectionPill']}>
-            <FaRegCheckCircle size={12} style={{ marginRight: 6 }} />
-            {t(
-              '{{selectedSegments}} of {{nonFilteredSegments}} clips selected',
-              {
-                selectedSegments: segmentsOrInverse.selected.length,
-                nonFilteredSegments: segmentsOrInverse.all.length,
-              },
-            )}
+        {notices.generic.length > 0 && (
+          <div className={styles['noticeStack']}>
+            {notices.generic.map((notice) => renderNotice(notice, {}))}
           </div>
         )}
 
         {simpleMode ? (
-          <div className={styles['heroGrid']}>
-            <section className={styles['sectionCard']}>
-              <div className={styles['sectionHeader']}>
-                <div>
-                  <div className={styles['sectionEyebrow']}>
-                    {t('Output goal')}
-                  </div>
-                  <div className={styles['sectionTitle']}>
-                    {t('Choose how this export should feel')}
-                  </div>
-                </div>
-                {!simpleMode && <HelpIcon onClick={onExportEncodeModeHelpPress} />}
-              </div>
+          <>
+            <section className={styles['section']}>
+              <div className={styles['sectionHeading']}>{t('Quality')}</div>
 
-              <div className={styles['choiceGrid']}>
+              <div className={styles['qualityChoices']} role="radiogroup" aria-label={t('Quality')}>
                 <button
                   type="button"
-                  className={[
-                    styles['choiceCard'],
-                    ...(!isSizeLimited ? [styles['choiceCardActive']] : []),
-                  ].join(' ')}
+                  role="radio"
+                  aria-checked={!isSizeLimited}
+                  className={[styles['choiceCard'], ...(!isSizeLimited ? [styles['choiceCardActive']] : [])].join(' ')}
                   onClick={() => handleExportEncodeModeChange('lossless')}
                 >
-                  <div className={styles['choiceTitle']}>
-                    {t('Keep source quality')}
-                  </div>
-                  <div className={styles['choiceBody']}>
-                    {t(
-                      'Use the regular ClipPress export path and preserve the original quality when possible.',
-                    )}
-                  </div>
+                  <span className={styles['choiceTitle']}>{t('Original quality')}</span>
+                  <span className={styles['choiceBody']}>{t('Keeps the picture as it is when it can. Files can be large.')}</span>
                 </button>
-
                 <button
                   type="button"
-                  className={[
-                    styles['choiceCard'],
-                    ...(isSizeLimited ? [styles['choiceCardActive']] : []),
-                  ].join(' ')}
+                  role="radio"
+                  aria-checked={isSizeLimited}
+                  className={[styles['choiceCard'], ...(isSizeLimited ? [styles['choiceCardActive']] : [])].join(' ')}
                   onClick={() => handleExportEncodeModeChange('size_limited')}
                 >
-                  <div className={styles['choiceTitle']}>
-                    {t('Target file size')}
-                  </div>
-                  <div className={styles['choiceBody']}>
-                    {t('Make a shareable MP4 that lands under a size cap.')}
-                  </div>
+                  <span className={styles['choiceTitle']}>{t('Fit a file size')}</span>
+                  <span className={styles['choiceBody']}>{t('Makes an MP4 that stays under the size you pick, e.g. for Discord.')}</span>
                 </button>
               </div>
 
               {isSizeLimited && (
-              <>
-                <div className={styles['inlineFieldRow']}>
-                  <label
-                    className={styles['fieldLabel']}
-                    htmlFor="size-limit-mb"
-                  >
-                    {t('Target size')}
-                  </label>
-                  <div className={styles['inlineFieldValue']}>
-                    <TextInput
-                      id="size-limit-mb"
-                      type="number"
-                      min={1}
-                      step={0.1}
-                      value={sizeLimitMb}
-                      onChange={handleSizeLimitMbChange}
-                      style={{ width: '6.5em', textAlign: 'right' }}
-                    />
-                    <span>{t('MB')}</span>
+                <div className={styles['fields']}>
+                  <div className={styles['field']}>
+                    <label className={styles['fieldName']} htmlFor="size-limit-mb">{t('Size limit')}</label>
+                    <div className={styles['fieldControl']}>
+                      <div className={styles['sizeInput']}>
+                        <TextInput
+                          id="size-limit-mb"
+                          type="number"
+                          min={1}
+                          step={0.1}
+                          value={sizeLimitMb}
+                          onChange={handleSizeLimitMbChange}
+                          style={{ width: '5.5em', flexGrow: 0, textAlign: 'right' }}
+                        />
+                        <span className={styles['unit']}>{t('MB')}</span>
+                      </div>
+                      <div className={styles['quickPicks']}>
+                        {sizeLimitQuickPicksMb.map((mb) => (
+                          <button
+                            key={mb}
+                            type="button"
+                            className={[styles['quickPick'], ...(sizeLimitMb === mb ? [styles['quickPickActive']] : [])].join(' ')}
+                            onClick={() => setSizeLimitMb(mb)}
+                          >
+                            {mb}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                {sizeLimitControlMode === 'simple' ? (
-                  <>
-                    <div
-                      className={styles['sectionEyebrow']}
-                      style={{ marginTop: '.4rem' }}
-                    >
-                      {t('Preset')}
+                  <div className={styles['field']}>
+                    <div className={styles['fieldName']}>{t('Preset')}</div>
+                    <div className={styles['fieldControl']}>
+                      <SegmentedControl<SizeLimitPreset | 'custom'>
+                        ariaLabel={t('Preset')}
+                        value={presetChoice}
+                        onChange={handlePresetChoice}
+                        options={[
+                          { value: 'max_quality', label: t('Max Quality') },
+                          { value: 'quality', label: t('Quality') },
+                          { value: 'fast', label: t('Fast') },
+                          { value: 'custom', label: t('Custom'), title: t('Pick the encoder and its settings yourself') },
+                        ]}
+                      />
+                      <div className={styles['fieldHint']}>
+                        {isCustomSizeLimit ? (
+                          <>
+                            {t('Custom: {{encoder}}', { encoder: advancedEncoderLabel })}
+                            {' · '}
+                            {sizeLimitAdvancedTwoPass ? t('2-pass') : t('1-pass')}
+                            {' · '}
+                            <button type="button" className={styles['inlineLink']} onClick={() => setShowAdvancedOverride(true)}>{t('Edit')}</button>
+                          </>
+                        ) : presetDescription}
+                      </div>
+                      {isCustomSizeLimit && advancedEncoderUnavailableMessage != null && (
+                        <div className={styles['fieldWarning']}>{advancedEncoderUnavailableMessage}</div>
+                      )}
                     </div>
-                    <div className={styles['choiceGrid']}>
-                      {(
-                        [
-                          [
-                            'max_quality',
-                            t('Max Quality'),
-                            t('Best-looking result under the cap.'),
-                          ],
-                          [
-                            'quality',
-                            t('Quality'),
-                            t('Recommended balance for most clips.'),
-                          ],
-                          [
-                            'fast',
-                            t('Fast'),
-                            t('Quicker export with good shareable quality.'),
-                          ],
-                        ] as const
-                      ).map(([value, title, description]) => (
-                        <button
-                          key={value}
-                          type="button"
-                          className={[
-                            styles['choiceCard'],
-                            ...(sizeLimitPreset === value
-                              ? [styles['choiceCardActive']]
-                              : []),
-                          ].join(' ')}
-                          onClick={() => setSizeLimitPreset(value)}
-                        >
-                          <div className={styles['choiceTitle']}>{title}</div>
-                          <div className={styles['choiceBody']}>
-                            {description}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
+                  </div>
 
-                    <div className={styles['twoColumnFields']}>
-                      <div className={styles['fieldCard']}>
-                        <div className={styles['fieldLabel']}>
-                          {t('Resolution')}
-                        </div>
-                        <Select
-                          value={selectedSizeLimitedResolution}
-                          onChange={withBlur((e) => handleSizeLimitedResolutionChange(
-                              e.target.value as SizeLimitSimpleResolution,
-                          ))}
-                        >
-                          {sizeLimitedResolutionOptions.map((value) => (
-                            <option key={value} value={value}>
-                              {
+                  <div className={styles['field']}>
+                    <label className={styles['fieldName']} htmlFor="size-limit-resolution">{t('Resolution')}</label>
+                    <div className={styles['fieldControl']}>
+                      <Select
+                        id="size-limit-resolution"
+                        value={selectedSizeLimitedResolution}
+                        title={sizeLimitedResolutionDescription}
+                        onChange={withBlur((e) => handleSizeLimitedResolutionChange(
+                            e.target.value as SizeLimitSimpleResolution,
+                        ))}
+                      >
+                        {sizeLimitedResolutionOptions.map((value) => (
+                          <option key={value} value={value}>
+                            {
                                 {
                                   auto: t('Auto (recommended)'),
                                   source: t('Keep source'),
@@ -1602,305 +1664,168 @@ function ExportConfirm({
                                   '1440p': '1440p',
                                 }[value]
                               }
-                            </option>
-                          ))}
-                        </Select>
-                        <div className={styles['helperText']}>
-                          {sizeLimitedResolutionDescription}
-                        </div>
-                      </div>
+                          </option>
+                        ))}
+                      </Select>
+                      <div className={styles['fieldHint']}>{sizeLimitedResolutionDescription}</div>
+                    </div>
+                  </div>
 
-                      <div className={styles['fieldCard']}>
-                        <div className={styles['fieldLabel']}>{t('FPS')}</div>
-                        <Select
-                          value={selectedSizeLimitedFps}
-                          onChange={withBlur((e) => handleSizeLimitedFpsChange(
-                              e.target.value as SizeLimitSimpleFps,
-                          ))}
-                        >
-                          {sizeLimitedFpsOptions.map((value) => (
-                            <option key={value} value={value}>
-                              {
+                  <div className={styles['field']}>
+                    <label className={styles['fieldName']} htmlFor="size-limit-fps">{t('Frame rate')}</label>
+                    <div className={styles['fieldControl']}>
+                      <Select
+                        id="size-limit-fps"
+                        value={selectedSizeLimitedFps}
+                        title={sizeLimitedFpsDescription}
+                        onChange={withBlur((e) => handleSizeLimitedFpsChange(
+                            e.target.value as SizeLimitSimpleFps,
+                        ))}
+                      >
+                        {sizeLimitedFpsOptions.map((value) => (
+                          <option key={value} value={value}>
+                            {
                                 {
                                   auto: t('Auto (recommended)'),
                                   source: t('Keep source'),
                                   '30fps': t('30 fps'),
                                 }[value]
                               }
-                            </option>
-                          ))}
-                        </Select>
-                        <div className={styles['helperText']}>
-                          {sizeLimitedFpsDescription}
-                        </div>
-                      </div>
+                          </option>
+                        ))}
+                      </Select>
+                      <div className={styles['fieldHint']}>{sizeLimitedFpsDescription}</div>
                     </div>
-                  </>
-                ) : (
-                  <div className={styles['helperText']}>
-                    {t(
-                      'Advanced size controls are active. Open Advanced settings below to tweak the encoder, 2-pass mode, and preset ladder directly.',
-                    )}
                   </div>
-                )}
-              </>
-              )}
-            </section>
-
-            <section className={styles['sectionCard']}>
-              <div className={styles['sectionHeader']}>
-                <div>
-                  <div className={styles['sectionEyebrow']}>
-                    {t('Clip output')}
-                  </div>
-                  <div className={styles['sectionTitle']}>
-                    {t('Pick how the finished clip files are produced')}
-                  </div>
-                </div>
-                {!simpleMode && <HelpIcon onClick={onExportModeHelpPress} />}
-              </div>
-
-              <div className={styles['choiceGrid']}>
-                <button
-                  type="button"
-                  className={[
-                    styles['choiceCard'],
-                    ...(effectiveExportMode === 'separate'
-                      ? [styles['choiceCardActive']]
-                      : []),
-                  ].join(' ')}
-                  onClick={() => handleQuickExportModeChange('separate')}
-                >
-                  <div className={styles['choiceTitle']}>
-                    {t('Separate clips')}
-                  </div>
-                  <div className={styles['choiceBody']}>
-                    {t('Export each marked clip as its own file.')}
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  className={[
-                    styles['choiceCard'],
-                    ...(effectiveExportMode === 'merge'
-                      ? [styles['choiceCardActive']]
-                      : []),
-                  ].join(' ')}
-                  onClick={() => handleQuickExportModeChange('merge')}
-                  disabled={segmentsOrInverse.selected.length < 2}
-                >
-                  <div className={styles['choiceTitle']}>
-                    {t('Merge into one clip')}
-                  </div>
-                  <div className={styles['choiceBody']}>
-                    {t('Combine the selected clips into one final video.')}
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  className={[
-                    styles['choiceCard'],
-                    ...(effectiveExportMode === 'merge+separate'
-                      ? [styles['choiceCardActive']]
-                      : []),
-                  ].join(' ')}
-                  onClick={() => handleQuickExportModeChange('merge+separate')}
-                  disabled={segmentsOrInverse.selected.length < 2}
-                >
-                  <div className={styles['choiceTitle']}>{t('Both')}</div>
-                  <div className={styles['choiceBody']}>
-                    {t(
-                      'Keep the separate clip files and also make one merged version.',
-                    )}
-                  </div>
-                </button>
-              </div>
-
-              {effectiveExportMode === 'segments_to_chapters' && (
-              <div className={styles['helperText']}>
-                {t(
-                  'Chapters-only export is still available in Advanced settings, but it stays out of the default path.',
-                )}
-              </div>
-              )}
-            </section>
-          </div>
-        ) : null}
-
-        <div className={styles['summaryGrid']}>
-          <section
-            className={[
-              styles['summaryCard'],
-            ].join(' ')}
-          >
-            <div className={styles['summaryLabel']}>{t('Tracks kept')}</div>
-            <div className={styles['summaryValue']}>
-              {t('{{count}} tracks', { count: numStreamsToCopy })}
-            </div>
-            {renderNotice(notices.specific['problematicStreams'], {
-              style: { marginBottom: 0 },
-            })}
-            <Button onClick={onShowStreamsSelectorClick}>
-              {t('Change')}
-            </Button>
-          </section>
-
-          <section
-            className={[
-              styles['summaryCard'],
-            ].join(' ')}
-          >
-            <div className={styles['summaryLabel']}>{t('Save to')}</div>
-            <div
-              className={styles['summaryValue']}
-              style={{ wordBreak: 'break-word' }}
-            >
-              {outputDir}
-            </div>
-            <OutDirSelector>
-              <Button>{t('Change')}</Button>
-            </OutDirSelector>
-          </section>
-
-          {!simpleMode && (
-            <section
-              className={[
-                styles['summaryCard'],
-                styles['summaryCardWide'],
-              ].join(' ')}
-            >
-              <div className={styles['summaryLabel']}>{t('Container')}</div>
-              <div className={styles['summaryValue']}>
-                {isSizeLimited
-                  ? 'MP4'
-                  : (effectiveOutFormat ?? t('Same as source'))}
-              </div>
-              <div className={styles['helperText']}>
-                {isSizeLimited
-                  ? t(
-                    'Fixed to MP4 for fast, shareable clips.',
-                  )
-                  : t(
-                    'Change container details in Advanced settings if you need to.',
+                  {advancedH264TargetWarningMessage != null && (
+                    <div className={styles['fieldWarning']}>{advancedH264TargetWarningMessage}</div>
                   )}
-              </div>
+                </div>
+              )}
             </section>
-          )}
 
-          <section
-            className={[
-              styles['summaryCard'],
-              styles['summaryCardWide'],
-              styles['summaryFieldCard'],
-            ].join(' ')}
-          >
-            {isSizeLimited
-              && sizeLimitSeparateNamingMode === 'auto'
-              && generateAutoCutFileNames != null
-              && !showSeparateNameEditor ? (
-                <AutoNamePreview
-                  title={simpleMode ? t('Export filename') : t('Filename')}
-                  generateFileNames={generateAutoCutFileNames}
-                  currentSegIndexSafe={currentSegIndexSafe}
-                  onCustomize={openSeparateNameEditor}
-                />
+            <section className={styles['section']}>
+              <div className={styles['sectionHeading']}>{t('Files')}</div>
+
+              {effectiveExportMode === 'segments_to_chapters' ? (
+                <div className={styles['fieldHint']}>
+                  {t('Chapters-only export is on: the recording is kept whole, with chapters made from the clips. Change it in More options.')}
+                </div>
               ) : (
-                <FileNameTemplateEditor
-                  mode="separate"
-                  template={
-                    isSizeLimited
-                      ? (sizeLimitCutFileTemplate ?? defaultSizeLimitedCutFileTemplate)
-                      : (cutFileTemplate ?? defaultCutFileTemplate)
-                  }
-                  setTemplate={isSizeLimited ? setSizeLimitCutFileTemplate : setCutFileTemplate}
-                  defaultTemplate={
-                    isSizeLimited
-                      ? defaultSizeLimitedCutFileTemplate
-                      : defaultCutFileTemplate
-                  }
-                  generateFileNames={generateCutFileNames}
-                  currentSegIndexSafe={currentSegIndexSafe}
-                  onReset={
-                    isSizeLimited
-                      ? () => {
-                        setSizeLimitSeparateNamingMode('auto');
-                        setShowSeparateNameEditor(false);
-                      }
-                      : undefined
-                  }
-                  resetLabel={isSizeLimited ? t('Use auto naming') : undefined}
+                <SegmentedControl<'separate' | 'merge' | 'merge+separate'>
+                  ariaLabel={t('Files')}
+                  value={effectiveExportMode}
+                  onChange={handleQuickExportModeChange}
+                  options={[
+                    { value: 'separate', label: t('One file per clip') },
+                    { value: 'merge', label: t('One merged file'), disabled: segmentsOrInverse.selected.length < 2, title: segmentsOrInverse.selected.length < 2 ? t('Needs two or more clips') : t('Joins the clips into one video, in the order of the clips list') },
+                    { value: 'merge+separate', label: t('Both'), disabled: segmentsOrInverse.selected.length < 2, title: segmentsOrInverse.selected.length < 2 ? t('Needs two or more clips') : t('One file per clip, plus one merged file') },
+                  ]}
                 />
               )}
-          </section>
 
-          {willMerge && (
-            <section
-              className={[
-                styles['summaryCard'],
-                styles['summaryCardWide'],
-                styles['summaryFieldCard'],
-              ].join(' ')}
-            >
-              {isSizeLimited
-                && sizeLimitMergedNamingMode === 'auto'
-                && generateAutoCutMergedFileNames != null
-                && !showMergedNameEditor ? (
-                  <AutoNamePreview
-                    title={simpleMode ? t('Merged export filename') : t('Merged filename')}
-                    generateFileNames={generateAutoCutMergedFileNames}
-                    onCustomize={openMergedNameEditor}
-                  />
-                ) : (
-                  <FileNameTemplateEditor
-                    mode="merge-segments"
-                    template={
-                      isSizeLimited
-                        ? (sizeLimitCutMergedFileTemplate
-                          ?? defaultSizeLimitedCutMergedFileTemplate)
-                        : (cutMergedFileTemplate
-                          ?? defaultCutMergedFileTemplate)
-                    }
-                    setTemplate={isSizeLimited ? setSizeLimitCutMergedFileTemplate : setCutMergedFileTemplate}
-                    defaultTemplate={
-                      isSizeLimited
-                        ? defaultSizeLimitedCutMergedFileTemplate
-                        : defaultCutMergedFileTemplate
-                    }
-                    generateFileNames={generateCutMergedFileNames}
-                    onReset={
-                      isSizeLimited
-                        ? () => {
-                          setSizeLimitMergedNamingMode('auto');
-                          setShowMergedNameEditor(false);
-                        }
-                        : undefined
-                    }
-                    resetLabel={isSizeLimited ? t('Use auto naming') : undefined}
-                  />
-                )}
+              <div className={styles['fileNames']}>
+                {(!willMerge || canEditSegTemplate) && separateFileName}
+                {mergedFileName}
+              </div>
+
+              <div className={styles['metaRows']}>
+                <div className={styles['metaRow']}>
+                  <div className={styles['metaLabel']}>{t('Save to')}</div>
+                  <div className={styles['metaValue']} title={outputDir}>{outputDir}</div>
+                  <OutDirSelector>
+                    <Button size="sm">{t('Change')}</Button>
+                  </OutDirSelector>
+                </div>
+                <div className={styles['metaRow']}>
+                  <div className={styles['metaLabel']}>{t('Tracks')}</div>
+                  <div className={styles['metaValue']}>
+                    {isSizeLimited ? t('Video and one audio track') : t('{{count}} tracks', { count: numStreamsToCopy })}
+                  </div>
+                  <Button size="sm" onClick={onShowStreamsSelectorClick}>{t('Change')}</Button>
+                </div>
+                {renderNotice(notices.specific['problematicStreams'], { style: { marginTop: '.25rem' } })}
+              </div>
             </section>
-          )}
-        </div>
 
-        <div className={styles['advancedHeader']}>
-          <div>
-            <div className={styles['sectionEyebrow']}>{t('Advanced')}</div>
-            <div className={styles['sectionTitle']}>
-              {simpleMode
-                ? t('Codec, naming, compatibility, and technical controls')
-                : t('Full export controls')}
+            <button type="button" className={styles['disclosure']} onClick={toggleAdvanced} aria-expanded={showAdvanced}>
+              {showAdvanced ? <FiChevronDown aria-hidden /> : <FiChevronRight aria-hidden />}
+              <span>{t('More options')}</span>
+              <span className={styles['disclosureHint']}>{t('Encoder, naming and compatibility')}</span>
+            </button>
+          </>
+        ) : (
+          <>
+            {segmentsOrInverse.selected.length !== segmentsOrInverse.all.length && (
+              <div className={styles['selectionPill']}>
+                <FaRegCheckCircle size={12} style={{ marginRight: 6 }} />
+                {t(
+                  '{{selectedSegments}} of {{nonFilteredSegments}} clips selected',
+                  {
+                    selectedSegments: segmentsOrInverse.selected.length,
+                    nonFilteredSegments: segmentsOrInverse.all.length,
+                  },
+                )}
+              </div>
+            )}
+
+            <div className={styles['summaryGrid']}>
+              <section className={styles['summaryCard']}>
+                <div className={styles['summaryLabel']}>{t('Tracks kept')}</div>
+                <div className={styles['summaryValue']}>
+                  {t('{{count}} tracks', { count: numStreamsToCopy })}
+                </div>
+                {renderNotice(notices.specific['problematicStreams'], {
+                  style: { marginBottom: 0 },
+                })}
+                <Button size="sm" onClick={onShowStreamsSelectorClick}>
+                  {t('Change')}
+                </Button>
+              </section>
+
+              <section className={styles['summaryCard']}>
+                <div className={styles['summaryLabel']}>{t('Save to')}</div>
+                <div
+                  className={styles['summaryValue']}
+                  style={{ wordBreak: 'break-word' }}
+                >
+                  {outputDir}
+                </div>
+                <OutDirSelector>
+                  <Button size="sm">{t('Change')}</Button>
+                </OutDirSelector>
+              </section>
+
+              <section className={[styles['summaryCard'], styles['summaryCardWide']].join(' ')}>
+                <div className={styles['summaryLabel']}>{t('Container')}</div>
+                <div className={styles['summaryValue']}>
+                  {isSizeLimited
+                    ? 'MP4'
+                    : (effectiveOutFormat ?? t('Same as source'))}
+                </div>
+                <div className={styles['helperText']}>
+                  {isSizeLimited
+                    ? t('Fixed to MP4 for fast, shareable clips.')
+                    : t('Change container details in Advanced settings if you need to.')}
+                </div>
+              </section>
+
+              <section className={[styles['summaryCard'], styles['summaryCardWide'], styles['summaryFieldCard']].join(' ')}>
+                {separateFileName}
+              </section>
+
+              {mergedFileName != null && (
+                <section className={[styles['summaryCard'], styles['summaryCardWide'], styles['summaryFieldCard']].join(' ')}>
+                  {mergedFileName}
+                </section>
+              )}
             </div>
-          </div>
-          {simpleMode && (
-            <Button onClick={toggleAdvanced}>
-              {showAdvanced
-                ? t('Hide advanced settings')
-                : t('Show advanced settings')}
-            </Button>
-          )}
-        </div>
+
+            <div className={styles['advancedHeader']}>
+              <div className={styles['sectionHeading']}>{t('Full export controls')}</div>
+            </div>
+          </>
+        )}
 
         {shouldRenderAdvancedTable && (
           <div className={styles['advancedTableWrap']}>
