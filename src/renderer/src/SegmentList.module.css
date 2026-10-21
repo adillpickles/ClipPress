@@ -151,7 +151,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.5rem;
+  /* Takes no room until shown, so it doesn't cut off the clip details (the negative margin cancels the row gap). */
+  width: 0;
+  margin-left: -.5rem;
+  overflow: hidden;
   height: 1.5rem;
   border-radius: var(--cp-radius-sm);
   color: var(--cp-text-subtle);
@@ -164,6 +167,8 @@
 .clip:hover .renameButton,
 .clipActive .renameButton,
 .renameButton:focus-visible {
+  width: 1.5rem;
+  margin-left: 0;
   opacity: 1;
 }
 

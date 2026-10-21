@@ -9,7 +9,8 @@ import type { DragEndEvent, DragStartEvent, UniqueIdentifier } from '@dnd-kit/co
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, arrayMove, useSortable } from '@dnd-kit/sortable';
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
+import type { Range } from '@tanstack/react-virtual';
 import { CSS } from '@dnd-kit/utilities';
 import invariant from 'tiny-invariant';
 import prettyBytes from 'pretty-bytes';
@@ -135,7 +136,7 @@ const Segment = memo(({
   onInvertSelectedSegments,
   onDuplicateSegmentClick,
   getSegEstimatedSize,
-  onEditSpeed, onEditCrop, noneTicked = false, onRename, maxLabelLength,
+  onEditSpeed, onEditCrop, noneTicked = false, renaming = false, onStartRename, onFinishRename, maxLabelLength,
 }: {
   seg: StateSegment | InverseCutSegment,
   index: number,
@@ -172,7 +173,11 @@ const Segment = memo(({
   onEditCrop: (segmentIndex: number) => void,
   /** No clip is ticked, so the export takes all of them. */
   noneTicked?: boolean,
-  onRename: (segmentIndex: number, name: string) => void,
+  /** The list keeps track of which clip is being renamed, so its row stays mounted while scrolled out of view. */
+  renaming?: boolean,
+  onStartRename: (segId: string) => void,
+  /** `newName` is undefined when renaming was cancelled. */
+  onFinishRename: (segId: string, newName: string | undefined) => void,
   maxLabelLength: number,
 }) => {
   const { invertCutSegments, darkMode, simpleMode } = useUserSettings();
@@ -182,8 +187,7 @@ const Segment = memo(({
   const ref = useRef<HTMLDivElement | null>(null);
 
   // Simple mode renames clips in place (#23).
-  const [renaming, setRenaming] = useState(false);
-  const startRenaming = useCallback(() => setRenaming(true), []);
+  const startRenaming = useCallback(() => onStartRename(seg.segId), [onStartRename, seg.segId]);
 
   const contextMenuTemplate = useMemo<ContextMenuTemplate>(() => {
     if (invertCutSegments) return [];
@@ -420,10 +424,7 @@ const Segment = memo(({
                 name={name ?? ''}
                 placeholder={timeStr}
                 maxLength={maxLabelLength}
-                onDone={(newName) => {
-                  setRenaming(false);
-                  if (newName != null && newName !== name) onRename(index, newName);
-                }}
+                onDone={(newName) => onFinishRename(seg.segId, newName)}
               />
             ) : (
               // eslint-disable-next-line jsx-a11y/no-static-element-interactions
@@ -619,7 +620,16 @@ function SegmentList({
   const { t } = useTranslation();
   const { getSegColor, nextSegColorIndex } = useSegColors();
 
-  const onRenameSegment = useCallback((index: number, name: string) => updateSegAtIndex(index, { name }), [updateSegAtIndex]);
+  const [renamingSegId, setRenamingSegId] = useState<string>();
+
+  // Looked up by id, since a clip's position can change while its name is being edited.
+  const onFinishRename = useCallback((segId: string, newName: string | undefined) => {
+    setRenamingSegId((current) => (current === segId ? undefined : current));
+    if (newName == null) return;
+    const index = cutSegments.findIndex((seg) => seg.segId === segId);
+    const existing = cutSegments[index];
+    if (existing != null && newName !== (existing.name ?? '')) updateSegAtIndex(index, { name: newName });
+  }, [cutSegments, updateSegAtIndex]);
   const [draggingId, setDraggingId] = useState<UniqueIdentifier | undefined>();
 
   const { invertCutSegments, simpleMode, darkMode, springAnimation } = useUserSettings();
@@ -639,6 +649,20 @@ function SegmentList({
   const noneTicked = !invertCutSegments && cutSegments.some((seg) => seg.end != null) && cutSegments.every((seg) => seg.end == null || !seg.selected);
 
   const sortableList = useMemo(() => segmentsOrInverse.map((seg) => ({ id: seg.segId, seg })), [segmentsOrInverse]);
+
+  const renamingIndex = renamingSegId != null ? sortableList.findIndex((item) => item.id === renamingSegId) : -1;
+
+  // The clip went away (removed, file closed), so don't bring it back mid-rename if an undo restores it.
+  useEffect(() => {
+    if (renamingSegId != null && renamingIndex === -1) setRenamingSegId(undefined);
+  }, [renamingIndex, renamingSegId]);
+
+  // Keep the row being renamed rendered when it scrolls out of view, so what was typed isn't lost.
+  const rangeExtractor = useCallback((range: Range) => {
+    const indexes = defaultRangeExtractor(range);
+    if (renamingIndex === -1 || indexes.includes(renamingIndex)) return indexes;
+    return [...indexes, renamingIndex].sort((a, b) => a - b);
+  }, [renamingIndex]);
 
   function getHeader() {
     if (segmentsOrInverse.length === 0) {
@@ -791,6 +815,7 @@ function SegmentList({
     estimateSize: () => (simpleMode ? 52 : 66), // measured afterwards; only the first layout uses this
     overscan: 5,
     getItemKey: (index) => sortableList[index]!.id,
+    rangeExtractor,
   });
 
   useEffect(() => {
@@ -859,7 +884,9 @@ function SegmentList({
         onEditSpeed={onEditSpeed}
         onEditCrop={onEditCrop}
         noneTicked={noneTicked}
-        onRename={onRenameSegment}
+        renaming={!dragging && seg.segId === renamingSegId}
+        onStartRename={setRenamingSegId}
+        onFinishRename={onFinishRename}
         maxLabelLength={maxLabelLength}
       />
     );
