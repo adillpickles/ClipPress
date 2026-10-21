@@ -18,9 +18,12 @@
 
   <rect x="64" y="64" width="384" height="384" rx="88" fill="url(#clippressTileMac)"/>
 
-  <g fill="#0b1417">
-    <rect x="160" y="130" width="192" height="30" rx="15"/>
-    <rect x="160" y="352" width="192" height="30" rx="15"/>
-    <path d="M209 207 L315 256 L209 305 Z" stroke="#0b1417" stroke-width="10" stroke-linejoin="round"/>
+  <!-- icon.svg's glyph, scaled to the inset tile (384 / 440) around the centre. -->
+  <g transform="translate(256 256) scale(0.8727) translate(-256 -256)">
+    <g fill="none" stroke="#0b1417" stroke-width="48" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M190 124 H138 V388 H190"/>
+      <path d="M322 124 H374 V388 H322"/>
+    </g>
+    <path d="M222 196 L306 256 L222 316 Z" fill="#0b1417" stroke="#0b1417" stroke-width="26" stroke-linejoin="round"/>
   </g>
 </svg>

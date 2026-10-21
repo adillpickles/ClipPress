@@ -1,62 +1,69 @@
 .wrapper {
-  height: 2.7rem;
+  height: 2.5rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0 .35rem 0 .8rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--gray-8) 26%, transparent);
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--blue-8) 12%, transparent), transparent 34%),
-    linear-gradient(180deg, color-mix(in srgb, var(--gray-2) 96%, transparent), color-mix(in srgb, var(--gray-1) 98%, transparent));
-  color: var(--gray-12);
+  padding: 0 0 0 .75rem;
+  border-bottom: 1px solid var(--cp-line);
+  background: var(--cp-bg);
+  color: var(--cp-text);
   flex-shrink: 0;
   -webkit-app-region: drag;
 }
 
-.wrapperInactive {
-  opacity: .92;
+.wrapperInactive .brandText,
+.wrapperInactive .menuButton {
+  color: var(--cp-text-subtle);
 }
 
 .left {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: .95rem;
+  gap: .9rem;
 }
 
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: .55rem;
+  gap: .5rem;
   min-width: 0;
 }
 
 .brandMark {
-  width: 1.55rem;
-  height: 1.55rem;
-  border-radius: .55rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 5px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--blue-5) 24%, transparent);
-  border: 1px solid color-mix(in srgb, var(--blue-8) 28%, transparent);
-  color: var(--blue-11);
-  font-size: .92rem;
+  background: linear-gradient(180deg, #4ccad4, #2b8e97);
+  color: #0b1417;
+  font-size: 1.25rem;
   flex-shrink: 0;
 }
 
 .brandText {
-  font-size: .9rem;
-  font-weight: 800;
+  font-family: var(--cp-font-display);
+  font-size: .875rem;
   letter-spacing: -.02em;
-  color: var(--gray-12);
+  color: var(--cp-text);
+}
+
+.brandClip {
+  font-weight: 650;
+}
+
+.brandPress {
+  font-weight: 450;
+  color: var(--cp-text-muted);
 }
 
 .menuBar {
   display: flex;
   align-items: center;
-  gap: .18rem;
+  gap: 2px;
   min-width: 0;
   -webkit-app-region: no-drag;
 }
@@ -64,50 +71,49 @@
 .menuButton {
   all: unset;
   cursor: pointer;
-  padding: .42rem .66rem;
-  border-radius: .7rem;
-  color: var(--gray-10);
-  font-size: .8rem;
-  font-weight: 700;
-  line-height: 1;
-  transition: background-color .14s ease, color .14s ease;
+  padding: .3rem .55rem;
+  border-radius: var(--cp-radius-sm);
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+  font-weight: 400;
+  line-height: 1.2;
+  transition: background-color .12s ease, color .12s ease;
 }
 
 .menuButton:hover,
 .menuButton:focus-visible {
-  background: color-mix(in srgb, var(--gray-4) 42%, transparent);
-  color: var(--gray-12);
+  background: var(--cp-hover);
+  color: var(--cp-text);
 }
 
 .windowControls {
   display: flex;
   align-items: stretch;
-  gap: .15rem;
+  align-self: stretch;
   margin-left: auto;
   -webkit-app-region: no-drag;
 }
 
 .windowControl {
   all: unset;
-  width: 2.55rem;
-  height: 2.1rem;
-  border-radius: .75rem;
+  width: 2.875rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--gray-11);
-  cursor: pointer;
-  transition: background-color .14s ease, color .14s ease;
+  color: var(--cp-text-muted);
+  cursor: default;
+  font-size: .95rem;
+  transition: background-color .12s ease, color .12s ease;
 }
 
 .windowControl:hover,
 .windowControl:focus-visible {
-  background: color-mix(in srgb, var(--gray-4) 44%, transparent);
-  color: var(--gray-12);
+  background: var(--cp-hover);
+  color: var(--cp-text);
 }
 
 .closeControl:hover,
 .closeControl:focus-visible {
-  background: color-mix(in srgb, var(--red-4) 26%, transparent);
-  color: var(--red-11);
+  background: #c42b1c;
+  color: white;
 }

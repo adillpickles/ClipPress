@@ -81,7 +81,10 @@ function AppChrome() {
           <div className={styles['brandMark']}>
             <ClipPressMark />
           </div>
-          <span className={styles['brandText']}>ClipPress</span>
+          <span className={styles['brandText']}>
+            <span className={styles['brandClip']}>Clip</span>
+            <span className={styles['brandPress']}>Press</span>
+          </span>
         </div>
 
         <div className={styles['menuBar']}>
