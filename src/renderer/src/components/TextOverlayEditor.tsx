@@ -99,6 +99,48 @@ function TextOverlayEditor({
 
   const visibleOverlays = useMemo(() => overlayClips.filter((overlayClip) => isOverlayActiveAtTime(overlayClip, relevantTime)), [overlayClips, relevantTime]);
 
+  // The text box only takes keyboard focus when the user asks to edit it: a text that was just
+  // added, or a click on the box. Not when playback reaches it, which used to steal the keys from
+  // playback (Space typed a space instead of pausing, #67).
+  const textAreasRef = useRef(new Map<string, HTMLTextAreaElement>());
+  // A click on a box that isn't selected yet asks to focus its text box once it appears. Only
+  // honoured briefly, so that it can't fire later when playback brings the box back.
+  const pendingFocusRef = useRef<{ overlayId: string, at: number }>();
+  const knownOverlayIdsRef = useRef<Set<string>>(new Set(overlayClips.map((overlayClip) => overlayClip.overlayId)));
+
+  const focusOverlayText = useCallback((overlayId: string) => {
+    const textArea = textAreasRef.current.get(overlayId);
+    if (textArea != null) {
+      textArea.focus();
+      pendingFocusRef.current = undefined;
+    } else {
+      pendingFocusRef.current = { overlayId, at: Date.now() };
+    }
+  }, []);
+
+  // A text that was just added (Add Text) is ready to type into.
+  useEffect(() => {
+    const known = knownOverlayIdsRef.current;
+    const added = overlayClips.filter((overlayClip) => !known.has(overlayClip.overlayId));
+    added.forEach((overlayClip) => known.add(overlayClip.overlayId));
+    if (selectedOverlayId != null && added.some((overlayClip) => overlayClip.overlayId === selectedOverlayId)) {
+      textAreasRef.current.get(selectedOverlayId)?.focus();
+    }
+  }, [overlayClips, selectedOverlayId]);
+
+  const setTextAreaRef = useCallback((overlayId: string, textArea: HTMLTextAreaElement | null) => {
+    if (textArea == null) {
+      textAreasRef.current.delete(overlayId);
+      return;
+    }
+    textAreasRef.current.set(overlayId, textArea);
+    const pending = pendingFocusRef.current;
+    if (pending?.overlayId === overlayId) {
+      pendingFocusRef.current = undefined;
+      if (Date.now() - pending.at < 1000) textArea.focus();
+    }
+  }, []);
+
   const updateFitted = useCallback((overlayId: string, updater: (clip: OverlayClip) => OverlayClip) => {
     onUpdateOverlay(overlayId, (clip) => fitTextOverlayBox(updater(clip), video.width, video.height));
   }, [onUpdateOverlay, video.height, video.width]);
@@ -209,6 +251,7 @@ function TextOverlayEditor({
               onMouseDown={(event) => {
                 event.stopPropagation();
                 onSelectOverlay(overlayClip.overlayId);
+                focusOverlayText(overlayClip.overlayId);
               }}
               style={{
                 position: 'absolute',
@@ -225,12 +268,14 @@ function TextOverlayEditor({
             >
               {selected ? (
                 <textarea
+                  ref={(textArea) => setTextAreaRef(overlayClip.overlayId, textArea)}
+                  aria-label="Text"
                   value={overlayClip.text}
                   onChange={(event) => updateFitted(overlayClip.overlayId, (clip) => ({ ...clip, text: event.target.value }))}
                   onMouseDown={(event) => event.stopPropagation()}
+                  // Escape leaves the text box, so the editor's shortcuts work again.
+                  onKeyDown={(event) => { if (event.key === 'Escape') event.currentTarget.blur(); }}
                   spellCheck={false}
-                  // eslint-disable-next-line jsx-a11y/no-autofocus
-                  autoFocus
                   style={{
                     ...scaledTextStyle,
                     position: 'absolute',
