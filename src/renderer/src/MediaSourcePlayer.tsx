@@ -3,8 +3,6 @@ import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
 import invariant from 'tiny-invariant';
 import debounce from 'lodash/debounce.js';
 import { FaVideo } from 'react-icons/fa';
-import { FiAlertTriangle } from 'react-icons/fi';
-import { useTranslation } from 'react-i18next';
 
 import isDev from './isDev';
 import type { ChromiumHTMLVideoElement } from './types';
@@ -12,8 +10,6 @@ import type { FFprobeStream } from '../../common/ffprobe';
 import { getFrameDuration } from './util';
 import { normalizeRotation } from './textOverlays';
 import type { FfmpegHwAccel } from '../../common/types';
-import Button from './components/Button';
-import styles from './MediaSourcePlayer.module.css';
 
 const { compatPlayer: { createMediaSourceStream } } = window.require('@electron/remote').require('./index.js');
 
@@ -337,7 +333,7 @@ async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, 
   processChunk();
 }
 
-function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioGainByStreamId, masterVideoRef, mediaSourceQuality, ffmpegHwaccel, onMakePreviewCopy }: {
+function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioGainByStreamId, masterVideoRef, mediaSourceQuality, ffmpegHwaccel, onFailedChange }: {
   rotate: number | undefined,
   filePath: string,
   videoStream: FFprobeStream | undefined,
@@ -346,14 +342,20 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
   masterVideoRef: RefObject<HTMLVideoElement>,
   mediaSourceQuality: number,
   ffmpegHwaccel: FfmpegHwAccel,
-  onMakePreviewCopy?: (() => void) | undefined,
+  /** The parent shows what went wrong, outside the video area, which can be hidden or cropped. */
+  onFailedChange?: ((failed: boolean) => void) | undefined,
 }) {
-  const { t } = useTranslation();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [loading, setLoading] = useState(true);
   const [showCanvas, setShowCanvas] = useState(false);
   const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    onFailedChange?.(failed);
+  }, [failed, onFailedChange]);
+
+  useEffect(() => () => onFailedChange?.(false), [onFailedChange]);
 
   const onVideoError = useCallback<ReactEventHandler<HTMLVideoElement>>((error) => {
     console.error('video error', error);
@@ -375,12 +377,17 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
     let disposed = false;
     let startDebounced: ReturnType<typeof debounce>;
     let failedAt: number | undefined;
+    // Seeks while FFmpeg is still starting up aren't followed yet, so a failed start retries from there.
+    let startingController: AbortController | undefined;
+    let seekedWhileStarting = false;
 
     const start = async () => {
       if (disposed) return;
       abortController?.abort();
       const controller = new AbortController();
       abortController = controller;
+      startingController = controller;
+      seekedWhileStarting = false;
       failedAt = undefined;
       setFailed(false);
 
@@ -429,9 +436,16 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
           },
           ffmpegHwaccel,
         });
+        if (startingController === controller) startingController = undefined;
       } catch (err) {
+        if (startingController === controller) startingController = undefined;
         if (!controller.signal.aborted) {
           console.error('Preview failed', err);
+          if (seekedWhileStarting) {
+            controller.abort();
+            startDebounced();
+            return;
+          }
           failedAt = seekTo;
           setLoading(false);
           // There may simply be no frames left to decode at the very end, so don't call that a failure.
@@ -446,6 +460,7 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
     // A failed start no longer follows the playhead, so try again from wherever the user seeks to.
     // Some recordings only fail to decode from certain points, such as the very start (#68).
     const onMasterSeeked = () => {
+      if (startingController != null) seekedWhileStarting = true;
       if (failedAt == null || masterVideo.currentTime === failedAt) return;
       startDebounced();
     };
@@ -492,23 +507,6 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
       {loading && (
         <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
           <FaVideo className="loading-animation" style={{ padding: '1em', background: 'rgba(0,0,0,0.2)', borderRadius: '50%' }} />
-        </div>
-      )}
-
-      {failed && (
-        <div className={styles['failedWrapper']}>
-          <div className={styles['failed']} role="status">
-            <div className={styles['failedTitle']}>
-              <FiAlertTriangle aria-hidden className={styles['failedIcon']} />
-              {t('Can\'t preview this part')}
-            </div>
-            <div className={styles['failedText']}>
-              {t('FFmpeg couldn\'t decode the recording from this point. Try moving the playhead further in, or make a preview copy instead.')}
-            </div>
-            {onMakePreviewCopy != null && (
-              <Button variant="primary" size="sm" onClick={onMakePreviewCopy} className={styles['failedButton']}>{t('Make a preview copy')}</Button>
-            )}
-          </div>
         </div>
       )}
     </div>

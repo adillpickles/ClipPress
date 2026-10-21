@@ -45,6 +45,7 @@ import NoFileLoaded from './NoFileLoaded';
 import RecentFiles from './components/RecentFiles';
 import AppChrome from './AppChrome';
 import MediaSourcePlayer from './MediaSourcePlayer';
+import PreviewFailedCard from './components/PreviewFailedCard';
 import TopMenu from './TopMenu';
 import LastCommands from './LastCommands';
 import StreamsSelector from './StreamsSelector';
@@ -378,6 +379,7 @@ function App() {
   >(new Set());
   const [activeSubtitleStreamIndex, setActiveSubtitleStreamIndex] = useState<number>();
   const [hideCompatPlayer, setHideCompatPlayer] = useState(false);
+  const [compatPlayerFailed, setCompatPlayerFailed] = useState(false);
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
   const [cacheBuster, setCacheBuster] = useState(0);
   const [currentFileExportCount, setCurrentFileExportCount] = useState(0);
@@ -1710,8 +1712,6 @@ function App() {
     showGenericDialog,
   });
 
-  const makeSmoothPreviewCopy = useCallback(() => userHtml5ifyCurrentFile({ speed: hasAudio || !hasVideo ? 'slow-audio' : 'slow' }), [hasAudio, hasVideo, userHtml5ifyCurrentFile]);
-
   const compatPlayerRequired = (
     // if user selected an explicit video or audio stream, and the html5 player does not have any track index corresponding to the selected stream index
     ((activeVideoStreamIndex != null || activeAudioStreamIndexes.size === 1)
@@ -1852,6 +1852,16 @@ function App() {
     setPreviewFilePath(undefined);
     setUsingDummyVideo(false);
   }, [setHideCompatPlayer, setPreviewFilePath, setUsingDummyVideo]);
+
+  const makeSmoothPreviewCopy = useCallback(() => userHtml5ifyCurrentFile({ speed: hasAudio || !hasVideo ? 'slow-audio' : 'slow' }), [hasAudio, hasVideo, userHtml5ifyCurrentFile]);
+
+  // Only offer a way out that would replace the assisted player: a preview copy stands in for a file the normal player
+  // can't play, but rotation previews and some track choices keep using the original file.
+  const compatPlayerFailedCard = useMemo(() => {
+    if (compatPlayerRequired) return { hint: t('Try moving the playhead further in.') };
+    if (usingDummyVideo) return { hint: t('Try moving the playhead further in, or make a preview copy instead.'), action: { label: t('Make a preview copy'), onClick: makeSmoothPreviewCopy } };
+    return { hint: t('Try moving the playhead further in, or turn off the rotation preview.'), action: { label: t('Turn off rotation preview'), onClick: handleHideCompatPlayerClick } };
+  }, [compatPlayerRequired, handleHideCompatPlayerClick, makeSmoothPreviewCopy, t, usingDummyVideo]);
 
   const {
     captureFrameFromTag,
@@ -6300,7 +6310,7 @@ function App() {
                               masterVideoRef={videoRef}
                               mediaSourceQuality={mediaSourceQuality}
                               ffmpegHwaccel={ffmpegHwaccel}
-                              onMakePreviewCopy={makeSmoothPreviewCopy}
+                              onFailedChange={setCompatPlayerFailed}
                             />
                             )}
                           </SegmentCropPreview>
@@ -6329,6 +6339,10 @@ function App() {
                           seekRel={seekRel}
                           darkMode={darkMode}
                         />
+                        )}
+
+                        {compatPlayerEnabled && compatPlayerFailed && (
+                          <PreviewFailedCard hint={compatPlayerFailedCard.hint} action={compatPlayerFailedCard.action} />
                         )}
 
                         {compatPlayerEnabled && (
