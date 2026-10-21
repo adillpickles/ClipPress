@@ -20,7 +20,9 @@ import Button, { DialogButton } from './Button';
 import Action from './Action';
 import TextInput from './TextInput';
 import Kbd from './Kbd';
+import SegmentedControl from './SegmentedControl';
 import { useAppContext } from '../contexts';
+import styles from './KeyboardShortcuts.module.css';
 
 
 type Category = string;
@@ -140,7 +142,7 @@ const CreateBinding = memo(({
   );
 });
 
-const rowStyle = { display: 'flex', alignItems: 'center', borderBottom: '1px solid rgba(0,0,0,0.1)', paddingBottom: '.2em' };
+const rowStyle = { display: 'flex', alignItems: 'center', gap: '.5em', padding: '.4em 0', borderBottom: '1px solid var(--cp-line)', fontSize: '.875rem' };
 
 function WheelModifier({ text, wheelText, modifier }: { text: string, wheelText: string, modifier: ModifierKey }) {
   return (
@@ -167,7 +169,7 @@ const KeyboardShortcuts = memo(({
   const { t } = useTranslation();
   const { updateKeyboardLayout, confirmDialog } = useAppContext();
 
-  const { mouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey } = useUserSettings();
+  const { mouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey, simpleMode } = useUserSettings();
 
   const { actionsMap, extraLinesPerCategory } = useMemo(() => {
     const playbackCategory = t('Playback');
@@ -390,6 +392,14 @@ const KeyboardShortcuts = memo(({
       },
       toggleSegmentSpeedControls: {
         name: t('Toggle segment speed controls'),
+        category: segmentsAndCutpointsCategory,
+      },
+      addTextOverlay: {
+        name: t('Add text'),
+        category: segmentsAndCutpointsCategory,
+      },
+      editCurrentSegmentCrop: {
+        name: t('Zoom / crop the current clip'),
         category: segmentsAndCutpointsCategory,
       },
       jumpPrevSegment: {
@@ -872,13 +882,13 @@ const KeyboardShortcuts = memo(({
   return (
     <>
       <div style={{ marginBottom: '1em' }}>
-        <div style={{ marginBottom: '1em' }}>
-          <TextInput ref={searchInputRef} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search" style={{ width: '100%', padding: '.4em .8em', boxSizing: 'border-box' }} />
+        <div className={styles['search']}>
+          <TextInput ref={searchInputRef} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder={t('Search shortcuts')} aria-label={t('Search shortcuts')} style={{ width: '100%' }} />
         </div>
 
         {categoriesWithActions.map(([category, actionsInCategory]) => (
-          <div key={category}>
-            {category !== 'undefined' && <div style={{ marginTop: '2em', marginBottom: '.7em', fontSize: '1.4em' }}>{category}</div>}
+          <div key={category} className={styles['category']}>
+            {category !== 'undefined' && <div className={styles['categoryTitle']}>{category}</div>}
 
             {actionsInCategory.map(([action, actionObj]) => {
               const actionName = (actionObj && actionObj.name) || action;
@@ -887,43 +897,136 @@ const KeyboardShortcuts = memo(({
               const bindingsForThisAction = keyBindings.filter((keyBinding) => keyBinding.action === action);
 
               return (
-                <div key={action} style={rowStyle}>
-                  <div>
+                <div key={action} className={styles['row']}>
+                  <div className={styles['rowName']} title={t('API action name: {{action}}', { action })}>
                     {beforeContent}
-                    <span title={action} style={{ marginRight: '.5em', opacity: 0.9 }}>{actionName}</span>
-                    <div style={{ fontSize: '.8em', opacity: 0.3 }} title={t('API action name: {{action}}', { action })}>{action} <Button onClick={() => onTriggerActionClick(action)}><FaHammer /></Button></div>
+                    <span>{actionName}</span>
+                    {!simpleMode && (
+                      <Button size="sm" variant="ghost" title={t('Run this action now')} aria-label={t('Run this action now')} onClick={() => onTriggerActionClick(action)}><FaHammer aria-hidden /></Button>
+                    )}
                   </div>
 
-                  <div style={{ flexGrow: 1 }} />
-
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                  <div className={styles['rowKeys']}>
                     {bindingsForThisAction.map(({ keys }) => (
-                      <div key={keys} style={{ display: 'flex', alignItems: 'center' }}>
+                      <div key={keys} className={styles['binding']}>
                         {renderKeys(splitKeyboardKeys(keys))}
-
-                        <Button title={t('Remove key binding')} onClick={() => onDeleteBindingClick({ action, keys })} style={{ marginLeft: '.9em' }}><FaTrash style={{ fontSize: '.8em', verticalAlign: 'middle' }} /></Button>
+                        <Button size="sm" variant="ghost" className={styles['bindingRemove']} title={t('Remove key binding')} aria-label={t('Remove key binding')} onClick={() => onDeleteBindingClick({ action, keys })}><FaTrash aria-hidden style={{ fontSize: '.75em' }} /></Button>
                       </div>
                     ))}
 
-                    {bindingsForThisAction.length === 0 && <span style={{ opacity: 0.8, fontSize: '.8em' }}>{t('No binding')}</span>}
+                    {bindingsForThisAction.length === 0 && <span className={styles['noBinding']}>{t('No binding')}</span>}
                   </div>
 
-                  <Button title={t('Bind new key to action')} onClick={() => onAddBindingClick(action)} style={{ marginLeft: '.5em' }}><FaPlus style={{ fontSize: '.8em', verticalAlign: 'middle' }} /></Button>
+                  <Button size="sm" variant="ghost" title={t('Bind new key to action')} aria-label={t('Bind new key to action')} onClick={() => onAddBindingClick(action)}><FaPlus aria-hidden style={{ fontSize: '.75em' }} /></Button>
                 </div>
               );
             })}
 
-            {extraLinesPerCategory[category] && <div style={{ marginTop: '.8em' }}>{extraLinesPerCategory[category]}</div>}
+            {extraLinesPerCategory[category] && <div style={{ marginTop: '.5em' }}>{extraLinesPerCategory[category]}</div>}
           </div>
         ))}
       </div>
 
-      {!isSearching && <Button onClick={onResetClick} style={{ marginBottom: '1em' }}><FaUndo style={{ marginRight: '.3em', verticalAlign: 'middle', padding: '.5em' }} />{t('Reset')}</Button>}
+      {!isSearching && <Button onClick={onResetClick} style={{ marginBottom: '1em' }}><FaUndo aria-hidden />{t('Reset all shortcuts')}</Button>}
 
       <CreateBinding actionsMap={actionsMap} action={creatingBinding} setCreatingBinding={setCreatingBinding} onNewKeyBindingConfirmed={onNewKeyBindingConfirmed} />
     </>
   );
 });
+
+/** The clip workflow's shortcuts at a glance (#20), read from the current bindings. */
+function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
+  const { t } = useTranslation();
+  const { segmentMouseModifierKey } = useUserSettings();
+
+  const groups = useMemo(() => [
+    {
+      id: 'playback',
+      title: t('Playback'),
+      items: [
+        { label: t('Play / pause'), actions: ['togglePlayResetSpeed'] },
+        { label: t('Back / forward'), actions: ['seekBackwards', 'seekForwards'] },
+        { label: t('Previous / next frame'), actions: ['seekPreviousFrame', 'seekNextFrame'] },
+        { label: t('Slower / faster'), actions: ['reducePlaybackRate', 'increasePlaybackRate'] },
+        { label: t('Mute'), actions: ['toggleMuted'] },
+      ],
+    },
+    {
+      id: 'clips',
+      title: t('Clips'),
+      items: [
+        { label: t('Start the clip here'), actions: ['setCutStart'] },
+        { label: t('End the clip here'), actions: ['setCutEnd'] },
+        { label: t('New clip'), actions: ['addSegment'] },
+        { label: t('Split the clip'), actions: ['splitCurrentSegment'] },
+        { label: t('Previous / next clip'), actions: ['jumpPrevSegment', 'jumpNextSegment'] },
+        { label: t('Go to the start / end of the clip'), actions: ['jumpCutStart', 'jumpCutEnd'] },
+        { label: t('Rename the clip'), actions: ['labelCurrentSegment'] },
+      ],
+    },
+    {
+      id: 'editing',
+      title: t('Editing'),
+      items: [
+        { label: t('Add text'), actions: ['addTextOverlay'] },
+        { label: t('Speed controls'), actions: ['toggleSegmentSpeedControls'] },
+        { label: t('Undo / redo'), actions: ['undo', 'redo'] },
+        { label: t('Zoom the timeline in / out'), actions: ['timelineZoomIn', 'timelineZoomOut'] },
+      ],
+    },
+    {
+      id: 'export',
+      title: t('Export and more'),
+      items: [
+        { label: t('Export'), actions: ['export'] },
+        { label: t('Save a still frame'), actions: ['captureSnapshot'] },
+        { label: t('Go to a time'), actions: ['goToTimecode'] },
+        { label: t('Full screen video'), actions: ['toggleFullscreenVideo'] },
+        { label: t('Keyboard shortcuts'), actions: ['toggleKeyboardShortcuts'] },
+      ],
+    },
+  ] satisfies { id: string, title: string, items: { label: string, actions: KeyboardAction[] }[] }[], [t]);
+
+  // The first binding of each action (most have one); unbound actions show a dash.
+  const keysFor = (action: KeyboardAction) => keyBindings.find((binding) => binding.action === action)?.keys;
+
+  return (
+    <div className={styles['essentials']}>
+      {groups.map((group) => (
+        <section key={group.id} className={styles['essentialsGroup']}>
+          <div className={styles['categoryTitle']}>{group.title}</div>
+          {group.items.map((item) => (
+            <div key={item.label} className={styles['essentialsRow']}>
+              <span>{item.label}</span>
+              <span className={styles['essentialsKeys']}>
+                {item.actions.map((action, i) => {
+                  const keys = keysFor(action);
+                  return (
+                    <Fragment key={action}>
+                      {i > 0 && <span className={styles['slash']}>/</span>}
+                      {keys != null ? renderKeys(splitKeyboardKeys(keys)) : <span className={styles['noBinding']}>–</span>}
+                    </Fragment>
+                  );
+                })}
+              </span>
+            </div>
+          ))}
+          {group.id === 'clips' && (
+            <div className={styles['essentialsRow']}>
+              <span>{t('Move or resize a clip')}</span>
+              <span className={styles['essentialsKeys']}>
+                <kbd>{getModifier(segmentMouseModifierKey)}</kbd>
+                <span className={styles['slash']}>+</span>
+                <FaMouse aria-hidden />
+                <span className={styles['noBinding']} style={{ marginLeft: '.3em' }}>{t('drag')}</span>
+              </span>
+            </div>
+          )}
+        </section>
+      ))}
+    </div>
+  );
+}
 
 function KeyboardShortcutsDialog({
   isShown, onHide, keyBindings, setKeyBindings, resetKeyBindings, currentCutSeg, getKeyboardAction,
@@ -937,21 +1040,40 @@ function KeyboardShortcutsDialog({
   getKeyboardAction: (action: KeyboardAction) => () => void,
 }) {
   const { t } = useTranslation();
+  const { simpleMode } = useUserSettings();
+  const [view, setView] = useState<'essentials' | 'all'>();
+  const effectiveView = view ?? (simpleMode ? 'essentials' : 'all');
 
   const handleTriggerActionClick = useCallback((action: KeyboardAction) => {
     onHide();
     getKeyboardAction(action)();
   }, [getKeyboardAction, onHide]);
 
-
   return (
     <Dialog.Root open={isShown} onOpenChange={(v) => v === false && onHide()}>
       <Dialog.Portal>
         <Dialog.Overlay />
-        <Dialog.Content style={{ width: '40em' }} aria-describedby={undefined}>
-          <Dialog.Title>{t('Keyboard & mouse shortcuts')}</Dialog.Title>
+        <Dialog.Content style={{ width: '44rem' }} aria-describedby={undefined}>
+          <Dialog.Title>{t('Keyboard shortcuts')}</Dialog.Title>
 
-          <KeyboardShortcuts keyBindings={keyBindings} setKeyBindings={setKeyBindings} currentCutSeg={currentCutSeg} resetKeyBindings={resetKeyBindings} onTriggerActionClick={handleTriggerActionClick} />
+          <div className={styles['viewSwitch']}>
+            <SegmentedControl<'essentials' | 'all'>
+              ariaLabel={t('Shortcuts to show')}
+              fullWidth={false}
+              value={effectiveView}
+              onChange={setView}
+              options={[
+                { value: 'essentials', label: t('Essentials') },
+                { value: 'all', label: t('All shortcuts') },
+              ]}
+            />
+          </div>
+
+          {effectiveView === 'essentials' ? (
+            <Essentials keyBindings={keyBindings} />
+          ) : (
+            <KeyboardShortcuts keyBindings={keyBindings} setKeyBindings={setKeyBindings} currentCutSeg={currentCutSeg} resetKeyBindings={resetKeyBindings} onTriggerActionClick={handleTriggerActionClick} />
+          )}
 
           <Dialog.CloseButton />
         </Dialog.Content>

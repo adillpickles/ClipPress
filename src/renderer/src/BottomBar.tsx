@@ -788,13 +788,13 @@ function BottomBar({
 
         <div className={styles['transportRight']}>
           {hasVideo && (
-            <Button size="sm" onClick={onEditSegmentCrop} disabled={!canEditSegmentCrop} title={t('Zoom in on part of the picture for this clip')}>
+            <Button size="sm" onClick={onEditSegmentCrop} disabled={!canEditSegmentCrop} title={shortcutTitle(t('Zoom in on part of the picture for this clip'), 'editCurrentSegmentCrop')}>
               <FiCrop aria-hidden />
               {t('Zoom / Crop')}
             </Button>
           )}
           {hasVideo && (
-            <Button size="sm" onClick={onAddTextOverlay} title={t('Add a caption at the current time')}>
+            <Button size="sm" onClick={onAddTextOverlay} title={shortcutTitle(t('Add a caption at the current time'), 'addTextOverlay')}>
               <FiType aria-hidden />
               {t('Add Text')}
             </Button>

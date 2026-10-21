@@ -42,7 +42,7 @@ const defaultKeyBindings: KeyBinding[] = [
   { keys: 'ControlLeft+KeyR', action: 'toggleSegmentSpeedControls' },
   { keys: 'MetaLeft+KeyR', action: 'toggleSegmentSpeedControls' },
   { keys: 'KeyG', action: 'goToTimecode' },
-  { keys: 'KeyT', action: 'toggleStripAll' },
+  { keys: 'KeyT', action: 'addTextOverlay' },
   { keys: 'ShiftLeft+KeyT', action: 'toggleStripCurrentFilter' },
 
   { keys: 'ArrowLeft', action: 'seekBackwards' },
@@ -658,6 +658,19 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
       && !existingBindings.some((existing) => existing.keys === binding.keys || existing.action === binding.action));
     if (addedBindings.length > 0) set('keyBindings', [...existingBindings, ...addedBindings]);
     store.set('segmentSpeedShortcutsMigrated', true);
+  }
+
+  // T used to toggle "strip all tracks", which silently left every track out of the next export
+  // when pressed by accident. It now adds text. Settings still holding that old default get the new
+  // one; a T the user bound to something else is left alone, and strip-all stays bindable.
+  if (store.get('textShortcutMigrated') !== true) {
+    const existingBindings = store.get('keyBindings') as KeyBinding[];
+    const withoutOldDefault = existingBindings.filter((existing) => !(existing.keys === 'KeyT' && existing.action === 'toggleStripAll'));
+    const tIsFree = !withoutOldDefault.some((existing) => existing.keys === 'KeyT');
+    const hasTextBinding = withoutOldDefault.some((existing) => existing.action === 'addTextOverlay');
+    const migrated = tIsFree && !hasTextBinding ? [...withoutOldDefault, { keys: 'KeyT', action: 'addTextOverlay' as const }] : withoutOldDefault;
+    if (migrated.length !== existingBindings.length || migrated.some((binding, i) => binding !== existingBindings[i])) set('keyBindings', migrated);
+    store.set('textShortcutMigrated', true);
   }
 
   // Ctrl+Y redo for existing settings too, unless Ctrl+Y (either Ctrl key) already does something.

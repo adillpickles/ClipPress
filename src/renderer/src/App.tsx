@@ -927,8 +927,10 @@ function App() {
       removeOverlayClip(overlayId);
     }
 
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    // Capture on window, ahead of the editor's shortcuts (a bubbling listener on document), so the
+    // key deletes the selected text and doesn't also remove a cut point (Backspace is bound to that).
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
   }, [exportConfirmOpen, keyboardShortcutsVisible, removeOverlayClip, selectedOverlayId, settingsVisible, streamsSelectorShown]);
 
   // 360 means we don't modify rotation gtrgt
@@ -5428,6 +5430,8 @@ function App() {
       addSegment,
       duplicateCurrentSegment,
       toggleSegmentSpeedControls,
+      addTextOverlay,
+      editCurrentSegmentCrop: () => editSegmentCrop(currentSegIndexSafe),
       toggleLastCommands,
       export: () => onExportPress(),
       extractCurrentSegmentFramesAsImages,
@@ -5537,6 +5541,8 @@ function App() {
     duplicateCurrentSegment,
     toggleLastCommands,
     toggleSegmentSpeedControls,
+    addTextOverlay,
+    editSegmentCrop,
     extractCurrentSegmentFramesAsImages,
     extractSelectedSegmentsFramesAsImages,
     reorderSegsByStartTime,
