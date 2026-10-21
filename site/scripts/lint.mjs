@@ -121,10 +121,10 @@ mustMatch(html, /unsigned/i, 'must disclose that the build is unsigned');
 mustMatch(html, /<kbd>I<\/kbd>[\s\S]{0,60}<kbd>O<\/kbd>/, 'must document the real I / O marking workflow');
 mustMatch(html, /ffmpeg/i, 'must state that ffmpeg is included in the build');
 // Positioning guard: the differentiator is the size-targeted export, not the
-// stream copy inherited from upstream. Both real modes must be named, and the
-// headline must lead with the size one.
-mustMatch(flatHtml, /target size/i, 'must name the real "Target size" workflow');
-mustMatch(flatHtml, /keep source quality/i, 'must name the real "Keep source quality" mode');
+// stream copy inherited from upstream. Both real modes must be named as the
+// export sheet labels them, and the headline must lead with the size one.
+mustMatch(flatHtml, /fit a file size/i, 'must name the real "Fit a file size" workflow');
+mustMatch(flatHtml, /original quality/i, 'must name the real "Original quality" mode');
 mustMatch(/<h1[^>]*>([\s\S]*?)<\/h1>/.exec(flatHtml)?.[1] ?? '', /size/i, 'the h1 must lead with the file-size pitch');
 
 const licenseMentions = count(html, /GPL-2\.0-only/g);
