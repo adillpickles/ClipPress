@@ -1,0 +1,86 @@
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+}
+
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: .65rem;
+  padding: .65rem .8rem;
+  border-radius: var(--cp-radius-lg);
+  border: 1px solid var(--cp-line);
+  background: var(--cp-bg);
+  cursor: pointer;
+  transition: border-color .12s ease, background-color .12s ease;
+}
+
+.option:hover {
+  border-color: var(--cp-line-strong);
+}
+
+.optionActive,
+.optionActive:hover {
+  border-color: var(--accent-9);
+  background: var(--cp-accent-soft);
+}
+
+.radio {
+  margin: .2rem 0 0;
+  accent-color: var(--accent-9);
+  flex-shrink: 0;
+}
+
+.optionText {
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+  min-width: 0;
+}
+
+.optionTitle {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  color: var(--cp-text);
+  font-size: .875rem;
+  font-weight: 600;
+}
+
+.optionDescription {
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+  line-height: 1.4;
+}
+
+.badge {
+  padding: .05rem .4rem;
+  border-radius: 4px;
+  background: var(--cp-accent-soft);
+  color: var(--cp-accent-text);
+  font-size: .6875rem;
+  font-weight: 600;
+}
+
+.more {
+  all: unset;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin: .4rem 0 .1rem;
+  padding: .25rem .2rem;
+  border-radius: var(--cp-radius-sm);
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+  font-weight: 600;
+}
+
+.more:hover {
+  color: var(--cp-text);
+}
+
+.more:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}

@@ -2,6 +2,7 @@ import type { ChangeEventHandler } from 'react';
 import { useState, useCallback } from 'react';
 import i18n from 'i18next';
 import { useTranslation } from 'react-i18next';
+import { FiChevronDown, FiChevronRight } from 'react-icons/fi';
 
 import type { Html5ifyMode } from '../../../common/types';
 import { DirectoryAccessDeclinedError } from '../../errors';
@@ -15,6 +16,7 @@ import { useGenericDialogContext } from '../components/GenericDialog';
 import * as Dialog from '../components/Dialog';
 import { ButtonRow } from '../components/Dialog';
 import { DialogButton } from '../components/Button';
+import styles from '../components/Html5ifyDialog.module.css';
 
 
 export default function useHtml5ify({ filePath, hasVideo, hasAudio, workingRef, setWorking, ensureWritableOutDir, customOutDir, batchFiles, enableAutoHtml5ify, setProgress, html5ify, withErrorHandling, showGenericDialog }: {
@@ -50,32 +52,37 @@ export default function useHtml5ify({ filePath, hasVideo, hasAudio, workingRef, 
     }
   }, [html5ify, setProgress]);
 
-  const askForHtml5ifySpeed = useCallback(async ({ allowedOptions, showRemember, initialOption }: {
+  const askForHtml5ifySpeed = useCallback(async ({ allowedOptions, showRemember, initialOption, batch }: {
     allowedOptions: Html5ifyMode[],
     showRemember?: boolean | undefined,
     initialOption?: Html5ifyMode | undefined,
+    batch?: boolean | undefined,
   }) => {
-    const availOptions: Record<Html5ifyMode, string> = {
-      fastest: i18n.t('Fastest: FFmpeg-assisted playback'),
-      fast: i18n.t('Fast: Full quality remux (no audio), likely to fail'),
-      'fast-audio-remux': i18n.t('Fast: Full quality remux, likely to fail'),
-      'fast-audio': i18n.t('Fast: Remux video, encode audio (fails if unsupported video codec)'),
-      slow: i18n.t('Slow: Low quality encode (no audio)'),
-      'slow-audio': i18n.t('Slow: Low quality encode'),
-      slowest: i18n.t('Slowest: High quality encode'),
+    // One instant and one smooth choice up front; the rest (including the remuxes, which often fail) are under More options (#19).
+    const availOptions: Record<Html5ifyMode, { title: string, description: string }> = {
+      fastest: { title: i18n.t('Instant preview'), description: i18n.t('Plays through FFmpeg without making a copy. Starts right away; seeking is slower.') },
+      'slow-audio': { title: i18n.t('Smooth preview copy'), description: i18n.t('Makes a lighter copy that plays and seeks smoothly. Takes a little while.') },
+      slow: { title: i18n.t('Smooth preview copy, no sound'), description: i18n.t('Makes a lighter copy of the video only. Takes a little while.') },
+      slowest: { title: i18n.t('High-quality preview copy'), description: i18n.t('Sharper picture, but takes longer to make.') },
+      'fast-audio-remux': { title: i18n.t('Quick remux'), description: i18n.t('Repackages the video and sound without converting them. Often fails.') },
+      'fast-audio': { title: i18n.t('Quick remux, convert sound'), description: i18n.t('Fails if the video format itself is not supported.') },
+      fast: { title: i18n.t('Quick remux, no sound'), description: i18n.t('Repackages the video only. Often fails.') },
     };
-    const inputOptions: Partial<Record<Html5ifyMode, string>> = {};
-    allowedOptions.forEach((allowedOption) => {
-      inputOptions[allowedOption] = availOptions[allowedOption];
-    });
+    const order: Html5ifyMode[] = ['fastest', 'slow-audio', 'slow', 'slowest', 'fast-audio-remux', 'fast-audio', 'fast'];
+    const options = order.filter((mode) => allowedOptions.includes(mode));
+    const smoothOption = (['slow-audio', 'slow'] as const).find((mode) => options.includes(mode));
+    const mainOptions = options.filter((mode) => mode === 'fastest' || mode === smoothOption);
+    const moreOptions = options.filter((mode) => !mainOptions.includes(mode));
+    const recommended = mainOptions[0] ?? options[0];
 
     const response = await new Promise<{ selectedOption: Html5ifyMode, rememberChoice: boolean } | undefined>((resolve) => {
       function AskForHtml5ifySpeed() {
         const { onOpenChange } = useGenericDialogContext();
         const { t } = useTranslation();
 
-        const [option, setOption] = useState(initialOption != null && inputOptions[initialOption] ? initialOption : Object.keys(inputOptions)[0]! as Html5ifyMode);
+        const [option, setOption] = useState<Html5ifyMode>(initialOption != null && options.includes(initialOption) ? initialOption : recommended!);
         const [remember, setRemember] = useState(!!initialOption);
+        const [showMore, setShowMore] = useState(initialOption != null && moreOptions.includes(initialOption));
 
         const onOptionChange = useCallback<ChangeEventHandler<HTMLInputElement>>((e) => setOption(e.currentTarget.value as Html5ifyMode), []);
 
@@ -86,42 +93,56 @@ export default function useHtml5ify({ filePath, hasVideo, hasAudio, workingRef, 
           onOpenChange(false);
         }, [onOpenChange, option, remember]);
 
+        const renderOption = (mode: Html5ifyMode) => {
+          const id = `html5ify-${mode}`;
+          const { title, description } = availOptions[mode];
+          return (
+            <label key={mode} htmlFor={id} className={[styles['option'], ...(option === mode ? [styles['optionActive']] : [])].join(' ')}>
+              <input id={id} type="radio" name="html5ify-speed" value={mode} checked={option === mode} onChange={onOptionChange} className={styles['radio']} />
+              <span className={styles['optionText']}>
+                <span className={styles['optionTitle']}>
+                  {title}
+                  {mode === recommended && <span className={styles['badge']}>{t('Recommended')}</span>}
+                </span>
+                <span className={styles['optionDescription']}>{description}</span>
+              </span>
+            </label>
+          );
+        };
+
         return (
-          <Dialog.Content aria-describedby={undefined} style={{ width: '80vw' }}>
+          <Dialog.Content aria-describedby={undefined} style={{ width: '34rem' }}>
             <Dialog.Title>
-              {i18n.t('Convert to supported format')}
+              {batch ? t('Make these recordings playable') : t('Make this recording playable')}
             </Dialog.Title>
 
             <Dialog.Description>
-              {i18n.t('These options will let you convert files to a format that is supported by the player. You can try different options and see which works with your file. Note that the conversion is for preview only. When you run an export, the output will still be lossless with full quality')}
+              {batch
+                ? t('ClipPress makes a preview copy of each file in the batch list. Exports always use the original recordings.')
+                : t('ClipPress can\'t play this file directly. Pick how to preview it while you edit. Exports always use the original recording.')}
             </Dialog.Description>
 
-            {Object.entries(inputOptions).map(([value, label]) => {
-              const id = `html5ify-${value}`;
-              return (
-                <div key={value}>
-                  <input
-                    id={id}
-                    type="radio"
-                    name="html5ify-speed"
-                    value={value}
-                    checked={option === value}
-                    onChange={onOptionChange}
-                  />
-                  {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
-                  <label htmlFor={id} style={{ marginLeft: '.5em' }}>{label}</label>
-                </div>
-              );
-            })}
+            <div className={styles['options']} role="radiogroup" aria-label={t('Preview method')}>
+              {mainOptions.map((mode) => renderOption(mode))}
+              {moreOptions.length > 0 && (
+                <>
+                  <button type="button" className={styles['more']} aria-expanded={showMore} onClick={() => setShowMore((v) => !v)}>
+                    {showMore ? <FiChevronDown aria-hidden /> : <FiChevronRight aria-hidden />}
+                    {t('More options')}
+                  </button>
+                  {showMore && moreOptions.map((mode) => renderOption(mode))}
+                </>
+              )}
+            </div>
 
-            {showRemember && <Checkbox checked={remember} onCheckedChange={onRememberChange} label={t('Use this for all files until ClipPress is restarted?')} style={{ marginTop: '.5em' }} />}
+            {showRemember && <Checkbox checked={remember} onCheckedChange={onRememberChange} label={t('Use this for other files until I restart ClipPress')} style={{ marginTop: '1rem' }} />}
 
             <ButtonRow>
               <Dialog.Close asChild>
                 <DialogButton>{t('Cancel')}</DialogButton>
               </Dialog.Close>
 
-              <DialogButton onClick={handleConfirmClick} primary>{t('OK')}</DialogButton>
+              <DialogButton onClick={handleConfirmClick} primary>{t('Continue')}</DialogButton>
             </ButtonRow>
           </Dialog.Content>
         );
@@ -174,7 +195,7 @@ export default function useHtml5ify({ filePath, hasVideo, hasAudio, workingRef, 
   const convertFormatBatch = useCallback(async () => {
     if (batchFiles.length === 0) return;
 
-    const response = await askForHtml5ifySpeed({ allowedOptions: ['fast-audio-remux', 'fast-audio', 'fast', 'slow', 'slow-audio', 'slowest'] });
+    const response = await askForHtml5ifySpeed({ allowedOptions: ['fast-audio-remux', 'fast-audio', 'fast', 'slow', 'slow-audio', 'slowest'], batch: true });
     if (response == null) return;
     const { selectedOption: speed } = response;
 
