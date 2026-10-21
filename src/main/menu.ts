@@ -74,7 +74,8 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
             mainWindow.webContents.send('closeCurrentFile');
           },
         },
-        // Batch lists and other project formats are advanced-mode tools; simple mode autosaves projects.
+        // Batch lists and other project formats are advanced-mode tools. Simple mode keeps the LLC
+        // project items, since autosave can be turned off.
         ...(simpleMode ? [] : [
           {
             label: esc(t('Close batch')),
@@ -82,19 +83,21 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
               mainWindow.webContents.send('closeBatch');
             },
           },
-          { type: 'separator' },
-          {
-            label: esc(t('Import project (LLC)...')),
-            click() {
-              mainWindow.webContents.send('importEdlFile', 'llc');
-            },
+        ] satisfies MenuItemConstructorOptions[]),
+        { type: 'separator' },
+        {
+          label: esc(t('Import project (LLC)...')),
+          click() {
+            mainWindow.webContents.send('importEdlFile', 'llc');
           },
-          {
-            label: esc(t('Export project (LLC)...')),
-            click() {
-              mainWindow.webContents.send('exportEdlFile', 'llc');
-            },
+        },
+        {
+          label: esc(t('Export project (LLC)...')),
+          click() {
+            mainWindow.webContents.send('exportEdlFile', 'llc');
           },
+        },
+        ...(simpleMode ? [] : [
           {
             label: esc(t('Import project')),
             submenu: [

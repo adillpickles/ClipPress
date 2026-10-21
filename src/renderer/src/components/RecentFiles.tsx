@@ -52,6 +52,14 @@ function RecentFiles({ files, customOutDir, onOpen, onRemove, onClear }: {
   const { t } = useTranslation();
   const formatRelative = useRelativeTime();
   const [states, setStates] = useState<Record<string, FileState>>({});
+  const [checkCount, setCheckCount] = useState(0);
+
+  // A drive can be reconnected, or a project saved, while this list is showing, so check again when the window regains focus.
+  useEffect(() => {
+    const onFocus = () => setCheckCount((n) => n + 1);
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,7 +75,7 @@ function RecentFiles({ files, customOutDir, onOpen, onRemove, onClear }: {
       if (!cancelled) setStates(Object.fromEntries(entries));
     })();
     return () => { cancelled = true; };
-  }, [customOutDir, files]);
+  }, [checkCount, customOutDir, files]);
 
   if (files.length === 0) return null;
 
