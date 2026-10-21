@@ -1,17 +1,21 @@
+/* Three groups; the sides share the remaining width equally so Play stays centred, and when the
+   window is too narrow for all of them the groups wrap onto another row instead of overlapping. */
 .transport {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: .75rem;
+  column-gap: .75rem;
+  row-gap: .5rem;
   min-height: 2.5rem;
 }
 
 .transportLeft,
 .transportRight {
+  flex: 1 1 0;
+  min-width: max-content;
   display: flex;
   align-items: center;
   gap: .4rem;
-  min-width: 0;
 }
 
 .transportRight {
@@ -19,6 +23,7 @@
 }
 
 .transportCenter {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;

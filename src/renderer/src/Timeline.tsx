@@ -583,6 +583,7 @@ function Timeline({
   }, [onGenerateOverviewWaveformClick]);
 
   const showTextLane = hasVideo || overlayClips.length > 0;
+  const noneTicked = cutSegments.some((seg) => seg.end != null) && cutSegments.every((seg) => seg.end == null || !seg.selected);
   const showWaveformHint = waveformEnabled && !shouldShowWaveform;
   const showWaveforms = waveformEnabled && shouldShowWaveform && (waveforms.length > 0 || overviewWaveform != null);
   const lanePx = scrollerWidth * (laneWidthPercent / 100);
@@ -759,7 +760,8 @@ function Timeline({
               ))}
 
               {cutSegments.map((seg, i) => {
-                const selected = invertCutSegments || seg.selected;
+                // With no clip ticked, the export takes all of them (useSegments).
+                const selected = invertCutSegments || seg.selected || noneTicked;
 
                 return (
                   <TimelineSeg

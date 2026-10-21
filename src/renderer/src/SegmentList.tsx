@@ -83,7 +83,7 @@ const Segment = memo(({
   onInvertSelectedSegments,
   onDuplicateSegmentClick,
   getSegEstimatedSize,
-  onEditSpeed, onEditCrop,
+  onEditSpeed, onEditCrop, noneTicked = false,
 }: {
   seg: StateSegment | InverseCutSegment,
   index: number,
@@ -118,6 +118,8 @@ const Segment = memo(({
   getSegEstimatedSize: UseSegments['getSegEstimatedSize'],
   onEditSpeed: (segmentIndex: number) => void,
   onEditCrop: (segmentIndex: number) => void,
+  /** No clip is ticked, so the export takes all of them. */
+  noneTicked?: boolean,
 }) => {
   const { invertCutSegments, darkMode, simpleMode } = useUserSettings();
   const { t } = useTranslation();
@@ -330,7 +332,8 @@ const Segment = memo(({
       ...(duration != null ? [`${t('Length')}: ${formatSimpleDuration(duration)}${speed !== 1 ? ` (${Math.round(speed * 100)}%)` : ''}`] : []),
       ...(sizeStr != null ? [`${t('Size at source quality')}: ~${sizeStr}`] : []),
     ].join('\n');
-    const included = selected !== false;
+    const ticked = selected !== false;
+    const included = ticked || noneTicked;
     return (
       <div
         ref={setRef}
@@ -363,13 +366,15 @@ const Segment = memo(({
           <button
             type="button"
             role="checkbox"
-            aria-checked={included}
-            className={[styles['includeToggle'], ...(included ? [styles['includeToggleOn']] : [])].join(' ')}
-            title={included ? t('Included in the export. Click to leave this clip out.') : t('Left out of the export. Click to include this clip.')}
+            aria-checked={ticked}
+            className={[styles['includeToggle'], ...(ticked ? [styles['includeToggleOn']] : [])].join(' ')}
+            title={noneTicked
+              ? t('No clip is ticked, so all of them are exported. Tick clips to export only those.')
+              : (ticked ? t('Included in the export. Click to leave this clip out.') : t('Left out of the export. Click to include this clip.'))}
             aria-label={t('Include in export')}
             onClick={onToggleSegmentSelectedClick}
           >
-            {included && <FiCheck aria-hidden />}
+            {ticked && <FiCheck aria-hidden />}
           </button>
         )}
       </div>
@@ -544,6 +549,8 @@ function SegmentList({
   ), [selectedSegments, cutSegments, fileDuration]);
 
   const segmentsOrInverse: (InverseCutSegment | StateSegment)[] = invertCutSegments ? inverseCutSegments : cutSegments;
+  // With no clip ticked, the export falls back to all of them (useSegments).
+  const noneTicked = !invertCutSegments && cutSegments.some((seg) => seg.end != null) && cutSegments.every((seg) => seg.end == null || !seg.selected);
 
   const sortableList = useMemo(() => segmentsOrInverse.map((seg) => ({ id: seg.segId, seg })), [segmentsOrInverse]);
 
@@ -559,6 +566,9 @@ function SegmentList({
 
     if (segmentsOrInverse.every((s) => s.end == null)) {
       return t('{{count}} markers', { count: segmentsOrInverse.length });
+    }
+    if (noneTicked) {
+      return t('None ticked, so all clips are exported');
     }
     if (!invertCutSegments && selectedSegments.length < segmentsOrInverse.length) {
       return t('{{selected}} of {{count}} in the export', { selected: selectedSegments.length, count: segmentsOrInverse.length });
@@ -762,6 +772,7 @@ function SegmentList({
         getSegEstimatedSize={getSegEstimatedSize}
         onEditSpeed={onEditSpeed}
         onEditCrop={onEditCrop}
+        noneTicked={noneTicked}
       />
     );
   }

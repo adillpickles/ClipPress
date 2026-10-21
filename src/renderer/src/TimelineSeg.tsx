@@ -135,8 +135,6 @@ function Segment({
       width: cutSectionWidth,
       display: 'flex',
       alignItems: 'center',
-      gap: 6,
-      padding: '0 6px',
       originX: 0,
       boxSizing: 'border-box',
       color: darkMode || excluded ? 'var(--gray-12)' : 'rgba(0, 0, 0, 0.82)',
@@ -177,10 +175,12 @@ function Segment({
       }}
       title={title}
     >
-      <div style={{ flexShrink: 0, minWidth: 16, height: 18, padding: '0 4px', boxSizing: 'border-box', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums', background: darkMode ? 'rgba(0, 0, 0, 0.28)' : 'rgba(255, 255, 255, 0.55)' }}>{segNum + 1}</div>
+      {/* The block keeps its exact time width (very short clips can be narrower than the padding). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 6px', minWidth: 0, width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+        <div style={{ flexShrink: 0, minWidth: 16, height: 18, padding: '0 4px', boxSizing: 'border-box', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums', background: darkMode ? 'rgba(0, 0, 0, 0.28)' : 'rgba(255, 255, 255, 0.55)' }}>{segNum + 1}</div>
 
-      <AnimatePresence>
-        {invertCutSegments && (
+        <AnimatePresence>
+          {invertCutSegments && (
           <motion.div
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
@@ -189,12 +189,13 @@ function Segment({
           >
             <FaTrashAlt style={{ display: 'block', minWidth: '.4em', fontSize: 11 }} />
           </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>
 
-      {name && <div style={{ flexShrink: 1, fontSize: 12, fontWeight: 600, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{name}</div>}
+        {name && <div style={{ flexShrink: 1, fontSize: 12, fontWeight: 600, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{name}</div>}
 
-      {speed !== 1 && <div style={{ flexShrink: 0, marginLeft: 'auto', fontSize: 11, fontWeight: 600, opacity: 0.85, fontVariantNumeric: 'tabular-nums' }}>{`${Math.round(speed * 100)}%`}</div>}
+        {speed !== 1 && <div style={{ flexShrink: 0, marginLeft: 'auto', fontSize: 11, fontWeight: 600, opacity: 0.85, fontVariantNumeric: 'tabular-nums' }}>{`${Math.round(speed * 100)}%`}</div>}
+      </div>
     </motion.div>
   );
 }
