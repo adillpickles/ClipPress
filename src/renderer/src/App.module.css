@@ -15,6 +15,8 @@ video.video::-webkit-media-text-track-display {
 .mainArea {
   flex-grow: 1;
   display: flex;
+  /* Keeps z-indexes inside the editor (playhead, lane buttons) from rising above sheets and dialogs. */
+  isolation: isolate;
   gap: .75rem;
   padding: 0 .75rem .75rem;
   overflow: hidden;

@@ -921,6 +921,8 @@ function App() {
       ) {
         return;
       }
+      // Keys pressed in a dialog or menu (e.g. on a sweetalert2 dialog's buttons) are theirs.
+      if (target instanceof Element && target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], .swal2-container') != null) return;
 
       event.preventDefault();
       event.stopPropagation();
