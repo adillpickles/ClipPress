@@ -135,13 +135,62 @@
 }
 
 .clipExcluded .clipBadge,
-.clipExcluded .clipText {
+.clipExcluded .clipTitle,
+.clipExcluded .clipDetails {
   opacity: .5;
 }
 
 .clipExcluded .clipTitle {
   text-decoration: line-through;
   text-decoration-color: var(--gray-9);
+}
+
+.renameButton {
+  all: unset;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--cp-radius-sm);
+  color: var(--cp-text-subtle);
+  font-size: .8rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .12s ease, background-color .12s ease;
+}
+
+.clip:hover .renameButton,
+.clipActive .renameButton,
+.renameButton:focus-visible {
+  opacity: 1;
+}
+
+.renameButton:hover {
+  background: var(--cp-hover);
+  color: var(--cp-text);
+}
+
+.renameButton:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.clipNameInput {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: -.15rem 0 -.15rem -.3rem;
+  padding: .1rem .3rem;
+  border-radius: var(--cp-radius-sm);
+  border: 1px solid var(--accent-8);
+  background: var(--cp-bg);
+  color: var(--cp-text);
+  font: inherit;
+  font-size: .875rem;
+  font-weight: 600;
+  line-height: 1.3;
+  outline: none;
 }
 
 .includeToggle {

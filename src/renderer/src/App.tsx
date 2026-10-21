@@ -6575,6 +6575,7 @@ function App() {
                       onMutateSegmentsByExpr={mutateSegmentsByExpr}
                       onLabelSelectedSegments={labelSelectedSegments}
                       updateSegAtIndex={updateSegAtIndex}
+                      maxLabelLength={maxLabelLength}
                       editingSegmentTags={editingSegmentTags}
                       editingSegmentTagsSegmentIndex={
                         editingSegmentTagsSegmentIndex

@@ -1,7 +1,7 @@
-import type { SetStateAction, Dispatch, MouseEventHandler, CSSProperties } from 'react';
+import type { SetStateAction, Dispatch, MouseEventHandler, CSSProperties, KeyboardEventHandler, SyntheticEvent } from 'react';
 import { memo, useMemo, useRef, useCallback, useState, useEffect } from 'react';
 import { FaYinYang, FaSave, FaPlus, FaMinus, FaTag, FaSortNumericDown, FaRegCheckCircle, FaRegCircle } from 'react-icons/fa';
-import { FiCheck, FiX } from 'react-icons/fi';
+import { FiCheck, FiEdit2, FiX } from 'react-icons/fi';
 import { AiOutlineSplitCells } from 'react-icons/ai';
 import { motion } from 'motion/react';
 import { useTranslation, Trans } from 'react-i18next';
@@ -50,6 +50,58 @@ function formatSimpleDuration(seconds: number) {
   return `${minutes}m ${secs}s`;
 }
 
+/** Edits a clip's name in place: Enter or leaving the field saves, Escape cancels. */
+function ClipNameInput({ name, placeholder, maxLength, onDone }: {
+  name: string,
+  placeholder: string,
+  maxLength: number,
+  onDone: (newName: string | undefined) => void,
+}) {
+  const { t } = useTranslation();
+  const [value, setValue] = useState(name);
+  const doneRef = useRef(false);
+
+  const finish = useCallback((newName: string | undefined) => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    onDone(newName);
+  }, [onDone]);
+
+  const handleKeyDown = useCallback<KeyboardEventHandler<HTMLInputElement>>((e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      finish(value.trim());
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      finish(undefined);
+    }
+  }, [finish, value]);
+
+  // Keep clicks and drags in the field from selecting or dragging the clip.
+  const stop = useCallback((e: SyntheticEvent) => e.stopPropagation(), []);
+
+  return (
+    <input
+      // eslint-disable-next-line jsx-a11y/no-autofocus
+      autoFocus
+      className={styles['clipNameInput']}
+      value={value}
+      placeholder={placeholder}
+      maxLength={maxLength}
+      aria-label={t('Clip name')}
+      title={t('Used in the file name when clips are exported as separate files')}
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={handleKeyDown}
+      onBlur={() => finish(value.trim())}
+      onFocus={(e) => e.currentTarget.select()}
+      onPointerDown={stop}
+      onClick={stop}
+      onDoubleClick={stop}
+    />
+  );
+}
+
 // eslint-disable-next-line react/display-name
 const Segment = memo(({
   seg,
@@ -83,7 +135,7 @@ const Segment = memo(({
   onInvertSelectedSegments,
   onDuplicateSegmentClick,
   getSegEstimatedSize,
-  onEditSpeed, onEditCrop, noneTicked = false,
+  onEditSpeed, onEditCrop, noneTicked = false, onRename, maxLabelLength,
 }: {
   seg: StateSegment | InverseCutSegment,
   index: number,
@@ -120,12 +172,18 @@ const Segment = memo(({
   onEditCrop: (segmentIndex: number) => void,
   /** No clip is ticked, so the export takes all of them. */
   noneTicked?: boolean,
+  onRename: (segmentIndex: number, name: string) => void,
+  maxLabelLength: number,
 }) => {
   const { invertCutSegments, darkMode, simpleMode } = useUserSettings();
   const { t } = useTranslation();
   const { getSegColor } = useSegColors();
 
   const ref = useRef<HTMLDivElement | null>(null);
+
+  // Simple mode renames clips in place (#23).
+  const [renaming, setRenaming] = useState(false);
+  const startRenaming = useCallback(() => setRenaming(true), []);
 
   const contextMenuTemplate = useMemo<ContextMenuTemplate>(() => {
     if (invertCutSegments) return [];
@@ -139,7 +197,7 @@ const Segment = memo(({
 
         { type: 'separator' },
 
-        { label: t('Rename clip…'), click: () => onLabelPress(index) },
+        { label: t('Rename clip'), click: startRenaming },
         { label: t('Duplicate clip'), click: () => onDuplicateSegmentClick(seg) },
         { label: t('Change speed…'), enabled: seg.end != null, click: () => onEditSpeed(index) },
         { label: t('Zoom / Crop…'), enabled: seg.end != null, click: () => onEditCrop(index) },
@@ -202,7 +260,7 @@ const Segment = memo(({
       { label: t('Segment tags'), click: () => onEditSegmentTags(index) },
       { label: t('Extract frames as image files'), click: () => onExtractSegmentsFramesAsImages([seg]) },
     ];
-  }, [invertCutSegments, simpleMode, selected, onToggleSegmentSelected, t, addSegment, onLabelSelectedSegments, onRemoveSelected, onExtractSelectedSegmentsFramesAsImages, updateSegOrder, index, jumpSegStart, jumpSegEnd, onLabelPress, onRemovePress, onDuplicateSegmentClick, seg, onSelectSingleSegment, onSelectAllSegments, onDeselectAllSegments, onSelectAllMarkers, onSelectSegmentsByLabel, onSelectSegmentsByExpr, onInvertSelectedSegments, onMutateSegmentsByExpr, onReorderPress, onEditSegmentTags, onExtractSegmentsFramesAsImages, onEditSpeed, onEditCrop]);
+  }, [invertCutSegments, simpleMode, startRenaming, selected, onToggleSegmentSelected, t, addSegment, onLabelSelectedSegments, onRemoveSelected, onExtractSelectedSegmentsFramesAsImages, updateSegOrder, index, jumpSegStart, jumpSegEnd, onLabelPress, onRemovePress, onDuplicateSegmentClick, seg, onSelectSingleSegment, onSelectAllSegments, onDeselectAllSegments, onSelectAllMarkers, onSelectSegmentsByLabel, onSelectSegmentsByExpr, onInvertSelectedSegments, onMutateSegmentsByExpr, onReorderPress, onEditSegmentTags, onExtractSegmentsFramesAsImages, onEditSpeed, onEditCrop]);
 
   useContextMenu(ref, contextMenuTemplate);
 
@@ -357,10 +415,35 @@ const Segment = memo(({
         >
           <span className={styles['clipBadge']} style={{ background: simpleSegColor?.saturationl(Math.min(simpleSegColor.saturationl(), 72)).lightness(darkMode ? 44 : 60).string() }}>{index + 1}</span>
           <span className={styles['clipText']}>
-            <span className={styles['clipTitle']}>{name || timeStr}</span>
+            {renaming ? (
+              <ClipNameInput
+                name={name ?? ''}
+                placeholder={timeStr}
+                maxLength={maxLabelLength}
+                onDone={(newName) => {
+                  setRenaming(false);
+                  if (newName != null && newName !== name) onRename(index, newName);
+                }}
+              />
+            ) : (
+              // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+              <span className={styles['clipTitle']} onDoubleClick={(e) => { e.stopPropagation(); startRenaming(); }}>{name || timeStr}</span>
+            )}
             {details.length > 0 && <span className={styles['clipDetails']}>{details.join(' · ')}</span>}
           </span>
         </div>
+
+        {!renaming && (
+          <button
+            type="button"
+            className={styles['renameButton']}
+            title={t('Rename clip')}
+            aria-label={t('Rename clip')}
+            onClick={(e) => { e.stopPropagation(); startRenaming(); }}
+          >
+            <FiEdit2 aria-hidden />
+          </button>
+        )}
 
         {selected != null && (
           <button
@@ -486,7 +569,7 @@ function SegmentList({
   setEditingSegmentTagsSegmentIndex,
   onEditSegmentTags,
   getSegEstimatedSize,
-  onEditSpeed, onEditCrop,
+  onEditSpeed, onEditCrop, maxLabelLength,
 }: {
   width: number,
   fileDuration: number | undefined,
@@ -531,9 +614,12 @@ function SegmentList({
   getSegEstimatedSize: UseSegments['getSegEstimatedSize'],
   onEditSpeed: (segmentIndex: number) => void,
   onEditCrop: (segmentIndex: number) => void,
+  maxLabelLength: number,
 }) {
   const { t } = useTranslation();
   const { getSegColor, nextSegColorIndex } = useSegColors();
+
+  const onRenameSegment = useCallback((index: number, name: string) => updateSegAtIndex(index, { name }), [updateSegAtIndex]);
   const [draggingId, setDraggingId] = useState<UniqueIdentifier | undefined>();
 
   const { invertCutSegments, simpleMode, darkMode, springAnimation } = useUserSettings();
@@ -773,6 +859,8 @@ function SegmentList({
         onEditSpeed={onEditSpeed}
         onEditCrop={onEditCrop}
         noneTicked={noneTicked}
+        onRename={onRenameSegment}
+        maxLabelLength={maxLabelLength}
       />
     );
   }
