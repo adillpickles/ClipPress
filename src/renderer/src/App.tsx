@@ -14,6 +14,7 @@ import { produce } from 'immer';
 import screenfull from 'screenfull';
 import type { IpcRendererEvent } from 'electron';
 import { IoMdMenu } from 'react-icons/io';
+import { FiDownload } from 'react-icons/fi';
 import fromPairs from 'lodash/fromPairs';
 import sum from 'lodash/sum';
 import invariant from 'tiny-invariant';
@@ -274,6 +275,7 @@ import useThumbnails from './hooks/useThumbnails';
 import useSubtitles from './hooks/useSubtitles';
 import useStreamsMeta from './hooks/useStreamsMeta';
 import { bottomStyle, videoStyle } from './styles';
+import PreviewSpinner from './components/PreviewSpinner';
 import styles from './App.module.css';
 import { DirectoryAccessDeclinedError, UserFacingError } from '../errors';
 import SwalContainer from './components/SwalContainer';
@@ -626,6 +628,10 @@ function App() {
   }, [pause, play, playingRef]);
 
   const appDropRef = useRef<HTMLDivElement>(null);
+  // The video is loading or waiting for data (shows a spinner over the preview after a short delay).
+  const [videoBusy, setVideoBusy] = useState(false);
+  // A file is being dragged over the window while a clip is open.
+  const [fileDragActive, setFileDragActive] = useState(false);
   const {
     timecodePlaceholder,
     formatTimecode,
@@ -6096,6 +6102,40 @@ function App() {
     return () => element?.removeEventListener('drop', onDrop);
   }, [userOpenFiles]);
 
+  // Show where a dragged file will go while a clip is open (the welcome screen has its own drop card).
+  useEffect(() => {
+    const element = appDropRef.current;
+    if (element == null) return undefined;
+    // `dragover` keeps firing while a file hovers the window; when it stops (left the window, Esc, dropped),
+    // the overlay goes away even if no `dragleave` arrives.
+    let hideTimeout: ReturnType<typeof setTimeout> | undefined;
+    const end = () => {
+      clearTimeout(hideTimeout);
+      setFileDragActive(false);
+    };
+    const onDragOver = (ev: DragEvent) => {
+      if (!ev.dataTransfer?.types.includes('Files')) return;
+      setFileDragActive(true);
+      clearTimeout(hideTimeout);
+      hideTimeout = setTimeout(end, 350);
+    };
+    const onDragLeave = (ev: DragEvent) => {
+      // relatedTarget is null when the pointer leaves the window.
+      if (ev.relatedTarget == null) end();
+    };
+    element.addEventListener('dragenter', onDragOver);
+    element.addEventListener('dragover', onDragOver);
+    element.addEventListener('dragleave', onDragLeave);
+    element.addEventListener('drop', end, true);
+    return () => {
+      clearTimeout(hideTimeout);
+      element.removeEventListener('dragenter', onDragOver);
+      element.removeEventListener('dragover', onDragOver);
+      element.removeEventListener('dragleave', onDragLeave);
+      element.removeEventListener('drop', end, true);
+    };
+  }, []);
+
   useEffect(() => {
     function onDrop(ev: DragEvent) {
       // default drop handler to prevent new electron window from popping up https://github.com/electron/electron/issues/39839
@@ -6313,9 +6353,17 @@ function App() {
                               onDoubleClick={toggleFullscreenVideo}
                               onFocusCapture={onVideoFocus}
                               onSeeked={onSeeked}
+                              onLoadStart={() => setVideoBusy(true)}
+                              onWaiting={() => setVideoBusy(true)}
+                              onLoadedData={() => setVideoBusy(false)}
+                              onCanPlay={() => setVideoBusy(false)}
+                              onPlaying={() => setVideoBusy(false)}
+                              onEmptied={() => setVideoBusy(false)}
                             >
                               {renderSubtitles()}
                             </video>
+
+                            <PreviewSpinner busy={videoBusy && fileUri != null && !compatPlayerEnabled} />
 
                             {filePath != null && compatPlayerEnabled && (
                             <MediaSourcePlayer
@@ -6835,6 +6883,15 @@ function App() {
                 resetKeyBindings={resetKeyBindings}
                 getKeyboardAction={getKeyboardAction}
               />
+
+              {isFileOpened && fileDragActive && !working && (
+                <div className={styles['dropOverlay']} aria-hidden>
+                  <div className={styles['dropOverlayCard']}>
+                    <FiDownload />
+                    {t('Drop to open')}
+                  </div>
+                </div>
+              )}
 
               {/* This should probably be last, so that it's always on top */}
               <AnimatePresence>
