@@ -118,6 +118,7 @@ const defaults: Config = {
   invertCutSegments: false,
   autoExportExtraStreams: true,
   exportConfirmEnabled: true,
+  trashSourceAfterExport: false,
   askBeforeClose: false,
   enableImportChapters: 'ask',
   enableAskForFileOpenAction: true,
@@ -423,6 +424,14 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
   if (cleanupChoices != null && cleanupChoices.closeFile == null) {
     logger.info('Migrating cleanupChoices.closeFile');
     set('cleanupChoices', { ...cleanupChoices, closeFile: true });
+  }
+
+  // "Move the original to the trash" + "Do this automatically after each export" in the clean-up dialog is now the
+  // Export setting "Move the original to the Recycle Bin after export", which never deletes permanently.
+  const legacyCleanupChoices = store.get('cleanupChoices') as (Config['cleanupChoices'] & { trashSourceFile?: boolean }) | undefined;
+  if (!storedKeys.has('trashSourceAfterExport') && legacyCleanupChoices?.cleanupAfterExport && legacyCleanupChoices.trashSourceFile) {
+    logger.info('Migrating cleanupChoices.trashSourceFile to trashSourceAfterExport');
+    set('trashSourceAfterExport', true);
   }
 
   const customOutDir = store.get('customOutDir'); // todo remove after a while

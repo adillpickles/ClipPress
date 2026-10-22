@@ -162,6 +162,7 @@ import {
   isWindows,
   readFileStats,
   makeSourceFileAccessError,
+  trashFile,
 } from './util';
 import getSwal, { errorToast, showPlaybackFailedMessage } from './swal';
 import { addRecentFile, removeRecentFile } from './util/recentFiles';
@@ -276,6 +277,9 @@ import useSubtitles from './hooks/useSubtitles';
 import useStreamsMeta from './hooks/useStreamsMeta';
 import { bottomStyle, videoStyle } from './styles';
 import PreviewSpinner from './components/PreviewSpinner';
+import { recycleOriginal, verifyExportedFiles } from './originalRecycling';
+import type { FileIdentity } from './originalRecycling';
+import { fileExists, identifyFile, probeOutput, statOutput } from './originalRecyclingIo';
 import styles from './App.module.css';
 import { DirectoryAccessDeclinedError, UserFacingError } from '../errors';
 import SwalContainer from './components/SwalContainer';
@@ -449,6 +453,7 @@ function App() {
     autoLoadTimecode,
     autoDeleteMergedSegments,
     exportConfirmEnabled,
+    trashSourceAfterExport,
     segmentsToChapters,
     simpleMode,
     cutFileTemplate,
@@ -2592,6 +2597,8 @@ function App() {
         await deleteFiles({
           paths: pathsToDelete,
           deleteIfTrashFails: cleanupChoices2.deleteIfTrashFails,
+          // The original recording is only ever moved to the Recycle Bin, never deleted permanently.
+          protectedPaths: savedPaths.sourceFilePath != null ? [savedPaths.sourceFilePath] : [],
           signal: abortController.signal,
           // The project file is deleted between its saves, so that no save from before (one that
           // failed and is tried again when the app closes, say) brings it back once it is gone.
@@ -2621,6 +2628,52 @@ function App() {
     resetState();
     clearSegments();
   }, [batchListRemoveFile, clearSegments, filePath, resetState]);
+
+  /**
+   * Settings > Export > "Move the original to the Recycle Bin after export". Only after every planned file was
+   * written and checked, only through the Recycle Bin, and never if the original changed during the export.
+   * Returns whether the recording was closed for it.
+   */
+  const recycleOriginalAfterExport = useCallback(async ({ wanted, sourcePath, sourceIdentity, allPlannedCreated, exportedPaths, notices, warnings, highlights }: {
+    wanted: boolean,
+    sourcePath: string,
+    sourceIdentity: FileIdentity | undefined,
+    allPlannedCreated: boolean,
+    exportedPaths: string[],
+    notices: Set<string>,
+    warnings: Set<string>,
+    /** Shown in the result dialog without opening Details. */
+    highlights: Set<string>,
+  }) => {
+    if (!wanted) return false;
+    if (!allPlannedCreated || exportedPaths.length === 0) {
+      notices.add(i18n.t('The original recording was kept, because not every file was exported.'));
+      return false;
+    }
+    setWorking({ text: i18n.t('Checking the exported files') });
+    const check = await verifyExportedFiles(exportedPaths, { statFile: statOutput, probe: probeOutput });
+    if (!check.ok) {
+      warnings.add(i18n.t('The original recording was kept, because this exported file could not be checked: {{file}}', { file: parsePath(check.path).base }));
+      return false;
+    }
+
+    // The preview holds the recording open, so close it (and let its project save) before recycling it.
+    batchListRemoveFile(sourcePath);
+    resetState();
+    clearSegments();
+    await whenProjectSaved();
+
+    setWorking({ text: i18n.t('Moving the original to the Recycle Bin') });
+    const result = await recycleOriginal(sourcePath, sourceIdentity, { identify: identifyFile, trash: trashFile, exists: fileExists });
+    if (result.recycled) {
+      highlights.add(i18n.t('The original recording was moved to the Recycle Bin. You can restore it from there.'));
+    } else if (result.reason === 'changed') {
+      warnings.add(i18n.t('The original recording was kept, because it changed during the export.'));
+    } else if (result.reason === 'refused') {
+      warnings.add(i18n.t('ClipPress kept the original recording: it could not be moved to the Recycle Bin. It may be too large for the Recycle Bin, on a drive without one, or still in use.'));
+    }
+    return true;
+  }, [batchListRemoveFile, clearSegments, resetState, setWorking, whenProjectSaved]);
 
   const askForCleanupChoices = useCallback(async () => {
     const trashResponse = await openCleanupFilesDialog(cleanupChoices);
@@ -3209,6 +3262,8 @@ function App() {
     if (workingRef.current) return;
     try {
       setWorking({ text: i18n.t('Exporting') });
+      // Checked again before the original is recycled, so a file that changed meanwhile is never touched.
+      const sourceIdentity = await identifyFile(filePath);
 
       if (segmentsToChaptersOnly && (hasSegmentSpeedChanges || hasSegmentCropChanges)) {
         throw new UserFacingError(i18n.t('Choose a clip export mode to apply speed and crop changes. Chapters-only export keeps the original video.'));
@@ -3470,17 +3525,30 @@ function App() {
         const exportedPaths = finalizedResults.filter((result) => result.created).map((result) => result.path);
         const revealPath = revealResult.path;
 
-        if (exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport) {
-          const newCleanupChoices = cleanupChoices.askForCleanup
-            ? await askForCleanupChoices()
-            : cleanupChoices;
-          if (newCleanupChoices) {
-            await cleanupFiles(newCleanupChoices).catch((error) => {
-              console.warn('Export completed but cleanup failed', error);
-              warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
-            });
-          }
-        } else if (exportedPaths.length > 0 && simpleMode && cleanupChoices.closeFile) {
+        // "Do this automatically after each export" in the clean-up dialog (asked first, when it asks).
+        const newCleanupChoices: CleanupChoicesType | undefined = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport
+          ? (cleanupChoices.askForCleanup ? await askForCleanupChoices() : cleanupChoices)
+          : undefined;
+
+        // The original is only ever moved to the Recycle Bin through this checked path, whichever setting asks for it.
+        const highlights = new Set<string>();
+        const closedForRecycling = await recycleOriginalAfterExport({
+          highlights,
+          wanted: trashSourceAfterExport || newCleanupChoices?.trashSourceFile === true,
+          sourcePath: filePath,
+          sourceIdentity,
+          allPlannedCreated: finalizedResults.length > 0 && finalizedResults.every((result) => result.created),
+          exportedPaths,
+          notices,
+          warnings,
+        });
+
+        if (newCleanupChoices != null) {
+          await cleanupFiles({ ...newCleanupChoices, trashSourceFile: false }).catch((error) => {
+            console.warn('Export completed but cleanup failed', error);
+            warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
+          });
+        } else if (!closedForRecycling && exportedPaths.length > 0 && !cleanupChoices.cleanupAfterExport && simpleMode && cleanupChoices.closeFile) {
           closeCurrentFileAfterExport();
         }
 
@@ -3490,6 +3558,7 @@ function App() {
             filePath: revealPath,
             warnings: [...warnings],
             notices: [...notices],
+            highlight: [...highlights][0],
             summary: resultSummary,
           });
         }
@@ -3663,17 +3732,30 @@ function App() {
         const revealPath = exportedPaths[0] ?? mergedOutFilePath ?? outFiles[0]?.path;
         invariant(revealPath != null);
 
-        if (exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport) {
-          const newCleanupChoices = cleanupChoices.askForCleanup
-            ? await askForCleanupChoices()
-            : cleanupChoices;
-          if (newCleanupChoices) {
-            await cleanupFiles(newCleanupChoices).catch((error) => {
-              console.warn('Export completed but cleanup failed', error);
-              warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
-            });
-          }
-        } else if (exportedPaths.length > 0 && simpleMode && cleanupChoices.closeFile) {
+        // "Do this automatically after each export" in the clean-up dialog (asked first, when it asks).
+        const newCleanupChoices: CleanupChoicesType | undefined = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport
+          ? (cleanupChoices.askForCleanup ? await askForCleanupChoices() : cleanupChoices)
+          : undefined;
+
+        // The original is only ever moved to the Recycle Bin through this checked path, whichever setting asks for it.
+        const highlights = new Set<string>();
+        const closedForRecycling = await recycleOriginalAfterExport({
+          highlights,
+          wanted: trashSourceAfterExport || newCleanupChoices?.trashSourceFile === true,
+          sourcePath: filePath,
+          sourceIdentity,
+          allPlannedCreated: outFiles.length > 0 && outFiles.every((file) => file.created) && (mergedResult == null || mergedResult.created),
+          exportedPaths,
+          notices,
+          warnings,
+        });
+
+        if (newCleanupChoices != null) {
+          await cleanupFiles({ ...newCleanupChoices, trashSourceFile: false }).catch((error) => {
+            console.warn('Export completed but cleanup failed', error);
+            warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
+          });
+        } else if (!closedForRecycling && exportedPaths.length > 0 && !cleanupChoices.cleanupAfterExport && simpleMode && cleanupChoices.closeFile) {
           closeCurrentFileAfterExport();
         }
 
@@ -3683,6 +3765,7 @@ function App() {
             filePath: revealPath,
             warnings: [...warnings],
             notices: [...notices],
+            highlight: [...highlights][0],
             fileCount: exportedPaths.length,
           });
         }
@@ -3870,18 +3953,30 @@ function App() {
       const revealPath = exportedPaths[0] ?? mergedOutFilePath ?? outFiles[0]?.path;
       invariant(revealPath != null);
 
-      if (exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport) {
-        const newCleanupChoices = cleanupChoices.askForCleanup
-          ? await askForCleanupChoices()
-          : cleanupChoices;
-        // only if not canceled
-        if (newCleanupChoices) {
-          await cleanupFiles(newCleanupChoices).catch((error) => {
-            console.warn('Export completed but cleanup failed', error);
-            warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
-          });
-        }
-      } else if (exportedPaths.length > 0 && simpleMode && cleanupChoices.closeFile) {
+      // "Do this automatically after each export" in the clean-up dialog (asked first, when it asks).
+      const newCleanupChoices: CleanupChoicesType | undefined = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport
+        ? (cleanupChoices.askForCleanup ? await askForCleanupChoices() : cleanupChoices)
+        : undefined;
+
+      // The original is only ever moved to the Recycle Bin through this checked path, whichever setting asks for it.
+      const highlights = new Set<string>();
+      const closedForRecycling = await recycleOriginalAfterExport({
+        highlights,
+        wanted: trashSourceAfterExport || newCleanupChoices?.trashSourceFile === true,
+        sourcePath: filePath,
+        sourceIdentity,
+        allPlannedCreated: outFiles.length > 0 && outFiles.every((file) => file.created) && (mergedResult == null || mergedResult.created),
+        exportedPaths,
+        notices,
+        warnings,
+      });
+
+      if (newCleanupChoices != null) {
+        await cleanupFiles({ ...newCleanupChoices, trashSourceFile: false }).catch((error) => {
+          console.warn('Export completed but cleanup failed', error);
+          warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
+        });
+      } else if (!closedForRecycling && exportedPaths.length > 0 && !cleanupChoices.cleanupAfterExport && simpleMode && cleanupChoices.closeFile) {
         closeCurrentFileAfterExport();
       }
 
@@ -3891,6 +3986,7 @@ function App() {
           filePath: revealPath,
           warnings: [...warnings],
           notices: [...notices],
+          highlight: [...highlights][0],
           fileCount: exportedPaths.length,
         });
       }
@@ -3937,6 +4033,8 @@ function App() {
     }
   }, [
     activeVideoStream,
+    recycleOriginalAfterExport,
+    trashSourceAfterExport,
     allFilesMeta,
     appendFfmpegCommandLog,
     appendSizeLimitedResultNotices,

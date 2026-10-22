@@ -70,6 +70,8 @@ export interface Config {
   invertCutSegments: boolean,
   autoExportExtraStreams: boolean,
   exportConfirmEnabled: boolean,
+  /** After a checked, complete export, move the source recording to the Recycle Bin (never a permanent delete). */
+  trashSourceAfterExport: boolean,
   askBeforeClose: boolean,
   enableImportChapters: EnableImportChapters,
   enableAskForFileOpenAction: boolean,

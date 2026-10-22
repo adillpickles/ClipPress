@@ -85,10 +85,12 @@ function ExportDetails({ items, defaultOpen, label }: {
  * menu") at the same level as the result, which made a routine success read like a
  * report to work through.
  */
-function ExportResultBody({ hasWarnings, headline, subtitle, details, warningCount, sizeFilePath }: {
+function ExportResultBody({ hasWarnings, headline, subtitle, highlight, details, warningCount, sizeFilePath }: {
   hasWarnings: boolean,
   headline: ReactNode,
   subtitle?: ReactNode,
+  /** Something the user should see without opening Details (e.g. the original went to the Recycle Bin). */
+  highlight?: ReactNode,
   details?: ReactNode,
   warningCount: number,
   sizeFilePath?: string | undefined,
@@ -120,6 +122,10 @@ function ExportResultBody({ hasWarnings, headline, subtitle, details, warningCou
           )}
         </div>
       </div>
+
+      {highlight != null && (
+        <div style={{ marginTop: '.7em', padding: '.5em .7em', borderRadius: 'var(--cp-radius)', background: 'var(--cp-accent-soft)', color: 'var(--cp-text)', fontSize: '.9em' }}>{highlight}</div>
+      )}
 
       {details != null && (
         <ExportDetails
@@ -319,10 +325,11 @@ export function useDialog() {
     }
   }, [showGenericDialog, t]);
 
-  const openCutFinishedDialog = useCallback(async ({ filePath, warnings, notices, fileCount = 1 }: {
+  const openCutFinishedDialog = useCallback(async ({ filePath, warnings, notices, highlight, fileCount = 1 }: {
     filePath: string,
     warnings: string[],
     notices: string[],
+    highlight?: string | undefined,
     fileCount?: number | undefined,
   }) => {
     const hasWarnings = warnings.length > 0;
@@ -338,6 +345,7 @@ export function useDialog() {
           headline={fileCount === 0 ? t('No new files were written') : getResultFileName(filePath)}
           sizeFilePath={fileCount === 1 ? filePath : undefined}
           subtitle={fileCount > 1 ? t('{{count}} files exported', { count: fileCount }) : undefined}
+          highlight={highlight}
           details={(
             <>
               <Warnings warnings={warnings} />
@@ -352,11 +360,12 @@ export function useDialog() {
     });
   }, [openExportFinishedDialog, t]);
 
-  const openSizeLimitedFinishedDialog = useCallback(async ({ filePath, warnings, notices, summary }: {
+  const openSizeLimitedFinishedDialog = useCallback(async ({ filePath, warnings, notices, summary, highlight }: {
     filePath: string,
     warnings: string[],
     notices: string[],
     summary: SizeLimitedFinishedSummary,
+    highlight?: string | undefined,
   }) => {
     const hasWarnings = warnings.length > 0;
     const wroteNewFiles = summary.createdCount > 0;
@@ -400,6 +409,7 @@ export function useDialog() {
           warningCount={warnings.length}
           headline={wroteNewFiles ? fileName : t('No new files were written')}
           subtitle={sizeText}
+          highlight={highlight}
           details={detailItems}
         />
       ),
@@ -494,9 +504,9 @@ export function useDialog() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '.55rem', marginBottom: '1.25rem' }}>
               <Checkbox label={t('Close the recording')} checked={closeFile} disabled={trashSourceFile || trashTmpFiles} onCheckedChange={(checked) => onChange('closeFile', checked)} />
               <Checkbox label={t('Move temporary preview files to the trash')} checked={trashTmpFiles} onCheckedChange={(checked) => onChange('trashTmpFiles', checked)} />
-              <Checkbox label={t('Move the original recording to the trash')} checked={trashSourceFile} onCheckedChange={(checked) => onChange('trashSourceFile', checked)} />
+              <Checkbox label={t('Move the original recording to the Recycle Bin')} checked={trashSourceFile} onCheckedChange={(checked) => onChange('trashSourceFile', checked)} />
               <Checkbox label={t('Move the project file (.llc) to the trash')} checked={trashProjectFile} onCheckedChange={(checked) => onChange('trashProjectFile', checked)} />
-              <Checkbox label={t('Delete permanently if the trash fails')} disabled={!(trashTmpFiles || trashProjectFile || trashSourceFile)} checked={deleteIfTrashFails} onCheckedChange={(checked) => onChange('deleteIfTrashFails', checked)} />
+              <Checkbox label={t('Delete temporary and project files permanently if the Recycle Bin can\'t take them')} disabled={!(trashTmpFiles || trashProjectFile || trashSourceFile)} checked={deleteIfTrashFails} onCheckedChange={(checked) => onChange('deleteIfTrashFails', checked)} />
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '.55rem', paddingTop: '1rem', borderTop: '1px solid var(--cp-line)' }}>

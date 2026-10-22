@@ -19,6 +19,7 @@ import type { ProjectSaveFailure } from '../projectAutoSave';
 import type { UserCloseChoice } from '../saveBeforeClose';
 
 const { lstat } = window.require('fs/promises');
+const { basename } = window.require('path');
 const remote = window.require('@electron/remote');
 const electron = window.require('electron');
 const { clipboard } = electron;
@@ -608,9 +609,11 @@ export async function promptDownloadMediaUrl(outPath: string) {
 }
 
 
-export async function deleteFiles({ paths, deleteIfTrashFails, signal, runDeletion = async (_path, deletion) => deletion() }: {
+export async function deleteFiles({ paths, deleteIfTrashFails, protectedPaths = [], signal, runDeletion = async (_path, deletion) => deletion() }: {
   paths: string[],
   deleteIfTrashFails?: boolean | undefined,
+  /** Only ever moved to the trash, never deleted permanently (the original recording). */
+  protectedPaths?: string[] | undefined,
   signal: AbortSignal,
   /** Runs each attempt to delete a file (moving it to the trash, or deleting it). By default, at once. */
   runDeletion?: ((path: string, deletion: () => Promise<void>) => Promise<void>) | undefined,
@@ -619,10 +622,10 @@ export async function deleteFiles({ paths, deleteIfTrashFails, signal, runDeleti
 
   // eslint-disable-next-line no-restricted-syntax
   for (const path of paths) {
+    signal.throwIfAborted();
     try {
       // eslint-disable-next-line no-await-in-loop
       await runDeletion(path, async () => trashFile(path));
-      signal.throwIfAborted();
     } catch (err) {
       console.error(err);
       failedToTrashFiles.push(path);
@@ -631,17 +634,30 @@ export async function deleteFiles({ paths, deleteIfTrashFails, signal, runDeleti
 
   if (failedToTrashFiles.length === 0) return; // All good!
 
+  const keptFiles = failedToTrashFiles.filter((path) => protectedPaths.includes(path));
+  const deletableFiles = failedToTrashFiles.filter((path) => !protectedPaths.includes(path));
+
+  if (keptFiles.length > 0) {
+    await getSwal().Swal.fire({
+      icon: 'info',
+      text: i18n.t('The original recording could not be moved to the Recycle Bin, so ClipPress kept it: {{file}}', { file: keptFiles.map((path) => basename(path)).join(', ') }),
+    });
+  }
+
+  if (deletableFiles.length === 0) return;
+
   if (!deleteIfTrashFails) {
     const { value } = await getSwal().Swal.fire({
       icon: 'warning',
-      text: i18n.t('Unable to move file to trash. Do you want to permanently delete it?'),
+      text: i18n.t('These files could not be moved to the Recycle Bin. Delete them permanently? {{files}}', { files: deletableFiles.map((path) => basename(path)).join(', ') }),
       confirmButtonText: i18n.t('Permanently delete'),
       showCancelButton: true,
+      focusCancel: true,
     });
     if (!value) return;
   }
 
-  await pMap(failedToTrashFiles, async (path) => runDeletion(path, async () => {
+  await pMap(deletableFiles, async (path) => runDeletion(path, async () => {
     await unlinkWithRetry(path, { signal });
   }), { concurrency: 5 });
 }
