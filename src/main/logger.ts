@@ -33,6 +33,7 @@ export const logFilePath = join(logDirPath, 'app.log');
 
 const logger = createLogger();
 logger.add(new winston.transports.Console());
-logger.add(new winston.transports.File({ level: 'debug', filename: logFilePath, options: { flags: 'a' }, maxsize: 1e6, maxFiles: 100, tailable: true }));
+// At most 3 files of 1 MB: enough recent history to diagnose a problem without letting the log grow with use.
+logger.add(new winston.transports.File({ level: 'debug', filename: logFilePath, options: { flags: 'a' }, maxsize: 1e6, maxFiles: 3, tailable: true }));
 
 export default logger;
