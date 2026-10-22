@@ -1,0 +1,41 @@
+.lane {
+  position: relative;
+  width: 100%;
+  border-top: 1px solid var(--cp-line);
+  background: color-mix(in srgb, var(--gray-3) 30%, transparent);
+}
+
+/* Drawn for the visible stretch only and moved along with the scroll position. */
+.canvas {
+  position: absolute;
+  top: 5px;
+  pointer-events: none;
+}
+
+.clip {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent-9) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-9) 30%, transparent), 0 3px 8px -4px rgb(0 0 0 / 60%);
+  cursor: pointer;
+  transition: box-shadow .12s ease;
+}
+
+.clip:hover {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-9) 60%, transparent), 0 3px 8px -4px rgb(0 0 0 / 60%);
+}
+
+.clipActive,
+.clipActive:hover {
+  background: color-mix(in srgb, var(--accent-9) 15%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent-9) 85%, transparent), 0 3px 8px -4px rgb(0 0 0 / 60%);
+}
+
+.clipExcluded,
+.clipExcluded:hover {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 14%);
+}

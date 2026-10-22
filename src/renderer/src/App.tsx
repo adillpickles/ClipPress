@@ -278,6 +278,8 @@ import useStreamsMeta from './hooks/useStreamsMeta';
 import { bottomStyle, videoStyle } from './styles';
 import PreviewSpinner from './components/PreviewSpinner';
 import useFilmstrip from './hooks/useFilmstrip';
+import useAudioPeaks from './hooks/useAudioPeaks';
+import AudioTrackHeader from './components/AudioTrackHeader';
 import { recycleOriginal, verifyExportedFiles } from './originalRecycling';
 import type { FileIdentity } from './originalRecycling';
 import { fileExists, identifyFile, probeOutput, statOutput } from './originalRecyclingIo';
@@ -1635,6 +1637,15 @@ function App() {
     enabled: simpleMode && hasVideo,
     ffmpegHwaccel,
     timeOffset: filmstripTimeOffset,
+  });
+
+  // Simple mode's audio track under the clips: its waveform, made once per open recording.
+  const showAudioLane = simpleMode && hasAudio;
+  const audioPeaks = useAudioPeaks({
+    filePath,
+    streamIndex: activeAudioStreams[0]?.index ?? mainAudioStream?.index,
+    duration: fileDuration,
+    enabled: showAudioLane,
   });
 
   const { thumbnailsSorted, setThumbnails } = useThumbnails({
@@ -6597,6 +6608,7 @@ function App() {
                             alignItems: 'flex-end',
                           }}
                         >
+                          {!showAudioLane && (
                           <VolumeControl
                             playbackVolume={playbackVolume}
                             setPlaybackVolume={setPlaybackVolume}
@@ -6604,6 +6616,7 @@ function App() {
                             audioGainControls={previewAudioGainControls}
                             onAudioGainChange={updateAudioGainForStream}
                           />
+                          )}
 
                           {!simpleMode && shouldShowPlaybackStreamSelector && (
                           <PlaybackStreamSelector
@@ -6708,6 +6721,16 @@ function App() {
                           neighbouringKeyFrames={neighbouringKeyFrames}
                           thumbnails={thumbnailsSorted}
                           filmstrip={filmstrip}
+                          audioPeaks={audioPeaks}
+                          showAudioLane={showAudioLane}
+                          audioHeader={(
+                            <AudioTrackHeader
+                              previewMuted={playbackVolume === 0}
+                              onTogglePreviewMuted={toggleMuted}
+                              gainControls={previewAudioGainControls}
+                              onGainChange={updateAudioGainForStream}
+                            />
+                          )}
                           getCurrentTime={getRelevantTime}
                           onScrubbingChange={onTimelineScrubbingChange}
                           commandedTime={commandedTime}

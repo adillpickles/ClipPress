@@ -7,6 +7,8 @@ import minBy from 'lodash/minBy';
 import invariant from 'tiny-invariant';
 import z from 'zod';
 import type { FilmstripFrame } from './filmstrip';
+import { computePeaks, getPeaksArgs, getPeaksBucketSeconds, getPeaksSampleRate } from './audioPeaks';
+import type { AudioPeaks } from './audioPeaks';
 import { getFilmstripArgs, pairFrames, parseShowinfoTimes, splitJpegStream } from './filmstrip';
 
 import { pcmAudioCodecs, isMov } from './util/streams';
@@ -466,6 +468,21 @@ export async function extractSubtitleTrackVtt(filePath: string, streamId: number
 
   const blob = safeCreateBlob(stdout, { type: 'text/vtt' });
   return URL.createObjectURL(blob);
+}
+
+/** The audio track's waveform (see audioPeaks.ts): one pass to low-rate mono samples, reduced to peaks. */
+export async function renderAudioPeaks({ filePath, streamIndex, duration, signal }: {
+  filePath: string,
+  streamIndex: number | undefined,
+  duration: number,
+  signal: AbortSignal,
+}): Promise<AudioPeaks> {
+  const sampleRate = getPeaksSampleRate(duration);
+  const { stdout } = await runFfmpeg(getPeaksArgs({ filePath, streamIndex, sampleRate }), { cancelSignal: signal }, { logCli: false });
+  const bytes = stdout instanceof Uint8Array ? stdout : new Uint8Array(stdout);
+  // A copy, so the samples start on an even byte.
+  const samples = new Int16Array(bytes.slice(0, bytes.byteLength - (bytes.byteLength % 2)).buffer);
+  return computePeaks(samples, sampleRate, getPeaksBucketSeconds(duration));
 }
 
 /** One stretch of the timeline filmstrip (see filmstrip.ts): keyframes only, with each frame's time. */

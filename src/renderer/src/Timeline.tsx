@@ -1,4 +1,4 @@
-import type { MutableRefObject, CSSProperties, WheelEventHandler, MouseEventHandler, MouseEvent as ReactMouseEvent } from 'react';
+import type { MutableRefObject, CSSProperties, ReactNode, WheelEventHandler, MouseEventHandler, MouseEvent as ReactMouseEvent } from 'react';
 import { memo, useRef, useMemo, useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { useMotionValue, useSpring } from 'motion/react';
 import debounce from 'lodash/debounce';
@@ -28,6 +28,8 @@ import { getSegmentOutputDuration, getSegmentSpeed, getSpeedForOutputDuration } 
 import { createTimelineMap, getRetimeAutoScrollStep, getWarpedImageSpans } from './timelineMap';
 import type { TimelineMap } from './timelineMap';
 import type { FilmstripFrame } from './filmstrip';
+import type { AudioPeaks } from './audioPeaks';
+import AudioLane from './components/AudioLane';
 
 const remote = window.require('@electron/remote');
 const { Menu } = remote;
@@ -138,6 +140,7 @@ const rulerHeight = 22;
 const clipLaneHeight = 44;
 /** Simple mode's clips lane is taller: it shows the filmstrip and holds the speed band, so speed controls don't add a lane. */
 const simpleClipLaneHeight = 64;
+const audioLaneHeight = 34;
 const textLaneHeight = 28;
 const retimeLaneHeight = 38;
 const thumbnailsHeight = 63;
@@ -167,6 +170,10 @@ function Timeline({
   shouldShowKeyframes,
   thumbnails,
   filmstrip,
+  audioPeaks,
+  showAudioLane,
+  audioHeader,
+  onAudioClipContextMenu,
   zoomWindowStartTime,
   zoomWindowEndTime,
   onZoomWindowStartTimeChange,
@@ -221,6 +228,11 @@ function Timeline({
   thumbnails: Thumbnail[],
   /** Simple mode: frames of the whole recording for the clips lane. */
   filmstrip: FilmstripFrame[],
+  /** Simple mode's audio track under the clips. */
+  audioPeaks: AudioPeaks | undefined,
+  showAudioLane: boolean,
+  audioHeader: ReactNode,
+  onAudioClipContextMenu?: ((index: number, event: ReactMouseEvent<HTMLElement>) => void) | undefined,
   zoomWindowStartTime: number,
   zoomWindowEndTime: number | undefined,
   onZoomWindowStartTimeChange: (a: number) => void,
@@ -702,13 +714,15 @@ function Timeline({
   const noneTicked = cutSegments.some((seg) => seg.end != null) && cutSegments.every((seg) => seg.end == null || !seg.selected);
   // The waveform lane keeps its height whether it shows the waveform or the "zoom in" hint, so zooming
   // doesn't resize the preview.
-  const showWaveformLane = waveformEnabled;
+  // (Simple mode has its own audio track under the clips instead.)
+  const showWaveformLane = waveformEnabled && !simpleMode;
   const showWaveformHint = waveformEnabled && !shouldShowWaveform;
   const showWaveforms = waveformEnabled && shouldShowWaveform && (waveforms.length > 0 || overviewWaveform != null);
   // Simple mode draws speed controls on the clip block itself rather than in a lane of their own.
   const retimeOverlay = simpleMode;
   const showRetimeLane = !retimeOverlay && retimeSegments.length > 0;
   const lanePx = scrollerWidth * (laneWidthPercent / 100);
+  const pxToTime = useCallback((px: number) => timelineMap.toSource((px / Math.max(lanePx, 1)) * laneDuration), [laneDuration, lanePx, timelineMap]);
   // The visible stretch of the lane, in source time. Retimed clips stretch or squeeze the lane, so
   // this is mapped from lane time rather than taken as a fixed share of the file.
   const visibleEnd = lanePx > 0
@@ -730,6 +744,7 @@ function Timeline({
         {showTextLane && <div className={styles['laneLabel']} style={{ height: textLaneHeight }}>{t('Text')}</div>}
         {showRetimeLane && <div className={styles['laneLabel']} style={{ height: retimeLaneHeight }}>{t('Speed')}</div>}
         <div className={styles['laneLabel']} style={{ height: simpleMode ? simpleClipLaneHeight : clipLaneHeight }}>{simpleMode ? t('Clips') : t('Segments')}</div>
+        {showAudioLane && <div style={{ height: audioLaneHeight, display: 'flex', flexDirection: 'column' }}>{audioHeader}</div>}
       </div>
 
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions,jsx-a11y/mouse-events-have-key-events */}
@@ -942,6 +957,23 @@ function Timeline({
                 <div key={f.time} style={{ position: 'absolute', top: 0, bottom: 0, left: `${toLanePercent(f.time)}%`, marginLeft: -1, width: 1, background: 'var(--gray-10)', pointerEvents: 'none' }} />
               ))}
             </div>
+
+            {showAudioLane && (
+              <AudioLane
+                peaks={audioPeaks}
+                height={audioLaneHeight}
+                segments={cutSegments}
+                activeIndex={currentSegIndexSafe}
+                noneTicked={noneTicked}
+                toLanePercent={toLanePercent}
+                pxToTime={pxToTime}
+                lanePx={lanePx}
+                visibleStartPx={(toLanePercent(zoomWindowStartTime) / 100) * lanePx}
+                viewportPx={scrollerWidth}
+                onClipClick={setCurrentSegIndex}
+                onClipContextMenu={onAudioClipContextMenu}
+              />
+            )}
 
             <Playhead playing={playing} commandedTime={commandedTime} getCurrentTime={getCurrentTime} calculateTimelinePos={calculateTimelinePos} />
           </div>
