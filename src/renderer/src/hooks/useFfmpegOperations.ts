@@ -9,7 +9,9 @@ import i18n from 'i18next';
 import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists } from '../util';
 import { assertOutPathsNotSource } from '../util/sourceProtection';
 import { isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, getDuration, createChaptersFromSegments, readFileFfprobeMeta, getExperimentalArgs, getVideoTimescaleArgs, logStdoutStderr, runFfmpegConcat, RefuseOverwriteError, runFfmpeg } from '../ffmpeg';
-import { defaultAudioGainDb, getMapStreamsArgs, getStreamIdsToCopy, isMutedAudioGain, isNeutralAudioGain } from '../util/streams';
+import { getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
+import type { ClipVolume } from '../util/audioGain';
+import { combineAudioGain, getVolumeFilter } from '../util/audioGain';
 import { needsSmartCut, getCodecParams } from '../smartcut';
 import { getGuaranteedSegments, isDurationValid } from '../segments';
 import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } from '../textOverlays';
@@ -85,9 +87,22 @@ function getAdjustedAudioEncodeArgs({ outFormat, outputIndex }: { outFormat: str
   return [`-c:${outputIndex}`, 'aac', `-b:${outputIndex}`, '192k'];
 }
 
-function getAdjustedAudioGainArgs({ audioGainDb, outFormat, outputIndex }: { audioGainDb: number, outFormat: string | undefined, outputIndex: number }) {
+/**
+ * A track's sound inside one clip: copied when neither the track nor the clip volume changes it, otherwise
+ * filtered and encoded. `forceEncode` encodes even unchanged clips, so every piece of a merge has the same codec.
+ */
+export function getClipAudioArgs({ trackGainDb, clipVolume, forceEncode = false, outFormat, outputIndex }: {
+  trackGainDb: number | undefined,
+  clipVolume: ClipVolume | undefined,
+  forceEncode?: boolean | undefined,
+  outFormat: string | undefined,
+  outputIndex: number,
+}) {
+  const audioGainDb = combineAudioGain(trackGainDb, clipVolume);
+  const neutral = isNeutralAudioGain(audioGainDb);
+  if (neutral && !forceEncode) return undefined;
   return [
-    `-filter:${outputIndex}`, isMutedAudioGain(audioGainDb) ? 'volume=0' : `volume=${audioGainDb.toFixed(2)}dB`,
+    ...(neutral ? [] : [`-filter:${outputIndex}`, getVolumeFilter(audioGainDb)]),
     ...getAdjustedAudioEncodeArgs({ outFormat, outputIndex }),
   ];
 }
@@ -370,7 +385,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
   const losslessCutSingle = useCallback(async ({
     keyframeCut: ssBeforeInput, avoidNegativeTs, copyFileStreams, cutFrom, cutTo, chaptersPath, onProgress, outPath,
-    fileDuration, rotation, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMovData, preserveChapters, movFastStart, customTagsByFile, paramsByStreamId, videoTimebase, detectedFps,
+    fileDuration, rotation, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMovData, preserveChapters, movFastStart, customTagsByFile, paramsByStreamId, videoTimebase, detectedFps, clipVolume, forceAudioEncode,
   }: {
     keyframeCut: boolean,
     avoidNegativeTs: AvoidNegativeTs | undefined,
@@ -394,6 +409,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     paramsByStreamId: ParamsByStreamId,
     videoTimebase?: number | undefined,
     detectedFps?: number,
+    clipVolume?: ClipVolume | undefined,
+    forceAudioEncode?: boolean | undefined,
   }) => {
     const frameDuration = getFrameDuration(detectedFps);
     await assertOutPathIsNotSource(outPath, copyFileStreams.map((source) => source.path));
@@ -463,11 +480,9 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       allFilesMeta,
       outFormat,
       needFlac: areWeCutting,
-      getAudioArgs: ({ path, streamIndex, outputIndex }) => {
-        const audioGainDb = paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb ?? defaultAudioGainDb;
-        if (isNeutralAudioGain(audioGainDb)) return undefined;
-        return getAdjustedAudioGainArgs({ audioGainDb, outFormat, outputIndex });
-      },
+      getAudioArgs: ({ path, streamIndex, outputIndex }) => getClipAudioArgs({
+        trackGainDb: paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb, clipVolume, forceEncode: forceAudioEncode, outFormat, outputIndex,
+      }),
     });
 
     const customParamsArgs = (() => {
@@ -590,6 +605,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     videoStreamIndex,
     videoWidth,
     videoHeight,
+    encodeAllAudio,
     onProgress: onTotalProgress,
   }: {
     outputDir: string,
@@ -612,6 +628,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     videoStreamIndex: number,
     videoWidth: number,
     videoHeight: number,
+    /** For merges: encode every clip's sound, so the pieces match and none brings cut-off sound along (#53). */
+    encodeAllAudio: boolean,
     onProgress: (progress: number) => void,
   }) => {
     invariant(filePath != null);
@@ -744,11 +762,11 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
             outFormat,
             needFlac: true,
             getAudioArgs: ({ path, streamIndex, outputIndex }) => {
-              const audioGainDb = paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb ?? defaultAudioGainDb;
-              if (segmentRate === 1 && isNeutralAudioGain(audioGainDb)) return undefined;
+              const audioGainDb = combineAudioGain(paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb, segment);
+              if (segmentRate === 1 && isNeutralAudioGain(audioGainDb) && !encodeAllAudio) return undefined;
               const audioFilters = [
                 'asetpts=PTS-STARTPTS', getAudioTempoFilter(segmentRate),
-                !isNeutralAudioGain(audioGainDb) ? (isMutedAudioGain(audioGainDb) ? 'volume=0' : `volume=${audioGainDb.toFixed(2)}dB`) : '',
+                !isNeutralAudioGain(audioGainDb) ? getVolumeFilter(audioGainDb) : '',
               ].filter(Boolean);
               return [`-filter:${outputIndex}`, audioFilters.join(','), ...getAdjustedAudioEncodeArgs({ outFormat, outputIndex })];
             },
@@ -820,7 +838,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   }, [appendFfmpegCommandLog, assertOutPathIsNotSource, exportGpuAcceleration, filePath, outputPlaybackRate, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   // inspired by https://gist.github.com/fernandoherreradelasheras/5eca67f4200f1a7cc8281747da08496e
-  const cutEncodeSmartPart = useCallback(async ({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate, videoTimebase, allFilesMeta, copyFileStreams, videoStreamIndex, paramsByStreamId, ffmpegExperimental, hasBFrames }: {
+  const cutEncodeSmartPart = useCallback(async ({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate, videoTimebase, allFilesMeta, copyFileStreams, videoStreamIndex, paramsByStreamId, ffmpegExperimental, hasBFrames, clipVolume, forceAudioEncode }: {
     cutFrom: number,
     cutTo: number,
     outPath: string,
@@ -834,6 +852,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     paramsByStreamId: ParamsByStreamId,
     ffmpegExperimental: boolean,
     hasBFrames: number | undefined,
+    clipVolume: ClipVolume | undefined,
+    forceAudioEncode: boolean,
   }) => {
     invariant(filePath != null);
 
@@ -859,11 +879,9 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       copyFileStreams,
       outFormat,
       getVideoArgs,
-      getAudioArgs: ({ path, streamIndex, outputIndex }) => {
-        const audioGainDb = paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb ?? defaultAudioGainDb;
-        if (isNeutralAudioGain(audioGainDb)) return undefined;
-        return getAdjustedAudioGainArgs({ audioGainDb, outFormat, outputIndex });
-      },
+      getAudioArgs: ({ path, streamIndex, outputIndex }) => getClipAudioArgs({
+        trackGainDb: paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb, clipVolume, forceEncode: forceAudioEncode, outFormat, outputIndex,
+      }),
     });
 
     const ffmpegArgs = [
@@ -895,7 +913,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   }, [appendFfmpegCommandLog, assertOutPathIsNotSource, filePath]);
 
   const cutMultiple = useCallback(async ({
-    outputDir, customOutDir, segments: segmentsIn, cutFileNames, fileDuration, rotation, detectedFps, onProgress: onTotalProgress, keyframeCut, copyFileStreams, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, customTagsByFile, paramsByStreamId, chapters,
+    outputDir, customOutDir, segments: segmentsIn, cutFileNames, fileDuration, rotation, detectedFps, onProgress: onTotalProgress, keyframeCut, copyFileStreams, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, customTagsByFile, paramsByStreamId, chapters, encodeAllAudio,
   }: {
     outputDir: string,
     customOutDir: string | undefined,
@@ -920,6 +938,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     customTagsByFile: CustomTagsByFile,
     paramsByStreamId: ParamsByStreamId,
     chapters: Chapter[] | undefined,
+    /** For merges where some clip's volume changed: encode every clip's sound, so the pieces have the same codec. */
+    encodeAllAudio: boolean,
   }) => {
     console.log('customTagsByFile', customTagsByFile);
     console.log('paramsByStreamId', paramsByStreamId);
@@ -941,7 +961,9 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     // or if enabled, will first cut&encode the part before the next keyframe, trying to match the input file's codec params
     // then it will cut the part *from* the keyframe to "end", and concat them together and return the concated file
     // so that for the calling code it looks as if it's just a normal segment
-    const cutSegment = async ({ start: desiredCutFrom, end: cutTo }: { start: number, end: number }, i: number) => {
+    const cutSegment = async (segment: SegmentToExport, i: number) => {
+      const { start: desiredCutFrom, end: cutTo } = segment;
+      const clipVolume: ClipVolume = { audioGainDb: segment.audioGainDb, audioMuted: segment.audioMuted };
       const onProgress = (progress: number) => onSingleProgress(i, progress / 2);
       const onConcatProgress = (progress: number) => onSingleProgress(i, (1 + progress) / 2);
 
@@ -959,7 +981,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         // simple lossless cut
         invariant(outFormat != null);
         await losslessCutSingle({
-          cutFrom: desiredCutFrom, cutTo, chaptersPath, outPath: finalOutPath, copyFileStreams, keyframeCut, avoidNegativeTs, fileDuration, rotation, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMovData, preserveChapters, movFastStart, customTagsByFile, paramsByStreamId, onProgress: (progress) => onSingleProgress(i, progress),
+          cutFrom: desiredCutFrom, cutTo, chaptersPath, outPath: finalOutPath, copyFileStreams, keyframeCut, avoidNegativeTs, fileDuration, rotation, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMovData, preserveChapters, movFastStart, customTagsByFile, paramsByStreamId, clipVolume, forceAudioEncode: encodeAllAudio, onProgress: (progress) => onSingleProgress(i, progress),
         });
         onSingleProgress(i, 1);
         return { path: finalOutPath, created: true };
@@ -994,7 +1016,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         invariant(sourceCodecParams.videoTimebase != null);
         invariant(filePath != null);
         invariant(outFormat != null);
-        await cutEncodeSmartPart({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate: encCustomBitrate != null ? encCustomBitrate * 1000 : sourceCodecParams.videoBitrate, videoStreamIndex: videoStream.index, videoTimebase: sourceCodecParams.videoTimebase, allFilesMeta, copyFileStreams: copyFileStreamsFiltered, paramsByStreamId, ffmpegExperimental, hasBFrames: sourceCodecParams.videoStream.has_b_frames });
+        await cutEncodeSmartPart({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate: encCustomBitrate != null ? encCustomBitrate * 1000 : sourceCodecParams.videoBitrate, videoStreamIndex: videoStream.index, videoTimebase: sourceCodecParams.videoTimebase, allFilesMeta, copyFileStreams: copyFileStreamsFiltered, paramsByStreamId, ffmpegExperimental, hasBFrames: sourceCodecParams.videoStream.has_b_frames, clipVolume, forceAudioEncode: encodeAllAudio });
       }
 
       const cutEncodeWholePart = async () => {
@@ -1033,7 +1055,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
       // for smart cut we need to use keyframe cut here, and no avoid_negative_ts
       await losslessCutSingle({
-        cutFrom: losslessCutFrom, cutTo, chaptersPath, outPath: losslessPartOutPath, copyFileStreams: copyFileStreamsFiltered, keyframeCut: true, avoidNegativeTs: undefined, fileDuration, rotation, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMovData, preserveChapters, movFastStart, customTagsByFile, paramsByStreamId, videoTimebase, onProgress,
+        cutFrom: losslessCutFrom, cutTo, chaptersPath, outPath: losslessPartOutPath, copyFileStreams: copyFileStreamsFiltered, keyframeCut: true, avoidNegativeTs: undefined, fileDuration, rotation, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMovData, preserveChapters, movFastStart, customTagsByFile, paramsByStreamId, videoTimebase, clipVolume, forceAudioEncode: encodeAllAudio, onProgress,
       });
 
       // We don't need to concat, just return the single cut file (we may need smart cut in other segments though)

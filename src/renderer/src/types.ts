@@ -5,6 +5,7 @@ import type { FileStream } from './ffmpeg';
 import { minSegmentSpeed, maxSegmentSpeed } from './segmentSpeed';
 import { minCropSize } from './segmentCrop';
 import type { SegmentCrop } from './segmentCrop';
+import type { UndoableSetOptions } from './undoableHistory';
 
 
 export interface ChromiumHTMLVideoElement extends HTMLVideoElement {
@@ -44,6 +45,10 @@ export const llcProjectSaveableSegmentSchema = z.object({
   selected: z.boolean().optional(),
   speed: z.number().min(minSegmentSpeed).max(maxSegmentSpeed).optional(),
   crop: segmentCropSchema.optional(),
+  /** The clip's own volume in dB, added to each track's. No limits here: one odd value must not reject the whole project. */
+  audioGainDb: z.number().optional(),
+  /** Silences the clip but keeps its volume for when it is un-muted. */
+  audioMuted: z.boolean().optional(),
   /** Marks a project's only segment as the untouched whole file. Older readers drop it and load an ordinary segment. */
   initial: z.boolean().optional(),
 });
@@ -127,6 +132,8 @@ export interface SegmentBase {
   name?: string | undefined,
   speed?: number | undefined,
   crop?: SegmentCrop | undefined,
+  audioGainDb?: number | undefined,
+  audioMuted?: boolean | undefined,
 }
 
 export interface DefiniteSegmentBase {
@@ -134,6 +141,8 @@ export interface DefiniteSegmentBase {
   end: number,
   speed?: number | undefined,
   crop?: SegmentCrop | undefined,
+  audioGainDb?: number | undefined,
+  audioMuted?: boolean | undefined,
 }
 
 export interface SegmentColorIndex {
@@ -216,7 +225,7 @@ export type ParseTimecode = (val: string) => number | undefined;
 
 export type GetFrameCount = (sec: number) => number | undefined;
 
-export type UpdateSegAtIndex = (index: number, newProps: Partial<StateSegment>) => void;
+export type UpdateSegAtIndex = (index: number, newProps: Partial<StateSegment>, options?: UndoableSetOptions) => void;
 
 export type ContextMenuTemplate = (MenuItemConstructorOptions | MenuItem)[];
 

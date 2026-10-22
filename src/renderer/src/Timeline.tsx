@@ -173,7 +173,7 @@ function Timeline({
   audioPeaks,
   showAudioLane,
   audioHeader,
-  onAudioClipContextMenu,
+  onEditClipVolume,
   zoomWindowStartTime,
   zoomWindowEndTime,
   onZoomWindowStartTimeChange,
@@ -232,7 +232,8 @@ function Timeline({
   audioPeaks: AudioPeaks | undefined,
   showAudioLane: boolean,
   audioHeader: ReactNode,
-  onAudioClipContextMenu?: ((index: number, event: ReactMouseEvent<HTMLElement>) => void) | undefined,
+  /** Opens a clip's volume popover at a point (right-click on the audio track, or the clip's menu). */
+  onEditClipVolume?: ((index: number, point: { x: number, y: number }) => void) | undefined,
   zoomWindowStartTime: number,
   zoomWindowEndTime: number | undefined,
   onZoomWindowStartTimeChange: (a: number) => void,
@@ -824,7 +825,7 @@ function Timeline({
                       className={[styles['textClip'], ...(selected ? [styles['textClipSelected']] : [])].join(' ')}
                       title={overlayClip.text}
                       onMouseDown={onOverlayMouseDown(overlayClip, 'move')}
-                      onContextMenu={onOverlayContextMenu(overlayClip)}
+                      onContextMenuCapture={onOverlayContextMenu(overlayClip)}
                       style={{ left, width }}
                     >
                       <button
@@ -920,6 +921,7 @@ function Timeline({
                     onRemoveSpeed={onRemoveSegmentSpeed}
                     onToggleSpeedControls={onToggleSegmentSpeedControls}
                     onEditCrop={onEditSegmentCrop}
+                    onEditVolume={onEditClipVolume}
                     filmstrip={filmstrip}
                     fileEnd={fileDurationNonZero}
                     onTrimHandleMouseDown={simpleMode ? onTrimHandleMouseDown : undefined}
@@ -971,7 +973,7 @@ function Timeline({
                 visibleStartPx={(toLanePercent(zoomWindowStartTime) / 100) * lanePx}
                 viewportPx={scrollerWidth}
                 onClipClick={setCurrentSegIndex}
-                onClipContextMenu={onAudioClipContextMenu}
+                onClipContextMenu={onEditClipVolume != null ? (index, event) => onEditClipVolume(index, { x: event.clientX, y: event.clientY }) : undefined}
               />
             )}
 

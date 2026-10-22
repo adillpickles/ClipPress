@@ -18,6 +18,7 @@ import { parameters as allFfmpegParameters, getHint, getLabel } from '../ffmpegP
 import { maxSegmentsAllowed } from '../util/constants';
 import type { DefiniteSegmentBase, ParseTimecode, SegmentBase, SegmentToExport, StateSegment, UpdateSegAtIndex } from '../types';
 import { segmentTagsSchema } from '../types';
+import type { UndoableSetOptions } from '../undoableHistory';
 import safeishEval from '../worker/eval';
 import type { FFprobeFormat, FFprobeStream } from '../../../common/ffprobe';
 import type { HandleError } from '../contexts';
@@ -113,7 +114,7 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     setSegColorCounter(0);
   }, [setSegColorCounter]);
 
-  const safeSetCutSegments = useCallback((newSegmentsOrFn: StateSegment[] | ((a: StateSegment[]) => StateSegment[]), clampDuration?: number) => {
+  const safeSetCutSegments = useCallback((newSegmentsOrFn: StateSegment[] | ((a: StateSegment[]) => StateSegment[]), clampDuration?: number, options?: UndoableSetOptions) => {
     function clampValue(val: number | undefined) {
       if (val == null || Number.isNaN(val)) return undefined;
       const clamped = Math.max(val, 0);
@@ -143,11 +144,11 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     });
 
     if (typeof newSegmentsOrFn === 'function') {
-      setCutSegments((existing) => map(newSegmentsOrFn(existing)));
+      setCutSegments((existing) => map(newSegmentsOrFn(existing)), options);
       return;
     }
 
-    setCutSegments(map(newSegmentsOrFn));
+    setCutSegments(map(newSegmentsOrFn), options);
   }, [setCutSegments]);
 
   const clearSegments = useCallback(() => {
@@ -448,13 +449,13 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     safeSetCutSegments((existingSegments) => combineSelectedSegments2(existingSegments));
   }, [safeSetCutSegments]);
 
-  const updateSegAtIndex = useCallback<UpdateSegAtIndex>((index, newProps) => {
+  const updateSegAtIndex = useCallback<UpdateSegAtIndex>((index, newProps, options) => {
     if (index < 0) return;
     const cutSegmentsNew = [...cutSegments];
     const existing = cutSegments[index];
     invariant(existing != null);
     cutSegmentsNew.splice(index, 1, { ...existing, ...newProps });
-    safeSetCutSegments(cutSegmentsNew, fileDuration);
+    safeSetCutSegments(cutSegmentsNew, fileDuration, options);
   }, [cutSegments, safeSetCutSegments, fileDuration]);
 
   const setCutTime = useCallback((type: 'start' | 'end' | 'move', time: number | undefined) => {
@@ -594,14 +595,14 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     }
   }, [getRelevantTime, fileDuration, cutSegments, simpleMode, createIndexedSegment, safeSetCutSegments]);
 
-  const duplicateSegment = useCallback((segment: Pick<StateSegment, 'start' | 'end'> & Partial<Pick<StateSegment, 'name' | 'speed' | 'crop'>>) => {
+  const duplicateSegment = useCallback((segment: Pick<StateSegment, 'start' | 'end'> & Partial<Pick<StateSegment, 'name' | 'speed' | 'crop' | 'audioGainDb' | 'audioMuted'>>) => {
     try {
       // Cannot duplicate if seg is not finished
       if (segment.start === undefined && segment.end === undefined) return;
 
       const cutSegmentsNew = [
         ...cutSegments,
-        createIndexedSegment({ segment: { start: segment.start, end: segment.end, name: segment.name, speed: segment.speed, crop: segment.crop }, incrementCount: true }),
+        createIndexedSegment({ segment: { start: segment.start, end: segment.end, name: segment.name, speed: segment.speed, crop: segment.crop, audioGainDb: segment.audioGainDb, audioMuted: segment.audioMuted }, incrementCount: true }),
       ];
 
       safeSetCutSegments(cutSegmentsNew);
@@ -714,8 +715,9 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
 
     if (segment.start === relevantTime || segment.end === relevantTime) return; // No point
 
-    const firstPart = createIndexedSegment({ segment: { name: getNewName(segment.name, '1'), start: segment.start, end: relevantTime, speed: segment.speed, crop: segment.crop }, incrementCount: false });
-    const secondPart = createIndexedSegment({ segment: { name: getNewName(segment.name, '2'), start: relevantTime, end: segment.end, speed: segment.speed, crop: segment.crop }, incrementCount: true });
+    const { speed, crop, audioGainDb, audioMuted } = segment;
+    const firstPart = createIndexedSegment({ segment: { name: getNewName(segment.name, '1'), start: segment.start, end: relevantTime, speed, crop, audioGainDb, audioMuted }, incrementCount: false });
+    const secondPart = createIndexedSegment({ segment: { name: getNewName(segment.name, '2'), start: relevantTime, end: segment.end, speed, crop, audioGainDb, audioMuted }, incrementCount: true });
 
     const newSegments = [...cutSegments];
     newSegments.splice(firstSegmentAtCursorIndex, 1, firstPart, secondPart);

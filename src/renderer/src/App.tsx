@@ -262,7 +262,8 @@ import { parseFfprobeDuration } from '../../common/util.js';
 
 import useLoading from './hooks/useLoading';
 import useVideo from './hooks/useVideo';
-import usePreviewAudioGain from './hooks/usePreviewAudioGain';
+import usePreviewAudioGain, { getPreviewGainFactor } from './hooks/usePreviewAudioGain';
+import type { PreviewClipVolume } from './hooks/usePreviewAudioGain';
 import useUndoableState from './hooks/useUndoableState';
 import EditHistoryOrder from './editHistoryOrder';
 import type { EditDomainHistory } from './editHistoryOrder';
@@ -280,6 +281,9 @@ import PreviewSpinner from './components/PreviewSpinner';
 import useFilmstrip from './hooks/useFilmstrip';
 import useAudioPeaks from './hooks/useAudioPeaks';
 import AudioTrackHeader from './components/AudioTrackHeader';
+import ClipVolumePopover from './components/ClipVolumePopover';
+import type { ClipVolumeChange } from './components/ClipVolumePopover';
+import { combineAudioGain, isClipVolumeChanged, sanitizeClipGainDb } from './util/audioGain';
 import { recycleOriginal, verifyExportedFiles } from './originalRecycling';
 import type { FileIdentity } from './originalRecycling';
 import { fileExists, identifyFile, probeOutput, statOutput } from './originalRecyclingIo';
@@ -900,7 +904,6 @@ function App() {
     [activeAudioStreams, filePath, paramsByStreamId],
   );
   // The native player plays one audio track; with more, the FFmpeg-assisted player applies gain itself.
-  usePreviewAudioGain(videoRef, activeAudioStreams.length === 1 ? activeAudioGainByStreamId[activeAudioStreams[0]!.index] : undefined, filePath);
   const previewAudioGainControls = useMemo(
     () => activeAudioStreams.map((stream, index) => ({
       streamIndex: stream.index,
@@ -1129,6 +1132,14 @@ function App() {
     .map((segment) => segment.segId)), [cutSegments, invertCutSegments, speedControlsBySegment]);
   const hasSegmentSpeedChanges = segmentsOrInverse.selected.some((segment) => getSegmentSpeed(segment) !== 1);
   const hasSegmentCropChanges = segmentsOrInverse.selected.some((segment) => hasSegmentCrop(segment));
+  const hasSegmentVolumeChanges = segmentsOrInverse.selected.some((segment) => isClipVolumeChanged(segment));
+  // Clip volumes play through the native player too (with the FFmpeg-assisted player they're only in the export).
+  const previewClipVolumes = useMemo<PreviewClipVolume[]>(() => (invertCutSegments ? [] : cutSegments.flatMap((segment) => (
+    segment.end != null && isClipVolumeChanged(segment)
+      ? [{ start: segment.start, end: segment.end, factor: getPreviewGainFactor(combineAudioGain(undefined, segment)) }]
+      : []
+  ))), [cutSegments, invertCutSegments]);
+  usePreviewAudioGain(videoRef, activeAudioStreams.length === 1 ? activeAudioGainByStreamId[activeAudioStreams[0]!.index] : undefined, filePath, previewClipVolumes);
   const [editingCropSegmentId, setEditingCropSegmentId] = useState<string>();
   const editingCropSegment = !invertCutSegments && currentCutSeg?.segId === editingCropSegmentId ? currentCutSeg : undefined;
   const previewSegment = invertCutSegments ? undefined : getPreviewSegment(cutSegments, currentSegIndexSafe, relevantTime, fileDuration);
@@ -1189,6 +1200,32 @@ function App() {
     if (segment?.end == null || invertCutSegments || workingRef.current) return;
     setSpeedControlsBySegment((existing) => ({ ...existing, [segmentId]: !speedControlsSegmentIds.has(segmentId) }));
   }, [cutSegments, invertCutSegments, setSpeedControlsBySegment, speedControlsSegmentIds, workingRef]);
+
+  /** A clip's own volume, from its popover on the audio track. One slider drag is one undo step. */
+  const changeSegmentVolume = useCallback((segmentId: string, { audioGainDb: requestedDb, audioMuted: requestedMuted }: ClipVolumeChange, drag: boolean) => {
+    if (workingRef.current || invertCutSegments) return;
+    const index = cutSegments.findIndex((segment) => segment.segId === segmentId);
+    const segment = cutSegments[index];
+    if (segment?.end == null) return;
+    const audioGainDb = sanitizeClipGainDb(requestedDb);
+    const audioMuted = requestedMuted ? true : undefined;
+    if (sanitizeClipGainDb(segment.audioGainDb) === audioGainDb && (segment.audioMuted === true) === requestedMuted) return;
+    updateSegAtIndex(index, { audioGainDb, audioMuted }, drag ? { coalesceKey: `clip-volume:${segmentId}` } : undefined);
+  }, [cutSegments, invertCutSegments, updateSegAtIndex, workingRef]);
+
+  const [clipVolumeEditor, setClipVolumeEditor] = useState<{ segId: string, anchor: { x: number, y: number } }>();
+  const editClipVolume = useCallback((index: number, point: { x: number, y: number }) => {
+    const segment = cutSegments[index];
+    if (segment?.end == null || invertCutSegments || workingRef.current) return;
+    setCurrentSegIndex(index);
+    setClipVolumeEditor({ segId: segment.segId, anchor: point });
+  }, [cutSegments, invertCutSegments, setCurrentSegIndex, workingRef]);
+  const clipVolumeEditorIndex = clipVolumeEditor != null ? cutSegments.findIndex((segment) => segment.segId === clipVolumeEditor.segId) : -1;
+  const clipVolumeEditorSegment = cutSegments[clipVolumeEditorIndex];
+  const closeClipVolumeEditor = useCallback(() => setClipVolumeEditor(undefined), []);
+  const onClipVolumeChange = useCallback((volume: ClipVolumeChange, drag: boolean) => {
+    if (clipVolumeEditor != null) changeSegmentVolume(clipVolumeEditor.segId, volume, drag);
+  }, [changeSegmentVolume, clipVolumeEditor]);
 
   const toggleSegmentSpeedControls = useCallback(() => {
     if (currentCutSeg != null) toggleSpeedControlsForSegment(currentCutSeg.segId);
@@ -2243,6 +2280,8 @@ function App() {
         tags: currentCutSeg?.tags,
         speed: currentCutSeg?.speed,
         crop: currentCutSeg?.crop,
+        audioGainDb: currentCutSeg?.audioGainDb,
+        audioMuted: currentCutSeg?.audioMuted,
       },
     ];
   }, [
@@ -3309,8 +3348,8 @@ function App() {
       // Checked again before the original is recycled, so a file that changed meanwhile is never touched.
       const sourceIdentity = await identifyFile(filePath);
 
-      if (segmentsToChaptersOnly && (hasSegmentSpeedChanges || hasSegmentCropChanges)) {
-        throw new UserFacingError(i18n.t('Choose a clip export mode to apply speed and crop changes. Chapters-only export keeps the original video.'));
+      if (segmentsToChaptersOnly && (hasSegmentSpeedChanges || hasSegmentCropChanges || hasSegmentVolumeChanges)) {
+        throw new UserFacingError(i18n.t('Choose a clip export mode to apply speed, crop and volume changes. Chapters-only export keeps the original video.'));
       }
 
       if (isSizeLimitedExport) {
@@ -3448,7 +3487,7 @@ function App() {
               sourceRotation: effectiveRotation,
               rotation: isRotationSet ? effectiveRotation : undefined,
               appendFfmpegCommandLog,
-              audioGainDb: sizeLimitedAudioGainDb,
+              audioGainDb: combineAudioGain(sizeLimitedAudioGainDb, segment),
               overlayClips: hasOverlayClips ? overlayClips : undefined,
               overlayVideoWidth: sizeLimitedVideoStream.width,
               overlayVideoHeight: sizeLimitedVideoStream.height,
@@ -3697,6 +3736,7 @@ function App() {
           videoStreamIndex: activeVideoStream.index,
           videoWidth: activeVideoStream.width,
           videoHeight: activeVideoStream.height,
+          encodeAllAudio: willMerge,
           onProgress: setProgress,
         });
 
@@ -3887,6 +3927,7 @@ function App() {
         paramsByStreamId,
         chapters: chaptersToAdd,
         detectedFps,
+        encodeAllAudio: willMerge && segmentsToExport.some((segment) => isClipVolumeChanged(segment)),
       });
 
       let mergedOutFilePath: string | undefined;
@@ -4126,6 +4167,7 @@ function App() {
     hasOverlayClips,
     hasSegmentSpeedChanges,
     hasSegmentCropChanges,
+    hasSegmentVolumeChanges,
     haveInvalidSegs,
     hideAllNotifications,
     invertCutSegments,
@@ -6723,13 +6765,26 @@ function App() {
                           filmstrip={filmstrip}
                           audioPeaks={audioPeaks}
                           showAudioLane={showAudioLane}
+                          onEditClipVolume={showAudioLane && !invertCutSegments ? editClipVolume : undefined}
                           audioHeader={(
-                            <AudioTrackHeader
-                              previewMuted={playbackVolume === 0}
-                              onTogglePreviewMuted={toggleMuted}
-                              gainControls={previewAudioGainControls}
-                              onGainChange={updateAudioGainForStream}
-                            />
+                            <>
+                              <AudioTrackHeader
+                                previewMuted={playbackVolume === 0}
+                                onTogglePreviewMuted={toggleMuted}
+                                gainControls={previewAudioGainControls}
+                                onGainChange={updateAudioGainForStream}
+                              />
+                              {clipVolumeEditor != null && clipVolumeEditorSegment != null && (
+                                <ClipVolumePopover
+                                  anchor={clipVolumeEditor.anchor}
+                                  clipLabel={clipVolumeEditorSegment.name || t('Clip {{number}}', { number: clipVolumeEditorIndex + 1 })}
+                                  audioGainDb={clipVolumeEditorSegment.audioGainDb}
+                                  audioMuted={clipVolumeEditorSegment.audioMuted === true}
+                                  onChange={onClipVolumeChange}
+                                  onClose={closeClipVolumeEditor}
+                                />
+                              )}
+                            </>
                           )}
                           getCurrentTime={getRelevantTime}
                           onScrubbingChange={onTimelineScrubbingChange}

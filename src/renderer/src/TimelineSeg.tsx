@@ -106,7 +106,7 @@ function getClipFrames(filmstrip: readonly FilmstripFrame[], start: number, end:
 }
 
 function Segment({
-  seg, segNum, color, isActive, selected, onClick, getTimePercent, instant, formatTimecode, invertCutSegments, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, filmstrip, toLanePercent, fileEnd, onTrimHandleMouseDown,
+  seg, segNum, color, isActive, selected, onClick, getTimePercent, instant, formatTimecode, invertCutSegments, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmstrip, toLanePercent, fileEnd, onTrimHandleMouseDown,
 }: {
   seg: Omit<StateSegment, 'end'> & { end: number },
   segNum: number,
@@ -123,6 +123,7 @@ function Segment({
   onRemoveSpeed: (segmentId: string) => void,
   onToggleSpeedControls: (segmentId: string) => void,
   onEditCrop: (index: number) => void,
+  onEditVolume?: ((index: number, point: { x: number, y: number }) => void) | undefined,
   filmstrip: readonly FilmstripFrame[],
   toLanePercent: (time: number) => number,
   fileEnd: number,
@@ -188,6 +189,7 @@ function Segment({
     event.preventDefault();
     event.stopPropagation();
     onClick();
+    const point = { x: event.clientX, y: event.clientY };
     const remote = window.require('@electron/remote');
     remote.Menu.buildFromTemplate([
       { label: t('Speed controls'), type: 'checkbox', checked: speedControlsVisible, click: () => onToggleSpeedControls(seg.segId) },
@@ -195,6 +197,7 @@ function Segment({
       { label: t('Remove speed change'), enabled: speed !== 1 || speedControlsVisible, click: () => onRemoveSpeed(seg.segId) },
       { type: 'separator' },
       { label: t('Zoom / Crop…'), click: () => onEditCrop(segNum) },
+      ...(onEditVolume != null ? [{ label: t('Clip volume…'), click: () => onEditVolume(segNum, point) }] : []),
     ]).popup({ window: remote.getCurrentWindow() });
   };
 
@@ -291,7 +294,7 @@ function Segment({
 }
 
 function SegmentOrMarker({
-  seg, toLanePercent, instant, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, filmstrip, fileEnd, onTrimHandleMouseDown,
+  seg, toLanePercent, instant, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmstrip, fileEnd, onTrimHandleMouseDown,
 } : {
   seg: StateSegment,
   toLanePercent: (time: number) => number,
@@ -307,6 +310,7 @@ function SegmentOrMarker({
   onRemoveSpeed: (segmentId: string) => void,
   onToggleSpeedControls: (segmentId: string) => void,
   onEditCrop: (index: number) => void,
+  onEditVolume?: ((index: number, point: { x: number, y: number }) => void) | undefined,
   filmstrip: readonly FilmstripFrame[],
   fileEnd: number,
   /** Simple mode: start dragging an edge of the active clip. */
@@ -321,7 +325,7 @@ function SegmentOrMarker({
   const onThisSegClick = useCallback(() => onSegClick(segNum), [onSegClick, segNum]);
 
   if (seg.end != null) {
-    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} instant={instant} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} speedControlsVisible={speedControlsVisible} onEditSpeed={onEditSpeed} onRemoveSpeed={onRemoveSpeed} onToggleSpeedControls={onToggleSpeedControls} onEditCrop={onEditCrop} filmstrip={filmstrip} toLanePercent={toLanePercent} fileEnd={fileEnd} onTrimHandleMouseDown={onTrimHandleMouseDown} />;
+    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} instant={instant} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} speedControlsVisible={speedControlsVisible} onEditSpeed={onEditSpeed} onRemoveSpeed={onRemoveSpeed} onToggleSpeedControls={onToggleSpeedControls} onEditCrop={onEditCrop} onEditVolume={onEditVolume} filmstrip={filmstrip} toLanePercent={toLanePercent} fileEnd={fileEnd} onTrimHandleMouseDown={onTrimHandleMouseDown} />;
   }
 
   return (
