@@ -62,15 +62,6 @@ const zoomOptions = Array.from({ length: 13 })
   .fill(undefined)
   .map((_unused, z) => 2 ** z);
 
-/** A trim bracket, as in the ClipPress mark: `[` for a clip's start, `]` for its end. */
-function BracketIcon({ side }: { side: 'start' | 'end' }) {
-  return (
-    <svg viewBox="0 0 16 16" width="0.95em" height="0.95em" aria-hidden focusable="false" style={{ flexShrink: 0 }}>
-      <path d={side === 'start' ? 'M9.5 2.5H5.5V13.5H9.5' : 'M6.5 2.5H10.5V13.5H6.5'} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 // eslint-disable-next-line react/display-name
 const InvertCutModeButton = memo(
   ({
@@ -628,19 +619,8 @@ function BottomBar({
         </div>
 
         <div className={styles['transportCenter']}>
-          {simpleMode && (
-          <>
-            <Button size="sm" className={styles['markButton']} onClick={setCutStart} title={shortcutTitle(t('Start the clip here'), 'setCutStart')}>
-              <BracketIcon side="start" />
-              {t('Start')}
-            </Button>
-            {playButton}
-            <Button size="sm" className={styles['markButton']} onClick={setCutEnd} title={shortcutTitle(t('End the clip here'), 'setCutEnd')}>
-              {t('End')}
-              <BracketIcon side="end" />
-            </Button>
-          </>
-          )}
+          {/* Simple mode keeps the transport to Play; clips start and end with I / O, the timeline's right-click menu or the clip handles. */}
+          {simpleMode && playButton}
 
           {!simpleMode && (
           <>
