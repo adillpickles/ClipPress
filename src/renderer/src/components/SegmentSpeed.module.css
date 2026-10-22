@@ -108,3 +108,31 @@
 @container (max-width: 160px) {
   .retimeDuration { display: none; }
 }
+
+/* Simple mode: a slim band along the bottom of the clip block instead of a lane of its own, so turning speed
+   controls on doesn't change the timeline's height (and with it the preview's size). */
+.retimeBar[data-overlay="true"] {
+  top: auto;
+  bottom: 7px;
+  height: 15px;
+  margin: 0 2px;
+  z-index: 1;
+  flex-direction: row;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--retime-color) 60%, transparent);
+  border-radius: 0 0 5px 5px;
+  background: color-mix(in srgb, var(--gray-1) 72%, transparent);
+}
+.retimeBar[data-overlay="true"] .retimeHeader {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  background: transparent;
+  border: 0;
+  opacity: .3;
+  pointer-events: none;
+}
+.retimeBar[data-overlay="true"] .retimeBody { justify-content: flex-start; padding-left: 2px; }
+.retimeBar[data-overlay="true"] .retimeSpeed { font-size: 10px; }
+.retimeBar[data-overlay="true"] .retimeDuration { font-size: 9.5px; }
+.retimeBar[data-overlay="true"][data-active="true"] .retimeDuration { right: 12px; }

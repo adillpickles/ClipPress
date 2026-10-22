@@ -16,7 +16,7 @@ const baseArrowSpacing = 14;
  * Resolve-style retime header drawn over a segment's timeline span. The timeline owns the
  * drag because a speed change ripples every lane; this only renders the bar and its menus.
  */
-export default function SegmentRetimeBar({ left, width, speed, committedSpeed, outputDuration, isActive, dragging, formatTimecode, onHandleMouseDown, onSelect, onChange, onEdit, onRemove, onHide }: {
+export default function SegmentRetimeBar({ left, width, speed, committedSpeed, outputDuration, isActive, dragging, overlay = false, formatTimecode, onHandleMouseDown, onSelect, onChange, onEdit, onRemove, onHide }: {
   left: string,
   width: string,
   speed: number,
@@ -24,6 +24,8 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
   outputDuration: number,
   isActive: boolean,
   dragging: boolean,
+  /** Drawn as a slim band along the bottom of the clip block (simple mode), so showing it doesn't add a lane. */
+  overlay?: boolean,
   formatTimecode: FormatTimecode,
   onHandleMouseDown: (event: ReactMouseEvent<HTMLButtonElement>) => void,
   onSelect: () => void,
@@ -63,6 +65,7 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
       data-tone={speed < 1 ? 'slow' : 'normal'}
       data-active={isActive}
       data-dragging={dragging}
+      data-overlay={overlay}
       style={{ left, width }}
       onMouseDown={(event) => event.stopPropagation()}
       onClick={onSelect}
@@ -83,7 +86,7 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
         <span className={styles['retimeDuration']}>{formatTimecode({ seconds: outputDuration, shorten: true })}</span>
       </div>
 
-      {isActive && !dragging && (
+      {isActive && !dragging && !overlay && (
         <LaneDeleteButton title={t('Remove speed change (back to 100%)')} onDelete={onRemove} style={{ right: 12 }} />
       )}
 

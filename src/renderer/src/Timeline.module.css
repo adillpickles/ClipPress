@@ -35,14 +35,20 @@
   min-width: 0;
 }
 
+/* Shown in the waveform lane when zoomed out too far; it keeps the lane's height. Sticky, so it stays in view
+   when the lane is wider than the window. */
 .waveformHint {
+  position: sticky;
+  left: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: .6rem;
+  width: max-content;
+  max-width: 100%;
+  padding: 0 .6rem;
   color: var(--cp-text-subtle);
   font-size: .8125rem;
-  border-bottom: 1px solid var(--cp-line);
+  white-space: nowrap;
 }
 
 .lane {

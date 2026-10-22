@@ -100,10 +100,12 @@ function Segment({
   onToggleSpeedControls: (segmentId: string) => void,
   onEditCrop: (index: number) => void,
 }) {
-  const { darkMode, prefersReducedMotion, springAnimation } = useUserSettings();
+  const { darkMode, prefersReducedMotion, springAnimation, simpleMode } = useUserSettings();
   const { t } = useTranslation();
   const { name } = seg;
   const speed = getSegmentSpeed(seg);
+  // Simple mode draws the speed controls as a band along the bottom of the block (Timeline), which also shows the %.
+  const speedBand = simpleMode && speedControlsVisible && !invertCutSegments;
 
   const backgroundColor = useMemo(() => {
     // Same hue at a fixed tone, so every clip reads clearly whatever its palette colour. Excluded
@@ -134,7 +136,8 @@ function Segment({
       left: getTimePercent(seg.start),
       width: cutSectionWidth,
       display: 'flex',
-      alignItems: 'center',
+      alignItems: speedBand ? 'flex-start' : 'center',
+      paddingTop: speedBand ? 2 : 0,
       originX: 0,
       boxSizing: 'border-box',
       color: darkMode || excluded ? 'var(--gray-12)' : 'rgba(0, 0, 0, 0.82)',
@@ -146,7 +149,7 @@ function Segment({
         ? `inset 0 0 0 2px ${darkMode ? 'rgba(255, 255, 255, 0.92)' : 'rgba(0, 0, 0, 0.7)'}`
         : `inset 0 0 0 1px ${darkMode ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)'}`,
     };
-  }, [getTimePercent, seg.end, seg.start, darkMode, excluded, isActive]);
+  }, [getTimePercent, seg.end, seg.start, darkMode, excluded, isActive, speedBand]);
 
   return (
     <motion.div
@@ -194,7 +197,7 @@ function Segment({
 
         {name && <div style={{ flexShrink: 1, fontSize: 12, fontWeight: 600, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{name}</div>}
 
-        {speed !== 1 && <div style={{ flexShrink: 0, marginLeft: 'auto', fontSize: 11, fontWeight: 600, opacity: 0.85, fontVariantNumeric: 'tabular-nums' }}>{`${Math.round(speed * 100)}%`}</div>}
+        {speed !== 1 && !speedBand && <div style={{ flexShrink: 0, marginLeft: 'auto', fontSize: 11, fontWeight: 600, opacity: 0.85, fontVariantNumeric: 'tabular-nums' }}>{`${Math.round(speed * 100)}%`}</div>}
       </div>
     </motion.div>
   );

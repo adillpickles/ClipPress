@@ -119,6 +119,8 @@ function Playhead({ playing, commandedTime, getCurrentTime, calculateTimelinePos
 
 const rulerHeight = 22;
 const clipLaneHeight = 44;
+/** Simple mode's clips lane is taller: it also holds the speed band, so speed controls don't add a lane. */
+const simpleClipLaneHeight = 56;
 const textLaneHeight = 28;
 const retimeLaneHeight = 38;
 const thumbnailsHeight = 63;
@@ -640,8 +642,14 @@ function Timeline({
 
   const showTextLane = hasVideo || overlayClips.length > 0;
   const noneTicked = cutSegments.some((seg) => seg.end != null) && cutSegments.every((seg) => seg.end == null || !seg.selected);
+  // The waveform lane keeps its height whether it shows the waveform or the "zoom in" hint, so zooming
+  // doesn't resize the preview.
+  const showWaveformLane = waveformEnabled;
   const showWaveformHint = waveformEnabled && !shouldShowWaveform;
   const showWaveforms = waveformEnabled && shouldShowWaveform && (waveforms.length > 0 || overviewWaveform != null);
+  // Simple mode draws speed controls on the clip block itself rather than in a lane of their own.
+  const retimeOverlay = simpleMode;
+  const showRetimeLane = !retimeOverlay && retimeSegments.length > 0;
   const lanePx = scrollerWidth * (laneWidthPercent / 100);
   // The visible stretch of the lane, in source time. Retimed clips stretch or squeeze the lane, so
   // this is mapped from lane time rather than taken as a fixed share of the file.
@@ -658,13 +666,12 @@ function Timeline({
   return (
     <div className={styles['timeline']}>
       <div className={styles['gutter']} aria-hidden>
-        {showWaveformHint && <div style={{ height: clipLaneHeight }} />}
         <div style={{ height: rulerHeight }} />
-        {showWaveforms && <div className={styles['laneLabel']} style={{ height: waveformHeight }}>{t('Audio')}</div>}
+        {showWaveformLane && <div className={styles['laneLabel']} style={{ height: waveformHeight }}>{t('Audio')}</div>}
         {showThumbnails && <div style={{ height: thumbnailsHeight }} />}
         {showTextLane && <div className={styles['laneLabel']} style={{ height: textLaneHeight }}>{t('Text')}</div>}
-        {retimeSegments.length > 0 && <div className={styles['laneLabel']} style={{ height: retimeLaneHeight }}>{t('Speed')}</div>}
-        <div className={styles['laneLabel']} style={{ height: clipLaneHeight }}>{simpleMode ? t('Clips') : t('Segments')}</div>
+        {showRetimeLane && <div className={styles['laneLabel']} style={{ height: retimeLaneHeight }}>{t('Speed')}</div>}
+        <div className={styles['laneLabel']} style={{ height: simpleMode ? simpleClipLaneHeight : clipLaneHeight }}>{simpleMode ? t('Clips') : t('Segments')}</div>
       </div>
 
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions,jsx-a11y/mouse-events-have-key-events */}
@@ -675,13 +682,6 @@ function Timeline({
         // eslint-disable-next-line jsx-a11y/mouse-events-have-key-events
         onMouseOut={onMouseOut}
       >
-        {showWaveformHint && (
-          <div className={styles['waveformHint']} style={{ height: clipLaneHeight }}>
-            {t('Zoom in more to view waveform')}
-            <Button size="sm" onClick={onGenerateOverviewWaveformClick2}>{t('Load overview')}</Button>
-          </div>
-        )}
-
         <div
           style={{ overflowX: 'scroll', overflowY: 'hidden' }}
           className="hide-scrollbar"
@@ -702,6 +702,13 @@ function Timeline({
               height={rulerHeight}
             />
 
+            {showWaveformHint && (
+              <div className={styles['waveformHint']} style={{ height: waveformHeight }}>
+                {t('Zoom in more to view waveform')}
+                <Button size="sm" onClick={onGenerateOverviewWaveformClick2}>{t('Load overview')}</Button>
+              </div>
+            )}
+            {showWaveformLane && !showWaveformHint && !showWaveforms && <div style={{ height: waveformHeight }} className={styles['loading-bg']} />}
             {showWaveforms && (
               <Waveforms
                 timelineMap={timelineMap}
@@ -771,7 +778,7 @@ function Timeline({
               </div>
             )}
 
-            {retimeSegments.length > 0 && (
+            {showRetimeLane && (
               <div className={styles['lane']} style={{ height: retimeLaneHeight, isolation: 'isolate', overflow: 'hidden' }}>
                 {retimeSegments.map(({ seg, index }) => {
                   const left = toLanePercent(seg.start);
@@ -802,7 +809,7 @@ function Timeline({
 
             <div
               className={[styles['lane'], styles['clipLane']].join(' ')}
-              style={{ height: clipLaneHeight, transition: darkModeTransition }}
+              style={{ height: simpleMode ? simpleClipLaneHeight : clipLaneHeight, transition: darkModeTransition }}
               ref={timelineWrapperRef}
             >
               {inverseCutSegments.map((seg) => (
@@ -836,6 +843,32 @@ function Timeline({
                     onRemoveSpeed={onRemoveSegmentSpeed}
                     onToggleSpeedControls={onToggleSegmentSpeedControls}
                     onEditCrop={onEditSegmentCrop}
+                  />
+                );
+              })}
+
+              {retimeOverlay && retimeSegments.map(({ seg, index }) => {
+                const left = toLanePercent(seg.start);
+                const dragging = retimeDrag?.segId === seg.segId;
+                const speed = dragging ? retimeDrag.speed : getSegmentSpeed(seg);
+                return (
+                  <SegmentRetimeBar
+                    key={seg.segId}
+                    overlay
+                    left={`${left}%`}
+                    width={`calc(${toLanePercent(seg.end) - left}% - 4px)`}
+                    speed={speed}
+                    committedSpeed={getSegmentSpeed(seg)}
+                    outputDuration={getSegmentOutputDuration({ ...seg, speed })}
+                    isActive={index === currentSegIndexSafe}
+                    dragging={dragging}
+                    formatTimecode={formatTimecode}
+                    onHandleMouseDown={onRetimeHandleMouseDown(seg, index)}
+                    onSelect={() => setCurrentSegIndex(index)}
+                    onChange={(nextSpeed) => onChangeSegmentSpeed(seg.segId, nextSpeed)}
+                    onEdit={() => onEditSegmentSpeed(index)}
+                    onRemove={() => onRemoveSegmentSpeed(seg.segId)}
+                    onHide={() => onToggleSegmentSpeedControls(seg.segId)}
                   />
                 );
               })}

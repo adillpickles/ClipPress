@@ -22,17 +22,21 @@ video.video::-webkit-media-text-track-display {
   overflow: hidden;
 }
 
+/* The preview takes whatever the editor card leaves, but never less than a floor; the editor card takes its
+   natural height (a fixed set of lanes, so it doesn't change while editing) and scrolls only if the window is
+   too small for both. */
 .workspaceColumn {
   min-width: 0;
+  min-height: 0;
   flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-  gap: .75rem;
+  display: grid;
+  grid-template-rows: minmax(12rem, 1fr) minmax(0, auto);
+  row-gap: .75rem;
 }
 
 .emptyStateShell {
+  grid-row: 1 / -1;
   position: relative;
-  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   align-items: stretch;
@@ -41,8 +45,7 @@ video.video::-webkit-media-text-track-display {
 
 .previewCard {
   position: relative;
-  flex-grow: 1;
-  min-height: clamp(14rem, 38vh, 30rem);
+  min-height: 0;
   overflow: hidden;
   border-radius: var(--cp-radius-lg);
   border: 1px solid var(--cp-line);
@@ -50,6 +53,8 @@ video.video::-webkit-media-text-track-display {
 }
 
 .editorCard {
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: .6rem;

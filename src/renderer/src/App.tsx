@@ -1120,12 +1120,13 @@ function App() {
     const segment = cutSegments[index];
     if (segment?.end == null || activeVideoStream?.width == null || activeVideoStream.height == null || invertCutSegments || workingRef.current) return;
     pause();
-    setWaveformMode(undefined);
+    // The full-size waveform takes the preview's place, which cropping needs; the small waveform lane can stay.
+    if (waveformModePreference === 'big-waveform') setWaveformMode(undefined);
     setCurrentSegIndex(index);
     seekAbs(segment.start);
     setSelectedOverlayId(undefined);
     setEditingCropSegmentId(segment.segId);
-  }, [activeVideoStream, cutSegments, invertCutSegments, pause, seekAbs, setCurrentSegIndex, setWaveformMode, workingRef]);
+  }, [activeVideoStream, cutSegments, invertCutSegments, pause, seekAbs, setCurrentSegIndex, setWaveformMode, waveformModePreference, workingRef]);
 
   const changeSegmentCrop = useCallback((crop: SegmentCrop) => {
     if (editingCropSegmentId == null || workingRef.current) return;
@@ -1604,7 +1605,8 @@ function App() {
 
   const waveformEnabled = hasAudio && waveformMode != null;
   const bigWaveformEnabled = waveformEnabled && waveformMode === 'big-waveform';
-  const showThumbnails = thumbnailsEnabled && hasVideo;
+  // The thumbnail row is an advanced-mode tool; simple mode will get its own filmstrip in the clips lane.
+  const showThumbnails = thumbnailsEnabled && hasVideo && !simpleMode;
 
   const { thumbnailsSorted, setThumbnails } = useThumbnails({
     filePath,
