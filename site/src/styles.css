@@ -14,13 +14,7 @@
   --faint: #7d7d86;
   --line: rgba(255, 255, 255, 0.08);
   --line-strong: rgba(255, 255, 255, 0.16);
-  /* Brand teal, as in the app (main.css --accent-*). Anything drawn on a
-     solid teal fill uses the near-black ink, like the app's primary buttons. */
   --accent: #3bb3bd;
-  --accent-hover: #4cc2cc;
-  --accent-ink: #041416;
-  --accent-soft: rgba(59, 179, 189, 0.14);
-  --accent-line: rgba(59, 179, 189, 0.6);
 
   --sans: 'Segoe UI Variable Display', 'Segoe UI', -apple-system, BlinkMacSystemFont,
     'Helvetica Neue', Arial, sans-serif;
@@ -121,32 +115,10 @@ a {
 }
 
 .wordmark {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
   font-size: 19px;
   font-weight: 500;
   letter-spacing: -0.03em;
   text-decoration: none;
-}
-
-/* The app mark: the icon's glyph on its teal tile (src/renderer/src/icon.svg).
-   The SVG view is cropped to the tile, so the glyph keeps the icon's
-   proportions at any size. Used in the header and the app mock title bar. */
-.mark {
-  display: inline-block;
-  flex: none;
-  width: 24px;
-  height: 24px;
-  border-radius: 23%;
-  background: linear-gradient(180deg, #4ccad4, #2b8e97);
-  color: #0b1417;
-}
-
-.mark svg {
-  display: block;
-  width: 100%;
-  height: 100%;
 }
 
 /* The one bit of brand personality on the page: the two halves of the name
@@ -797,8 +769,8 @@ a {
   width: 26px;
   height: 26px;
   border-radius: 7px;
-  background: linear-gradient(135deg, rgba(59, 179, 189, 0.45), rgba(59, 179, 189, 0.12));
-  box-shadow: inset 0 0 0 1px rgba(59, 179, 189, 0.45);
+  background: linear-gradient(135deg, rgba(62, 124, 196, 0.5), rgba(62, 124, 196, 0.15));
+  box-shadow: inset 0 0 0 1px rgba(62, 124, 196, 0.45);
 }
 
 .fig__filename {
@@ -876,16 +848,16 @@ a {
 }
 
 .fig__preset.is-on {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
+  border-color: rgba(62, 124, 196, 0.7);
+  background: rgba(62, 124, 196, 0.12);
   color: var(--ink);
 }
 
 .fig__go {
   padding: 8px 20px;
   border-radius: 9px;
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: #3e7cc4;
+  color: #fff;
   font-size: 13px;
   font-weight: 650;
   white-space: nowrap;
@@ -909,7 +881,7 @@ a {
   width: 100%;
   height: 100%;
   border-radius: 3px;
-  background: var(--accent);
+  background: #3e7cc4;
 }
 
 .fig--js .fig__progress span {
@@ -1148,7 +1120,7 @@ a {
 }
 
 .step:nth-child(1) .step__icon {
-  stroke: #e8c884;
+  stroke: #8ea3d6;
   animation: stepsnip 7s ease-in-out infinite;
 }
 
@@ -1432,33 +1404,18 @@ kbd {
   text-align: center;
 }
 
-/* Simplified miniature of the Beta 6 ClipPress editor in simple mode: title
-   bar, toolbar, preview, transport + timeline panel and the clips panel. The
-   surfaces follow the app's neutral tokens (main.css --cp-*), nudged toward
-   the page's zinc so the mock sits calmly in it; teal marks only the primary
-   action, selection and the playhead, as in the app. */
+/* Simplified miniature of the real ClipPress window: dark desktop-app frame,
+   toolbar, preview stage, timeline and clips panel. Wide, rounded, quiet.
+   The product blue is muted one step here so the mock sits calmly in the
+   page; the app itself is untouched. */
 .appmock {
-  --m-bg: #111113;
-  --m-panel: #18181b;
-  --m-raised: #222226;
-  --m-hover: #2b2b30;
-  --m-line: rgba(255, 255, 255, 0.08);
-  --m-line-strong: rgba(255, 255, 255, 0.15);
-  --m-text: #ededef;
-  --m-muted: #b4b4b9;
-  --m-subtle: #7b7b82;
-  /* The app's first clip colour (#5b8def, util/colors.ts) at the tones
-     TimelineSeg and SegmentList draw it. Clip hues are not the accent: the
-     app leaves teal out so a clip never reads as selected. */
-  --m-clip: hsl(220 72% 54% / 0.95);
-  --m-clip-badge: hsl(220 72% 44%);
   position: relative;
   overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: 16px;
-  background: var(--m-bg);
+  background: #0e0e11;
   box-shadow: 0 40px 90px -40px rgba(0, 0, 0, 0.8), inset 0 1px rgba(255, 255, 255, 0.04);
-  color: var(--m-muted);
+  color: #d7d7dc;
   font-size: 13px;
   text-align: left;
   /* A scrub surface, not a document: no text selection and no native
@@ -1476,247 +1433,142 @@ kbd {
   font-family: inherit;
 }
 
-.appmock p {
-  margin: 0;
-}
-
-/* Feather line icons, as in the app. */
-.appmock__titlebar svg,
-.appmock__btn svg,
-.appmock__export svg,
-.appmock__x,
-.appmock__dlgclose svg,
-.appmock__spin {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 .appmock__titlebar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  height: 36px;
-  padding-left: 12px;
-  border-bottom: 1px solid var(--m-line);
+  gap: 20px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
 }
 
 .appmock__brand {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  color: var(--m-text);
-  font-size: 13px;
-  letter-spacing: -0.02em;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   white-space: nowrap;
 }
 
-.appmock__brand .mark {
+.appmock__brand svg {
   width: 18px;
   height: 18px;
-}
-
-.appmock__brand b {
-  font-weight: 650;
-}
-
-.appmock__brand b + span {
-  color: var(--m-muted);
-  font-weight: 450;
-}
-
-.appmock__menus {
-  display: inline-flex;
-  gap: 2px;
-  color: var(--m-subtle);
-  font-size: 12px;
-}
-
-.appmock__menus i {
-  padding: 3px 7px;
-  font-style: normal;
+  fill: #3e7cc4;
+  stroke: #0e0e11;
+  stroke-width: 1.4;
 }
 
 .appmock__winbtns {
   display: inline-flex;
-  align-items: center;
+  gap: 16px;
   margin-left: auto;
-  color: var(--m-muted);
+  color: var(--faint);
+  font-size: 12px;
 }
 
-.appmock__winbtns svg {
-  width: 13px;
-  height: 13px;
-  margin: 0 15px;
-  stroke-width: 1.6;
+.appmock__winbtns i {
+  font-style: normal;
 }
 
 .appmock__toolbar {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
 }
 
-/* App buttons (components/Button.module.css): raised neutral by default,
-   ghost without a fill, primary teal for Export. */
-.appmock__btn {
+.appmock__simple {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  flex: none;
-  min-height: 30px;
-  padding: 0 11px;
-  border: 1px solid var(--m-line);
-  border-radius: 8px;
-  background: var(--m-raised);
-  color: var(--m-text);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.2;
+  margin-left: auto;
+  padding: 9px 20px;
+  border-radius: 999px;
+  background: #3e7cc4;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 650;
   white-space: nowrap;
 }
 
-button.appmock__btn {
-  cursor: pointer;
-  transition: background-color 0.14s ease, border-color 0.14s ease;
-}
-
-button.appmock__btn:hover {
-  background: var(--m-hover);
-  border-color: var(--m-line-strong);
-}
-
-.appmock__btn svg {
-  width: 14px;
-  height: 14px;
-  flex: none;
-}
-
-.appmock__btn--sm {
-  min-height: 27px;
-  padding: 0 9px;
-  border-radius: 6px;
-  font-size: 12.5px;
-}
-
-.appmock__btn--lg {
-  min-height: 36px;
-  padding: 0 16px;
-  font-size: 14px;
-}
-
-.appmock__btn--ghost {
-  border-color: transparent;
-  background: transparent;
-  color: var(--m-muted);
-}
-
 .appmock__name {
-  flex: 1 1 auto;
-  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  min-width: 180px;
+  flex: 1 1 220px;
+  padding: 5px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.appmock__namelabel {
+  color: var(--faint);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .appmock__name input {
   width: 100%;
-  max-width: 340px;
-  padding: 4px 8px;
-  border: 1px solid transparent;
-  border-radius: 8px;
+  padding: 0;
+  border: 0;
   background: transparent;
-  color: var(--m-text);
+  color: var(--ink);
   font-family: inherit;
-  font-size: 14.5px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  transition: background-color 0.14s ease;
+  font-size: 13px;
+  font-weight: 650;
 }
 
-.appmock__name input:hover {
-  background: var(--m-hover);
-}
-
-.appmock__name input:focus,
-.appmock__name input:focus-visible {
+.appmock__name input:focus {
   outline: none;
-  border-color: var(--accent);
-  background: var(--m-bg);
-}
-
-/* Simple / Advanced switch: decorative, Simple is the product. */
-.appmock__mode {
-  display: inline-flex;
-  flex: none;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--m-line);
-  border-radius: 8px;
-  background: var(--m-bg);
-}
-
-.appmock__mode i {
-  min-width: 62px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  color: var(--m-subtle);
-  font-size: 12.5px;
-  font-style: normal;
-  font-weight: 600;
-  text-align: center;
-}
-
-.appmock__mode i.is-on {
-  background: var(--m-hover);
-  color: var(--m-text);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 .appmock__export {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  flex: none;
-  min-height: 32px;
-  padding: 0 14px 0 12px;
+  gap: 8px;
+  padding: 9px 18px;
   border: 0;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: 14px;
-  font-weight: 700;
+  border-radius: 10px;
+  background: #3e7cc4;
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 650;
   cursor: pointer;
   white-space: nowrap;
-  transition: background-color 0.14s ease;
+  transition: background-color 0.15s ease;
 }
 
 .appmock__export:hover {
-  background: var(--accent-hover);
+  background: #4c88cf;
 }
 
 .appmock__export svg {
-  width: 15px;
-  height: 15px;
-  stroke-width: 2.2;
-}
-
-.appmock__export--lg {
-  min-height: 36px;
-  padding: 0 16px 0 14px;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
 }
 
 .appmock__main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 236px;
-  gap: 8px;
-  padding: 0 10px 10px;
+  grid-template-columns: minmax(0, 1fr) 232px;
+  gap: 12px;
+  padding: 12px 14px 14px;
 }
 
 .appmock__stage {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   align-content: start;
   min-width: 0;
 }
@@ -1724,7 +1576,7 @@ button.appmock__btn:hover {
 .appmock__screen {
   position: relative;
   aspect-ratio: 16 / 9;
-  border: 1px solid var(--m-line);
+  border: 1px solid var(--line);
   border-radius: 12px;
   overflow: hidden;
   background: #000;
@@ -1794,93 +1646,59 @@ button.appmock__btn:hover {
   text-transform: uppercase;
 }
 
-/* Transport + timeline panel under the preview. */
-.appmock__bottom {
-  display: grid;
-  gap: 8px;
-  padding: 8px 10px 10px;
-  border: 1px solid var(--m-line);
-  border-radius: 12px;
-  background: var(--m-panel);
-}
-
-/* Time on the left, [ Start  ▶  End ] centred, tools on the right. */
 .appmock__transport {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px 10px;
+  justify-content: center;
+  gap: 12px;
 }
 
-.appmock__time,
-.appmock__tools {
+.appmock__io {
   display: inline-flex;
-  align-items: baseline;
-  flex: 1 1 0;
-  min-width: max-content;
+  align-items: center;
+  gap: 10px;
 }
 
-.appmock__time {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.appmock__timecur {
-  color: var(--m-text);
+.appmock__iobtn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink);
+  font-family: var(--mono);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
+  cursor: pointer;
 }
 
-.appmock__timedur {
-  color: var(--m-subtle);
-  font-size: 12.5px;
-  white-space: pre;
-}
-
-.appmock__tcenter {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.appmock__tools {
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.appmock__setbtn {
-  min-width: 68px;
-}
-
-.appmock__setbtn svg {
-  width: 13px;
-  height: 13px;
-  stroke-width: 2.2;
+.appmock__iobtn:hover {
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .appmock__play {
   display: grid;
   place-items: center;
-  flex: none;
-  width: 34px;
-  height: 34px;
-  padding: 0;
+  width: 40px;
+  height: 40px;
   border: 0;
   border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: #3e7cc4;
+  color: #fff;
   cursor: pointer;
-  transition: background-color 0.14s ease;
+  transition: background-color 0.15s ease;
 }
 
 .appmock__play:hover {
-  background: var(--accent-hover);
+  background: #4c88cf;
 }
 
 .appmock__play svg {
-  width: 13px;
-  height: 13px;
+  width: 16px;
+  height: 16px;
   fill: currentColor;
 }
 
@@ -1893,164 +1711,68 @@ button.appmock__btn:hover {
 @keyframes playnudge {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(59, 179, 189, 0);
+    box-shadow: 0 0 0 0 rgba(62, 124, 196, 0);
   }
 
   50% {
-    box-shadow: 0 0 0 10px rgba(59, 179, 189, 0.25);
+    box-shadow: 0 0 0 12px rgba(62, 124, 196, 0.25);
   }
-}
-
-/* Timeline: lane-label gutter, then a thin ruler over the clip lane. */
-.appmock__tlbox {
-  display: flex;
-  overflow: hidden;
-  border: 1px solid var(--m-line);
-  border-radius: 8px;
-  background: var(--m-bg);
-}
-
-.appmock__gutter {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  justify-content: flex-end;
-  width: 52px;
-  border-right: 1px solid var(--m-line);
-}
-
-.appmock__gutter i {
-  display: flex;
-  align-items: center;
-  height: 40px;
-  padding: 0 8px;
-  border-top: 1px solid var(--m-line);
-  color: var(--m-subtle);
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 600;
 }
 
 .appmock__timeline {
   position: relative;
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 61px;
+  height: 50px;
   touch-action: none;
   cursor: pointer;
 }
 
-.appmock__ruler {
+.appmock__tltrack {
   position: absolute;
-  top: 0;
   left: 0;
   right: 0;
-  height: 21px;
-  overflow: hidden;
-  border-bottom: 1px solid var(--m-line);
+  top: 11px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
 }
 
-/* Ticks and labels are placed by main.ts from the media duration. */
-.appmock__ruler b,
-.appmock__ruler s {
-  position: absolute;
-  bottom: 0;
-  width: 1px;
-}
-
-.appmock__ruler b {
-  height: 8px;
-  background: #6e6e74;
-}
-
-.appmock__ruler s {
-  height: 4px;
-  background: #47474d;
-}
-
-.appmock__ruler span {
-  position: absolute;
-  bottom: 6px;
-  margin-left: 4px;
-  color: var(--m-subtle);
-  font-size: 10px;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.appmock__lane {
-  position: absolute;
-  top: 21px;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(255, 255, 255, 0.025);
-}
-
-/* The clip: a solid block in its hue with a number badge; the white ring
-   is the app's active-clip outline. */
 .appmock__tlrange {
   position: absolute;
-  top: 26px;
-  bottom: 5px;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-  border-radius: 6px;
-  background: var(--m-clip);
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.92);
+  top: 11px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(59, 179, 189, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(59, 179, 189, 0.55);
 }
 
-.appmock__tlrange i {
-  /* Clear of the start grip. A margin rather than padding on the range, so short clips keep their true width. */
-  flex-shrink: 0;
-  margin-left: 14px;
-  min-width: 16px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.28);
-  color: #fff;
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 700;
-  line-height: 18px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Teal playhead across ruler and lane, with its handle in the ruler. */
 .appmock__tlhead {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  z-index: 2;
+  top: 4px;
+  bottom: 4px;
   width: 2px;
   margin-left: -1px;
-  background: var(--accent);
-  pointer-events: none;
+  border-radius: 1px;
+  background: var(--ink);
 }
 
-.appmock__tlhead::before {
+.appmock__tlhead::after {
   content: '';
   position: absolute;
-  top: 0;
+  top: -3px;
   left: 50%;
-  width: 11px;
-  height: 12px;
-  border-radius: 2px 2px 0 0;
-  background: var(--accent);
-  transform: translateX(-50%);
-  clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%);
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: var(--ink);
 }
 
 .appmock__handle {
   position: absolute;
-  top: 26px;
-  bottom: 5px;
-  z-index: 3;
+  top: 11px;
   width: 16px;
+  height: 28px;
   margin-left: -8px;
   padding: 0;
   border: 0;
@@ -2059,353 +1781,296 @@ button.appmock__btn:hover {
   touch-action: none;
 }
 
-/* Grips sit just inside the clip edge they move. */
 .appmock__handle i {
-  position: absolute;
-  top: 50%;
-  width: 4px;
-  height: 16px;
-  margin-top: -8px;
-  border-radius: 2px;
-  background: #fff;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  display: block;
+  width: 5px;
+  height: 100%;
+  margin: 0 auto;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.85);
 }
 
-#mockHandleIn i {
-  left: 11px;
+.appmock__tlmeta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
 }
 
-#mockHandleOut i {
-  right: 11px;
+.appmock__hint {
+  color: var(--faint);
+  font-family: var(--sans);
+  font-size: 12px;
+}
+
+.appmock__total strong {
+  color: var(--ink);
+  font-weight: 650;
 }
 
 .appmock__clips {
   display: flex;
   flex-direction: column;
+  gap: 12px;
   min-width: 0;
-  border: 1px solid var(--m-line);
+  padding: 14px;
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--m-panel);
+  background: rgba(255, 255, 255, 0.015);
 }
 
 .appmock__clipshead {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
-  padding: 10px 8px 8px 12px;
 }
 
 .appmock__clipstitle {
-  color: var(--m-text);
-  font-size: 14.5px;
+  color: var(--ink);
+  font-size: 14px;
   font-weight: 700;
-  line-height: 1.2;
 }
 
 .appmock__clipssub {
   margin-top: 2px;
-  color: var(--m-subtle);
-  font-size: 11.5px;
+  color: var(--faint);
+  font-size: 12px;
 }
 
 .appmock__x {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  margin-right: 6px;
-  color: var(--m-subtle);
-}
-
-.appmock__clipslist {
-  display: grid;
-  gap: 4px;
-  padding: 0 6px 6px;
+  color: var(--faint);
+  font-size: 13px;
 }
 
 .appmock__clipcard {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 7px 8px;
-  border: 1px solid transparent;
-  border-radius: 8px;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
 }
 
 .appmock__clipcard.is-on {
-  border-color: #5c5c62;
-  background: var(--m-raised);
+  border-color: rgba(62, 124, 196, 0.65);
+  background: rgba(62, 124, 196, 0.07);
+}
+
+.appmock__clipslist {
+  display: grid;
+  gap: 10px;
 }
 
 .appmock__clipnum {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   flex: none;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 4px;
-  border-radius: 6px;
-  background: var(--m-clip-badge);
-  color: #fff;
-  font-size: 11.5px;
-  font-weight: 700;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
 }
 
 .appmock__cliptexts {
   display: grid;
-  flex: 1 1 auto;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
 .appmock__cliprange {
-  color: var(--m-text);
-  font-size: 13.5px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 650;
   white-space: nowrap;
 }
 
 .appmock__clipmeta {
-  overflow: hidden;
-  color: var(--m-subtle);
+  color: var(--muted);
+  font-family: var(--mono);
   font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Include-in-export tick, drawn ticked in teal as in the app. */
-.appmock__tick {
-  flex: none;
-  width: 17px;
-  height: 17px;
-  padding: 2px;
-  border-radius: 4px;
-  background: var(--accent);
-  fill: none;
-  stroke: var(--accent-ink);
-  stroke-width: 3.2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 .appmock__clipsfoot {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
   margin-top: auto;
-  padding: 9px 12px;
-  border-top: 1px solid var(--m-line);
-  color: var(--m-subtle);
-  font-size: 11.5px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .appmock__clipsfoot strong {
-  color: var(--m-text);
-  font-size: 14px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  display: block;
+  margin-top: 3px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0;
 }
 
-/* Export sheet, progress card and result card float above the mock window. */
+/* Export dialog + progress + success float above the mock window. */
 .appmock__overlay {
   position: absolute;
   inset: 0;
   z-index: 5;
   display: grid;
   place-items: center;
-  padding: 18px;
-  background: rgba(0, 0, 0, 0.6);
+  padding: 20px;
+  background: rgba(5, 5, 8, 0.72);
+  backdrop-filter: blur(6px);
 }
 
 .appmock__overlay[hidden] {
   display: none;
 }
 
-/* The app's export sheet (components/ExportSheet + ExportConfirm): header
-   with a one-line summary, a scrolling body, a footer with the actions. */
 .appmock__dialog {
-  display: flex;
-  flex-direction: column;
-  width: min(560px, 100%);
+  width: min(680px, 100%);
   max-height: 100%;
-  overflow: hidden;
-  border: 1px solid var(--m-line);
+  overflow-y: auto;
+  padding: 20px 22px 22px;
+  border: 1px solid var(--line-strong);
   border-radius: 16px;
-  background: var(--m-panel);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.2);
+  background: #141417;
+  box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.85);
 }
 
 .appmock__dlghead {
   display: flex;
-  flex: none;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 20px 12px;
 }
 
 .appmock__dlghead h3 {
   margin: 0;
-  color: var(--m-text);
+  color: var(--ink);
   font-size: 17px;
   font-weight: 700;
-  line-height: 1.3;
-}
-
-.appmock__dlgsub {
-  margin-top: 3px;
-  color: var(--m-muted);
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
 
 .appmock__dlgclose {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 30px;
-  height: 30px;
-  margin: -4px -8px 0 0;
-  padding: 0;
+  padding: 6px 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
-  color: var(--m-muted);
+  color: var(--muted);
+  font-size: 14px;
   cursor: pointer;
 }
 
 .appmock__dlgclose:hover {
-  background: var(--m-hover);
-  color: var(--m-text);
+  color: var(--ink);
 }
 
-.appmock__dlgclose svg {
-  width: 16px;
-  height: 16px;
-}
-
-.appmock__dlgbody {
-  display: grid;
-  gap: 10px;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 0 20px 18px;
+.appmock__banner {
+  margin-top: 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(62, 124, 196, 0.1);
+  color: #8ea3d6;
+  font-size: 12.5px;
+  line-height: 1.55;
 }
 
 .appmock__group {
-  color: var(--m-text);
-  font-size: 13.5px;
-  font-weight: 700;
+  margin: 16px 0 8px;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.appmock__group[hidden],
+.appmock__cards[hidden] {
+  display: none;
 }
 
 .appmock__cards {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.appmock__card {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 10px 12px;
-  border: 1px solid var(--m-line);
-  border-radius: 12px;
-  background: var(--m-bg);
-  color: var(--m-muted);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 0.12s ease, background-color 0.12s ease;
-}
-
-.appmock__card strong {
-  color: var(--m-text);
-  font-size: 13.5px;
-  font-weight: 600;
-}
-
-.appmock__card span {
-  font-size: 12.5px;
-  line-height: 1.4;
-}
-
-.appmock__card:hover {
-  border-color: var(--m-line-strong);
-  background: var(--m-raised);
-}
-
-.appmock__card.is-on {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-
-.appmock__fields {
-  display: grid;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--m-line);
-  border-radius: 12px;
-  background: var(--m-bg);
-}
-
-.appmock__fields[hidden] {
-  display: none;
-}
-
-.appmock__field {
-  display: grid;
-  grid-template-columns: 84px minmax(0, 1fr);
-  align-items: start;
   gap: 10px;
 }
 
-.appmock__fieldname {
-  color: var(--m-muted);
-  font-size: 12.5px;
-  font-weight: 600;
-  line-height: 30px;
+.appmock__cards--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.appmock__fieldctl {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
+.appmock__card {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.appmock__card strong {
+  display: block;
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.appmock__card span {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.appmock__card:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.appmock__card.is-on {
+  border-color: rgba(62, 124, 196, 0.7);
+  background: rgba(62, 124, 196, 0.1);
+}
+
+.appmock__sizerow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 550;
 }
 
 .appmock__sizewrap {
   display: inline-flex;
   align-items: center;
-  justify-self: start;
-  gap: 7px;
-  color: var(--m-muted);
-  font-size: 12.5px;
+  gap: 8px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 13px;
 }
 
 .appmock__sizewrap input {
-  width: 76px;
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--m-line-strong);
+  width: 84px;
+  padding: 7px 10px;
+  border: 1px solid var(--line-strong);
   border-radius: 8px;
-  background: var(--m-panel);
-  color: var(--m-text);
-  font-family: inherit;
-  font-size: 13.5px;
-  text-align: right;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
   appearance: textfield;
-}
-
-.appmock__sizewrap input:focus,
-.appmock__sizewrap input:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .appmock__sizewrap input::-webkit-outer-spin-button,
@@ -2413,207 +2078,119 @@ button.appmock__btn:hover {
   appearance: none;
 }
 
-.appmock__quick {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.appmock__quick button {
-  min-width: 42px;
-  padding: 3px 8px;
-  border: 1px solid var(--m-line);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--m-muted);
-  font-size: 11.5px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  transition: border-color 0.12s ease, color 0.12s ease;
-}
-
-.appmock__quick button::after {
-  content: ' MB';
-  font-weight: 400;
-  opacity: 0.7;
-}
-
-.appmock__quick button:hover {
-  border-color: var(--m-line-strong);
-  color: var(--m-text);
-}
-
-.appmock__quick button.is-on {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--m-text);
-}
-
-/* Preset segmented control: neutral track, raised selected option. */
-.appmock__segctl {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--m-line);
-  border-radius: 8px;
-  background: var(--m-bg);
-}
-
-.appmock__segctl button {
-  flex: 1 1 0;
-  min-height: 28px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--m-muted);
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.appmock__segctl button:hover {
-  background: var(--m-hover);
-  color: var(--m-text);
-}
-
-.appmock__segctl button.is-on {
-  background: var(--m-raised);
-  color: var(--m-text);
-  box-shadow: inset 0 0 0 1px var(--accent-line), 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-
-.appmock__fieldhint {
-  color: var(--m-subtle);
-  font-size: 11.5px;
-  line-height: 1.45;
+.appmock__sizerow.is-off,
+.appmock__cards.is-off {
+  opacity: 0.45;
 }
 
 .appmock__dlgfoot {
   display: flex;
-  flex: none;
   justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 20px;
-  border-top: 1px solid var(--m-line);
-  background: var(--m-bg);
+  margin-top: 18px;
 }
 
-/* Progress and result cards (components/Working, the export result dialog). */
 .appmock__work {
   display: grid;
-  gap: 9px;
-  width: min(400px, 100%);
-  padding: 18px 20px 16px;
-  border: 1px solid var(--m-line);
+  justify-items: center;
+  gap: 8px;
+  width: min(420px, 100%);
+  padding: 28px 28px 24px;
+  border: 1px solid var(--line-strong);
   border-radius: 16px;
-  background: var(--m-panel);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.2);
+  background: #141417;
+  box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.85);
+  text-align: center;
 }
 
-.appmock__worktitle {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: var(--m-text);
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 1.3;
-}
-
-.appmock__spin {
-  flex: none;
-  width: 17px;
-  height: 17px;
-  color: var(--accent);
-  animation: mockspin 1.2s linear infinite;
-}
-
-@keyframes mockspin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.appmock__workmeta {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 4px;
-  color: var(--m-subtle);
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-}
-
-.appmock__pct {
-  color: var(--m-text);
-  font-size: 14.5px;
-  font-weight: 700;
-}
-
-.appmock__workbar {
-  height: 6px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--m-hover);
-}
-
-.appmock__workbar span {
-  display: block;
-  width: 4%;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-}
-
-.appmock__workfoot {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 6px;
-}
-
-.appmock__result {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-}
-
-.appmock__ok {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
-}
-
-.appmock__ok circle {
-  fill: #7ee787;
-}
-
-.appmock__ok path {
+.appmock__workicon {
+  width: 40px;
+  height: 40px;
+  padding: 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
   fill: none;
-  stroke: #08200f;
-  stroke-width: 2.6;
+  stroke: #8ea3d6;
+  stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.appmock__donename {
-  display: block;
-  color: var(--m-text);
-  font-size: 14.5px;
+.appmock__workicon--ok {
+  stroke: #7ee787;
+}
+
+.appmock__workeyebrow {
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.appmock__worktitle {
+  color: var(--ink);
+  font-size: 17px;
   font-weight: 700;
-  word-break: break-word;
+  letter-spacing: -0.02em;
+}
+
+.appmock__workmeta {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.appmock__workbar {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+
+.appmock__workbar span {
+  display: block;
+  width: 0%;
+  height: 100%;
+  border-radius: 3px;
+  background: #3e7cc4;
+}
+
+.appmock__abort {
+  margin-top: 6px;
+  padding: 8px 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.appmock__abort:hover {
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .appmock__donesize {
-  display: block;
-  margin-top: 2px;
-  color: var(--m-muted);
+  color: var(--ink);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.appmock__donename {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.appmock__doneready {
+  color: var(--muted);
   font-size: 13px;
-  font-variant-numeric: tabular-nums;
 }
 
 /* One-shot celebration layer inside the success overlay. Pieces are placed
@@ -2630,12 +2207,6 @@ button.appmock__btn:hover {
   display: block;
 }
 
-@media (max-width: 1080px) {
-  .appmock__menus {
-    display: none;
-  }
-}
-
 @media (max-width: 900px) {
   .appmock__main {
     grid-template-columns: minmax(0, 1fr);
@@ -2643,39 +2214,21 @@ button.appmock__btn:hover {
 }
 
 @media (max-width: 640px) {
-  .appmock__mode,
-  .appmock__settings,
-  .appmock__tools {
+  .appmock__hint {
     display: none;
   }
 
-  .appmock__cards {
+  .appmock__cards,
+  .appmock__cards--3 {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .appmock__field {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
-  }
-
-  .appmock__fieldname {
-    line-height: 1.4;
-  }
-
-  .appmock__dlghead {
-    padding: 14px 14px 10px;
-  }
-
-  .appmock__dlgbody {
-    padding: 0 14px 14px;
-  }
-
-  .appmock__dlgfoot {
-    padding: 10px 14px;
+  .appmock__dialog {
+    padding: 16px;
   }
 
   .appmock__overlay {
-    padding: 10px;
+    padding: 12px;
   }
 }
 
@@ -2812,16 +2365,8 @@ button.appmock__btn:hover {
     justify-content: flex-start;
   }
 
-  /* The figure flows in the frame, so the frame grows with it instead of clipping at the narrowest phones. */
   .shot__frame:has(.fig) {
     aspect-ratio: auto;
-    display: flex;
-  }
-
-  .shot__frame:has(.fig) .fig {
-    position: relative;
-    inset: auto;
-    flex: 1;
   }
 
   .shot__frame:has(#figTools) {

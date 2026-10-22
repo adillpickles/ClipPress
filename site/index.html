@@ -55,15 +55,7 @@
 
     <header class="topbar">
       <a class="wordmark" href="#top">
-        <!-- ClipPress mark: the app icon's glyph (src/renderer/src/icon.svg) on its teal tile. -->
-        <span class="mark" aria-hidden="true"
-          ><svg viewBox="36 36 440 440" focusable="false" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M190 124H138V388H190M322 124H374V388H322" stroke-width="48" />
-            <path d="M222 196 306 256 222 316Z" fill="currentColor" stroke-width="26" /></svg
-        ></span>
-        <span class="wordmark__text"
-          ><span class="wordmark__clip">Clip</span><span class="wordmark__press">Press</span></span
-        >
+        <span class="wordmark__clip">Clip</span><span class="wordmark__press">Press</span>
       </a>
     </header>
 
@@ -173,54 +165,36 @@
 
           <figure class="shot">
             <!--
-              APP MOCK. A simplified, fully interactive miniature of the Beta 6
-              ClipPress editor in simple mode, based on the application
-              screenshots. The preview plays a repo-local muted demo clip
-              (site/public/demo) and drives the timeline from the real media
-              duration; if the media cannot load, a neutral slate appears
-              instead. The export is a fixed fixture: it processes no video,
-              makes no network calls and performs no real export. Labels mirror
-              real UI strings (Open, Simple, Advanced, Settings, Export, Start,
-              End, Zoom / Crop, Add Text, Clips, in the export, Export length,
-              Quality, Original quality, Fit a file size, Size limit, Preset,
-              Max Quality, Quality, Fast, Cancel, Exporting, elapsed, Export
-              successful, of ... limit, Close). Single clip only: scrub, set the
-              start and end, export. Decorative chrome is hidden from assistive
-              tech. Icons are Feather (MIT), as in the app.
+              APP MOCK. A simplified, fully interactive miniature of the real
+              ClipPress window based on the application screenshots. The preview
+              plays a repo-local muted demo clip (site/public/demo) and drives the
+              timeline from the real media duration; if the media cannot load, a
+              neutral slate appears instead. The export is a fixed fixture: it
+              processes no video, makes no network calls and performs no real
+              export. Labels mirror real UI
+              strings (Simple, Export name, Clip, Mark In, Mark Out,
+              Export options, Keep source quality, Target file size,
+              Max Quality, Quality, Fast,
+              Exporting, Abort). Single segment only: scrub, mark In and Out,
+              export. Decorative chrome is hidden from assistive tech.
             -->
             <div class="appmock" id="appmock">
               <div class="appmock__titlebar" aria-hidden="true">
                 <span class="appmock__brand">
-                  <span class="mark"
-                    ><svg viewBox="36 36 440 440" focusable="false" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M190 124H138V388H190M322 124H374V388H322" stroke-width="48" />
-                      <path d="M222 196 306 256 222 316Z" fill="currentColor" stroke-width="26" /></svg
-                  ></span>
-                  <span><b>Clip</b><span>Press</span></span>
+                  <svg viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="4" /><path d="M5 5l6 6M11 5l-6 6" /></svg>
+                  ClipPress
                 </span>
-                <span class="appmock__menus"><i>File</i><i>Edit</i><i>Clips</i><i>View</i><i>Tools</i><i>Help</i></span>
-                <span class="appmock__winbtns">
-                  <svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>
-                  <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
-                  <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
-                </span>
+                <span class="appmock__winbtns"><i>-</i><i>▢</i><i>✕</i></span>
               </div>
 
               <div class="appmock__toolbar">
-                <span class="appmock__btn appmock__open" aria-hidden="true">
-                  <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
-                  Open
-                </span>
                 <span class="appmock__name">
-                  <input id="mockName" type="text" value="gaming-clip.mp4" maxlength="60" autocomplete="off" spellcheck="false" aria-label="Export name" />
+                  <span class="appmock__namelabel">Export name</span>
+                  <input id="mockName" type="text" value="gaming-clip" maxlength="60" autocomplete="off" spellcheck="false" aria-label="Export name" />
                 </span>
-                <span class="appmock__mode" aria-hidden="true"><i class="is-on">Simple</i><i>Advanced</i></span>
-                <span class="appmock__btn appmock__btn--ghost appmock__settings" aria-hidden="true">
-                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
-                  Settings
-                </span>
+                <span class="appmock__simple">Simple</span>
                 <button class="appmock__export" id="mockExport" type="button">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13" /></svg>
+                  <svg viewBox="0 0 16 16"><circle cx="4.5" cy="4.5" r="2" /><circle cx="4.5" cy="11.5" r="2" /><path d="M6 5.5 14 13M6 10.5 14 3" /></svg>
                   Export
                 </button>
               </div>
@@ -244,176 +218,122 @@
                     </div>
                     <span class="appmock__demotag">Demo clip</span>
                   </div>
-
-                  <div class="appmock__bottom">
-                    <div class="appmock__transport">
-                      <span class="appmock__time"
-                        ><span class="appmock__timecur" id="mockTc">0:00.00</span
-                        ><span class="appmock__timedur"> / <span id="mockDur">0:12.00</span></span></span
-                      >
-                      <span class="appmock__tcenter">
-                        <button class="appmock__btn appmock__btn--sm appmock__setbtn" id="mockInBtn" type="button" title="Start the clip here (I)">
-                          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5H5.5V13.5H9.5" /></svg>
-                          Start
-                        </button>
-                        <button class="appmock__play" id="mockPlay" type="button" aria-label="Play">
-                          <svg id="mockPlayIcon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" /></svg>
-                        </button>
-                        <button class="appmock__btn appmock__btn--sm appmock__setbtn" id="mockOutBtn" type="button" title="End the clip here (O)">
-                          End
-                          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 2.5H10.5V13.5H6.5" /></svg>
-                        </button>
-                      </span>
-                      <span class="appmock__tools" aria-hidden="true">
-                        <span class="appmock__btn appmock__btn--sm">
-                          <svg viewBox="0 0 24 24"><path d="M6.13 1 6 16a2 2 0 0 0 2 2h15M1 6.13 16 6a2 2 0 0 1 2 2v15" /></svg>
-                          Zoom / Crop
-                        </span>
-                        <span class="appmock__btn appmock__btn--sm">
-                          <svg viewBox="0 0 24 24"><path d="M4 7V4h16v3M9 20h6M12 4v16" /></svg>
-                          Add Text
-                        </span>
-                      </span>
-                    </div>
-
-                    <div class="appmock__tlbox">
-                      <span class="appmock__gutter" aria-hidden="true"><i>Clips</i></span>
-                      <div class="appmock__timeline" id="mockTl">
-                        <div class="appmock__ruler" id="mockRuler" aria-hidden="true"></div>
-                        <div class="appmock__lane" aria-hidden="true"></div>
-                        <div class="appmock__tlrange" id="mockRange" aria-hidden="true"><i>1</i></div>
-                        <div class="appmock__tlhead" id="mockHead" aria-hidden="true"></div>
-                        <button class="appmock__handle" id="mockHandleIn" type="button" aria-label="Drag the clip start">
-                          <i></i>
-                        </button>
-                        <button class="appmock__handle" id="mockHandleOut" type="button" aria-label="Drag the clip end">
-                          <i></i>
-                        </button>
-                      </div>
-                    </div>
+                  <div class="appmock__transport">
+                    <button class="appmock__iobtn" id="mockInBtn" type="button" title="Mark In (I)" aria-label="Mark In">I</button>
+                    <button class="appmock__play" id="mockPlay" type="button" aria-label="Play">
+                      <svg id="mockPlayIcon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" /></svg>
+                    </button>
+                    <button class="appmock__iobtn" id="mockOutBtn" type="button" title="Mark Out (O)" aria-label="Mark Out">O</button>
+                  </div>
+                  <div class="appmock__timeline" id="mockTl">
+                    <div class="appmock__tltrack" aria-hidden="true"></div>
+                    <div class="appmock__tlrange" id="mockRange" aria-hidden="true"></div>
+                    <div class="appmock__tlhead" id="mockHead" aria-hidden="true"></div>
+                    <button class="appmock__handle" id="mockHandleIn" type="button" aria-label="Drag the segment start">
+                      <i></i>
+                    </button>
+                    <button class="appmock__handle" id="mockHandleOut" type="button" aria-label="Drag the segment end">
+                      <i></i>
+                    </button>
+                  </div>
+                  <div class="appmock__tlmeta">
+                    <span class="appmock__tc" id="mockTc">00:00:00.000</span>
+                    <span class="appmock__hint" aria-hidden="true">Click to scrub · I / O mark the clip</span>
+                    <span class="appmock__total">Selected <strong id="mockTotal">00:00:07.800</strong></span>
                   </div>
                 </div>
 
-                <aside class="appmock__clips" aria-label="Clips">
+                <aside class="appmock__clips" aria-label="Clip">
                   <div class="appmock__clipshead">
                     <div>
-                      <p class="appmock__clipstitle">Clips</p>
-                      <p class="appmock__clipssub">1 of 1 in the export</p>
+                      <p class="appmock__clipstitle">Clip</p>
+                      <p class="appmock__clipssub" id="mockClipsSub">ready to export</p>
                     </div>
-                    <svg class="appmock__x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                    <span class="appmock__x" aria-hidden="true">✕</span>
                   </div>
                   <div class="appmock__clipslist">
                     <div class="appmock__clipcard is-on">
                       <span class="appmock__clipnum">1</span>
                       <span class="appmock__cliptexts">
-                        <span class="appmock__cliprange" id="mockClipRange">0:00–0:12</span>
-                        <span class="appmock__clipmeta" id="mockClipMeta">12.0 s · ~66.0 MB</span>
+                        <span class="appmock__cliprange" id="mockClipRange">00:00 - 00:07</span>
+                        <span class="appmock__clipmeta" id="mockClipMeta">7.8 sec · ~42.9 MB</span>
                       </span>
-                      <svg class="appmock__tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
                     </div>
                   </div>
-                  <p class="appmock__clipsfoot">Export length <strong id="mockTotal">0:12.0</strong></p>
                 </aside>
               </div>
 
               <div class="appmock__overlay" id="mockOverlay" hidden>
-                <div class="appmock__dialog" role="dialog" aria-modal="true" aria-labelledby="mockDlgTitle" aria-describedby="mockSummary">
+                <div class="appmock__dialog" role="dialog" aria-modal="true" aria-labelledby="mockDlgTitle">
                   <div class="appmock__dlghead">
-                    <div>
-                      <h3 id="mockDlgTitle" tabindex="-1">Export</h3>
-                      <p class="appmock__dlgsub" id="mockSummary">1 clip · 0:12.0 · under 20 MB</p>
-                    </div>
-                    <button class="appmock__dlgclose" id="mockDlgClose" type="button" aria-label="Close">
-                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                    <h3 id="mockDlgTitle" tabindex="-1">Export options</h3>
+                    <button class="appmock__dlgclose" id="mockDlgClose" type="button" aria-label="Close export options">✕</button>
+                  </div>
+                  <p class="appmock__banner">Size-limited export creates a shareable MP4 and keeps only the main video plus one audio track.</p>
+                  <p class="appmock__group">Output goal</p>
+                  <div class="appmock__cards" role="group" aria-label="Output goal">
+                    <button type="button" class="appmock__card" data-goal="keep" aria-pressed="false">
+                      <strong>Keep source quality</strong>
+                      <span>Use the regular export path and preserve the original quality when possible.</span>
+                    </button>
+                    <button type="button" class="appmock__card is-on" data-goal="target" aria-pressed="true">
+                      <strong>Target file size</strong>
+                      <span>Make a shareable MP4 that lands under a size cap.</span>
                     </button>
                   </div>
-                  <div class="appmock__dlgbody">
-                    <p class="appmock__group" id="mockQualityLabel">Quality</p>
-                    <div class="appmock__cards" role="group" aria-labelledby="mockQualityLabel">
-                      <button type="button" class="appmock__card" data-goal="keep" aria-pressed="false">
-                        <strong>Original quality</strong>
-                        <span>Keeps the picture as it is when it can. Files can be large.</span>
-                      </button>
-                      <button type="button" class="appmock__card is-on" data-goal="target" aria-pressed="true">
-                        <strong>Fit a file size</strong>
-                        <span>Makes an MP4 that stays under the size you pick, e.g. for Discord.</span>
-                      </button>
-                    </div>
-                    <div class="appmock__fields" id="mockFields">
-                      <div class="appmock__field">
-                        <label class="appmock__fieldname" for="mockSize">Size limit</label>
-                        <div class="appmock__fieldctl">
-                          <span class="appmock__sizewrap">
-                            <input id="mockSize" type="number" min="1" max="4000" step="1" value="20" inputmode="numeric" />
-                            MB
-                          </span>
-                          <span class="appmock__quick" id="mockQuick" role="group" aria-label="Common sizes in MB">
-                            <button type="button" data-mb="10" aria-pressed="false">10</button>
-                            <button type="button" data-mb="20" aria-pressed="true" class="is-on">20</button>
-                            <button type="button" data-mb="25" aria-pressed="false">25</button>
-                            <button type="button" data-mb="50" aria-pressed="false">50</button>
-                            <button type="button" data-mb="100" aria-pressed="false">100</button>
-                          </span>
-                        </div>
-                      </div>
-                      <div class="appmock__field">
-                        <span class="appmock__fieldname" id="mockPresetLabel">Preset</span>
-                        <div class="appmock__fieldctl">
-                          <span class="appmock__segctl" role="group" aria-labelledby="mockPresetLabel" id="mockPresets">
-                            <button type="button" data-preset="max" aria-pressed="false">Max Quality</button>
-                            <button type="button" class="is-on" data-preset="quality" aria-pressed="true">Quality</button>
-                            <button type="button" data-preset="fast" aria-pressed="false">Fast</button>
-                          </span>
-                          <span class="appmock__fieldhint" id="mockPresetHint">Recommended everyday balance for most shareable clips.</span>
-                        </div>
-                      </div>
-                    </div>
+                  <div class="appmock__sizerow" id="mockSizeRow">
+                    <label for="mockSize">Target size</label>
+                    <span class="appmock__sizewrap">
+                      <input id="mockSize" type="number" min="1" max="4000" step="1" value="20" inputmode="numeric" />
+                      MB
+                    </span>
+                  </div>
+                  <p class="appmock__group" id="mockPresetLabel">Preset</p>
+                  <div class="appmock__cards appmock__cards--3" role="group" aria-labelledby="mockPresetLabel" id="mockPresets">
+                    <button type="button" class="appmock__card" data-preset="max" aria-pressed="false">
+                      <strong>Max Quality</strong>
+                      <span>Best-looking result under the cap.</span>
+                    </button>
+                    <button type="button" class="appmock__card is-on" data-preset="quality" aria-pressed="true">
+                      <strong>Quality</strong>
+                      <span>Recommended balance for most clips.</span>
+                    </button>
+                    <button type="button" class="appmock__card" data-preset="fast" aria-pressed="false">
+                      <strong>Fast</strong>
+                      <span>Quicker export with good shareable quality.</span>
+                    </button>
                   </div>
                   <div class="appmock__dlgfoot">
-                    <button class="appmock__btn appmock__btn--lg" id="mockDlgCancel" type="button">Cancel</button>
-                    <button class="appmock__export appmock__export--lg" id="mockRunExport" type="button">
-                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13" /></svg>
-                      Export
-                    </button>
+                    <button class="appmock__export" id="mockRunExport" type="button">Export</button>
                   </div>
                 </div>
               </div>
 
               <div class="appmock__overlay" id="mockProgress" hidden>
                 <div class="appmock__work" role="status">
-                  <p class="appmock__worktitle">
-                    <svg class="appmock__spin" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" /></svg>
-                    Exporting
-                  </p>
-                  <p class="appmock__workmeta"><span id="mockElapsed">0:00 elapsed</span><span class="appmock__pct" id="mockPct">0.0%</span></p>
+                  <svg class="appmock__workicon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 4 12 2.5-6H21" /></svg>
+                  <p class="appmock__workeyebrow">Working</p>
+                  <p class="appmock__worktitle">Exporting</p>
+                  <p class="appmock__workmeta"><span id="mockElapsed">Elapsed: 0.0 seconds</span><span id="mockPct">0.0%</span></p>
                   <div class="appmock__workbar"><span id="mockWorkBar"></span></div>
-                  <div class="appmock__workfoot">
-                    <button class="appmock__btn" id="mockAbort" type="button">Cancel</button>
-                  </div>
+                  <button class="appmock__abort" id="mockAbort" type="button">Abort</button>
                 </div>
               </div>
 
               <div class="appmock__overlay" id="mockDone" hidden>
                 <div class="appmock__work" role="status">
-                  <p class="appmock__worktitle">Export successful</p>
-                  <div class="appmock__result">
-                    <svg class="appmock__ok" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="m7.5 12.3 3 3 6-6.3" /></svg>
-                    <span>
-                      <span class="appmock__donename" id="mockDoneName">gaming-clip.mp4</span>
-                      <span class="appmock__donesize" id="mockDoneSize">19.7 MB of 20 MB limit</span>
-                    </span>
-                  </div>
-                  <div class="appmock__workfoot">
-                    <button class="appmock__btn" id="mockDoneClose" type="button">Close</button>
-                  </div>
+                  <svg class="appmock__workicon appmock__workicon--ok" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M8.5 12.2l2.4 2.4 4.6-5" /></svg>
+                  <p class="appmock__workeyebrow">Done</p>
+                  <p class="appmock__worktitle">Export complete</p>
+                  <p class="appmock__donesize" id="mockDoneSize">19.7 MB</p>
+                  <p class="appmock__donename" id="mockDoneName">demo-clip.mp4</p>
+                  <p class="appmock__doneready">Ready to share</p>
+                  <button class="appmock__abort" id="mockDoneClose" type="button">Done</button>
                 </div>
               </div>
             </div>
           </figure>
-          <p class="mockfine">
-            Simplified interactive preview: click the timeline to scrub, press I and O to set the
-            start and end. The real export runs in the app on your machine.
-          </p>
+          <p class="mockfine">Simplified interactive preview. The real export runs in the app on your machine.</p>
         </div>
       </section>
 
@@ -431,9 +351,8 @@
               </svg>
               <h2 class="step__label">Trim</h2>
               <p class="step__body">
-                Set the start and end with <kbd>I</kbd> and <kbd>O</kbd>, and add text with
-                <kbd>T</kbd>. Turn down a loud track and cut as many clips from one recording as
-                you need.
+                Mark in and out with <kbd>I</kbd> and <kbd>O</kbd>. Add a text overlay, pull down a
+                loud track, split the recording into as many segments as you need.
               </p>
             </li>
             <li class="step">
@@ -447,8 +366,8 @@
               </svg>
               <h2 class="step__label">Target</h2>
               <p class="step__body">
-                Original quality keeps the picture as it is when it can. Or pick Fit a file size,
-                type a size limit in MB and choose a preset.
+                Keep source quality copies the original streams where the format allows it. Or type
+                a target size in megabytes and pick a quality preset.
               </p>
             </li>
             <li class="step">
@@ -461,7 +380,7 @@
               <h2 class="step__label">Export</h2>
               <p class="step__body">
                 ClipPress plans the bitrate, chooses the encoder, and measures the finished file
-                against your size limit. If it overshoots, it tries again.
+                against your target. If it overshoots, it tries again.
               </p>
             </li>
           </ol>
@@ -488,7 +407,7 @@
                 class="fig"
                 id="figTools"
                 role="img"
-                aria-label="Illustration of ClipPress finishing tools. A text overlay reads Final lap. Audio gain is set to minus 6 dB. The clip starts at 0:03 and ends at 0:05. The I, O, T and Space keys light up. Status resolves to Ready."
+                aria-label="Illustration of ClipPress finishing tools. A text overlay reads Final lap. Audio gain is set to minus 6 dB. Trim marks read In 00:03 and Out 00:05. The I, O and Space keys light up. Status resolves to Ready."
               >
                 <div class="fig__inner" aria-hidden="true">
                   <span class="fig__tag">Illustration</span>
@@ -527,13 +446,13 @@
                     <li class="fig__row" style="--d: 0.3s">
                       <span class="fig__label">Trim</span>
                       <span class="fig__chips">
-                        <span class="fig__chip"><b>Start</b> <span data-in>0:03</span></span>
-                        <span class="fig__chip"><b>End</b> <span data-out>0:05</span></span>
+                        <span class="fig__chip"><b>I</b> <span data-in>00:03</span></span>
+                        <span class="fig__chip"><b>O</b> <span data-out>00:05</span></span>
                       </span>
                     </li>
                     <li class="fig__row" style="--d: 0.45s">
                       <span class="fig__label">Shortcuts</span>
-                      <span class="fig__keys" data-keys><kbd>I</kbd><kbd>O</kbd><kbd>T</kbd><kbd>Space</kbd></span>
+                      <span class="fig__keys" data-keys><kbd>I</kbd><kbd>O</kbd><kbd>Space</kbd></span>
                     </li>
                   </ul>
                   <p class="fig__status" data-status><svg class="fig__check" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" /><path d="M5.4 8.3l1.8 1.8 3.4-3.9" /></svg><span data-statustext>Ready</span></p>
@@ -547,13 +466,13 @@
             <p class="prose">
               ClipPress stays capable without getting complicated: trim your clip, add a
               caption, fix the audio, pick the size it has to fit under, and export.
-              Advanced mode has deeper controls when you want them.
+              Deeper controls are there when you want them.
             </p>
             <ul class="checks">
               <li>Text overlays for callouts and captions</li>
               <li>Simple audio fixes when one source is too loud</li>
-              <li>One file per clip, one merged file, or both</li>
-              <li>Presets, resolution and frame rate that fit under your size limit</li>
+              <li>Straightforward export options, from separate clips to one merged cut</li>
+              <li>Quality, resolution and frame-rate presets that fit under your size cap</li>
               <li>Fast keyboard shortcuts, plus projects you can save and reopen</li>
             </ul>
           </div>
@@ -572,7 +491,7 @@
             </p>
             <ul class="checks">
               <li>Private by default. Your clip stays on your machine.</li>
-              <li>Export that fits under the size limit you set.</li>
+              <li>Size-limited export that fits under your target.</li>
               <li>Finish with a shareable video, ready to post.</li>
             </ul>
           </div>
@@ -597,7 +516,7 @@
                 class="fig fig--story"
                 id="figTarget"
                 role="img"
-                aria-label="Illustration of the file size workflow. A clip named gameplay.mov at 43.5 MB, a size limit of 25 MB, the Quality preset, an export, and a 24.7 MB result under the limit."
+                aria-label="Illustration of the target file size workflow. A clip named gameplay.mov at 43.5 MB, a target of 25 MB, the Quality preset, an export, and a 24.7 MB result under the target."
               >
                 <div class="fig__inner" aria-hidden="true">
                   <span class="fig__tag">Illustration</span>
@@ -608,11 +527,11 @@
                   </div>
                   <div class="fig__settings">
                     <span class="fig__setting">
-                      <span class="fig__label">Size limit</span>
+                      <span class="fig__label">Target size</span>
                       <span class="fig__sizefield" data-anchor="field"><span data-target>25</span><span class="fig__unit">MB</span></span>
                     </span>
                     <span class="fig__setting">
-                      <span class="fig__label">Preset</span>
+                      <span class="fig__label">Quality</span>
                       <span class="fig__presets">
                         <span class="fig__preset">Max Quality</span>
                         <span class="fig__preset is-on" data-anchor="preset" data-preset>Quality</span>
@@ -625,7 +544,7 @@
                   <div class="fig__result" data-result>
                     <span class="fig__filename">gameplay.mp4</span>
                     <span class="fig__filesize">24.7 MB</span>
-                    <span class="fig__verdict">✓ Under the 25 MB limit</span>
+                    <span class="fig__verdict">✓ Under 25 MB target</span>
                   </div>
                   <p class="fig__fine">Simulated preview</p>
                   <span class="fig__cursor" data-cursor><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 2.5 21 12l-8.2 1.4L9.5 21.5z" fill="#f4f4f5" stroke="#101014" stroke-width="1.6" stroke-linejoin="round" /></svg></span>

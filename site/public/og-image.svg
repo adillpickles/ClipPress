@@ -1,25 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="ClipPress — trim the clip, set the file size">
-  <defs>
-    <linearGradient id="clippressTile" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#4ccad4"/>
-      <stop offset="1" stop-color="#2b8e97"/>
-    </linearGradient>
-  </defs>
   <rect width="1200" height="630" fill="#09090B"/>
   <g stroke="#FFFFFF" stroke-opacity="0.07" stroke-width="1">
     <path d="M136.5 0V630M272.5 0V630M408.5 0V630M544.5 0V630M680.5 0V630M816.5 0V630M952.5 0V630M1088.5 0V630"/>
     <path d="M0 90.5H1200M0 226.5H1200M0 362.5H1200M0 498.5H1200"/>
   </g>
-  <!-- ClipPress mark (src/renderer/src/icon.svg), cropped to its tile. -->
-  <svg x="96" y="99" width="38" height="38" viewBox="36 36 440 440">
-    <rect x="36" y="36" width="440" height="440" rx="100" fill="url(#clippressTile)"/>
-    <g fill="none" stroke="#0b1417" stroke-width="48" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M190 124 H138 V388 H190"/>
-      <path d="M322 124 H374 V388 H322"/>
-    </g>
-    <path d="M222 196 L306 256 L222 316 Z" fill="#0b1417" stroke="#0b1417" stroke-width="26" stroke-linejoin="round"/>
-  </svg>
-  <text x="148" y="128" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="26" font-weight="600" letter-spacing="-0.4" fill="#A1A1AA">ClipPress</text>
+  <text x="96" y="128" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="26" font-weight="600" letter-spacing="-0.4" fill="#A1A1AA">ClipPress</text>
   <text x="96" y="300" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="82" font-weight="500" letter-spacing="-3" fill="#FAFAFA">Trim the clip.</text>
   <text x="96" y="388" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="82" font-weight="500" letter-spacing="-3" fill="#FAFAFA">Set the file size.</text>
   <text x="96" y="466" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="25" letter-spacing="-0.2" fill="#A1A1AA">Open-source clip editor for Windows.</text>

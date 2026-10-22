@@ -72,15 +72,13 @@ function initFloatParallax(): void {
   });
 }
 
-// Simplified interactive miniature of the Beta 6 ClipPress editor in simple
-// mode. Everything is deterministic and page-local: the preview plays a
-// repo-local muted demo clip (no audio, no network) while the timeline and
-// export flow are a fixed fixture. Single clip only: scrub, set the start and
-// end, export. Labels and formats mirror the app (TopMenu, BottomBar,
-// SegmentList, ExportConfirm, Working, the export result dialog): Start, End,
-// Clips, in the export, Export length, Export, Original quality, Fit a file
-// size, Size limit, Preset, Max Quality, Quality, Fast, Cancel, Exporting,
-// elapsed, Export successful, Close.
+// Simplified interactive miniature of the real ClipPress window. Everything
+// is deterministic and page-local: the preview plays a repo-local muted demo
+// clip (no audio, no network) while the timeline and export flow are a fixed
+// fixture. Single segment only: scrub, mark In and Out, export. Labels mirror
+// real UI strings (Simple, Export name, Clip, Mark In, Mark Out,
+// Export options, Keep source quality, Target file size, Max Quality,
+// Quality, Fast, Exporting, Abort).
 function initAppMock(): void {
   const root = document.getElementById('appmock');
   const video = document.getElementById('mockVideo') as HTMLVideoElement | null;
@@ -92,26 +90,21 @@ function initAppMock(): void {
   const inBtn = document.getElementById('mockInBtn');
   const outBtn = document.getElementById('mockOutBtn');
   const tl = document.getElementById('mockTl');
-  const ruler = document.getElementById('mockRuler');
   const range = document.getElementById('mockRange');
   const head = document.getElementById('mockHead');
   const handleIn = document.getElementById('mockHandleIn');
   const handleOut = document.getElementById('mockHandleOut');
   const tc = document.getElementById('mockTc');
-  const dur = document.getElementById('mockDur');
   const total = document.getElementById('mockTotal');
   const clipRange = document.getElementById('mockClipRange');
   const clipMeta = document.getElementById('mockClipMeta');
+  const clipsSub = document.getElementById('mockClipsSub');
   const overlay = document.getElementById('mockOverlay');
   const dlgTitle = document.getElementById('mockDlgTitle');
   const dlgClose = document.getElementById('mockDlgClose');
-  const dlgCancel = document.getElementById('mockDlgCancel');
-  const summary = document.getElementById('mockSummary');
-  const fields = document.getElementById('mockFields');
   const sizeInput = document.getElementById('mockSize') as HTMLInputElement | null;
-  const quick = document.getElementById('mockQuick');
+  const sizeRow = document.getElementById('mockSizeRow');
   const presets = document.getElementById('mockPresets');
-  const presetHint = document.getElementById('mockPresetHint');
   const runExport = document.getElementById('mockRunExport') as HTMLButtonElement | null;
   const progress = document.getElementById('mockProgress');
   const workBar = document.getElementById('mockWorkBar');
@@ -124,10 +117,10 @@ function initAppMock(): void {
   const doneClose = document.getElementById('mockDoneClose');
   if (
     !root || !video || !novideo || !nameInput || !exportBtn || !playBtn || !playIcon ||
-    !inBtn || !outBtn || !tl || !ruler || !range || !head || !handleIn || !handleOut ||
-    !tc || !dur || !total || !clipRange || !clipMeta || !overlay || !dlgTitle ||
-    !dlgClose || !dlgCancel || !summary || !fields || !sizeInput || !quick || !presets ||
-    !presetHint || !runExport || !progress || !workBar || !elapsedEl || !pctEl || !abortBtn ||
+    !inBtn || !outBtn || !tl || !range || !head || !handleIn || !handleOut ||
+    !tc || !total || !clipRange || !clipMeta || !clipsSub || !overlay || !dlgTitle ||
+    !dlgClose || !sizeInput || !sizeRow || !presets || !runExport ||
+    !progress || !workBar || !elapsedEl || !pctEl || !abortBtn ||
     !done || !doneSize || !doneName || !doneClose
   ) {
     return;
@@ -137,10 +130,9 @@ function initAppMock(): void {
   // closures below, so bind every element once into a non-null bag.
   const ui = {
     root, video, novideo, nameInput, exportBtn, playBtn, playIcon, inBtn, outBtn,
-    tl, ruler, range, head, handleIn, handleOut, tc, dur, total, clipRange, clipMeta,
-    overlay, dlgTitle, dlgClose, dlgCancel, summary, fields, sizeInput, quick, presets,
-    presetHint, runExport, progress, workBar, elapsedEl, pctEl, abortBtn, done, doneSize,
-    doneName, doneClose,
+    tl, range, head, handleIn, handleOut, tc, total, clipRange, clipMeta, clipsSub,
+    overlay, dlgTitle, dlgClose, sizeInput, sizeRow, presets, runExport,
+    progress, workBar, elapsedEl, pctEl, abortBtn, done, doneSize, doneName, doneClose,
   };
 
   let CLIP = 12;
@@ -169,32 +161,22 @@ function initAppMock(): void {
   let lastRequested: number | null = null;
 
   const pad = (n: number): string => String(n).padStart(2, '0');
-  // The app's simple-mode clock (util/clockTime.ts): unpadded minutes, hours
-  // only when needed, truncated so it never shows a time not yet reached.
-  const fmtClock = (s: number, decimals: 0 | 2 = 0): string => {
-    const scale = 10 ** decimals;
-    const units = Math.floor(Math.max(0, s) * scale + 1e-6);
-    const whole = Math.floor(units / scale);
-    const frac = decimals > 0 ? `.${String(units % scale).padStart(decimals, '0')}` : '';
-    const h = Math.floor(whole / 3600);
-    const m = Math.floor(whole / 60) % 60;
-    return h > 0 ? `${h}:${pad(m)}:${pad(whole % 60)}${frac}` : `${m}:${pad(whole % 60)}${frac}`;
+  const fmtTC = (s: number): string => {
+    const ms = Math.floor((s % 1) * 1000);
+    const totalS = Math.floor(s);
+    return `${pad(Math.floor(totalS / 3600))}:${pad(Math.floor((totalS % 3600) / 60))}:${pad(totalS % 60)}.${String(ms).padStart(3, '0')}`;
   };
+  const fmtRange = (s: number): string => `${pad(Math.floor(s / 60))}:${pad(Math.floor(s % 60))}`;
   const clampT = (v: number): number => Math.min(CLIP, Math.max(0, Math.round(v * 10) / 10));
   // Integer tenths keep durations exact: binary float dust (2.2999 instead
   // of 2.3) would otherwise leak into the totals and estimates.
   const segTenths = (): number => Math.round(seg.end * 10) - Math.round(seg.start * 10);
-  const fmtTotal = (tenths: number): string => `${fmtClock(Math.floor(tenths / 10))}.${tenths % 10}`;
-  // SegmentList's clip length: "7.8 s" under a minute, "1m 05s" style above.
-  const fmtLength = (tenths: number): string => {
-    if (tenths < 600) return `${(tenths / 10).toFixed(1)} s`;
-    const secs = Math.round(tenths / 10);
-    return secs % 60 === 0 ? `${secs / 60} min` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+  const fmtTotal = (tenths: number): string => {
+    const ms = tenths * 100;
+    const sec = Math.floor(ms / 1000);
+    return `${pad(Math.floor(sec / 3600))}:${pad(Math.floor((sec % 3600) / 60))}:${pad(sec % 60)}.${String(ms % 1000).padStart(3, '0')}`;
   };
-  // Fixture size at source quality: a flat ~5.5 MB per second of footage.
-  const estMb = (tenths: number): string => (Math.round(tenths * 5.5) / 10).toFixed(1);
-  // The size limit as the export will use it: whole MB, 1 to 4000.
-  const sizeMb = (): number => Math.min(4000, Math.max(1, Math.floor(Number(ui.sizeInput.value) || 20)));
+  const fmtEst = (tenths: number): string => `${(tenths / 10).toFixed(1)} sec · ~${(Math.round(tenths * 5.5) / 10).toFixed(1)} MB`;
 
   function renderFrame(): void {
     ui.range.style.left = `${(seg.start / CLIP) * 100}%`;
@@ -202,7 +184,7 @@ function initAppMock(): void {
     ui.head.style.left = `${(t / CLIP) * 100}%`;
     ui.handleIn.style.left = `${(seg.start / CLIP) * 100}%`;
     ui.handleOut.style.left = `${(seg.end / CLIP) * 100}%`;
-    ui.tc.textContent = fmtClock(t, 2);
+    ui.tc.textContent = fmtTC(t);
   }
 
   function render(): void {
@@ -213,45 +195,8 @@ function initAppMock(): void {
   function renderTotals(): void {
     const tenths = segTenths();
     ui.total.textContent = fmtTotal(tenths);
-    ui.clipRange.textContent = `${fmtClock(seg.start)}–${fmtClock(seg.end)}`;
-    ui.clipMeta.textContent = `${fmtLength(tenths)} · ~${estMb(tenths)} MB`;
-    renderSummary();
-  }
-
-  // The export sheet's one-line subtitle, e.g. "1 clip · 0:07.8 · under 20 MB".
-  function renderSummary(): void {
-    const quality = goal === 'target' ? `under ${sizeMb()} MB` : 'original quality';
-    ui.summary.textContent = `1 clip · ${fmtTotal(segTenths())} · ${quality}`;
-  }
-
-  // A thin ruler like the app's TimelineRuler: a label on every major tick,
-  // at least ~60px apart (three to ten labels), with minor ticks between.
-  let rulerWidth = 0;
-  function renderRuler(): void {
-    rulerWidth = ui.tl.clientWidth;
-    const maxLabels = Math.max(3, Math.min(10, Math.floor(rulerWidth / 60) || 10));
-    const majors = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
-    const step = majors.find((s) => CLIP / s <= maxLabels) ?? 1200;
-    const per = step === 15 || step === 30 ? 3 : step === 5 || step === 10 || step === 300 ? 5 : 4;
-    const minor = step / per;
-    const count = Math.floor(CLIP / minor + 1e-6);
-    const frag = document.createDocumentFragment();
-    for (let i = 0; i <= count; i += 1) {
-      const at = i * minor;
-      const left = `${((at / CLIP) * 100).toFixed(3)}%`;
-      const tick = document.createElement(i % per === 0 ? 'b' : 's');
-      tick.style.left = left;
-      frag.appendChild(tick);
-      // Skip a label that would run off the right edge.
-      if (i % per === 0 && CLIP - at >= step * 0.6) {
-        const label = document.createElement('span');
-        label.style.left = left;
-        label.textContent = fmtClock(at);
-        frag.appendChild(label);
-      }
-    }
-    ui.ruler.replaceChildren(frag);
-    ui.dur.textContent = fmtClock(CLIP, 2);
+    ui.clipRange.textContent = `${fmtRange(seg.start)} - ${fmtRange(seg.end)}`;
+    ui.clipMeta.textContent = fmtEst(tenths);
   }
 
   function setPlaying(p: boolean): void {
@@ -514,61 +459,36 @@ function initAppMock(): void {
     else markOut();
   });
 
-  // One pressed button per group (quality cards, quick sizes, presets).
-  function selectIn(buttons: NodeListOf<HTMLButtonElement>, btn: HTMLButtonElement | null): void {
-    buttons.forEach((other) => {
+  function selectIn(group: HTMLElement, btn: HTMLButtonElement): void {
+    group.querySelectorAll('.appmock__card').forEach((other) => {
       const on = other === btn;
       other.classList.toggle('is-on', on);
       other.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
 
-  // As in the app, the size limit and preset only exist for Fit a file size.
-  const goalBtns = ui.overlay.querySelectorAll<HTMLButtonElement>('[data-goal]');
-  goalBtns.forEach((btn) => {
+  ui.overlay.querySelectorAll<HTMLButtonElement>('[data-goal]').forEach((btn) => {
     btn.addEventListener('click', () => {
       goal = btn.dataset.goal === 'keep' ? 'keep' : 'target';
-      selectIn(goalBtns, btn);
-      ui.fields.hidden = goal === 'keep';
-      renderSummary();
+      selectIn(ui.overlay, btn);
+      const off = goal === 'keep';
+      ui.sizeRow.classList.toggle('is-off', off);
+      ui.presets.classList.toggle('is-off', off);
+      ui.sizeInput.disabled = off;
+      ui.presets.querySelectorAll('button').forEach((p) => {
+        p.disabled = off;
+      });
     });
   });
 
-  // Quick sizes fill the field; typing a size lights the matching pick.
-  const quickBtns = ui.quick.querySelectorAll<HTMLButtonElement>('[data-mb]');
-  function syncQuick(): void {
-    const value = Number(ui.sizeInput.value);
-    selectIn(quickBtns, [...quickBtns].find((b) => Number(b.dataset.mb) === value) ?? null);
-  }
-  quickBtns.forEach((btn) => {
+  ui.presets.querySelectorAll<HTMLButtonElement>('[data-preset]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      ui.sizeInput.value = btn.dataset.mb ?? '20';
-      syncQuick();
-      renderSummary();
-    });
-  });
-  ui.sizeInput.addEventListener('input', () => {
-    syncQuick();
-    renderSummary();
-  });
-
-  // Preset hints are the app's one-line descriptions (ExportConfirm).
-  const PRESET_HINTS: Record<string, string> = {
-    max: 'Best-looking result under the limit. Slower is acceptable.',
-    quality: 'Recommended everyday balance for most shareable clips.',
-    fast: 'Good everyday shareable quality with quicker export.',
-  };
-  const presetBtns = ui.presets.querySelectorAll<HTMLButtonElement>('[data-preset]');
-  presetBtns.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      selectIn(presetBtns, btn);
-      ui.presetHint.textContent = PRESET_HINTS[btn.dataset.preset ?? ''] ?? '';
+      selectIn(ui.presets, btn);
     });
   });
 
   ui.exportBtn.addEventListener('click', openPanel);
   ui.dlgClose.addEventListener('click', () => closeOverlays(true));
-  ui.dlgCancel.addEventListener('click', () => closeOverlays(true));
 
   // One restrained celebration burst on success. Skipped entirely under
   // reduced motion; the result card carries the message on its own. Each
@@ -630,22 +550,19 @@ function initAppMock(): void {
     hide(ui.overlay);
     show(ui.progress);
     ui.abortBtn.focus();
-    const target = sizeMb();
+    const target = Math.min(4000, Math.max(1, Math.floor(Number(ui.sizeInput.value) || 20)));
     ui.sizeInput.value = String(target);
-    syncQuick();
-    renderSummary();
-    // Fake duration for size-limited exports follows the selected footage:
-    // about half the clip length, bounded so the demo never drags or
-    // flashes by. Original quality is a passthrough-style operation, so
+    // Fake duration for size-targeted exports follows the selected footage:
+    // about half the segment length, bounded so the demo never drags or
+    // flashes by. Keep-source-quality is a passthrough-style operation, so
     // it resolves in a flat ~0.3s regardless of length.
-    const tenths = segTenths();
-    const duration = goal === 'keep' || reduceMotion ? 300 : Math.min(3000, Math.max(800, Math.round(tenths * 50)));
+    const totalSecs = segTenths() / 10;
+    const duration = goal === 'keep' || reduceMotion ? 300 : Math.min(3000, Math.max(800, Math.round(totalSecs * 500)));
     const started = performance.now();
     const step = (now: number): void => {
       const p = Math.min(1, (now - started) / duration);
-      // Working.tsx keeps a sliver of bar visible from the start.
-      ui.workBar.style.width = `${Math.max(p * 100, 4).toFixed(1)}%`;
-      ui.elapsedEl.textContent = `${fmtClock((now - started) / 1000)} elapsed`;
+      ui.workBar.style.width = `${(p * 100).toFixed(1)}%`;
+      ui.elapsedEl.textContent = `Elapsed: ${((now - started) / 1000).toFixed(1)} seconds`;
       ui.pctEl.textContent = `${(p * 100).toFixed(1)}%`;
       if (p < 1) {
         workRaf = requestAnimationFrame(step);
@@ -653,14 +570,12 @@ function initAppMock(): void {
       }
       view = 'done';
       hide(ui.progress);
-      // The result dialog's wording: "<size> of <limit> limit" for a size-
-      // limited export, the file size alone for original quality.
-      ui.doneSize.textContent = goal === 'target'
-        ? `${Math.max(0.1, target - 0.3).toFixed(1)} MB of ${target} MB limit`
-        : `${estMb(tenths)} MB`;
-      // The name field holds the clip name (the app shows the source file
-      // name); the export is always an MP4 here.
-      const raw = ui.nameInput.value.trim().replace(/\.(mp4|mkv|mov|webm)$/i, '') || 'gaming-clip';
+      if (goal === 'target') {
+        ui.doneSize.textContent = `${(target - 0.3).toFixed(1)} MB`;
+      } else {
+        ui.doneSize.textContent = 'Source quality kept';
+      }
+      const raw = ui.nameInput.value.trim() || 'gaming-clip';
       ui.doneName.textContent = `${raw}.mp4`;
       show(ui.done);
       ui.doneClose.focus();
@@ -712,7 +627,6 @@ function initAppMock(): void {
     t = 0;
     pendingSeek = null;
     lastRequested = null;
-    renderRuler();
     render();
   }
 
@@ -764,16 +678,7 @@ function initAppMock(): void {
     lastRequested = null;
   });
 
-  // The ruler's label spacing follows the timeline width (it stacks under
-  // the preview on narrow screens), so rebuild it when the width changes.
-  if (typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(() => {
-      if (ui.tl.clientWidth !== rulerWidth) renderRuler();
-    }).observe(ui.tl);
-  }
-
   setPlaying(false);
-  renderRuler();
   render();
   // One restrained discoverability hint on the Play control: it pulses twice
   // and then rests. The first intentional contact dismisses it for good.
@@ -820,7 +725,7 @@ function initFigureStories(): void {
 }
 
 // Finishing-tools story: rows stagger in, a caption types out, the gain
-// knob slides to -6 dB, Start / End chips populate, shortcut keys light up, and
+// knob slides to -6 dB, I / O chips populate, shortcut keys light up, and
 // the status resolves to Ready. About four seconds end to end.
 function initToolsStory(): FigStory | null {
   const root = document.getElementById('figTools');
@@ -888,8 +793,8 @@ function initToolsStory(): FigStory | null {
     ui.gainRange.disabled = true;
     ui.gainRange.tabIndex = -1;
     ui.gain.textContent = fmtGain(0);
-    ui.inEl.textContent = '-:--';
-    ui.outEl.textContent = '-:--';
+    ui.inEl.textContent = '--:--';
+    ui.outEl.textContent = '--:--';
     keys.forEach((k) => k.classList.remove('is-on'));
     ui.status.classList.remove('is-done');
     ui.statusText.textContent = 'Working…';
@@ -963,8 +868,8 @@ function initToolsStory(): FigStory | null {
     ui.textInput.value = FINAL_TEXT;
     ui.gainRange.value = '-6';
     ui.gain.textContent = fmtGain(-6);
-    ui.inEl.textContent = '0:03';
-    ui.outEl.textContent = '0:05';
+    ui.inEl.textContent = '00:03';
+    ui.outEl.textContent = '00:05';
     keys.forEach((k) => k.classList.add('is-on'));
     ui.status.classList.add('is-done');
     ui.statusText.textContent = 'Ready';
@@ -984,8 +889,8 @@ function initToolsStory(): FigStory | null {
     if (!live()) return;
     await later(350);
     if (!live()) return;
-    ui.inEl.textContent = '0:03';
-    ui.outEl.textContent = '0:05';
+    ui.inEl.textContent = '00:03';
+    ui.outEl.textContent = '00:05';
     await later(600);
     if (!live()) return;
     for (const k of keys) {
