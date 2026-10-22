@@ -42,3 +42,61 @@
 :global(.dark-theme) .select {
   background-image: url("data:image/svg+xml;utf8,<svg fill='rgba(255,255,255,0.6)' height='24' viewBox='0 0 24 24' width='24' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/><path d='M0 0h24v24H0z' fill='none'/></svg>");
 }
+
+/* Chromium's customizable select: the open list is drawn like the rest of the app (a rounded, raised
+   popover) instead of the system's popup. Browsers without it keep the native list. */
+@supports (appearance: base-select) {
+  .select,
+  .select::picker(select) {
+    appearance: base-select;
+  }
+
+  .select {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .select::picker-icon {
+    display: none;
+  }
+
+  .select::picker(select) {
+    margin-top: .3rem;
+    padding: .3rem;
+    border: 1px solid var(--cp-line-strong);
+    border-radius: var(--cp-radius);
+    background: var(--cp-raised);
+    color: var(--cp-text);
+    box-shadow: var(--cp-shadow-popover);
+  }
+
+  .select option {
+    padding: .4rem .6rem;
+    border-radius: var(--cp-radius-sm);
+    font-size: .875rem;
+    font-weight: 500;
+    color: var(--cp-text);
+    cursor: pointer;
+  }
+
+  .select option::checkmark {
+    display: none;
+  }
+
+  .select option:hover,
+  .select option:focus-visible {
+    outline: none;
+    background: var(--cp-hover);
+  }
+
+  .select option:checked {
+    background: var(--cp-accent-soft);
+    color: var(--cp-accent-text);
+    font-weight: 600;
+  }
+
+  .select option:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+  }
+}

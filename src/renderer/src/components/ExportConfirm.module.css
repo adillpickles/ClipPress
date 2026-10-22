@@ -199,8 +199,12 @@
   cursor: pointer;
   box-sizing: border-box;
   min-width: 2.6rem;
-  padding: .2rem .55rem;
-  border-radius: var(--cp-radius-sm);
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 .7rem;
+  border-radius: 999px;
   border: 1px solid var(--cp-line);
   color: var(--cp-text-muted);
   font-size: .75rem;
@@ -211,7 +215,8 @@
 }
 
 .quickPick::after {
-  content: ' MB';
+  content: 'MB';
+  margin-left: .2em;
   font-weight: 400;
   opacity: .7;
 }
@@ -426,4 +431,108 @@ table.options td:nth-child(2) > div {
   .qualityChoices {
     grid-template-columns: 1fr;
   }
+}
+
+/* Size limit: the number and its quick picks on one line. */
+.sizeControl {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+}
+
+.sizeControl .sizeInput {
+  margin-right: .25rem;
+}
+
+/* Fit a file size: three big, obvious preset cards across the panel. */
+.presetCards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .5rem;
+}
+
+.presetCard {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+  min-height: 4.25rem;
+  padding: .75rem .85rem;
+  border-radius: var(--cp-radius-lg);
+  border: 1px solid var(--cp-line);
+  background: var(--cp-panel);
+  transition: border-color .12s ease, background-color .12s ease, box-shadow .12s ease, transform .12s ease;
+}
+
+.presetCard:hover {
+  border-color: var(--cp-line-strong);
+  background: var(--cp-raised);
+  transform: translateY(-1px);
+}
+
+.presetCard:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.presetCardActive,
+.presetCardActive:hover {
+  border-color: var(--accent-9);
+  background: var(--cp-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-9);
+}
+
+.presetTitle {
+  color: var(--cp-text);
+  font-size: .9375rem;
+  font-weight: 650;
+}
+
+.presetBody {
+  color: var(--cp-text-muted);
+  font-size: .78rem;
+  line-height: 1.35;
+}
+
+/* The quieter way in for people who want to pick the encoder themselves. */
+.customRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-top: -.35rem;
+  font-size: .8125rem;
+}
+
+.customToggle {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .2rem .35rem .2rem .15rem;
+  border-radius: var(--cp-radius-sm);
+  color: var(--cp-text-subtle);
+  font-weight: 600;
+}
+
+.customToggle:hover,
+.customToggleActive {
+  color: var(--cp-text);
+}
+
+.customToggle:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.customPanel {
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+  margin-top: -.2rem;
+  padding: .75rem .85rem;
+  border-radius: var(--cp-radius-lg);
+  border: 1px dashed var(--cp-line-strong);
 }

@@ -42,6 +42,17 @@ export default ({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfi
     // todo remove once we use Dialog component (already supports escape button)
     const isEscape = e.code === 'Escape';
     if (exportConfirmOpen) {
+      // Escape on an open dropdown list closes the list, not the export sheet. While the list is open, focus is
+      // on one of its options.
+      const select = e.target instanceof Element ? e.target.closest('select') : null;
+      const openSelect = select != null && (e.target instanceof HTMLOptionElement || (() => {
+        try {
+          return select.matches(':open');
+        } catch {
+          return false;
+        }
+      })());
+      if (isEscape && openSelect) return;
       if (isEscape) {
         closeExportConfirm();
         e.preventDefault();

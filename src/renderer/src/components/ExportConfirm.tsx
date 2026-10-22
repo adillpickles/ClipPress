@@ -1420,20 +1420,11 @@ function ExportConfirm({
     return parts.join(' · ');
   }, [areWeCutting, isSizeLimited, outputPlaybackRate, segmentsOrInverse.all.length, segmentsOrInverse.selected.length, segmentsToExport, sizeLimitMb, t, willMerge]);
 
-  const advancedEncoderLabel = useMemo(() => ({
-    av1_cpu: t('AV1 CPU (SVT-AV1)'),
-    av1_nvenc: gpuAv1Encoder != null ? t('AV1 GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuAv1Encoder.vendor] }) : t('AV1 GPU'),
-    h264_cpu: t('H.264 CPU (x264)'),
-    h264_nvenc: gpuH264Encoder != null ? t('H.264 GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuH264Encoder.vendor] }) : t('H.264 GPU'),
-  })[sizeLimitAdvancedEncoder], [gpuAv1Encoder, gpuH264Encoder, sizeLimitAdvancedEncoder, t]);
-
   const isCustomSizeLimit = sizeLimitControlMode === 'advanced';
-  const presetChoice = isCustomSizeLimit ? 'custom' : sizeLimitPreset;
 
   const handlePresetChoice = useCallback((value: SizeLimitPreset | 'custom') => {
     if (value === 'custom') {
       setSizeLimitControlMode('advanced');
-      setShowAdvancedOverride(true);
       return;
     }
     setSizeLimitControlMode('simple');
@@ -1565,7 +1556,7 @@ function ExportConfirm({
                   onClick={() => handleExportEncodeModeChange('lossless')}
                 >
                   <span className={styles['choiceTitle']}>{t('Original quality')}</span>
-                  <span className={styles['choiceBody']}>{t('Keeps the picture as it is when it can. Files can be large.')}</span>
+                  <span className={styles['choiceBody']}>{t('The picture as it is. Files can be large.')}</span>
                 </button>
                 <button
                   type="button"
@@ -1575,7 +1566,7 @@ function ExportConfirm({
                   onClick={() => handleExportEncodeModeChange('size_limited')}
                 >
                   <span className={styles['choiceTitle']}>{t('Fit a file size')}</span>
-                  <span className={styles['choiceBody']}>{t('Makes an MP4 that stays under the size you pick, e.g. for Discord.')}</span>
+                  <span className={styles['choiceBody']}>{t('Stays under a size you pick, e.g. for Discord.')}</span>
                 </button>
               </div>
 
@@ -1583,7 +1574,7 @@ function ExportConfirm({
                 <div className={styles['fields']}>
                   <div className={styles['field']}>
                     <label className={styles['fieldName']} htmlFor="size-limit-mb">{t('Size limit')}</label>
-                    <div className={styles['fieldControl']}>
+                    <div className={[styles['fieldControl'], styles['sizeControl']].join(' ')}>
                       <div className={styles['sizeInput']}>
                         <TextInput
                           id="size-limit-mb"
@@ -1611,36 +1602,90 @@ function ExportConfirm({
                     </div>
                   </div>
 
-                  <div className={styles['field']}>
-                    <div className={styles['fieldName']}>{t('Preset')}</div>
-                    <div className={styles['fieldControl']}>
-                      <SegmentedControl<SizeLimitPreset | 'custom'>
-                        ariaLabel={t('Preset')}
-                        value={presetChoice}
-                        onChange={handlePresetChoice}
-                        options={[
-                          { value: 'max_quality', label: t('Max Quality') },
-                          { value: 'quality', label: t('Quality') },
-                          { value: 'fast', label: t('Fast') },
-                          { value: 'custom', label: t('Custom'), title: t('Pick the encoder and its settings yourself') },
-                        ]}
-                      />
-                      <div className={styles['fieldHint']}>
-                        {isCustomSizeLimit ? (
-                          <>
-                            {t('Custom: {{encoder}}', { encoder: advancedEncoderLabel })}
-                            {' · '}
-                            {sizeLimitAdvancedTwoPass ? t('2-pass') : t('1-pass')}
-                            {' · '}
-                            <button type="button" className={styles['inlineLink']} onClick={() => setShowAdvancedOverride(true)}>{t('Edit')}</button>
-                          </>
-                        ) : presetDescription}
-                      </div>
-                      {isCustomSizeLimit && advancedEncoderUnavailableMessage != null && (
-                        <div className={styles['fieldWarning']}>{advancedEncoderUnavailableMessage}</div>
-                      )}
-                    </div>
+                  <div className={styles['presetCards']} role="radiogroup" aria-label={t('Preset')}>
+                    {([
+                      { value: 'max_quality', title: t('Max Quality'), body: t('Best picture, slower') },
+                      { value: 'quality', title: t('Quality'), body: t('The everyday choice') },
+                      { value: 'fast', title: t('Fast'), body: t('Quickest export') },
+                    ] as const).map(({ value, title, body }) => {
+                      const checked = !isCustomSizeLimit && sizeLimitPreset === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          role="radio"
+                          aria-checked={checked}
+                          className={[styles['presetCard'], ...(checked ? [styles['presetCardActive']] : [])].join(' ')}
+                          onClick={() => handlePresetChoice(value)}
+                        >
+                          <span className={styles['presetTitle']}>{title}</span>
+                          <span className={styles['presetBody']}>{body}</span>
+                        </button>
+                      );
+                    })}
                   </div>
+
+                  <div className={styles['customRow']}>
+                    <button
+                      type="button"
+                      className={[styles['customToggle'], ...(isCustomSizeLimit ? [styles['customToggleActive']] : [])].join(' ')}
+                      aria-expanded={isCustomSizeLimit}
+                      onClick={() => handlePresetChoice(isCustomSizeLimit ? sizeLimitPreset : 'custom')}
+                    >
+                      {isCustomSizeLimit ? <FiChevronDown aria-hidden /> : <FiChevronRight aria-hidden />}
+                      {t('Custom settings')}
+                    </button>
+                    {isCustomSizeLimit && (
+                      <button type="button" className={styles['inlineLink']} onClick={() => handlePresetChoice(sizeLimitPreset)}>{t('Use a preset')}</button>
+                    )}
+                  </div>
+
+                  {isCustomSizeLimit && (
+                    <div className={styles['customPanel']}>
+                      <div className={styles['field']}>
+                        <label className={styles['fieldName']} htmlFor="size-limit-encoder">{t('Encoder')}</label>
+                        <div className={styles['fieldControl']}>
+                          <Select
+                            id="size-limit-encoder"
+                            value={sizeLimitAdvancedEncoder}
+                            onChange={withBlur((e) => setSizeLimitAdvancedEncoder(e.target.value as SizeLimitAdvancedEncoder))}
+                          >
+                            <option value="av1_cpu" disabled={encoderCapabilities != null && !encoderCapabilities.libsvtav1}>{t('AV1 CPU (SVT-AV1)')}</option>
+                            <option value="av1_nvenc" disabled={encoderCapabilities != null && gpuAv1Encoder == null}>
+                              {gpuAv1Encoder != null ? t('AV1 GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuAv1Encoder.vendor] }) : t('AV1 GPU')}
+                            </option>
+                            <option value="h264_cpu" disabled={encoderCapabilities != null && !encoderCapabilities.libx264}>{t('H.264 CPU (x264)')}</option>
+                            <option value="h264_nvenc" disabled={encoderCapabilities != null && gpuH264Encoder == null}>
+                              {gpuH264Encoder != null ? t('H.264 GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuH264Encoder.vendor] }) : t('H.264 GPU')}
+                            </option>
+                          </Select>
+                          {advancedEncoderUnavailableMessage != null && (
+                            <div className={styles['fieldWarning']}>{advancedEncoderUnavailableMessage}</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className={styles['field']}>
+                        <label className={styles['fieldName']} htmlFor="size-limit-encoder-preset">{t('Speed')}</label>
+                        <div className={styles['fieldControl']}>
+                          <Select
+                            id="size-limit-encoder-preset"
+                            value={advancedPresetValue}
+                            onChange={withBlur((e) => handleAdvancedPresetChange(e.target.value))}
+                          >
+                            {advancedPresetOptions.map(({ value, label }) => (
+                              <option key={value} value={value}>{label}</option>
+                            ))}
+                          </Select>
+                        </div>
+                      </div>
+                      <div className={styles['field']}>
+                        <div className={styles['fieldName']}>{t('2-pass')}</div>
+                        <div className={styles['fieldControl']}>
+                          <Switch checked={sizeLimitAdvancedTwoPass} onCheckedChange={setSizeLimitAdvancedTwoPass} aria-label={t('2-pass')} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div className={styles['field']}>
                     <label className={styles['fieldName']} htmlFor="size-limit-resolution">{t('Resolution')}</label>
@@ -1667,7 +1712,6 @@ function ExportConfirm({
                           </option>
                         ))}
                       </Select>
-                      <div className={styles['fieldHint']}>{sizeLimitedResolutionDescription}</div>
                     </div>
                   </div>
 
@@ -1694,7 +1738,6 @@ function ExportConfirm({
                           </option>
                         ))}
                       </Select>
-                      <div className={styles['fieldHint']}>{sizeLimitedFpsDescription}</div>
                     </div>
                   </div>
                   {advancedH264TargetWarningMessage != null && (
@@ -1750,7 +1793,6 @@ function ExportConfirm({
             <button type="button" className={styles['disclosure']} onClick={toggleAdvanced} aria-expanded={showAdvanced}>
               {showAdvanced ? <FiChevronDown aria-hidden /> : <FiChevronRight aria-hidden />}
               <span>{t('More options')}</span>
-              <span className={styles['disclosureHint']}>{t('Encoder, naming and compatibility')}</span>
             </button>
           </>
         ) : (
@@ -1877,7 +1919,7 @@ function ExportConfirm({
                   </tr>
                 )}
 
-                {isSizeLimited && (
+                {isSizeLimited && !simpleMode && (
                   <>
                     {!simpleMode && (
                       <tr>
