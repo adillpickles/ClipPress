@@ -1,4 +1,5 @@
 import { memo, useCallback, useMemo } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { MotionStyle } from 'motion/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FaTrashAlt } from 'react-icons/fa';
@@ -9,6 +10,8 @@ import useUserSettings from './hooks/useUserSettings';
 import { useSegColors } from './contexts';
 import type { FormatTimecode, StateSegment } from './types';
 import { getSegmentSpeed } from './segmentSpeed';
+import type { FilmstripFrame } from './filmstrip';
+import styles from './TimelineSeg.module.css';
 
 
 const markerButtonStyle: React.CSSProperties = { fontSize: 10, minWidth: 0, letterSpacing: '-.1em', color: 'white' };
@@ -81,8 +84,29 @@ function Marker({
   );
 }
 
+/** The frames of `filmstrip` that cover [start, end], placed as percentages of the clip block. */
+function getClipFrames(filmstrip: readonly FilmstripFrame[], start: number, end: number, toLanePercent: (t: number) => number, fileEnd: number) {
+  const left = toLanePercent(start);
+  const width = toLanePercent(end) - left;
+  if (!(width > 0)) return [];
+  const frames: { url: string, left: number, width: number }[] = [];
+  for (let i = 0; i < filmstrip.length; i += 1) {
+    const frame = filmstrip[i]!;
+    const next = filmstrip[i + 1]?.time ?? fileEnd;
+    // eslint-disable-next-line no-continue
+    if (next <= start || frame.time >= end) continue;
+    const frameLeft = toLanePercent(frame.time);
+    frames.push({
+      url: frame.url,
+      left: ((frameLeft - left) / width) * 100,
+      width: ((toLanePercent(next) - frameLeft) / width) * 100,
+    });
+  }
+  return frames;
+}
+
 function Segment({
-  seg, segNum, color, isActive, selected, onClick, getTimePercent, instant, formatTimecode, invertCutSegments, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop,
+  seg, segNum, color, isActive, selected, onClick, getTimePercent, instant, formatTimecode, invertCutSegments, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, filmstrip, toLanePercent, fileEnd, onTrimHandleMouseDown,
 }: {
   seg: Omit<StateSegment, 'end'> & { end: number },
   segNum: number,
@@ -99,6 +123,10 @@ function Segment({
   onRemoveSpeed: (segmentId: string) => void,
   onToggleSpeedControls: (segmentId: string) => void,
   onEditCrop: (index: number) => void,
+  filmstrip: readonly FilmstripFrame[],
+  toLanePercent: (time: number) => number,
+  fileEnd: number,
+  onTrimHandleMouseDown: ((edge: 'start' | 'end') => (event: ReactMouseEvent<HTMLElement>) => void) | undefined,
 }) {
   const { darkMode, prefersReducedMotion, springAnimation, simpleMode } = useUserSettings();
   const { t } = useTranslation();
@@ -151,6 +179,78 @@ function Segment({
     };
   }, [getTimePercent, seg.end, seg.start, darkMode, excluded, isActive, speedBand]);
 
+  // Simple mode (keeping clips): the clip shows its own frames in full colour (see TimelineSeg.module.css).
+  const simpleLook = simpleMode && !invertCutSegments;
+  const clipFrames = useMemo(() => (simpleLook ? getClipFrames(filmstrip, seg.start, seg.end, toLanePercent, fileEnd) : []), [fileEnd, filmstrip, seg.end, seg.start, simpleLook, toLanePercent]);
+
+  const onContextMenuCapture = (event: ReactMouseEvent<HTMLElement>) => {
+    if (invertCutSegments) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onClick();
+    const remote = window.require('@electron/remote');
+    remote.Menu.buildFromTemplate([
+      { label: t('Speed controls'), type: 'checkbox', checked: speedControlsVisible, click: () => onToggleSpeedControls(seg.segId) },
+      { label: t('Change speed…'), click: () => onEditSpeed(segNum) },
+      { label: t('Remove speed change'), enabled: speed !== 1 || speedControlsVisible, click: () => onRemoveSpeed(seg.segId) },
+      { type: 'separator' },
+      { label: t('Zoom / Crop…'), click: () => onEditCrop(segNum) },
+    ]).popup({ window: remote.getCurrentWindow() });
+  };
+
+  if (simpleLook) {
+    const hasFrames = clipFrames.length > 0;
+    return (
+      <motion.div
+        className={[styles['clip'], ...(isActive ? [styles['active']] : []), ...(excluded ? [styles['excluded']] : [])].join(' ')}
+        style={{
+          position: 'absolute',
+          top: 5,
+          bottom: 5,
+          left: getTimePercent(seg.start),
+          width: `calc(${getTimePercent(seg.end)} - ${getTimePercent(seg.start)})`,
+          originX: 0,
+          boxSizing: 'border-box',
+          overflow: 'hidden',
+          borderRadius: 10,
+          cursor: 'pointer',
+          // Until the frames arrive (or for clips without video), the clip is a soft block of its colour.
+          backgroundColor: hasFrames ? 'transparent' : backgroundColor,
+        }}
+        layout={!prefersReducedMotion && !instant}
+        transition={instant ? { duration: 0 } : springAnimation}
+        initial={{ opacity: 0, scaleX: 0 }}
+        animate={{ opacity: 1, scaleX: 1 }}
+        exit={{ opacity: 0, scaleX: 0 }}
+        role="button"
+        onClick={onClick}
+        data-segment-id={seg.segId}
+        onContextMenuCapture={onContextMenuCapture}
+        title={title}
+      >
+        {hasFrames && (
+          <div className={styles['film']} aria-hidden>
+            {clipFrames.map((frame) => (
+              <img key={frame.url} src={frame.url} alt="" draggable={false} style={{ left: `${frame.left}%`, width: `${frame.width}%` }} />
+            ))}
+          </div>
+        )}
+        <div className={styles['tint']} aria-hidden />
+        <span className={styles['pill']}>
+          <span className={styles['num']} style={{ background: color.saturationl(Math.min(color.saturationl(), 70)).lightness(46).string() }}>{segNum + 1}</span>
+          {name && <span className={styles['name']}>{name}</span>}
+          {speed !== 1 && !speedBand && <span className={styles['speed']}>{`${Math.round(speed * 100)}%`}</span>}
+        </span>
+        {isActive && !excluded && onTrimHandleMouseDown != null && (
+          <>
+            <button type="button" tabIndex={-1} className={[styles['handle'], styles['handleStart']].join(' ')} aria-label={t('Drag to change where the clip starts')} title={t('Drag to change where the clip starts')} onMouseDown={onTrimHandleMouseDown('start')} />
+            <button type="button" tabIndex={-1} className={[styles['handle'], styles['handleEnd']].join(' ')} aria-label={t('Drag to change where the clip ends')} title={t('Drag to change where the clip ends')} onMouseDown={onTrimHandleMouseDown('end')} />
+          </>
+        )}
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
       style={wrapperStyle}
@@ -162,20 +262,7 @@ function Segment({
       role="button"
       onClick={onClick}
       data-segment-id={seg.segId}
-      onContextMenuCapture={(event) => {
-        if (invertCutSegments) return;
-        event.preventDefault();
-        event.stopPropagation();
-        onClick();
-        const remote = window.require('@electron/remote');
-        remote.Menu.buildFromTemplate([
-          { label: t('Speed controls'), type: 'checkbox', checked: speedControlsVisible, click: () => onToggleSpeedControls(seg.segId) },
-          { label: t('Change speed…'), click: () => onEditSpeed(segNum) },
-          { label: t('Remove speed change'), enabled: speed !== 1 || speedControlsVisible, click: () => onRemoveSpeed(seg.segId) },
-          { type: 'separator' },
-          { label: t('Zoom / Crop…'), click: () => onEditCrop(segNum) },
-        ]).popup({ window: remote.getCurrentWindow() });
-      }}
+      onContextMenuCapture={onContextMenuCapture}
       title={title}
     >
       {/* The block keeps its exact time width (very short clips can be narrower than the padding). */}
@@ -204,7 +291,7 @@ function Segment({
 }
 
 function SegmentOrMarker({
-  seg, toLanePercent, instant, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop,
+  seg, toLanePercent, instant, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, filmstrip, fileEnd, onTrimHandleMouseDown,
 } : {
   seg: StateSegment,
   toLanePercent: (time: number) => number,
@@ -220,6 +307,10 @@ function SegmentOrMarker({
   onRemoveSpeed: (segmentId: string) => void,
   onToggleSpeedControls: (segmentId: string) => void,
   onEditCrop: (index: number) => void,
+  filmstrip: readonly FilmstripFrame[],
+  fileEnd: number,
+  /** Simple mode: start dragging an edge of the active clip. */
+  onTrimHandleMouseDown?: ((edge: 'start' | 'end') => (event: ReactMouseEvent<HTMLElement>) => void) | undefined,
 }) {
   const { getSegColor } = useSegColors();
 
@@ -230,7 +321,7 @@ function SegmentOrMarker({
   const onThisSegClick = useCallback(() => onSegClick(segNum), [onSegClick, segNum]);
 
   if (seg.end != null) {
-    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} instant={instant} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} speedControlsVisible={speedControlsVisible} onEditSpeed={onEditSpeed} onRemoveSpeed={onRemoveSpeed} onToggleSpeedControls={onToggleSpeedControls} onEditCrop={onEditCrop} />;
+    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} instant={instant} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} speedControlsVisible={speedControlsVisible} onEditSpeed={onEditSpeed} onRemoveSpeed={onRemoveSpeed} onToggleSpeedControls={onToggleSpeedControls} onEditCrop={onEditCrop} filmstrip={filmstrip} toLanePercent={toLanePercent} fileEnd={fileEnd} onTrimHandleMouseDown={onTrimHandleMouseDown} />;
   }
 
   return (

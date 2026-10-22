@@ -27,6 +27,7 @@ import formatClockTime from './util/clockTime';
 import { getSegmentOutputDuration, getSegmentSpeed, getSpeedForOutputDuration } from './segmentSpeed';
 import { createTimelineMap, getRetimeAutoScrollStep, getWarpedImageSpans } from './timelineMap';
 import type { TimelineMap } from './timelineMap';
+import type { FilmstripFrame } from './filmstrip';
 
 const remote = window.require('@electron/remote');
 const { Menu } = remote;
@@ -75,6 +76,22 @@ const Waveforms = memo(({ timelineMap, laneDuration, fileDurationNonZero, wavefo
   </div>
 ));
 
+/** The whole recording as a dimmed, hatched strip of frames behind the clip blocks (simple mode). */
+// eslint-disable-next-line react/display-name
+const FilmTape = memo(({ frames, toLanePercent, fileEnd }: {
+  frames: readonly FilmstripFrame[],
+  toLanePercent: (time: number) => number,
+  fileEnd: number,
+}) => (
+  <div className={styles['filmTape']} aria-hidden>
+    {frames.map((frame, i) => {
+      const left = toLanePercent(frame.time);
+      const width = toLanePercent(frames[i + 1]?.time ?? fileEnd) - left;
+      return <img key={frame.url} src={frame.url} alt="" draggable={false} style={{ left: `${left}%`, width: `${width}%` }} />;
+    })}
+  </div>
+));
+
 /**
  * The one playhead. Paused, it sits at the time the user asked for. While playing, it follows the video on
  * every display frame, written straight to the element (no React render, no easing), so it moves smoothly
@@ -119,8 +136,8 @@ function Playhead({ playing, commandedTime, getCurrentTime, calculateTimelinePos
 
 const rulerHeight = 22;
 const clipLaneHeight = 44;
-/** Simple mode's clips lane is taller: it also holds the speed band, so speed controls don't add a lane. */
-const simpleClipLaneHeight = 56;
+/** Simple mode's clips lane is taller: it shows the filmstrip and holds the speed band, so speed controls don't add a lane. */
+const simpleClipLaneHeight = 64;
 const textLaneHeight = 28;
 const retimeLaneHeight = 38;
 const thumbnailsHeight = 63;
@@ -149,6 +166,7 @@ function Timeline({
   shouldShowWaveform,
   shouldShowKeyframes,
   thumbnails,
+  filmstrip,
   zoomWindowStartTime,
   zoomWindowEndTime,
   onZoomWindowStartTimeChange,
@@ -201,6 +219,8 @@ function Timeline({
   shouldShowWaveform: boolean,
   shouldShowKeyframes: boolean,
   thumbnails: Thumbnail[],
+  /** Simple mode: frames of the whole recording for the clips lane. */
+  filmstrip: FilmstripFrame[],
   zoomWindowStartTime: number,
   zoomWindowEndTime: number | undefined,
   onZoomWindowStartTimeChange: (a: number) => void,
@@ -476,6 +496,44 @@ function Timeline({
     window.addEventListener('mouseup', onMouseUp, { once: true });
     window.addEventListener('mousemove', onMouseMove);
   }, [fileDurationNonZero, getMouseTimelinePos, onScrubbingChange, seekAbs, segmentMouseModifierKey, setCutTime, zoom]);
+
+  // Simple mode: drag an edge handle of the active clip to trim it (no modifier key needed).
+  const onTrimHandleMouseDown = useCallback((edge: 'start' | 'end') => (e: ReactMouseEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // eslint-disable-next-line no-shadow
+    const currentCutSeg = currentCutSegRef.current;
+    if (currentCutSeg == null) return;
+    seekAbs(edge === 'start' ? currentCutSeg.start : (currentCutSeg.end ?? currentCutSeg.start));
+    resizingSegmentRef.current = { operation: edge };
+    mouseDownRef.current = e.target;
+    let scrubbing = false;
+
+    function onMouseMove(e2: MouseEvent) {
+      if (!scrubbing) {
+        scrubbing = true;
+        onScrubbingChange(true);
+      }
+      const time = getMouseTimelinePos(e2);
+      seekAbs(time);
+      try {
+        setCutTime(edge, time);
+      } catch (err) {
+        console.warn('Error while trimming clip:', err instanceof Error ? err.message : err);
+      }
+    }
+
+    function onMouseUp() {
+      mouseDownRef.current = undefined;
+      resizingSegmentRef.current = undefined;
+      window.removeEventListener('mousemove', onMouseMove);
+      if (scrubbing) onScrubbingChange(false);
+    }
+
+    window.addEventListener('mouseup', onMouseUp, { once: true });
+    window.addEventListener('mousemove', onMouseMove);
+  }, [getMouseTimelinePos, onScrubbingChange, seekAbs, setCutTime]);
 
   const onOverlayMouseDown = useCallback((overlayClip: OverlayClip, mode: 'start' | 'end' | 'move') => (e: ReactMouseEvent<HTMLElement>) => {
     if (e.nativeEvent.buttons !== 1) return;
@@ -812,6 +870,10 @@ function Timeline({
               style={{ height: simpleMode ? simpleClipLaneHeight : clipLaneHeight, transition: darkModeTransition }}
               ref={timelineWrapperRef}
             >
+              {simpleMode && !invertCutSegments && filmstrip.length > 0 && (
+                <FilmTape frames={filmstrip} toLanePercent={toLanePercent} fileEnd={fileDurationNonZero} />
+              )}
+
               {inverseCutSegments.map((seg) => (
                 <BetweenSegments
                   key={seg.segId}
@@ -843,6 +905,9 @@ function Timeline({
                     onRemoveSpeed={onRemoveSegmentSpeed}
                     onToggleSpeedControls={onToggleSegmentSpeedControls}
                     onEditCrop={onEditSegmentCrop}
+                    filmstrip={filmstrip}
+                    fileEnd={fileDurationNonZero}
+                    onTrimHandleMouseDown={simpleMode ? onTrimHandleMouseDown : undefined}
                   />
                 );
               })}

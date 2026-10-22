@@ -277,6 +277,7 @@ import useSubtitles from './hooks/useSubtitles';
 import useStreamsMeta from './hooks/useStreamsMeta';
 import { bottomStyle, videoStyle } from './styles';
 import PreviewSpinner from './components/PreviewSpinner';
+import useFilmstrip from './hooks/useFilmstrip';
 import { recycleOriginal, verifyExportedFiles } from './originalRecycling';
 import type { FileIdentity } from './originalRecycling';
 import { fileExists, identifyFile, probeOutput, statOutput } from './originalRecyclingIo';
@@ -1622,6 +1623,19 @@ function App() {
   const bigWaveformEnabled = waveformEnabled && waveformMode === 'big-waveform';
   // The thumbnail row is an advanced-mode tool; simple mode will get its own filmstrip in the clips lane.
   const showThumbnails = thumbnailsEnabled && hasVideo && !simpleMode;
+
+  // Simple mode's clips lane shows the recording as a filmstrip (made once per open recording, freed on close).
+  const filmstripTimeOffset = useMemo(() => {
+    const start = Number.parseFloat(mainFileFormat?.start_time ?? '0');
+    return Number.isFinite(start) ? start : 0;
+  }, [mainFileFormat?.start_time]);
+  const filmstrip = useFilmstrip({
+    filePath,
+    duration: fileDuration,
+    enabled: simpleMode && hasVideo,
+    ffmpegHwaccel,
+    timeOffset: filmstripTimeOffset,
+  });
 
   const { thumbnailsSorted, setThumbnails } = useThumbnails({
     filePath,
@@ -6693,6 +6707,7 @@ function App() {
                           showThumbnails={showThumbnails}
                           neighbouringKeyFrames={neighbouringKeyFrames}
                           thumbnails={thumbnailsSorted}
+                          filmstrip={filmstrip}
                           getCurrentTime={getRelevantTime}
                           onScrubbingChange={onTimelineScrubbingChange}
                           commandedTime={commandedTime}

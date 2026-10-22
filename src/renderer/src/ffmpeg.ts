@@ -6,6 +6,8 @@ import Timecode from 'smpte-timecode';
 import minBy from 'lodash/minBy';
 import invariant from 'tiny-invariant';
 import z from 'zod';
+import type { FilmstripFrame } from './filmstrip';
+import { getFilmstripArgs, pairFrames, parseShowinfoTimes, splitJpegStream } from './filmstrip';
 
 import { pcmAudioCodecs, isMov } from './util/streams';
 import { getStdioString, isExecaError, readFileSize } from './util';
@@ -464,6 +466,24 @@ export async function extractSubtitleTrackVtt(filePath: string, streamId: number
 
   const blob = safeCreateBlob(stdout, { type: 'text/vtt' });
   return URL.createObjectURL(blob);
+}
+
+/** One stretch of the timeline filmstrip (see filmstrip.ts): keyframes only, with each frame's time. */
+export async function renderFilmstripChunk({ filePath, from, length, interval, hwaccelArgs, timeOffset, signal }: {
+  filePath: string,
+  from: number,
+  length: number,
+  interval: number,
+  hwaccelArgs: string[],
+  timeOffset: number,
+  signal: AbortSignal,
+}): Promise<FilmstripFrame[]> {
+  const args = getFilmstripArgs({ filePath, from, length, interval, hwaccelArgs });
+  const { stdout, stderr } = await runFfmpeg(args, { cancelSignal: signal }, { logCli: false });
+  const bytes = stdout instanceof Uint8Array ? stdout : new Uint8Array(stdout);
+  const images = splitJpegStream(bytes);
+  const times = parseShowinfoTimes(typeof stderr === 'string' ? stderr : new TextDecoder().decode(stderr));
+  return pairFrames(images, times, timeOffset, (image) => URL.createObjectURL(safeCreateBlob(image, { type: 'image/jpeg' })));
 }
 
 export async function renderThumbnails({ filePath, from, duration, onThumbnail, signal }: {
