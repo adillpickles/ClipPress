@@ -1,69 +1,61 @@
+/* Custom title bar. It has no background of its own, so it shares the app's softly lit surface edge to edge;
+   menu and window buttons get rounded, gentle hover states like Beta 5. */
 .wrapper {
-  height: 2.5rem;
+  height: 2.7rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0 0 0 .75rem;
-  border-bottom: 1px solid var(--cp-line);
-  background: var(--cp-bg);
+  padding: 0 .35rem 0 .8rem;
+  background: transparent;
   color: var(--cp-text);
   flex-shrink: 0;
   -webkit-app-region: drag;
 }
 
-.wrapperInactive .brandText,
-.wrapperInactive .menuButton {
-  color: var(--cp-text-subtle);
+.wrapperInactive {
+  opacity: .9;
 }
 
 .left {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: .9rem;
+  gap: .95rem;
 }
 
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: .5rem;
+  gap: .55rem;
   min-width: 0;
 }
 
 .brandMark {
-  width: 1.25rem;
-  height: 1.25rem;
-  border-radius: 5px;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 7px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: linear-gradient(180deg, #4ccad4, #2b8e97);
   color: #0b1417;
-  font-size: 1.25rem;
+  font-size: 1.4rem;
   flex-shrink: 0;
 }
 
 .brandText {
   font-family: var(--cp-font-display);
-  font-size: .875rem;
+  font-size: .9rem;
+  font-weight: 750;
   letter-spacing: -.02em;
   color: var(--cp-text);
-}
-
-.brandClip {
-  font-weight: 650;
-}
-
-.brandPress {
-  font-weight: 450;
-  color: var(--cp-text-muted);
 }
 
 .menuBar {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: .18rem;
   min-width: 0;
   -webkit-app-region: no-drag;
 }
@@ -71,49 +63,50 @@
 .menuButton {
   all: unset;
   cursor: pointer;
-  padding: .3rem .55rem;
-  border-radius: var(--cp-radius-sm);
-  color: var(--cp-text-muted);
-  font-size: .8125rem;
-  font-weight: 400;
-  line-height: 1.2;
-  transition: background-color .12s ease, color .12s ease;
+  padding: .42rem .66rem;
+  border-radius: .7rem;
+  color: var(--cp-text-subtle);
+  font-size: .8rem;
+  font-weight: 650;
+  line-height: 1;
+  transition: background-color .14s ease, color .14s ease;
 }
 
 .menuButton:hover,
 .menuButton:focus-visible {
-  background: var(--cp-hover);
+  background: color-mix(in srgb, var(--gray-4) 55%, transparent);
   color: var(--cp-text);
 }
 
 .windowControls {
   display: flex;
-  align-items: stretch;
-  align-self: stretch;
+  align-items: center;
+  gap: .15rem;
   margin-left: auto;
   -webkit-app-region: no-drag;
 }
 
 .windowControl {
   all: unset;
-  width: 2.875rem;
+  width: 2.55rem;
+  height: 2.1rem;
+  border-radius: .75rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--cp-text-muted);
-  cursor: default;
-  font-size: .95rem;
-  transition: background-color .12s ease, color .12s ease;
+  cursor: pointer;
+  transition: background-color .14s ease, color .14s ease;
 }
 
 .windowControl:hover,
 .windowControl:focus-visible {
-  background: var(--cp-hover);
+  background: color-mix(in srgb, var(--gray-4) 55%, transparent);
   color: var(--cp-text);
 }
 
 .closeControl:hover,
 .closeControl:focus-visible {
-  background: #c42b1c;
-  color: white;
+  background: color-mix(in srgb, var(--red-9) 22%, transparent);
+  color: var(--red-11);
 }

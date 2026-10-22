@@ -6199,7 +6199,7 @@ function App() {
       flexDirection: 'column',
       height: '100vh',
       transition: darkModeTransition,
-      background: 'var(--cp-bg)',
+      background: 'var(--cp-app-bg)',
     }),
     [baseColorStyle],
   );
