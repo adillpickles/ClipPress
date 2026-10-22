@@ -623,9 +623,12 @@ function App() {
     }
     if (resumeAfterScrubRef.current) {
       resumeAfterScrubRef.current = false;
-      play();
+      // The pause event may not have arrived yet on a very quick drag, so play() would think it's still playing.
+      const video = videoRef.current;
+      if (!playingRef.current) play();
+      else if (video?.paused) video.play().catch((err) => console.error('Resuming after a scrub failed', err));
     }
-  }, [pause, play, playingRef]);
+  }, [pause, play, playingRef, videoRef]);
 
   const appDropRef = useRef<HTMLDivElement>(null);
   // The video is loading or waiting for data (shows a spinner over the preview after a short delay).
@@ -6344,11 +6347,11 @@ function App() {
                               src={fileUri}
                               onPlay={onStartPlaying}
                               onPause={onStopPlaying}
-                              onAbort={onVideoAbort}
+                              onAbort={() => { setVideoBusy(false); onVideoAbort(); }}
                               onDurationChange={onDurationChange}
                               onLoadedMetadata={() => setSegmentPreviewSpeed(previewSegmentSpeed)}
                               onTimeUpdate={onTimeUpdate}
-                              onError={onVideoError}
+                              onError={() => { setVideoBusy(false); onVideoError(); }}
                               onClick={onVideoClick}
                               onDoubleClick={toggleFullscreenVideo}
                               onFocusCapture={onVideoFocus}
