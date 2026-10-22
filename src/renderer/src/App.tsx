@@ -527,6 +527,7 @@ function App() {
     resetKeyBindings,
     setStoreProjectInWorkingDir,
     setCleanupChoices,
+    setTrashSourceAfterExport,
     toggleDarkMode,
     setWaveformMode,
     setThumbnailsEnabled,
@@ -2686,10 +2687,18 @@ function App() {
   }, [batchListRemoveFile, clearSegments, resetState, setWorking, whenProjectSaved]);
 
   const askForCleanupChoices = useCallback(async () => {
-    const trashResponse = await openCleanupFilesDialog(cleanupChoices);
-    if (trashResponse != null) setCleanupChoices(trashResponse); // Store for next time, if not canceled
+    const trashResponse = await openCleanupFilesDialog({
+      ...cleanupChoices,
+      // An unattended "move the original after each export" is the Export switch; show it as such.
+      ...(cleanupChoices.cleanupAfterExport && !cleanupChoices.askForCleanup ? { trashSourceFile: trashSourceAfterExport } : {}),
+    });
+    if (trashResponse != null) {
+      setCleanupChoices(trashResponse); // Store for next time, if not canceled
+      // ...and choosing it there (unattended) turns the switch on or off, so both always agree.
+      if (trashResponse.cleanupAfterExport && !trashResponse.askForCleanup) setTrashSourceAfterExport(trashResponse.trashSourceFile === true);
+    }
     return trashResponse;
-  }, [cleanupChoices, openCleanupFilesDialog, setCleanupChoices]);
+  }, [cleanupChoices, openCleanupFilesDialog, setCleanupChoices, setTrashSourceAfterExport, trashSourceAfterExport]);
 
   const cleanupFilesDialog = useCallback(async () => {
     if (!isFileOpened || workingRef.current) return;

@@ -87,6 +87,7 @@ export async function recycleOriginal(path: string, expected: FileIdentity | und
     const current = await identify(path);
     if (current == null) return { recycled: false, reason: 'missing' };
     if (!sameIdentity(current, expected)) return { recycled: false, reason: 'changed' };
+    if (isCancelled()) return { recycled: false, reason: 'cancelled' };
     try {
       // eslint-disable-next-line no-await-in-loop
       await trash(path);

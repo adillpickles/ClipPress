@@ -17,6 +17,7 @@ import type { KeyboardLayoutMap } from './types';
 import App from './App';
 import ErrorBoundary from './ErrorBoundary';
 import { listenForCloseRequests } from './closeRequests';
+import { installSelectEscapeGuard } from './selectEscapeGuard';
 import './i18n';
 
 import type { RemoteApiLegacy, RemoteRpcApi } from '../../main';
@@ -66,6 +67,9 @@ console.log('Version', app.getVersion());
 
 // Before rendering, so that closing works even if the editor fails to render.
 listenForCloseRequests();
+
+// Escape on an open dropdown list closes the list only, not the dialog or sheet around it.
+installSelectEscapeGuard();
 
 
 const container = document.getElementById('root')!;
