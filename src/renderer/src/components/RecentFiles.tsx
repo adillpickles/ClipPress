@@ -80,7 +80,7 @@ function RecentFiles({ files, customOutDir, onOpen, onRemove, onClear }: {
   if (files.length === 0) return null;
 
   return (
-    <section className={styles['recent']} aria-label={t('Recent recordings')}>
+    <section className={styles['recent']} aria-label={t('Recent clips')}>
       <div className={styles['header']}>
         <span className={styles['title']}>{t('Recent')}</span>
         <button type="button" className={styles['clear']} onClick={onClear}>{t('Clear list')}</button>
@@ -108,7 +108,7 @@ function RecentFiles({ files, customOutDir, onOpen, onRemove, onClear }: {
                 </span>
                 <span className={styles['side']}>
                   {missing && <span className={styles['badgeMissing']}>{t('Missing')}</span>}
-                  {!missing && state?.edited && <span className={styles['badge']} title={t('Your clips and edits are saved for this recording')}>{t('Edited')}</span>}
+                  {!missing && state?.edited && <span className={styles['badge']} title={t('Your edits to this clip are saved')}>{t('Edited')}</span>}
                   <span className={styles['when']}>{formatRelative(openedAt)}</span>
                 </span>
               </button>

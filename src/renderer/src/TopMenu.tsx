@@ -51,7 +51,7 @@ function TopMenu({
   return (
     <div className={`no-user-select ${styles['wrapper']}`}>
       <div className={styles['primary']}>
-        <Button onClick={onOpenFiles} title={t('Open another recording')}>
+        <Button onClick={onOpenFiles} title={t('Open another clip')}>
           <FiFolder aria-hidden />
           {t('Open')}
         </Button>

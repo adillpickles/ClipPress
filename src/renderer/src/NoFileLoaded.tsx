@@ -2,13 +2,12 @@ import type { ReactNode } from 'react';
 import { Fragment, memo, useState } from 'react';
 import { motion } from 'motion/react';
 import { Trans, useTranslation } from 'react-i18next';
-import { FiFolder, FiShare, FiType } from 'react-icons/fi';
+import { FiDownload, FiFolder, FiScissors, FiShare, FiType } from 'react-icons/fi';
 
 import type { KeyBinding } from '../../common/types';
 import { isMac, splitKeyboardKeys } from './util';
 import Kbd from './components/Kbd';
 import Button from './components/Button';
-import ClipPressMark from './components/ClipPressMark';
 import styles from './NoFileLoaded.module.css';
 
 function Keys({ keys }: { keys: string | undefined }) {
@@ -68,27 +67,28 @@ function NoFileLoaded({ onClick, onOpenFolderClick, keyBindingByAction, showStep
       ].join(' ')}
     >
       <div className={styles['content']}>
-        <div className={styles['mark']}>
-          <ClipPressMark size="100%" />
-        </div>
+        {/* The whole window takes drops; this card is where it looks like you can. */}
+        <div className={[styles['dropCard'], ...(dragging ? [styles['dropCardActive']] : [])].join(' ')}>
+          <div className={styles['dropIcon']}><FiDownload aria-hidden /></div>
 
-        <h1 className={styles['title']}>{dragging ? t('Drop to open') : t('Open a recording to start clipping')}</h1>
-        <p className={styles['subtitle']}>{t('Drag a video anywhere into this window, or choose one.')}</p>
+          <h1 className={styles['title']}>{dragging ? t('Drop to open') : t('Drop a clip to get started')}</h1>
+          <p className={styles['subtitle']}>{t('Drag a video anywhere into this window, or choose one.')}</p>
 
-        <div className={styles['actions']}>
-          <Button variant="primary" size="lg" onClick={onClick}>
-            {t('Open recording…')}
-            <span className={styles['buttonKeys']}><kbd>{isMac ? '⌘' : 'Ctrl'}</kbd><span className={styles['plus']}>+</span><kbd>O</kbd></span>
-          </Button>
-          <Button variant="ghost" size="lg" onClick={onOpenFolderClick}>
-            <FiFolder aria-hidden />
-            {t('Open folder')}
-          </Button>
+          <div className={styles['actions']}>
+            <Button variant="primary" size="lg" onClick={onClick}>
+              {t('Open clip…')}
+              <span className={styles['buttonKeys']}><kbd>{isMac ? '⌘' : 'Ctrl'}</kbd><span className={styles['plus']}>+</span><kbd>O</kbd></span>
+            </Button>
+            <Button variant="ghost" size="lg" onClick={onOpenFolderClick}>
+              <FiFolder aria-hidden />
+              {t('Open folder')}
+            </Button>
+          </div>
         </div>
 
         {showSteps && (
         <div className={styles['steps']}>
-          <Step icon={<span className={styles['bracketIcon']}>[ ]</span>} title={t('Mark the moment')}>
+          <Step icon={<FiScissors aria-hidden />} title={t('Mark the moment')}>
             {keyBindingByAction['setCutStart'] != null && keyBindingByAction['setCutEnd'] != null ? (
               <Trans>Press <Keys keys={keyBindingByAction['setCutStart'].keys} /> for the start and <Keys keys={keyBindingByAction['setCutEnd'].keys} /> for the end. Add as many clips as you like.</Trans>
             ) : t('Set a start and an end for each clip.')}
