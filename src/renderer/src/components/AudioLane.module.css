@@ -1,6 +1,7 @@
 .lane {
   position: relative;
   width: 100%;
+  overflow: hidden;
   border-top: 1px solid var(--cp-line);
   background: color-mix(in srgb, var(--gray-3) 30%, transparent);
 }

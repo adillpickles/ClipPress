@@ -23,8 +23,10 @@ export function formatGainDb(audioGainDb: number, muteLabel: string) {
  * The audio track's header: mute the preview (doesn't change the export) and the track's volume for the whole
  * export (what used to be "Clip gain" on the preview).
  */
-function AudioTrackHeader({ previewMuted, onTogglePreviewMuted, gainControls, onGainChange }: {
-  previewMuted: boolean,
+function AudioTrackHeader({ previewVolume, onPreviewVolumeChange, onTogglePreviewMuted, gainControls, onGainChange }: {
+  /** 0..1, what you hear here only. */
+  previewVolume: number,
+  onPreviewVolumeChange: (volume: number) => void,
   onTogglePreviewMuted: () => void,
   gainControls: TrackGainControl[],
   onGainChange: (streamIndex: number, audioGainDb: number) => void,
@@ -33,6 +35,7 @@ function AudioTrackHeader({ previewMuted, onTogglePreviewMuted, gainControls, on
   // The pill the popover opens from (null when closed).
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
 
+  const previewMuted = previewVolume === 0;
   const main = gainControls[0];
   const changed = gainControls.some((control) => control.audioGainDb !== defaultAudioGainDb);
   const PreviewIcon = previewMuted ? FiVolumeX : FiVolume2;
@@ -64,6 +67,23 @@ function AudioTrackHeader({ previewMuted, onTogglePreviewMuted, gainControls, on
 
       {anchor != null && (
         <AnchoredPopover anchor={anchor} onClose={() => setAnchor(null)} label={t('Track volume')}>
+          <div className={styles['gainItem']}>
+            <div className={styles['gainHeader']}>
+              <span className={styles['gainLabel']}>{t('Preview volume (not exported)')}</span>
+              <span className={styles['gainValue']}>{Math.round(previewVolume * 100)}%</span>
+            </div>
+            <input
+              className={styles['slider']}
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={Math.round(previewVolume * 100)}
+              aria-label={t('Preview volume')}
+              onChange={(e) => onPreviewVolumeChange(Number(e.target.value) / 100)}
+            />
+          </div>
+          <div className={styles['divider']} />
           <div className={styles['popoverTitle']}>{t('Track volume')}</div>
           <div className={styles['popoverHint']}>{t('For the whole export. Right-click a clip on the audio track to change just that clip.')}</div>
           {gainControls.map(({ streamIndex, label, audioGainDb }) => (

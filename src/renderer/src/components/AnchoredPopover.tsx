@@ -10,7 +10,7 @@ const margin = 8;
  * A small floating panel next to a point or element (above it when there's room), portalled to the app root.
  * Closes on a click outside it or Escape.
  */
-export default function AnchoredPopover({ anchor, onClose, children, label, className, align = 'center', onPointerEnter, onPointerLeave }: {
+export default function AnchoredPopover({ anchor, onClose, children, label, className, align = 'center', dataShelf, onPointerEnter, onPointerLeave }: {
   /** Where to open: an element, or a point (e.g. where the user right-clicked). */
   anchor: HTMLElement | { x: number, y: number },
   onClose: () => void,
@@ -19,6 +19,8 @@ export default function AnchoredPopover({ anchor, onClose, children, label, clas
   className?: string | undefined,
   /** Centred on the anchor, or lined up with its left edge. */
   align?: 'center' | 'start' | undefined,
+  /** Marks the shelf's popover, so focus inside it can be found. */
+  dataShelf?: boolean | undefined,
   onPointerEnter?: (() => void) | undefined,
   onPointerLeave?: (() => void) | undefined,
 }) {
@@ -67,6 +69,7 @@ export default function AnchoredPopover({ anchor, onClose, children, label, clas
       ref={ref}
       role="dialog"
       aria-label={label}
+      data-shelf={dataShelf ? '' : undefined}
       className={[styles['popover'], ...(className != null ? [className] : [])].join(' ')}
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}

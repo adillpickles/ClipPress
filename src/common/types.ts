@@ -52,6 +52,9 @@ export type ShelfOrder = 'date' | 'name';
 /** An export the shelf remembers: the clip it came from, and the files it wrote. */
 export interface ShelfExport {
   source: string,
+  /** The source as it was when exported, so a new recording saved under the same name isn't taken for it. */
+  sourceSize?: number | undefined,
+  sourceModifiedAt?: number | undefined,
   outputs: string[],
   /** Milliseconds since the epoch. */
   exportedAt: number,

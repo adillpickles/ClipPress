@@ -38,6 +38,14 @@ describe('shelf', () => {
     ]);
   });
 
+  it('takes a new recording saved under an exported name for a new clip', () => {
+    const exports = [{ source: a.path, sourceSize: a.size, sourceModifiedAt: a.modifiedAt, outputs: [], exportedAt: 1 }];
+    expect(buildShelfQueue([a], { order: 'date', exports, caseInsensitive: true })[0]?.exported).toBe(true);
+    const replaced = { ...a, modifiedAt: a.modifiedAt + 60_000 };
+    expect(buildShelfQueue([replaced], { order: 'date', exports, caseInsensitive: true })[0]?.exported).toBe(false);
+    expect(rememberShelfExport([], exports[0]!, true)[0]).toMatchObject({ sourceSize: a.size, sourceModifiedAt: a.modifiedAt });
+  });
+
   it('picks the next clip still to do, wrapping round, never the open one', () => {
     const exports = [{ source: b.path, outputs: [], exportedAt: 1 }];
     const queue = buildShelfQueue(files, { order: 'date', exports, caseInsensitive: true });

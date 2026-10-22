@@ -18,6 +18,16 @@ export function getPeaksBucketSeconds(duration: number) {
   return Math.max(0.01, duration / 20_000);
 }
 
+/** The rate the sound is rectified at: keeps everything up to 8 kHz, so high-pitched sounds still show. */
+const envelopeSampleRate = 16_000;
+
+/**
+ * Raw samples of the sound's loudness, starting at the recording's start:
+ * - `aresample=async=1:first_pts=0` pads with silence where the track starts late or has gaps, since raw
+ *   samples carry no timestamps;
+ * - taking the absolute value before going down to the low output rate keeps the loudness of sounds above
+ *   that rate's range, which resampling on its own would filter away.
+ */
 export function getPeaksArgs({ filePath, streamIndex, sampleRate }: { filePath: string, streamIndex: number | undefined, sampleRate: number }) {
   return [
     '-hide_banner',
@@ -25,6 +35,7 @@ export function getPeaksArgs({ filePath, streamIndex, sampleRate }: { filePath: 
     '-i', filePath,
     '-map', streamIndex != null ? `0:${streamIndex}` : '0:a:0',
     '-vn', '-sn', '-dn',
+    '-af', `aresample=async=1:first_pts=0,aformat=channel_layouts=mono,aresample=${envelopeSampleRate},aeval=exprs=abs(val(0)),aresample=${sampleRate}`,
     '-ac', '1',
     '-ar', String(sampleRate),
     '-c:a', 'pcm_s16le',

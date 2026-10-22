@@ -12,6 +12,7 @@ import type { FormatTimecode, StateSegment } from './types';
 import { getSegmentSpeed } from './segmentSpeed';
 import type { FilmstripFrame } from './filmstrip';
 import styles from './TimelineSeg.module.css';
+import { dbToPercent, isClipVolumeChanged } from './util/audioGain';
 
 
 const markerButtonStyle: React.CSSProperties = { fontSize: 10, minWidth: 0, letterSpacing: '-.1em', color: 'white' };
@@ -184,6 +185,13 @@ function Segment({
   const simpleLook = simpleMode && !invertCutSegments;
   const clipFrames = useMemo(() => (simpleLook ? getClipFrames(filmstrip, seg.start, seg.end, toLanePercent, fileEnd) : []), [fileEnd, filmstrip, seg.end, seg.start, simpleLook, toLanePercent]);
 
+  // Shows a changed volume, which advanced mode has no audio track to show.
+  const getClipVolumeMenuLabel = () => {
+    if (seg.audioMuted) return t('Clip volume (muted)…');
+    if (isClipVolumeChanged(seg)) return t('Clip volume ({{percent}}%)…', { percent: dbToPercent(seg.audioGainDb ?? 0) });
+    return t('Clip volume…');
+  };
+
   const onContextMenuCapture = (event: ReactMouseEvent<HTMLElement>) => {
     if (invertCutSegments) return;
     event.preventDefault();
@@ -197,7 +205,7 @@ function Segment({
       { label: t('Remove speed change'), enabled: speed !== 1 || speedControlsVisible, click: () => onRemoveSpeed(seg.segId) },
       { type: 'separator' },
       { label: t('Zoom / Crop…'), click: () => onEditCrop(segNum) },
-      ...(onEditVolume != null ? [{ label: t('Clip volume…'), click: () => onEditVolume(segNum, point) }] : []),
+      ...(onEditVolume != null ? [{ label: getClipVolumeMenuLabel(), click: () => onEditVolume(segNum, point) }] : []),
     ]).popup({ window: remote.getCurrentWindow() });
   };
 

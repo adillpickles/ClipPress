@@ -24,7 +24,10 @@ function ShelfButton({ onOpenFiles, onShelfShown, shelf }: {
 }) {
   const { t } = useTranslation();
   const anchorRef = useRef<HTMLDivElement>(null);
+  const arrowRef = useRef<HTMLButtonElement>(null);
   const [anchor, setAnchor] = useState<HTMLElement>();
+  // Opened from the arrow (mouse or keyboard): focus goes into the list.
+  const [focusList, setFocusList] = useState(false);
   // Opened with a click: stays until a click elsewhere, rather than closing when the pointer leaves.
   const pinnedRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -36,8 +39,10 @@ function ShelfButton({ onOpenFiles, onShelfShown, shelf }: {
   useEffect(() => clearTimer, []);
 
   const show = useCallback((pinned: boolean) => {
+    clearTimer();
     if (anchorRef.current == null) return;
     pinnedRef.current = pinned;
+    setFocusList(pinned);
     onShelfShown();
     setAnchor(anchorRef.current);
   }, [onShelfShown]);
@@ -47,6 +52,25 @@ function ShelfButton({ onOpenFiles, onShelfShown, shelf }: {
     pinnedRef.current = false;
     setAnchor(undefined);
   }, []);
+
+  // Escape (or a click outside) while focus is in the list: give it back to the arrow rather than losing it.
+  const onPopoverClose = useCallback(() => {
+    const popover = document.querySelector('[role=dialog][data-shelf]');
+    if (popover != null && popover.contains(document.activeElement)) arrowRef.current?.focus();
+    close();
+  }, [close]);
+
+  const onArrowClick = () => {
+    if (anchor == null) {
+      show(true);
+    } else if (!pinnedRef.current) {
+      // Hover opened it a moment ago: the click keeps it open rather than closing it.
+      clearTimer();
+      pinnedRef.current = true;
+    } else {
+      close();
+    }
+  };
 
   const onPointerEnter = () => {
     clearTimer();
@@ -70,9 +94,10 @@ function ShelfButton({ onOpenFiles, onShelfShown, shelf }: {
         {t('Open')}
       </button>
       <button
+        ref={arrowRef}
         type="button"
         className={styles['arrow']}
-        onClick={() => (anchor != null ? close() : show(true))}
+        onClick={onArrowClick}
         aria-expanded={anchor != null}
         aria-label={t('Clips in this folder')}
         title={t('Clips in this folder')}
@@ -84,8 +109,9 @@ function ShelfButton({ onOpenFiles, onShelfShown, shelf }: {
         <AnchoredPopover
           anchor={anchor}
           align="start"
-          onClose={close}
+          onClose={onPopoverClose}
           label={t('Clips in this folder')}
+          dataShelf
           className={shelfStyles['popover']}
           onPointerEnter={clearTimer}
           onPointerLeave={onPointerLeave}
@@ -102,6 +128,7 @@ function ShelfButton({ onOpenFiles, onShelfShown, shelf }: {
             onChooseFolder={shelf.onChooseFolder}
             thumbnails={shelf.thumbnails}
             requestThumbnail={shelf.requestThumbnail}
+            autoFocus={focusList}
           />
         </AnchoredPopover>
       )}

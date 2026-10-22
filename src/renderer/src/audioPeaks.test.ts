@@ -15,6 +15,8 @@ describe('audioPeaks', () => {
     const args = getPeaksArgs({ filePath: 'a.mp4', streamIndex: 2, sampleRate: 1000 });
     expect(args.slice(args.indexOf('-map'), args.indexOf('-map') + 2)).toEqual(['-map', '0:2']);
     expect(args).toEqual(expect.arrayContaining(['-ac', '1', '-ar', '1000', '-f', 's16le']));
+    // Padded to the recording's start, and rectified before the rate drops.
+    expect(args[args.indexOf('-af') + 1]).toBe('aresample=async=1:first_pts=0,aformat=channel_layouts=mono,aresample=16000,aeval=exprs=abs(val(0)),aresample=1000');
     expect(getPeaksArgs({ filePath: 'a.mp4', streamIndex: undefined, sampleRate: 1000 })).toContain('0:a:0');
   });
 

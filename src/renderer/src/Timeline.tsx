@@ -717,8 +717,8 @@ function Timeline({
   // doesn't resize the preview.
   // (Simple mode has its own audio track under the clips instead.)
   const showWaveformLane = waveformEnabled && !simpleMode;
-  const showWaveformHint = waveformEnabled && !shouldShowWaveform;
-  const showWaveforms = waveformEnabled && shouldShowWaveform && (waveforms.length > 0 || overviewWaveform != null);
+  const showWaveformHint = showWaveformLane && !shouldShowWaveform;
+  const showWaveforms = showWaveformLane && shouldShowWaveform && (waveforms.length > 0 || overviewWaveform != null);
   // Simple mode draws speed controls on the clip block itself rather than in a lane of their own.
   const retimeOverlay = simpleMode;
   const showRetimeLane = !retimeOverlay && retimeSegments.length > 0;
@@ -738,13 +738,14 @@ function Timeline({
 
   return (
     <div className={styles['timeline']}>
-      <div className={styles['gutter']} aria-hidden>
-        <div style={{ height: rulerHeight }} />
-        {showWaveformLane && <div className={styles['laneLabel']} style={{ height: waveformHeight }}>{t('Audio')}</div>}
-        {showThumbnails && <div style={{ height: thumbnailsHeight }} />}
-        {showTextLane && <div className={styles['laneLabel']} style={{ height: textLaneHeight }}>{t('Text')}</div>}
-        {showRetimeLane && <div className={styles['laneLabel']} style={{ height: retimeLaneHeight }}>{t('Speed')}</div>}
-        <div className={styles['laneLabel']} style={{ height: simpleMode ? simpleClipLaneHeight : clipLaneHeight }}>{simpleMode ? t('Clips') : t('Segments')}</div>
+      {/* The lane labels are decoration; the audio track's controls are real buttons, so only the labels are hidden. */}
+      <div className={styles['gutter']}>
+        <div style={{ height: rulerHeight }} aria-hidden />
+        {showWaveformLane && <div className={styles['laneLabel']} style={{ height: waveformHeight }} aria-hidden>{t('Audio')}</div>}
+        {showThumbnails && <div style={{ height: thumbnailsHeight }} aria-hidden />}
+        {showTextLane && <div className={styles['laneLabel']} style={{ height: textLaneHeight }} aria-hidden>{t('Text')}</div>}
+        {showRetimeLane && <div className={styles['laneLabel']} style={{ height: retimeLaneHeight }} aria-hidden>{t('Speed')}</div>}
+        <div className={styles['laneLabel']} style={{ height: simpleMode ? simpleClipLaneHeight : clipLaneHeight }} aria-hidden>{simpleMode ? t('Clips') : t('Segments')}</div>
         {showAudioLane && <div style={{ height: audioLaneHeight, display: 'flex', flexDirection: 'column' }}>{audioHeader}</div>}
       </div>
 
@@ -967,13 +968,14 @@ function Timeline({
                 segments={cutSegments}
                 activeIndex={currentSegIndexSafe}
                 noneTicked={noneTicked}
+                invertCutSegments={invertCutSegments}
                 toLanePercent={toLanePercent}
                 pxToTime={pxToTime}
                 lanePx={lanePx}
                 visibleStartPx={(toLanePercent(zoomWindowStartTime) / 100) * lanePx}
                 viewportPx={scrollerWidth}
                 onClipClick={setCurrentSegIndex}
-                onClipContextMenu={onEditClipVolume != null ? (index, event) => onEditClipVolume(index, { x: event.clientX, y: event.clientY }) : undefined}
+                onClipContextMenu={onEditClipVolume}
               />
             )}
 

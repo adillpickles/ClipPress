@@ -65,7 +65,7 @@ const ShelfRow = memo(ShelfRowInner);
  * The shelf: the videos in the open clip's folder, oldest recording first (or by name). Clips already
  * exported sink to the bottom; ClipPress's own exports aren't listed.
  */
-function Shelf({ folder, queue, currentPath, nextPath, caseInsensitive, order, onOrderChange, onOpen, onChooseFolder, thumbnails, requestThumbnail }: {
+function Shelf({ folder, queue, currentPath, nextPath, caseInsensitive, order, onOrderChange, onOpen, onChooseFolder, thumbnails, requestThumbnail, autoFocus = false }: {
   folder: string | undefined,
   queue: ShelfItem[],
   currentPath: string | undefined,
@@ -77,14 +77,23 @@ function Shelf({ folder, queue, currentPath, nextPath, caseInsensitive, order, o
   onChooseFolder: () => void,
   thumbnails: ReadonlyMap<string, string>,
   requestThumbnail: (path: string) => void,
+  /** Move focus to the first clip that can be opened (opened from the keyboard or a click). */
+  autoFocus?: boolean,
 }) {
   const { t } = useTranslation();
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!autoFocus) return;
+    const root = rootRef.current;
+    const target = root?.querySelector<HTMLButtonElement>(`.${styles['row']}:not(:disabled)`) ?? root?.querySelector<HTMLButtonElement>('button');
+    target?.focus();
+  }, [autoFocus]);
   const currentKey = currentPath != null ? shelfPathKey(currentPath, caseInsensitive) : undefined;
   const nextKey = nextPath != null ? shelfPathKey(nextPath, caseInsensitive) : undefined;
   const remaining = queue.filter((item) => !item.exported).length;
 
   return (
-    <div className={styles['shelf']}>
+    <div ref={rootRef} className={styles['shelf']}>
       <div className={styles['header']}>
         <button type="button" className={styles['folder']} onClick={onChooseFolder} title={folder ?? t('Choose a folder')}>
           <FiFolder aria-hidden />

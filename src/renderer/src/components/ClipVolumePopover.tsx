@@ -14,8 +14,6 @@ export interface ClipVolumeChange {
 
 /** Dragging near 100% snaps to it, so "back to normal" is easy to hit. */
 const detentPercent = 4;
-/** Below this, un-muting brings the clip back to 100% instead of to a barely audible level. */
-const minRestoredPercent = 10;
 
 /**
  * A clip's own volume: a mute switch that remembers the level, a 0–200% slider and a reset. Opened by
@@ -26,13 +24,17 @@ function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, onChang
   clipLabel: string,
   audioGainDb: number | undefined,
   audioMuted: boolean,
-  /** `drag` while the slider moves, so one drag is one undo step. */
-  onChange: (volume: ClipVolumeChange, drag: boolean) => void,
+  /** `dragId` while the slider moves: changes with the same id are one undo step. */
+  onChange: (volume: ClipVolumeChange, dragId: number | undefined) => void,
   onClose: () => void,
 }) {
   const { t } = useTranslation();
   const ticksId = useId();
   const pointerDownRef = useRef(false);
+  // Each press or focus of the slider starts a new undo step.
+  const dragIdRef = useRef(0);
+  // The level before the slider was dragged down to 0, which un-muting brings back.
+  const levelBeforeDragRef = useRef<number | undefined>(undefined);
 
   const levelPercent = dbToPercent(audioGainDb ?? 0);
   const percent = audioMuted ? 0 : levelPercent;
@@ -43,18 +45,17 @@ function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, onChang
     // Snap only for the pointer: with the arrow keys, 99 and 101 must stay reachable.
     const snapped = pointerDownRef.current && Math.abs(value - 100) <= detentPercent ? 100 : value;
     if (snapped <= 0) {
-      onChange({ audioGainDb, audioMuted: true }, true);
+      onChange({ audioGainDb: pointerDownRef.current ? levelBeforeDragRef.current : audioGainDb, audioMuted: true }, dragIdRef.current);
       return;
     }
-    onChange({ audioGainDb: snapped === 100 ? undefined : percentToDb(snapped), audioMuted: false }, true);
+    onChange({ audioGainDb: snapped === 100 ? undefined : percentToDb(snapped), audioMuted: false }, dragIdRef.current);
   };
 
-  const toggleMuted = () => {
-    if (audioMuted) {
-      onChange({ audioGainDb: levelPercent < minRestoredPercent ? undefined : audioGainDb, audioMuted: false }, false);
-    } else {
-      onChange({ audioGainDb, audioMuted: true }, false);
-    }
+  // Mute keeps the level; un-mute brings it back as it was.
+  const toggleMuted = () => onChange({ audioGainDb, audioMuted: !audioMuted }, undefined);
+
+  const startInteraction = () => {
+    dragIdRef.current += 1;
   };
 
   return (
@@ -84,8 +85,13 @@ function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, onChang
           list={ticksId}
           aria-label={t('Clip volume')}
           aria-valuetext={audioMuted ? t('Muted') : `${percent}%`}
-          onPointerDown={() => { pointerDownRef.current = true; }}
+          onPointerDown={() => {
+            startInteraction();
+            pointerDownRef.current = true;
+            levelBeforeDragRef.current = audioMuted ? undefined : audioGainDb;
+          }}
           onPointerUp={() => { pointerDownRef.current = false; }}
+          onFocus={startInteraction}
           onChange={(e) => onSlide(Number(e.target.value))}
         />
         <datalist id={ticksId}>
@@ -95,7 +101,7 @@ function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, onChang
         <button
           type="button"
           className={styles['resetButton']}
-          onClick={() => onChange({ audioGainDb: undefined, audioMuted: false }, false)}
+          onClick={() => onChange({ audioGainDb: undefined, audioMuted: false }, undefined)}
           disabled={!changed}
           title={t('Back to 100%')}
           aria-label={t('Back to 100%')}

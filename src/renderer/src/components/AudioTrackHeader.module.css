@@ -121,3 +121,9 @@
   width: 100%;
   accent-color: var(--cp-accent);
 }
+
+.divider {
+  height: 1px;
+  margin: .1rem -.85rem;
+  background: var(--cp-line);
+}

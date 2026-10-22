@@ -10,6 +10,8 @@ import type { FFprobeStream } from '../../common/ffprobe';
 import { getFrameDuration } from './util';
 import { normalizeRotation } from './textOverlays';
 import type { FfmpegHwAccel } from '../../common/types';
+import usePreviewAudioGain from './hooks/usePreviewAudioGain';
+import type { PreviewClipVolume } from './hooks/usePreviewAudioGain';
 
 const { compatPlayer: { createMediaSourceStream } } = window.require('@electron/remote').require('./index.js');
 
@@ -333,12 +335,14 @@ async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, 
   processChunk();
 }
 
-function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioGainByStreamId, masterVideoRef, mediaSourceQuality, ffmpegHwaccel, onFailedChange }: {
+function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioGainByStreamId, clipVolumes, masterVideoRef, mediaSourceQuality, ffmpegHwaccel, onFailedChange }: {
   rotate: number | undefined,
   filePath: string,
   videoStream: FFprobeStream | undefined,
   audioStreams: FFprobeStream[],
   audioGainByStreamId: Record<number, number>,
+  /** Clip volumes, applied to what this player plays (track volumes are already in FFmpeg's mix). */
+  clipVolumes?: PreviewClipVolume[] | undefined,
   masterVideoRef: RefObject<HTMLVideoElement>,
   mediaSourceQuality: number,
   ffmpegHwaccel: FfmpegHwAccel,
@@ -347,6 +351,8 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // This video is kept at the source's time (see the sync above), so clip edges line up as in the native player.
+  usePreviewAudioGain(videoRef, undefined, filePath, clipVolumes);
   const [loading, setLoading] = useState(true);
   const [showCanvas, setShowCanvas] = useState(false);
   const [failed, setFailed] = useState(false);

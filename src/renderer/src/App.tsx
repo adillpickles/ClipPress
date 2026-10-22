@@ -554,6 +554,9 @@ function App() {
     setShelfOrder,
   } = allUserSettings;
 
+  const shelf = useShelf({ folder: shelfFolder, order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac, currentPath: filePath });
+  const { refresh: refreshShelf, nextClip } = shelf;
+
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(!simpleMode);
 
   const { withErrorHandling, handleError, genericError, setGenericError } = useErrorHandling();
@@ -1143,11 +1146,15 @@ function App() {
   const hasSegmentCropChanges = segmentsOrInverse.selected.some((segment) => hasSegmentCrop(segment));
   const hasSegmentVolumeChanges = segmentsOrInverse.selected.some((segment) => isClipVolumeChanged(segment));
   // Clip volumes play through the native player too (with the FFmpeg-assisted player they're only in the export).
-  const previewClipVolumes = useMemo<PreviewClipVolume[]>(() => (invertCutSegments ? [] : cutSegments.flatMap((segment) => (
-    segment.end != null && isClipVolumeChanged(segment)
+  const previewClipVolumes = useMemo<PreviewClipVolume[]>(() => {
+    if (invertCutSegments || !cutSegments.some((segment) => segment.end != null && isClipVolumeChanged(segment))) return [];
+    // Where clips overlap, the same one wins as for the speed preview: the selected clip, then the first one.
+    const active = cutSegments[currentSegIndexSafe];
+    const ordered = active != null ? [active, ...cutSegments.filter((segment) => segment !== active)] : cutSegments;
+    return ordered.flatMap((segment) => (segment.end != null
       ? [{ start: segment.start, end: segment.end, factor: getPreviewGainFactor(combineAudioGain(undefined, segment)) }]
-      : []
-  ))), [cutSegments, invertCutSegments]);
+      : []));
+  }, [currentSegIndexSafe, cutSegments, invertCutSegments]);
   usePreviewAudioGain(videoRef, activeAudioStreams.length === 1 ? activeAudioGainByStreamId[activeAudioStreams[0]!.index] : undefined, filePath, previewClipVolumes);
   const [editingCropSegmentId, setEditingCropSegmentId] = useState<string>();
   const editingCropSegment = !invertCutSegments && currentCutSeg?.segId === editingCropSegmentId ? currentCutSeg : undefined;
@@ -1211,7 +1218,7 @@ function App() {
   }, [cutSegments, invertCutSegments, setSpeedControlsBySegment, speedControlsSegmentIds, workingRef]);
 
   /** A clip's own volume, from its popover on the audio track. One slider drag is one undo step. */
-  const changeSegmentVolume = useCallback((segmentId: string, { audioGainDb: requestedDb, audioMuted: requestedMuted }: ClipVolumeChange, drag: boolean) => {
+  const changeSegmentVolume = useCallback((segmentId: string, { audioGainDb: requestedDb, audioMuted: requestedMuted }: ClipVolumeChange, dragId: number | undefined) => {
     if (workingRef.current || invertCutSegments) return;
     const index = cutSegments.findIndex((segment) => segment.segId === segmentId);
     const segment = cutSegments[index];
@@ -1219,7 +1226,7 @@ function App() {
     const audioGainDb = sanitizeClipGainDb(requestedDb);
     const audioMuted = requestedMuted ? true : undefined;
     if (sanitizeClipGainDb(segment.audioGainDb) === audioGainDb && (segment.audioMuted === true) === requestedMuted) return;
-    updateSegAtIndex(index, { audioGainDb, audioMuted }, drag ? { coalesceKey: `clip-volume:${segmentId}` } : undefined);
+    updateSegAtIndex(index, { audioGainDb, audioMuted }, dragId != null ? { coalesceKey: `clip-volume:${segmentId}:${dragId}` } : undefined);
   }, [cutSegments, invertCutSegments, updateSegAtIndex, workingRef]);
 
   const [clipVolumeEditor, setClipVolumeEditor] = useState<{ segId: string, anchor: { x: number, y: number } }>();
@@ -1232,8 +1239,8 @@ function App() {
   const clipVolumeEditorIndex = clipVolumeEditor != null ? cutSegments.findIndex((segment) => segment.segId === clipVolumeEditor.segId) : -1;
   const clipVolumeEditorSegment = cutSegments[clipVolumeEditorIndex];
   const closeClipVolumeEditor = useCallback(() => setClipVolumeEditor(undefined), []);
-  const onClipVolumeChange = useCallback((volume: ClipVolumeChange, drag: boolean) => {
-    if (clipVolumeEditor != null) changeSegmentVolume(clipVolumeEditor.segId, volume, drag);
+  const onClipVolumeChange = useCallback((volume: ClipVolumeChange, dragId: number | undefined) => {
+    if (clipVolumeEditor != null) changeSegmentVolume(clipVolumeEditor.segId, volume, dragId);
   }, [changeSegmentVolume, clipVolumeEditor]);
 
   const toggleSegmentSpeedControls = useCallback(() => {
@@ -2274,9 +2281,15 @@ function App() {
   );
 
   /** The shelf moves an exported clip to the bottom and doesn't offer its exports as clips. */
-  const rememberExportedClip = useCallback((source: string, outputs: string[]) => {
+  const rememberExportedClip = useCallback((source: string, sourceIdentity: FileIdentity | undefined, outputs: string[]) => {
     if (outputs.length === 0) return;
-    setShelfExports((list) => rememberShelfExport(list, { source, outputs, exportedAt: Date.now() }, isWindows || isMac));
+    setShelfExports((list) => rememberShelfExport(list, {
+      source,
+      sourceSize: sourceIdentity?.size,
+      sourceModifiedAt: sourceIdentity?.mtimeMs,
+      outputs,
+      exportedAt: Date.now(),
+    }, isWindows || isMac));
   }, [setShelfExports]);
 
   const sizeLimitedSegmentsForExport = useMemo<SegmentToExport[]>(() => {
@@ -2687,8 +2700,11 @@ function App() {
           runDeletion: (deletePath, deletion) => (deletePath === projectFilePath ? deleteProjectFile(deletePath, deletion) : deletion()),
         });
       }, i18n.t('Unable to delete file'));
+      // The clip may have gone to the Recycle Bin: don't offer it as the next one.
+      refreshShelf();
     },
     [
+      refreshShelf,
       batchListRemoveFile,
       clearSegments,
       deleteProjectFile,
@@ -3663,7 +3679,7 @@ function App() {
 
         setExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
         setCurrentFileExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
-        rememberExportedClip(filePath, exportedPaths);
+        rememberExportedClip(filePath, sourceIdentity, exportedPaths);
         emitEvent({ eventName: 'export-complete', paths: exportedPaths });
         return;
       }
@@ -3874,7 +3890,7 @@ function App() {
 
         setExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
         setCurrentFileExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
-        rememberExportedClip(filePath, exportedPaths);
+        rememberExportedClip(filePath, sourceIdentity, exportedPaths);
         emitEvent({ eventName: 'export-complete', paths: exportedPaths });
         return;
       }
@@ -4099,7 +4115,7 @@ function App() {
 
       setExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
       setCurrentFileExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
-      rememberExportedClip(filePath, exportedPaths);
+      rememberExportedClip(filePath, sourceIdentity, exportedPaths);
 
       emitEvent({ eventName: 'export-complete', paths: exportedPaths });
     } catch (err) {
@@ -5001,11 +5017,18 @@ function App() {
     [workingRef, filePath, closeExportResultDialog, setWorking, withErrorHandling, userOpenSingleFile],
   );
 
-  const shelf = useShelf({ folder: shelfFolder, order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac, currentPath: filePath });
-  const { refresh: refreshShelf, nextClip } = shelf;
+  /** Opens a clip from the shelf, or tidies the shelf if it has gone (recycled or moved meanwhile). */
+  const openShelfClip = useCallback(async (path: string) => {
+    if (!(await mainApi.pathExists(path))) {
+      refreshShelf();
+      showNotification({ icon: 'info', text: i18n.t('That clip is no longer in its folder.') });
+      return;
+    }
+    await batchOpenSingleFile(path);
+  }, [batchOpenSingleFile, refreshShelf, showNotification]);
   const openNextClip = useCallback(() => {
-    if (nextClip != null) batchOpenSingleFile(nextClip.path);
-  }, [batchOpenSingleFile, nextClip]);
+    if (nextClip != null) openShelfClip(nextClip.path);
+  }, [nextClip, openShelfClip]);
   const chooseShelfFolder = useCallback(async () => {
     const { canceled, filePaths } = await showOpenDialog({
       properties: ['openDirectory'],
@@ -5335,6 +5358,10 @@ function App() {
 
         // Simple mode: a folder goes on the shelf, and its first clip opens.
         if (simpleMode && newFilePaths.length === 1 && (await lstat(firstNewFilePath)).isDirectory()) {
+          if (workingRef.current) {
+            showNotification({ icon: 'info', text: i18n.t('ClipPress is busy. Open the file again when the current task has finished.') });
+            return;
+          }
           const folder = firstNewFilePath;
           const queue = buildShelfQueue(await listShelfFolder(folder), { order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac });
           const first = pickNextClip(queue, undefined, isWindows || isMac) ?? queue[0]?.file;
@@ -6516,7 +6543,7 @@ function App() {
                     caseInsensitive: isWindows || isMac,
                     order: shelfOrder,
                     onOrderChange: setShelfOrder,
-                    onOpen: batchOpenSingleFile,
+                    onOpen: openShelfClip,
                     onChooseFolder: chooseShelfFolder,
                     thumbnails: shelf.thumbnails,
                     requestThumbnail: shelf.requestThumbnail,
@@ -6561,7 +6588,7 @@ function App() {
                             file={nextClip}
                             thumbnail={shelf.thumbnails.get(nextClip.path)}
                             requestThumbnail={shelf.requestThumbnail}
-                            onOpen={batchOpenSingleFile}
+                            onOpen={openShelfClip}
                           />
                         )}
                         <RecentFiles
@@ -6634,6 +6661,16 @@ function App() {
 
                             <PreviewSpinner busy={videoBusy && fileUri != null && !compatPlayerEnabled} />
 
+                            {clipVolumeEditor != null && clipVolumeEditorSegment != null && (
+                              <ClipVolumePopover
+                                anchor={clipVolumeEditor.anchor}
+                                clipLabel={clipVolumeEditorSegment.name || t('Clip {{number}}', { number: clipVolumeEditorIndex + 1 })}
+                                audioGainDb={clipVolumeEditorSegment.audioGainDb}
+                                audioMuted={clipVolumeEditorSegment.audioMuted === true}
+                                onChange={onClipVolumeChange}
+                                onClose={closeClipVolumeEditor}
+                              />
+                            )}
                             {filePath != null && compatPlayerEnabled && (
                             <MediaSourcePlayer
                               rotate={effectiveRotation}
@@ -6641,6 +6678,7 @@ function App() {
                               videoStream={activeVideoStream}
                               audioStreams={activeAudioStreams}
                               audioGainByStreamId={activeAudioGainByStreamId}
+                              clipVolumes={previewClipVolumes}
                               masterVideoRef={videoRef}
                               mediaSourceQuality={mediaSourceQuality}
                               ffmpegHwaccel={ffmpegHwaccel}
@@ -6843,26 +6881,15 @@ function App() {
                           filmstrip={filmstrip}
                           audioPeaks={audioPeaks}
                           showAudioLane={showAudioLane}
-                          onEditClipVolume={showAudioLane && !invertCutSegments ? editClipVolume : undefined}
+                          onEditClipVolume={hasAudio && !invertCutSegments ? editClipVolume : undefined}
                           audioHeader={(
-                            <>
-                              <AudioTrackHeader
-                                previewMuted={playbackVolume === 0}
-                                onTogglePreviewMuted={toggleMuted}
-                                gainControls={previewAudioGainControls}
-                                onGainChange={updateAudioGainForStream}
-                              />
-                              {clipVolumeEditor != null && clipVolumeEditorSegment != null && (
-                                <ClipVolumePopover
-                                  anchor={clipVolumeEditor.anchor}
-                                  clipLabel={clipVolumeEditorSegment.name || t('Clip {{number}}', { number: clipVolumeEditorIndex + 1 })}
-                                  audioGainDb={clipVolumeEditorSegment.audioGainDb}
-                                  audioMuted={clipVolumeEditorSegment.audioMuted === true}
-                                  onChange={onClipVolumeChange}
-                                  onClose={closeClipVolumeEditor}
-                                />
-                              )}
-                            </>
+                            <AudioTrackHeader
+                              previewVolume={playbackVolume}
+                              onPreviewVolumeChange={setPlaybackVolume}
+                              onTogglePreviewMuted={toggleMuted}
+                              gainControls={previewAudioGainControls}
+                              onGainChange={updateAudioGainForStream}
+                            />
                           )}
                           getCurrentTime={getRelevantTime}
                           onScrubbingChange={onTimelineScrubbingChange}

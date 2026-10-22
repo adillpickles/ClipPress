@@ -33,13 +33,18 @@ export function shelfPathKey(path: string, caseInsensitive: boolean) {
 }
 
 /** Notes an export: its source sinks to the bottom of the shelf, and its outputs aren't offered as clips. */
-export function rememberShelfExport(list: readonly ShelfExport[], { source, outputs, exportedAt }: ShelfExport, caseInsensitive: boolean): ShelfExport[] {
+export function rememberShelfExport(list: readonly ShelfExport[], { source, sourceSize, sourceModifiedAt, outputs, exportedAt }: ShelfExport, caseInsensitive: boolean): ShelfExport[] {
   const key = shelfPathKey(source, caseInsensitive);
   const previous = list.find((entry) => shelfPathKey(entry.source, caseInsensitive) === key);
   const allOutputs = [...outputs, ...(previous?.outputs ?? [])];
   const uniqueOutputs = allOutputs.filter((output, index) => allOutputs.findIndex((other) => shelfPathKey(other, caseInsensitive) === shelfPathKey(output, caseInsensitive)) === index);
   return [
-    { source, outputs: uniqueOutputs.slice(0, maxOutputsPerExport), exportedAt },
+    {
+      source,
+      ...(sourceSize != null && sourceModifiedAt != null ? { sourceSize, sourceModifiedAt } : {}),
+      outputs: uniqueOutputs.slice(0, maxOutputsPerExport),
+      exportedAt,
+    },
     ...list.filter((entry) => shelfPathKey(entry.source, caseInsensitive) !== key),
   ].slice(0, maxShelfExports);
 }
@@ -55,13 +60,20 @@ export function buildShelfQueue(files: readonly ShelfFile[], { order, exports, c
   exports: readonly ShelfExport[],
   caseInsensitive: boolean,
 }): ShelfItem[] {
-  const exportedSources = new Set(exports.map((entry) => shelfPathKey(entry.source, caseInsensitive)));
+  const exportedSources = new Map(exports.map((entry) => [shelfPathKey(entry.source, caseInsensitive), entry]));
   const outputs = new Set(exports.flatMap((entry) => entry.outputs.map((output) => shelfPathKey(output, caseInsensitive))));
+  // Same path and, when it was noted, the same size and time: a new recording saved under an old name is new.
+  const isExported = (file: ShelfFile) => {
+    const entry = exportedSources.get(shelfPathKey(file.path, caseInsensitive));
+    if (entry == null) return false;
+    if (entry.sourceSize == null || entry.sourceModifiedAt == null) return true;
+    return entry.sourceSize === file.size && Math.abs(entry.sourceModifiedAt - file.modifiedAt) < 2;
+  };
   const compare = order === 'name' ? compareNames : (a: ShelfFile, b: ShelfFile) => (a.modifiedAt - b.modifiedAt) || compareNames(a, b);
   const items = files
     .filter((file) => !outputs.has(shelfPathKey(file.path, caseInsensitive)))
     .sort(compare)
-    .map((file) => ({ file, exported: exportedSources.has(shelfPathKey(file.path, caseInsensitive)) }));
+    .map((file) => ({ file, exported: isExported(file) }));
   return [...items.filter((item) => !item.exported), ...items.filter((item) => item.exported)];
 }
 
