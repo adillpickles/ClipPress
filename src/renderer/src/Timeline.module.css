@@ -118,38 +118,32 @@
   background: var(--accent-9);
 }
 
-/* The time the user asked for (seek target): accent line across every lane with a handle in the ruler. */
+/* The one playhead: an accent line across every lane with a rounded handle in the ruler. Its position is
+   written by Timeline's Playhead (React when paused, every display frame while playing). */
 .playhead {
   position: absolute;
   top: 0;
   bottom: 0;
+  left: 0;
   width: 2px;
   margin-left: -1px;
+  border-radius: 1px;
   background: var(--cp-accent);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 35%);
   pointer-events: none;
   z-index: 2;
 }
 
 .playheadHandle {
   position: absolute;
-  top: 0;
+  top: 2px;
   left: 50%;
-  width: 11px;
-  height: 12px;
+  width: 12px;
+  height: 16px;
   transform: translateX(-50%);
-  background: var(--cp-accent);
-  clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%);
-  border-radius: 2px 2px 0 0;
-}
-
-/* Where playback actually is; normally under the playhead, visible while seeking catches up. */
-.playerTime {
-  position: absolute;
-  bottom: 0;
-  width: 1px;
-  background: color-mix(in srgb, var(--gray-12) 55%, transparent);
-  pointer-events: none;
-  z-index: 1;
+  border-radius: 6px;
+  background: linear-gradient(180deg, var(--accent-11), var(--cp-accent) 70%);
+  box-shadow: 0 0 0 2px var(--cp-bg), 0 2px 6px rgb(0 0 0 / 45%);
 }
 
 @keyframes background-animation {

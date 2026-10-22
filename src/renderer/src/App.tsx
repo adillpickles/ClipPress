@@ -610,6 +610,21 @@ function App() {
     pause,
     seekRel,
   } = useVideo({ filePath });
+
+  // Dragging along the timeline pauses playback while it lasts and resumes it afterwards; a paused video stays paused.
+  const resumeAfterScrubRef = useRef(false);
+  const onTimelineScrubbingChange = useCallback((scrubbing: boolean) => {
+    if (scrubbing) {
+      resumeAfterScrubRef.current = playingRef.current;
+      if (playingRef.current) pause();
+      return;
+    }
+    if (resumeAfterScrubRef.current) {
+      resumeAfterScrubRef.current = false;
+      play();
+    }
+  }, [pause, play, playingRef]);
+
   const appDropRef = useRef<HTMLDivElement>(null);
   const {
     timecodePlaceholder,
@@ -6504,7 +6519,8 @@ function App() {
                           showThumbnails={showThumbnails}
                           neighbouringKeyFrames={neighbouringKeyFrames}
                           thumbnails={thumbnailsSorted}
-                          playerTime={playerTime}
+                          getCurrentTime={getRelevantTime}
+                          onScrubbingChange={onTimelineScrubbingChange}
                           commandedTime={commandedTime}
                           relevantTime={relevantTime}
                           commandedTimeRef={commandedTimeRef}
@@ -6529,6 +6545,8 @@ function App() {
                           goToTimecode={goToTimecode}
                           darkMode={darkMode}
                           setCutTime={setCutTime}
+                          setCutStart={setCutStart}
+                          setCutEnd={setCutEnd}
                           overlayClips={overlayClips}
                           selectedOverlayId={selectedOverlayId}
                           onSelectOverlay={setSelectedOverlayId}

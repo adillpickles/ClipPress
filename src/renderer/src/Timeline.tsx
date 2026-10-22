@@ -1,6 +1,6 @@
 import type { MutableRefObject, CSSProperties, WheelEventHandler, MouseEventHandler, MouseEvent as ReactMouseEvent } from 'react';
-import { memo, useRef, useMemo, useCallback, useEffect, useState } from 'react';
-import { motion, useMotionValue, useSpring } from 'motion/react';
+import { memo, useRef, useMemo, useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { useMotionValue, useSpring } from 'motion/react';
 import debounce from 'lodash/debounce';
 import { useTranslation } from 'react-i18next';
 import invariant from 'tiny-invariant';
@@ -75,12 +75,47 @@ const Waveforms = memo(({ timelineMap, laneDuration, fileDurationNonZero, wavefo
   </div>
 ));
 
-// eslint-disable-next-line react/display-name
-const CommandedTime = memo(({ commandedTimePercent }: { commandedTimePercent: string }) => (
-  <div className={styles['playhead']} style={{ left: commandedTimePercent }}>
-    <div className={styles['playheadHandle']} />
-  </div>
-));
+/**
+ * The one playhead. Paused, it sits at the time the user asked for. While playing, it follows the video on
+ * every display frame, written straight to the element (no React render, no easing), so it moves smoothly
+ * rather than in steps each time the video reports its position (about 4 times a second).
+ */
+function Playhead({ playing, commandedTime, getCurrentTime, calculateTimelinePos }: {
+  playing: boolean,
+  commandedTime: number,
+  getCurrentTime: () => number,
+  calculateTimelinePos: (time: number | undefined) => number | undefined,
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const calculateTimelinePosRef = useRef(calculateTimelinePos);
+
+  useLayoutEffect(() => {
+    calculateTimelinePosRef.current = calculateTimelinePos;
+    const el = ref.current;
+    if (el == null) return;
+    const pos = calculateTimelinePos(playing ? getCurrentTime() : commandedTime);
+    el.style.left = `${(pos ?? 0) * 100}%`;
+  }, [calculateTimelinePos, commandedTime, getCurrentTime, playing]);
+
+  useEffect(() => {
+    if (!playing) return undefined;
+    let frame = requestAnimationFrame(function follow() {
+      const el = ref.current;
+      if (el != null) {
+        const pos = calculateTimelinePosRef.current(getCurrentTime());
+        if (pos != null) el.style.left = `${pos * 100}%`;
+      }
+      frame = requestAnimationFrame(follow);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [getCurrentTime, playing]);
+
+  return (
+    <div ref={ref} className={styles['playhead']}>
+      <div className={styles['playheadHandle']} />
+    </div>
+  );
+}
 
 const rulerHeight = 22;
 const clipLaneHeight = 44;
@@ -93,7 +128,8 @@ const retimeTrailingSpace = 0.15;
 function Timeline({
   fileDurationNonZero,
   startTimeOffset,
-  playerTime,
+  getCurrentTime,
+  onScrubbingChange,
   commandedTime,
   relevantTime,
   zoom,
@@ -125,6 +161,8 @@ function Timeline({
   goToTimecode,
   darkMode,
   setCutTime,
+  setCutStart,
+  setCutEnd,
   overlayClips,
   selectedOverlayId,
   onSelectOverlay,
@@ -140,7 +178,10 @@ function Timeline({
 } : {
   fileDurationNonZero: number,
   startTimeOffset: number,
-  playerTime: number | undefined,
+  /** The video's position while playing, the asked-for time otherwise. Read every frame, without re-rendering. */
+  getCurrentTime: () => number,
+  /** Dragging along the timeline starts and ends a scrub: playback pauses during it and resumes after. */
+  onScrubbingChange: (scrubbing: boolean) => void,
   commandedTime: number,
   relevantTime: number,
   zoom: number,
@@ -172,6 +213,8 @@ function Timeline({
   goToTimecode: () => void,
   darkMode: boolean,
   setCutTime: UseSegments['setCutTime'];
+  setCutStart: () => void,
+  setCutEnd: () => void,
   overlayClips: OverlayClip[],
   selectedOverlayId: string | undefined,
   onSelectOverlay: (overlayId: string | undefined) => void,
@@ -188,7 +231,7 @@ function Timeline({
 }) {
   const { t } = useTranslation();
 
-  const { invertCutSegments, springAnimation, segmentMouseModifierKey, simpleMode } = useUserSettings();
+  const { invertCutSegments, segmentMouseModifierKey, simpleMode } = useUserSettings();
 
   const timelineScrollerRef = useRef<HTMLDivElement>(null);
   const timelineScrollerSkipEventRef = useRef<boolean>(false);
@@ -240,8 +283,6 @@ function Timeline({
     return pos !== undefined ? `${pos * 100}%` : undefined;
   }, [calculateTimelinePos]);
 
-  const currentTimePercent = useMemo(() => calculateTimelinePercent(playerTime), [calculateTimelinePercent, playerTime]);
-  const commandedTimePercent = useMemo(() => calculateTimelinePercent(commandedTime), [calculateTimelinePercent, commandedTime]);
 
   const timeOfInterestPosPixels = useMemo(() => {
     // https://github.com/mifi/lossless-cut/issues/676
@@ -395,9 +436,14 @@ function Timeline({
     }
 
     mouseDownRef.current = e.target;
+    let scrubbing = false;
 
     function onMouseMove(e2: MouseEvent) {
       if (mouseDownRef.current == null) return;
+      if (!scrubbing) {
+        scrubbing = true;
+        onScrubbingChange(true);
+      }
       const mouseDragTimelinePos = getMouseTimelinePos(e2);
       seekAbs(mouseDragTimelinePos);
       try {
@@ -419,6 +465,7 @@ function Timeline({
       resizingSegmentRef.current = undefined;
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('mousemove', onMouseMove);
+      if (scrubbing) onScrubbingChange(false);
     }
 
     // https://github.com/mifi/lossless-cut/issues/1432
@@ -426,7 +473,7 @@ function Timeline({
     // https://stackoverflow.com/questions/6073505/what-is-the-difference-between-screenx-y-clientx-y-and-pagex-y
     window.addEventListener('mouseup', onMouseUp, { once: true });
     window.addEventListener('mousemove', onMouseMove);
-  }, [fileDurationNonZero, getMouseTimelinePos, seekAbs, segmentMouseModifierKey, setCutTime, zoom]);
+  }, [fileDurationNonZero, getMouseTimelinePos, onScrubbingChange, seekAbs, segmentMouseModifierKey, setCutTime, zoom]);
 
   const onOverlayMouseDown = useCallback((overlayClip: OverlayClip, mode: 'start' | 'end' | 'move') => (e: ReactMouseEvent<HTMLElement>) => {
     if (e.nativeEvent.buttons !== 1) return;
@@ -443,10 +490,15 @@ function Timeline({
       start: overlayClip.start,
       end: overlayClip.end,
     };
+    let scrubbing = false;
 
     function onMouseMove(e2: MouseEvent) {
       const overlayInteraction = overlayInteractionRef.current;
       if (overlayInteraction == null) return;
+      if (!scrubbing) {
+        scrubbing = true;
+        onScrubbingChange(true);
+      }
       const mouseDragTimelinePos = getMouseTimelinePos(e2);
       seekAbs(mouseDragTimelinePos);
       onUpdateOverlayClip(overlayClip.overlayId, (clip) => {
@@ -487,11 +539,12 @@ function Timeline({
       overlayInteractionRef.current = undefined;
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('mousemove', onMouseMove);
+      if (scrubbing) onScrubbingChange(false);
     }
 
     window.addEventListener('mouseup', onMouseUp, { once: true });
     window.addEventListener('mousemove', onMouseMove);
-  }, [fileDurationNonZero, getMouseTimelinePos, onSelectOverlay, onUpdateOverlayClip, seekAbs]);
+  }, [fileDurationNonZero, getMouseTimelinePos, onScrubbingChange, onSelectOverlay, onUpdateOverlayClip, seekAbs]);
 
   const onRetimeHandleMouseDown = useCallback((seg: Omit<StateSegment, 'end'> & { end: number }, index: number) => (event: ReactMouseEvent<HTMLElement>) => {
     const scroller = timelineScrollerRef.current;
@@ -572,8 +625,11 @@ function Timeline({
   const onMouseOut = useCallback(() => setHoveringTime(undefined), []);
 
   const contextMenuTemplate = useMemo(() => [
+    { label: simpleMode ? t('Start a clip at the playhead') : t('Start current segment at current time'), click: setCutStart },
+    { label: simpleMode ? t('End the clip at the playhead') : t('End current segment at current time'), click: setCutEnd },
+    { type: 'separator' as const },
     { label: t('Seek to timecode'), click: goToTimecode },
-  ], [goToTimecode, t]);
+  ], [goToTimecode, setCutEnd, setCutStart, simpleMode, t]);
 
   useContextMenu(timelineScrollerRef, contextMenuTemplate);
 
@@ -789,12 +845,7 @@ function Timeline({
               ))}
             </div>
 
-            {currentTimePercent !== undefined && (
-              <motion.div transition={springAnimation} animate={{ left: currentTimePercent }} className={styles['playerTime']} style={{ top: rulerHeight }} />
-            )}
-            {commandedTimePercent !== undefined && (
-              <CommandedTime commandedTimePercent={commandedTimePercent} />
-            )}
+            <Playhead playing={playing} commandedTime={commandedTime} getCurrentTime={getCurrentTime} calculateTimelinePos={calculateTimelinePos} />
           </div>
         </div>
       </div>
