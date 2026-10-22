@@ -18,11 +18,13 @@ export function createSeekQueue({
   cancel?: (handle: unknown) => void,
 }) {
   let inFlight = false;
+  let inFlightTime: number | undefined;
   let pending: number | undefined;
   let safetyTimer: unknown;
 
   function issue(time: number) {
     inFlight = true;
+    inFlightTime = time;
     seek(time);
     cancel(safetyTimer);
     // eslint-disable-next-line no-use-before-define
@@ -33,6 +35,7 @@ export function createSeekQueue({
     cancel(safetyTimer);
     safetyTimer = undefined;
     inFlight = false;
+    inFlightTime = undefined;
     const next = pending;
     pending = undefined;
     if (next != null) issue(next);
@@ -47,10 +50,15 @@ export function createSeekQueue({
       issue(time);
     },
     landed,
+    /** The newest time asked for that hasn't landed yet: the waiting one, else the one in flight. */
+    latestTarget(): number | undefined {
+      return pending ?? (inFlight ? inFlightTime : undefined);
+    },
     reset() {
       cancel(safetyTimer);
       safetyTimer = undefined;
       inFlight = false;
+      inFlightTime = undefined;
       pending = undefined;
     },
   };

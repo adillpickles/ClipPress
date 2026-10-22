@@ -79,4 +79,17 @@ describe('createSeekQueue', () => {
     queue.request(3);
     expect(seeks).toEqual([1, 3]);
   });
+
+  it('knows the newest target that has not landed yet', () => {
+    const { queue } = setup();
+    expect(queue.latestTarget()).toBeUndefined();
+    queue.request(1);
+    expect(queue.latestTarget()).toBe(1);
+    queue.request(2);
+    expect(queue.latestTarget()).toBe(2);
+    queue.landed();
+    expect(queue.latestTarget()).toBe(2);
+    queue.landed();
+    expect(queue.latestTarget()).toBeUndefined();
+  });
 });

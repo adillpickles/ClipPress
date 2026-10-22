@@ -93,9 +93,10 @@ export default ({ filePath }: { filePath: string | undefined }) => {
     playingRef.current = val;
     setPlaying(val);
     if (!val && videoRef.current) {
-      setCommandedTime(videoRef.current.currentTime);
+      // A seek still on its way (e.g. playback paused for a scrub) is where the user asked to be.
+      setCommandedTime(seekQueue.latestTarget() ?? videoRef.current.currentTime);
     }
-  }, [setCommandedTime]);
+  }, [seekQueue, setCommandedTime]);
 
   const onStopPlaying = useCallback(() => {
     onPlayingChange(false);
