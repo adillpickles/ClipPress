@@ -10,12 +10,17 @@ const margin = 8;
  * A small floating panel next to a point or element (above it when there's room), portalled to the app root.
  * Closes on a click outside it or Escape.
  */
-export default function AnchoredPopover({ anchor, onClose, children, label }: {
+export default function AnchoredPopover({ anchor, onClose, children, label, className, align = 'center', onPointerEnter, onPointerLeave }: {
   /** Where to open: an element, or a point (e.g. where the user right-clicked). */
   anchor: HTMLElement | { x: number, y: number },
   onClose: () => void,
   children: ReactNode,
   label: string,
+  className?: string | undefined,
+  /** Centred on the anchor, or lined up with its left edge. */
+  align?: 'center' | 'start' | undefined,
+  onPointerEnter?: (() => void) | undefined,
+  onPointerLeave?: (() => void) | undefined,
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{ top: number, left: number }>();
@@ -31,9 +36,10 @@ export default function AnchoredPopover({ anchor, onClose, children, label }: {
     const { width, height } = el.getBoundingClientRect();
     let top = rect.top - height - 8;
     if (top < margin) top = Math.min(window.innerHeight - height - margin, rect.bottom + 8);
-    const left = Math.min(Math.max(margin, rect.left + rect.width / 2 - width / 2), window.innerWidth - width - margin);
+    const preferredLeft = align === 'start' ? rect.left : rect.left + rect.width / 2 - width / 2;
+    const left = Math.min(Math.max(margin, preferredLeft), window.innerWidth - width - margin);
     setPosition({ top, left });
-  }, [anchor]);
+  }, [align, anchor]);
 
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
@@ -61,7 +67,9 @@ export default function AnchoredPopover({ anchor, onClose, children, label }: {
       ref={ref}
       role="dialog"
       aria-label={label}
-      className={styles['popover']}
+      className={[styles['popover'], ...(className != null ? [className] : [])].join(' ')}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
       style={position != null ? { top: position.top, left: position.left } : { top: -9999, left: -9999 }}
     >
       {children}

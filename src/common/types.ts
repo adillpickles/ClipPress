@@ -47,6 +47,16 @@ export type SizeLimitAdvancedH264CpuPreset = 'ultrafast' | 'superfast' | 'veryfa
 
 export type SizeLimitNamingMode = 'auto' | 'custom_template';
 
+export type ShelfOrder = 'date' | 'name';
+
+/** An export the shelf remembers: the clip it came from, and the files it wrote. */
+export interface ShelfExport {
+  source: string,
+  outputs: string[],
+  /** Milliseconds since the epoch. */
+  exportedAt: number,
+}
+
 export interface RecentFile {
   path: string,
   /** Milliseconds since the epoch. */
@@ -61,6 +71,9 @@ export interface Config {
   recentCustomOutDirs: string[],
   /** Recordings opened lately, newest first, for the welcome screen. */
   recentFiles: RecentFile[],
+  /** The shelf of clips in a folder: its order, and the exports it remembers (newest first). */
+  shelfOrder: ShelfOrder,
+  shelfExports: ShelfExport[],
   keyframeCut: boolean,
   autoMerge: boolean,
   autoDeleteMergedSegments: boolean,

@@ -432,6 +432,25 @@ async function renderThumbnail(filePath: string, timestamp: number, signal: Abor
   return URL.createObjectURL(blob);
 }
 
+/** A small frame for the shelf, a second in (or the first frame of a shorter video). */
+export async function renderShelfThumbnail(filePath: string, signal: AbortSignal) {
+  for (const timestamp of [1, 0]) {
+    const { stdout } = await runFfmpeg([
+      '-hide_banner',
+      '-ss', String(timestamp),
+      '-i', filePath,
+      '-frames:v', '1',
+      '-vf', 'scale=-2:90',
+      '-q:v', '6',
+      '-f', 'image2',
+      '-c:v', 'mjpeg',
+      '-',
+    ], { cancelSignal: signal }, { logCli: false });
+    if (stdout.length > 0) return URL.createObjectURL(safeCreateBlob(stdout, { type: 'image/jpeg' }));
+  }
+  return undefined;
+}
+
 export async function extractSubtitleTrack(filePath: string, streamId: number) {
   const args = [
     '-hide_banner',

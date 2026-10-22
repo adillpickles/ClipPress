@@ -109,6 +109,8 @@ const defaults: Config = {
   enableCustomOutDir: false,
   recentCustomOutDirs: [],
   recentFiles: [],
+  shelfOrder: 'date',
+  shelfExports: [],
   keyframeCut: true,
   autoMerge: false,
   autoDeleteMergedSegments: true,

@@ -1,0 +1,61 @@
+/* Open + the shelf arrow, drawn as one button with a divider (matches Button.module.css). */
+.split {
+  display: inline-flex;
+  align-items: stretch;
+  min-height: 2rem;
+  border-radius: var(--cp-radius);
+  border: 1px solid var(--cp-line);
+  background-color: var(--cp-raised);
+  transition: border-color .14s ease;
+}
+
+.split:hover {
+  border-color: var(--cp-line-strong);
+}
+
+.main,
+.arrow {
+  appearance: none;
+  font: inherit;
+  line-height: 1.2;
+  font-size: .875rem;
+  font-weight: 600;
+  color: var(--cp-text);
+  background: transparent;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  transition: background-color .14s ease, box-shadow .14s ease;
+}
+
+.main {
+  padding: 0 .65rem 0 .8rem;
+  border-radius: var(--cp-radius) 0 0 var(--cp-radius);
+}
+
+.arrow {
+  padding: 0 .45rem;
+  border-left: 1px solid var(--cp-line);
+  border-radius: 0 var(--cp-radius) var(--cp-radius) 0;
+  color: var(--cp-text-muted);
+}
+
+.main:hover,
+.arrow:hover,
+.arrow[aria-expanded='true'] {
+  background-color: var(--cp-hover);
+  color: var(--cp-text);
+}
+
+.main:active,
+.arrow:active {
+  background-color: var(--cp-active);
+}
+
+.main:focus-visible,
+.arrow:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}

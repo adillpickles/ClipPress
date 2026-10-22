@@ -51,6 +51,10 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ recentCustomOutDirs }), [recentCustomOutDirs]);
   const [recentFiles, setRecentFiles] = useState(safeGetConfigInitial('recentFiles'));
   useEffect(() => safeSetConfig({ recentFiles }), [recentFiles]);
+  const [shelfOrder, setShelfOrder] = useState(safeGetConfigInitial('shelfOrder'));
+  useEffect(() => safeSetConfig({ shelfOrder }), [shelfOrder]);
+  const [shelfExports, setShelfExports] = useState(safeGetConfigInitial('shelfExports'));
+  useEffect(() => safeSetConfig({ shelfExports }), [shelfExports]);
   const [enableCustomOutDir, setEnableCustomOutDir] = useState(safeGetConfigInitial('enableCustomOutDir'));
   useEffect(() => safeSetConfig({ enableCustomOutDir }), [enableCustomOutDir]);
   const [keyframeCut, setKeyframeCut] = useState(safeGetConfigInitial('keyframeCut'));
@@ -486,6 +490,10 @@ export default function useUserSettingsRoot() {
     // Kept out of `settings`, which is attached to error reports: these are file paths.
     recentFiles,
     setRecentFiles,
+    shelfExports,
+    setShelfExports,
+    shelfOrder,
+    setShelfOrder,
 
     // setters
     setLastAppVersion,
@@ -585,7 +593,7 @@ export default function useUserSettingsRoot() {
     setSizeLimitMergedNamingMode,
     setSizeLimitCutFileTemplate,
     setSizeLimitCutMergedFileTemplate,
-  }), [settings, springAnimation, customOutDir, setCustomOutDir, resetKeyBindings, toggleDarkMode, prefersReducedMotion, recentFiles]);
+  }), [settings, springAnimation, customOutDir, setCustomOutDir, resetKeyBindings, toggleDarkMode, prefersReducedMotion, recentFiles, shelfExports, shelfOrder]);
 }
 
 export type UserSettingsRoot = ReturnType<typeof useUserSettingsRoot>;

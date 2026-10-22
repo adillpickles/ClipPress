@@ -1,7 +1,9 @@
+import type { ComponentProps } from 'react';
 import { memo, useCallback, useMemo, useState } from 'react';
-import { FiEdit2, FiFolder, FiList, FiSettings } from 'react-icons/fi';
+import { FiChevronRight, FiEdit2, FiList, FiSettings } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import Button from './components/Button';
+import ShelfButton from './components/ShelfButton';
 
 import ExportButton from './components/ExportButton';
 import SimpleModeButton from './components/SimpleModeButton';
@@ -18,6 +20,10 @@ function TopMenu({
   setStreamsSelectorShown,
   toggleSettings,
   onOpenFiles,
+  onShelfShown,
+  shelf,
+  nextClipName,
+  onOpenNextClip,
   onExportPress,
   segmentsToExport,
 }: {
@@ -29,6 +35,11 @@ function TopMenu({
   setStreamsSelectorShown: (v: boolean) => void,
   toggleSettings: () => void,
   onOpenFiles: () => void,
+  onShelfShown: () => void,
+  shelf: ComponentProps<typeof ShelfButton>['shelf'],
+  /** Simple mode: the clip after this one in the shelf, if any. */
+  nextClipName: string | undefined,
+  onOpenNextClip: () => void,
   onExportPress: () => void,
   segmentsToExport: SegmentToExport[],
 }) {
@@ -51,10 +62,7 @@ function TopMenu({
   return (
     <div className={`no-user-select ${styles['wrapper']}`}>
       <div className={styles['primary']}>
-        <Button onClick={onOpenFiles} title={t('Open another clip')}>
-          <FiFolder aria-hidden />
-          {t('Open')}
-        </Button>
+        <ShelfButton onOpenFiles={onOpenFiles} onShelfShown={onShelfShown} shelf={shelf} />
 
         {fileName != null && (
           <div className={styles['fileChip']}>
@@ -92,6 +100,13 @@ function TopMenu({
               </button>
             )}
           </div>
+        )}
+
+        {nextClipName != null && (
+          <Button variant="ghost" onClick={onOpenNextClip} title={t('Next clip: {{name}}', { name: nextClipName })}>
+            {t('Next clip')}
+            <FiChevronRight aria-hidden />
+          </Button>
         )}
       </div>
 

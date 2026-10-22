@@ -282,6 +282,9 @@ import useFilmstrip from './hooks/useFilmstrip';
 import useAudioPeaks from './hooks/useAudioPeaks';
 import AudioTrackHeader from './components/AudioTrackHeader';
 import ClipVolumePopover from './components/ClipVolumePopover';
+import { ShelfUpNext } from './components/Shelf';
+import useShelf, { listShelfFolder } from './hooks/useShelf';
+import { buildShelfQueue, pickNextClip, rememberShelfExport } from './shelf';
 import type { ClipVolumeChange } from './components/ClipVolumePopover';
 import { combineAudioGain, isClipVolumeChanged, sanitizeClipGainDb } from './util/audioGain';
 import { recycleOriginal, verifyExportedFiles } from './originalRecycling';
@@ -429,6 +432,8 @@ function App() {
 
   // Batch state / concat files
   const [batchFiles, setBatchFiles] = useState<BatchFile[]>([]);
+  // The shelf's folder: the open clip's, kept after it closes so the next clip is one click away.
+  const [shelfFolder, setShelfFolder] = useState<string>();
   const [selectedBatchFiles, setSelectedBatchFiles] = useState<string[]>([]);
 
   const allUserSettings = useUserSettingsRoot();
@@ -543,6 +548,10 @@ function App() {
     customOutDir,
     recentFiles,
     setRecentFiles,
+    shelfExports,
+    setShelfExports,
+    shelfOrder,
+    setShelfOrder,
   } = allUserSettings;
 
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(!simpleMode);
@@ -2264,6 +2273,12 @@ function App() {
     [fileFormat, openSendConcatReportDialogWithState],
   );
 
+  /** The shelf moves an exported clip to the bottom and doesn't offer its exports as clips. */
+  const rememberExportedClip = useCallback((source: string, outputs: string[]) => {
+    if (outputs.length === 0) return;
+    setShelfExports((list) => rememberShelfExport(list, { source, outputs, exportedAt: Date.now() }, isWindows || isMac));
+  }, [setShelfExports]);
+
   const sizeLimitedSegmentsForExport = useMemo<SegmentToExport[]>(() => {
     if (segmentsToExport.length > 0) return segmentsToExport;
     if (!isDurationValid(fileDuration)) return [];
@@ -3648,6 +3663,7 @@ function App() {
 
         setExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
         setCurrentFileExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
+        rememberExportedClip(filePath, exportedPaths);
         emitEvent({ eventName: 'export-complete', paths: exportedPaths });
         return;
       }
@@ -3858,6 +3874,7 @@ function App() {
 
         setExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
         setCurrentFileExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
+        rememberExportedClip(filePath, exportedPaths);
         emitEvent({ eventName: 'export-complete', paths: exportedPaths });
         return;
       }
@@ -4082,6 +4099,7 @@ function App() {
 
       setExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
       setCurrentFileExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
+      rememberExportedClip(filePath, exportedPaths);
 
       emitEvent({ eventName: 'export-complete', paths: exportedPaths });
     } catch (err) {
@@ -4168,6 +4186,7 @@ function App() {
     hasSegmentSpeedChanges,
     hasSegmentCropChanges,
     hasSegmentVolumeChanges,
+    rememberExportedClip,
     haveInvalidSegs,
     hideAllNotifications,
     invertCutSegments,
@@ -4832,6 +4851,7 @@ function App() {
         // Autosave compares later changes with the state opened here.
         setProjectSession({ id: generation, loadedProjectPath });
         setRecentFiles((list) => addRecentFile(list, fp, Date.now(), isWindows || isMac));
+        setShelfFolder(dirname(fp));
         // This needs to be last, because it triggers <video> to load the video
         // If not, onVideoError might be triggered before setWorking() has been cleared.
         // https://github.com/mifi/lossless-cut/issues/515
@@ -4980,6 +5000,22 @@ function App() {
     },
     [workingRef, filePath, closeExportResultDialog, setWorking, withErrorHandling, userOpenSingleFile],
   );
+
+  const shelf = useShelf({ folder: shelfFolder, order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac, currentPath: filePath });
+  const { refresh: refreshShelf, nextClip } = shelf;
+  const openNextClip = useCallback(() => {
+    if (nextClip != null) batchOpenSingleFile(nextClip.path);
+  }, [batchOpenSingleFile, nextClip]);
+  const chooseShelfFolder = useCallback(async () => {
+    const { canceled, filePaths } = await showOpenDialog({
+      properties: ['openDirectory'],
+      ...((shelfFolder ?? lastOpenedPathRef.current) != null ? { defaultPath: (shelfFolder ?? lastOpenedPathRef.current)! } : {}),
+      title: t('Choose a folder'),
+    });
+    const [folder] = filePaths;
+    if (canceled || folder == null) return;
+    setShelfFolder(folder);
+  }, [shelfFolder, t]);
 
   const batchFileJump = useCallback(
     (direction: number, alsoOpen: boolean) => {
@@ -5297,6 +5333,20 @@ function App() {
 
         let firstNewFilePath = newFilePaths[0]!;
 
+        // Simple mode: a folder goes on the shelf, and its first clip opens.
+        if (simpleMode && newFilePaths.length === 1 && (await lstat(firstNewFilePath)).isDirectory()) {
+          const folder = firstNewFilePath;
+          const queue = buildShelfQueue(await listShelfFolder(folder), { order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac });
+          const first = pickNextClip(queue, undefined, isWindows || isMac) ?? queue[0]?.file;
+          if (first == null) {
+            errorToast(i18n.t('No videos in this folder'));
+            return;
+          }
+          setShelfFolder(folder);
+          await batchOpenSingleFile(first.path);
+          return;
+        }
+
         // first check if it is a single directory, and if so, read it recursively
         if (
           newFilePaths.length === 1
@@ -5458,6 +5508,10 @@ function App() {
       addStreamSourceFile,
       filePath,
       showNotification,
+      simpleMode,
+      shelfOrder,
+      shelfExports,
+      batchOpenSingleFile,
     ],
   );
 
@@ -6453,6 +6507,22 @@ function App() {
                   numStreamsTotal={numStreamsTotal}
                   setStreamsSelectorShown={setStreamsSelectorShown}
                   onOpenFiles={openFilesDialog}
+                  onShelfShown={refreshShelf}
+                  shelf={{
+                    folder: shelfFolder,
+                    queue: shelf.queue,
+                    currentPath: filePath,
+                    nextPath: nextClip?.path,
+                    caseInsensitive: isWindows || isMac,
+                    order: shelfOrder,
+                    onOrderChange: setShelfOrder,
+                    onOpen: batchOpenSingleFile,
+                    onChooseFolder: chooseShelfFolder,
+                    thumbnails: shelf.thumbnails,
+                    requestThumbnail: shelf.requestThumbnail,
+                  }}
+                  nextClipName={simpleMode ? nextClip?.name : undefined}
+                  onOpenNextClip={openNextClip}
                   onExportPress={onExportPress}
                   segmentsToExport={segmentsToExport}
                 />
@@ -6486,6 +6556,14 @@ function App() {
                         keyBindingByAction={keyBindingByAction}
                         showSteps={recentFiles.length === 0}
                       >
+                        {nextClip != null && (
+                          <ShelfUpNext
+                            file={nextClip}
+                            thumbnail={shelf.thumbnails.get(nextClip.path)}
+                            requestThumbnail={shelf.requestThumbnail}
+                            onOpen={batchOpenSingleFile}
+                          />
+                        )}
                         <RecentFiles
                           files={recentFiles}
                           customOutDir={customOutDir}
