@@ -50,7 +50,7 @@ export async function verifyExportedFiles(paths: readonly string[], {
 
 export type RecycleResult =
   | { recycled: true }
-  | { recycled: false, reason: 'changed' | 'missing' | 'refused' };
+  | { recycled: false, reason: 'changed' | 'missing' | 'refused' | 'cancelled' };
 
 export function sameIdentity(a: FileIdentity | undefined, b: FileIdentity | undefined) {
   return a != null && b != null && a.size === b.size && Math.abs(a.mtimeMs - b.mtimeMs) < 1;
@@ -65,6 +65,7 @@ export async function recycleOriginal(path: string, expected: FileIdentity | und
   identify,
   trash,
   exists,
+  isCancelled = () => false,
   attempts = 3,
   retryDelayMs = 700,
   wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -72,15 +73,20 @@ export async function recycleOriginal(path: string, expected: FileIdentity | und
   identify: (filePath: string) => Promise<FileIdentity | undefined>,
   trash: (filePath: string) => Promise<unknown>,
   exists: (filePath: string) => Promise<boolean>,
+  /** Checked before every attempt; a cancelled run keeps the original. */
+  isCancelled?: () => boolean,
   attempts?: number,
   retryDelayMs?: number,
   wait?: (ms: number) => Promise<unknown>,
 }): Promise<RecycleResult> {
-  const current = await identify(path);
-  if (current == null) return { recycled: false, reason: 'missing' };
-  if (!sameIdentity(current, expected)) return { recycled: false, reason: 'changed' };
-
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    if (isCancelled()) return { recycled: false, reason: 'cancelled' };
+    // Checked again before each attempt: a recorder that still had the file open may finish writing to it
+    // between attempts, and a file that changed is never recycled.
+    // eslint-disable-next-line no-await-in-loop
+    const current = await identify(path);
+    if (current == null) return { recycled: false, reason: 'missing' };
+    if (!sameIdentity(current, expected)) return { recycled: false, reason: 'changed' };
     try {
       // eslint-disable-next-line no-await-in-loop
       await trash(path);

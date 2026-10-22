@@ -428,10 +428,13 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
 
   // "Move the original to the trash" + "Do this automatically after each export" in the clean-up dialog is now the
   // Export setting "Move the original to the Recycle Bin after export", which never deletes permanently.
+  // Only an unattended setup (no "Ask me each time") becomes the switch, and the old automatic trigger is
+  // retired so that turning the switch off really stops it. Asked-each-time setups keep asking.
   const legacyCleanupChoices = store.get('cleanupChoices') as (Config['cleanupChoices'] & { trashSourceFile?: boolean }) | undefined;
-  if (!storedKeys.has('trashSourceAfterExport') && legacyCleanupChoices?.cleanupAfterExport && legacyCleanupChoices.trashSourceFile) {
+  if (!storedKeys.has('trashSourceAfterExport') && legacyCleanupChoices?.cleanupAfterExport && legacyCleanupChoices.trashSourceFile && !legacyCleanupChoices.askForCleanup) {
     logger.info('Migrating cleanupChoices.trashSourceFile to trashSourceAfterExport');
     set('trashSourceAfterExport', true);
+    set('cleanupChoices', { ...legacyCleanupChoices, trashSourceFile: false } as Config['cleanupChoices']);
   }
 
   const customOutDir = store.get('customOutDir'); // todo remove after a while

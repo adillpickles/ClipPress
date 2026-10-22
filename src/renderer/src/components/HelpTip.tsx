@@ -76,8 +76,8 @@ export default function HelpTip({ children, label }: { children: ReactNode, labe
         onMouseLeave={hide}
         onFocus={() => show(true)}
         onBlur={hide}
-        // A click (or tap) toggles it too, for anyone who doesn't hover.
-        onClick={() => (open ? hide() : show(true))}
+        // A click (or tap) opens it too, for anyone who doesn't hover; it closes on leaving, blur or Escape.
+        onClick={() => show(true)}
       >
         <FiInfo aria-hidden />
       </button>

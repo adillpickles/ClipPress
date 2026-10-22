@@ -95,6 +95,35 @@ describe('recycleOriginal', () => {
     expect(result).toEqual({ recycled: false, reason: 'missing' });
   });
 
+  it('checks the original again before each retry and stops when it changed', async () => {
+    let calls = 0;
+    let identifies = 0;
+    const result = await recycleOriginal('rec.mp4', identity, {
+      identify: async () => {
+        identifies += 1;
+        return identifies === 1 ? identity : { size: 200, mtimeMs: 2000 };
+      },
+      trash: async () => { calls += 1; throw new Error('in use'); },
+      exists: async () => true,
+      wait: noWait,
+    });
+    expect(result).toEqual({ recycled: false, reason: 'changed' });
+    expect(calls).toBe(1);
+  });
+
+  it('keeps the original when cancelled before an attempt', async () => {
+    let calls = 0;
+    const result = await recycleOriginal('rec.mp4', identity, {
+      identify: async () => identity,
+      trash: async () => { calls += 1; },
+      exists: async () => true,
+      isCancelled: () => true,
+      wait: noWait,
+    });
+    expect(result).toEqual({ recycled: false, reason: 'cancelled' });
+    expect(calls).toBe(0);
+  });
+
   it('compares identities by size and modification time', () => {
     expect(sameIdentity(identity, { size: 100, mtimeMs: 1000.4 })).toBe(true);
     expect(sameIdentity(identity, { size: 100, mtimeMs: 2000 })).toBe(false);

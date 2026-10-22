@@ -2650,8 +2650,16 @@ function App() {
       notices.add(i18n.t('The original recording was kept, because not every file was exported.'));
       return false;
     }
-    setWorking({ text: i18n.t('Checking the exported files') });
+    // Cancel works throughout: the original is kept unless everything below runs to the end.
+    const abortController = new AbortController();
+    const cancelled = () => abortController.signal.aborted;
+    const keptBecauseCancelled = () => notices.add(i18n.t('The original recording was kept, because this was cancelled.'));
+    setWorking({ text: i18n.t('Checking the exported files'), abortController });
     const check = await verifyExportedFiles(exportedPaths, { statFile: statOutput, probe: probeOutput });
+    if (cancelled()) {
+      keptBecauseCancelled();
+      return false;
+    }
     if (!check.ok) {
       warnings.add(i18n.t('The original recording was kept, because this exported file could not be checked: {{file}}', { file: parsePath(check.path).base }));
       return false;
@@ -2663,9 +2671,11 @@ function App() {
     clearSegments();
     await whenProjectSaved();
 
-    setWorking({ text: i18n.t('Moving the original to the Recycle Bin') });
-    const result = await recycleOriginal(sourcePath, sourceIdentity, { identify: identifyFile, trash: trashFile, exists: fileExists });
-    if (result.recycled) {
+    setWorking({ text: i18n.t('Moving the original to the Recycle Bin'), abortController });
+    const result = await recycleOriginal(sourcePath, sourceIdentity, { identify: identifyFile, trash: trashFile, exists: fileExists, isCancelled: cancelled });
+    if (!result.recycled && result.reason === 'cancelled') {
+      keptBecauseCancelled();
+    } else if (result.recycled) {
       highlights.add(i18n.t('The original recording was moved to the Recycle Bin. You can restore it from there.'));
     } else if (result.reason === 'changed') {
       warnings.add(i18n.t('The original recording was kept, because it changed during the export.'));
@@ -3534,7 +3544,7 @@ function App() {
         const highlights = new Set<string>();
         const closedForRecycling = await recycleOriginalAfterExport({
           highlights,
-          wanted: trashSourceAfterExport || newCleanupChoices?.trashSourceFile === true,
+          wanted: trashSourceAfterExport || (cleanupChoices.askForCleanup && newCleanupChoices?.trashSourceFile === true),
           sourcePath: filePath,
           sourceIdentity,
           allPlannedCreated: finalizedResults.length > 0 && finalizedResults.every((result) => result.created),
@@ -3705,6 +3715,7 @@ function App() {
           );
         }
 
+        let extraStreamsFailed = false;
         if (exportExtraStreams) {
           try {
             setProgress(undefined);
@@ -3723,6 +3734,7 @@ function App() {
           } catch (err) {
             console.error('Extra stream export failed', err);
             warnings.add(i18n.t('Unable to export unprocessable streams.'));
+            extraStreamsFailed = true;
           }
         }
 
@@ -3741,10 +3753,10 @@ function App() {
         const highlights = new Set<string>();
         const closedForRecycling = await recycleOriginalAfterExport({
           highlights,
-          wanted: trashSourceAfterExport || newCleanupChoices?.trashSourceFile === true,
+          wanted: trashSourceAfterExport || (cleanupChoices.askForCleanup && newCleanupChoices?.trashSourceFile === true),
           sourcePath: filePath,
           sourceIdentity,
-          allPlannedCreated: outFiles.length > 0 && outFiles.every((file) => file.created) && (mergedResult == null || mergedResult.created),
+          allPlannedCreated: !extraStreamsFailed && outFiles.length > 0 && outFiles.every((file) => file.created) && (mergedResult == null || mergedResult.created),
           exportedPaths,
           notices,
           warnings,
@@ -3923,6 +3935,7 @@ function App() {
         );
       }
 
+      let extraStreamsFailed = false;
       if (exportExtraStreams) {
         try {
           setProgress(undefined); // If extracting extra streams takes a long time, prevent loader from being stuck at 100%
@@ -3941,6 +3954,7 @@ function App() {
         } catch (err) {
           console.error('Extra stream export failed', err);
           warnings.add(i18n.t('Unable to export unprocessable streams.'));
+          extraStreamsFailed = true;
         }
       }
 
@@ -3962,10 +3976,10 @@ function App() {
       const highlights = new Set<string>();
       const closedForRecycling = await recycleOriginalAfterExport({
         highlights,
-        wanted: trashSourceAfterExport || newCleanupChoices?.trashSourceFile === true,
+        wanted: trashSourceAfterExport || (cleanupChoices.askForCleanup && newCleanupChoices?.trashSourceFile === true),
         sourcePath: filePath,
         sourceIdentity,
-        allPlannedCreated: outFiles.length > 0 && outFiles.every((file) => file.created) && (mergedResult == null || mergedResult.created),
+        allPlannedCreated: !extraStreamsFailed && outFiles.length > 0 && outFiles.every((file) => file.created) && (mergedResult == null || mergedResult.created),
         exportedPaths,
         notices,
         warnings,
