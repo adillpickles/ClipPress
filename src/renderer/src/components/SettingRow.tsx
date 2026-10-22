@@ -1,47 +1,40 @@
 import type { ReactNode } from 'react';
-import { useId, useState } from 'react';
-import { FiInfo } from 'react-icons/fi';
-import { useTranslation } from 'react-i18next';
 
+import HelpTip from './HelpTip';
 import styles from './Settings.module.css';
 
 /**
- * One setting: a short name and a one-line description on the left, the control on the right.
- * Longer explanations are one click away (the info button) instead of always on screen (#63).
+ * One setting: a short name on the left, the control on the right. What it does is behind a small "i"
+ * (hover or focus), so the screen isn't full of explanations; a live value (a folder, a percentage, a status)
+ * stays visible under the name.
  */
-export default function SettingRow({ label, description, details, children, controlId }: {
+export default function SettingRow({ label, description, details, value, children, controlId }: {
   label: ReactNode,
+  /** What the setting does: shown on hover or focus of the "i". */
   description?: ReactNode,
+  /** More about it, shown in the same bubble under the description. */
   details?: ReactNode,
+  /** The current value or state, always shown under the name. */
+  value?: ReactNode,
   children: ReactNode,
   /** The id of the control, so that the label focuses it. */
   controlId?: string | undefined,
 }) {
-  const { t } = useTranslation();
-  const [showDetails, setShowDetails] = useState(false);
-  const detailsId = useId();
+  const hasHelp = description != null || details != null;
 
   return (
     <div className={styles['row']}>
       <div className={styles['rowText']}>
         <div className={styles['rowLabel']}>
           {controlId != null ? <label htmlFor={controlId}>{label}</label> : label}
-          {details != null && (
-            <button
-              type="button"
-              className={[styles['infoButton'], ...(showDetails ? [styles['infoButtonActive']] : [])].join(' ')}
-              aria-expanded={showDetails}
-              aria-controls={detailsId}
-              aria-label={t('More about this setting')}
-              title={showDetails ? t('Hide details') : t('More about this setting')}
-              onClick={() => setShowDetails((v) => !v)}
-            >
-              <FiInfo aria-hidden />
-            </button>
+          {hasHelp && (
+            <HelpTip>
+              {description != null && <p>{description}</p>}
+              {details != null && <p>{details}</p>}
+            </HelpTip>
           )}
         </div>
-        {description != null && <div className={styles['rowDescription']}>{description}</div>}
-        {details != null && showDetails && <div id={detailsId} className={styles['rowDetails']}>{details}</div>}
+        {value != null && <div className={styles['rowValue']}>{value}</div>}
       </div>
       <div className={styles['rowControl']}>{children}</div>
     </div>

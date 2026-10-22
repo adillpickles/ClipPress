@@ -6903,6 +6903,11 @@ function App() {
                   <Dialog.Overlay />
                   <Dialog.Content
                     aria-describedby={undefined}
+                    // Focus the dialog itself, not the first tab, so opening Settings doesn't draw a focus ring on "General".
+                    onOpenAutoFocus={(e) => {
+                      e.preventDefault();
+                      (e.currentTarget as HTMLElement | null)?.focus({ preventScroll: true });
+                    }}
                     style={{
                       width: 'min(52rem, 92vw)',
                       height: 'min(38rem, 86vh)',

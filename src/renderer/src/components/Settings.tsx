@@ -56,7 +56,7 @@ function Settings({
   const { t } = useTranslation();
   const [category, setCategory] = useState<Category>('general');
 
-  const { customOutDir, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, invertTimelineScroll, setInvertTimelineScroll, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, storeProjectInWorkingDir, mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey, setSegmentMouseModifierKey, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration } = useUserSettings();
+  const { customOutDir, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, invertTimelineScroll, setInvertTimelineScroll, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, storeProjectInWorkingDir, mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey, setSegmentMouseModifierKey, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport } = useUserSettings();
 
   const onLangChange = useCallback<ChangeEventHandler<HTMLSelectElement>>((e) => {
     const { value } = e.target;
@@ -189,7 +189,7 @@ function Settings({
           <>
             <SettingRow
               label={t('Clips are')}
-              description={invertCutSegments ? t('Removed: the export keeps everything except the clips.') : t('Kept: the export contains only the clips.')}
+              value={invertCutSegments ? t('Removed: the export keeps everything except the clips.') : t('Kept: the export contains only the clips.')}
               details={t('"Keep" is the usual way to make clips. "Remove" cuts the marked parts out of the recording instead, for example to drop a pause or a loading screen.')}
             >
               <Select value={invertCutSegments ? 'remove' : 'keep'} onChange={(e) => setInvertCutSegments(e.target.value === 'remove')} aria-label={t('Clips are')}>
@@ -236,7 +236,7 @@ function Settings({
 
             <SettingRow
               label={t('Save exports to')}
-              description={customOutDir ?? t('The same folder as the recording.')}
+              value={customOutDir ?? t('The same folder as the recording.')}
             >
               <OutDirSelector>
                 <Button>
@@ -247,8 +247,16 @@ function Settings({
             </SettingRow>
 
             <SettingRow
+              label={t('Move the original to the Recycle Bin after export')}
+              description={t('Only after every exported file is saved and checked. Your clip keeps its own name.')}
+              details={t('Never deleted permanently: if the Recycle Bin can\'t take the recording (too large, a drive without one, or in use), ClipPress keeps it and tells you.')}
+            >
+              <Switch checked={trashSourceAfterExport} onCheckedChange={setTrashSourceAfterExport} aria-label={t('Move the original to the Recycle Bin after export')} />
+            </SettingRow>
+
+            <SettingRow
               label={t('After exporting')}
-              description={t('Close the recording, or move files to the trash.')}
+              description={t('Close the recording, or move temporary and project files to the Recycle Bin.')}
             >
               <Button onClick={askForCleanupChoices}>{t('Change…')}</Button>
             </SettingRow>
@@ -256,7 +264,7 @@ function Settings({
             {showAdvancedSettings && (
               <SettingRow
                 label={t('Keyframe cut')}
-                description={keyframeCut ? t('Cut at the keyframe before the start (lossless exports).') : t('Cut at the exact time (lossless exports).')}
+                value={keyframeCut ? t('Cut at the keyframe before the start (lossless exports).') : t('Cut at the exact time (lossless exports).')}
                 details={keyframeCut ? (
                   <>
                     {t('Cut at the preceding keyframe (not accurate time.) Equiv to')}: <code className="highlighted">ffmpeg -ss N -i input.mp4</code>
@@ -310,7 +318,7 @@ function Settings({
               <CaptureFormatButton showIcon />
             </SettingRow>
 
-            <SettingRow label={t('Image quality')} description={`${Math.round(captureFrameQuality * 100)}%`}>
+            <SettingRow label={t('Image quality')} value={`${Math.round(captureFrameQuality * 100)}%`}>
               <input
                 type="range"
                 className={styles['range']}
@@ -404,7 +412,7 @@ function Settings({
 
             <SettingRow
               label={t('Project file location')}
-              description={storeProjectInWorkingDir ? t('In the export folder.') : t('Next to the recording.')}
+              value={storeProjectInWorkingDir ? t('In the export folder.') : t('Next to the recording.')}
             >
               <Button disabled={!autoSaveProjectFile} onClick={toggleStoreProjectInWorkingDir}>
                 {storeProjectInWorkingDir ? t('Store next to the recording') : t('Store in the export folder')}
@@ -424,7 +432,7 @@ function Settings({
             {!isMasBuild && (
               <SettingRow
                 label={t('Custom FFmpeg')}
-                description={customFfPath ?? t('Using the FFmpeg that comes with ClipPress.')}
+                value={customFfPath ?? t('Using the FFmpeg that comes with ClipPress.')}
                 details={t('This allows you to specify custom FFmpeg and FFprobe binaries to use. Make sure the "ffmpeg" and "ffprobe" executables exist in the same directory, and then select the directory.')}
               >
                 <div className={styles['controlGroup']}>

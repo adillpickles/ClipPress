@@ -36,7 +36,7 @@ export default function UpdateSettings() {
 
   return (
     <>
-      <SettingRow label={t('Check for updates automatically')} description={description} details={details}>
+      <SettingRow label={t('Check for updates automatically')} value={description} details={details}>
         <Switch checked={enableUpdateCheck} onCheckedChange={setEnableUpdateCheck} disabled={status?.reason === 'offline'} aria-label={t('Check for updates automatically')} />
       </SettingRow>
 

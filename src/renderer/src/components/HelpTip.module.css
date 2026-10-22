@@ -1,0 +1,54 @@
+.button {
+  all: unset;
+  cursor: help;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: var(--cp-text-subtle);
+  font-size: .8rem;
+  transition: background-color .12s ease, color .12s ease;
+}
+
+.button:hover,
+.buttonOpen {
+  color: var(--cp-accent-text);
+  background: var(--cp-accent-soft);
+}
+
+.button:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.bubble {
+  position: fixed;
+  z-index: 10000;
+  max-width: 20rem;
+  padding: .6rem .75rem;
+  border-radius: var(--cp-radius);
+  border: 1px solid var(--cp-line-strong);
+  background: var(--cp-raised);
+  box-shadow: var(--cp-shadow-popover);
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+  font-weight: 400;
+  line-height: 1.5;
+  pointer-events: none;
+  animation: help-tip-in .12s ease;
+}
+
+.bubble p {
+  margin: 0;
+}
+
+.bubble p + p {
+  margin-top: .4rem;
+}
+
+@keyframes help-tip-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
