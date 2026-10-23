@@ -22,7 +22,7 @@ import { keyMap } from './hooks/useTimelineScroll';
 import { minTextOverlayDuration } from './textOverlays';
 import SegmentRetimeBar from './components/SegmentRetimeBar';
 import LaneDeleteButton from './components/LaneDeleteButton';
-import TimelineRuler from './components/TimelineRuler';
+import TimelineRuler, { createHoverStore, HoverMarker } from './components/TimelineRuler';
 import formatClockTime from './util/clockTime';
 import { getSegmentOutputDuration, getSegmentSpeed, getSpeedForOutputDuration } from './segmentSpeed';
 import { createTimelineMap, getRetimeAutoScrollStep, getWarpedImageSpans } from './timelineMap';
@@ -49,7 +49,8 @@ const Waveform = memo(({ waveform, timelineMap, laneDuration, fileDurationNonZer
 
   return spans.map((span) => {
     const spanStyle: CSSProperties = { pointerEvents: 'none', position: 'absolute', height: '100%', left: `${span.left}%`, width: `${span.width}%`, overflow: 'hidden' };
-    if (waveform.url == null) return <div key={span.left} style={spanStyle} className={styles['loading-bg']} />;
+    // A slice that failed isn't loading: no endless animation (it repaints the lane every frame).
+    if (waveform.url == null) return <div key={span.left} style={spanStyle} className={'failed' in waveform && waveform.failed ? undefined : styles['loading-bg']} />;
     return (
       <div key={span.left} style={spanStyle}>
         <img src={waveform.url} draggable={false} alt="" style={{ position: 'absolute', height: '100%', left: `${span.innerLeft}%`, width: `${span.innerWidth}%`, filter: darkMode ? undefined : 'invert(1)', imageRendering: 'pixelated' }} />
@@ -279,9 +280,9 @@ function Timeline({
   const timelineScrollerSkipEventDebounce = useRef<() => void>();
   const timelineWrapperRef = useRef<HTMLDivElement>(null);
 
-  const [hoveringTime, setHoveringTime] = useState<number>();
+  // The time under the mouse, outside React state: hovering re-renders only the marker, not the timeline.
+  const [hoverStore] = useState(createHoverStore);
 
-  const showHoverTime = hoveringTime != null && isFileOpened && !playing;
 
   const isZoomed = zoom > 1;
 
@@ -464,8 +465,8 @@ function Timeline({
   const mouseDownRef = useRef<unknown>();
 
   useEffect(() => {
-    setHoveringTime(undefined);
-  }, [relevantTime]);
+    hoverStore.set(undefined);
+  }, [hoverStore, relevantTime]);
 
   // for performance
   const currentCutSegRef = useRef<StateSegment | undefined>(currentCutSeg);
@@ -725,12 +726,12 @@ function Timeline({
 
   const onMouseMove = useCallback<MouseEventHandler<HTMLDivElement>>((e) => {
     if (!mouseDownRef.current) { // no button pressed
-      setHoveringTime(getMouseTimelinePos(e.nativeEvent));
+      hoverStore.set(getMouseTimelinePos(e.nativeEvent));
     }
     e.preventDefault();
-  }, [getMouseTimelinePos]);
+  }, [getMouseTimelinePos, hoverStore]);
 
-  const onMouseOut = useCallback(() => setHoveringTime(undefined), []);
+  const onMouseOut = useCallback(() => hoverStore.set(undefined), [hoverStore]);
 
   const contextMenuTemplate = useMemo(() => [
     { label: simpleMode ? t('Start a clip at the playhead') : t('Start current segment at current time'), click: setCutStart },
@@ -769,11 +770,13 @@ function Timeline({
     ? timelineMap.toSource(Math.min(laneDuration, timelineMap.toDisplay(visibleStart) + (scrollerWidth / lanePx) * laneDuration))
     : (zoomWindowEndTime ?? fileDurationNonZero);
 
-  const hoverLabel = useMemo(() => {
-    if (!showHoverTime || hoveringTime == null) return undefined;
-    const time = hoveringTime + startTimeOffset;
+  const formatHoverLabel = useCallback((hoverTime: number) => {
+    const time = hoverTime + startTimeOffset;
     return simpleMode ? formatClockTime(time, { decimals: 2, showHours: fileDurationNonZero >= 3600 }) : formatTimeAndFrames(time);
-  }, [fileDurationNonZero, formatTimeAndFrames, hoveringTime, showHoverTime, simpleMode, startTimeOffset]);
+  }, [fileDurationNonZero, formatTimeAndFrames, simpleMode, startTimeOffset]);
+  const hoverMarker = useMemo(() => (
+    <HoverMarker store={hoverStore} visible={isFileOpened && !playing} toLanePercent={toLanePercent} formatLabel={formatHoverLabel} />
+  ), [formatHoverLabel, hoverStore, isFileOpened, playing, toLanePercent]);
 
   return (
     <div className={styles['timeline']}>
@@ -811,10 +814,10 @@ function Timeline({
               visibleStart={visibleStart}
               visibleEnd={visibleEnd}
               fileDuration={fileDurationNonZero}
-              hoverTime={showHoverTime ? hoveringTime : undefined}
-              hoverLabel={hoverLabel}
               height={rulerHeight}
-            />
+            >
+              {hoverMarker}
+            </TimelineRuler>
 
             {showWaveformHint && (
               <div className={styles['waveformHint']} style={{ height: waveformHeight }}>

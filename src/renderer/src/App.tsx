@@ -76,6 +76,7 @@ import {
   exportSizeLimitedMerge,
   exportSizeLimitedSegment,
   pickSizeLimitedStreams,
+  prefetchEncoderCapabilities,
 } from './sizeLimitedExport';
 import { bytesPerMb } from './sizeLimitedPlanner';
 import { gpuEncoderLabels } from './gpuEncoders';
@@ -6467,6 +6468,13 @@ function App() {
     },
     [setWaveformMode],
   );
+
+  // Which encoders work is checked in the background a while after a clip opens, so an export doesn't wait for it.
+  useEffect(() => {
+    if (filePath == null) return undefined;
+    const timer = setTimeout(prefetchEncoderCapabilities, 8000);
+    return () => clearTimeout(timer);
+  }, [filePath]);
 
   // FFmpeg's self-check starts two processes; at launch it waits a moment so it doesn't compete with opening the
   // first file (a broken FFmpeg shows up then anyway). A changed FFmpeg path is checked at once.

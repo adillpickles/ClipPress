@@ -85,7 +85,9 @@ const readEncoderCapabilities = createAsyncCache(async (): Promise<SizeLimitedEn
     capabilities[capability] = encoders.has(encoder) && await probeGpuEncoder(encoder);
   }));
   return capabilities;
-}, 5 * 60 * 1000); // GPU availability can change without the executable changing.
+  // GPU availability can change without the executable changing; and if a GPU stops working before this runs out,
+  // an export that fails on it falls back to the next encoder (see failedGpuEncoders).
+}, 30 * 60 * 1000);
 
 /**
  * GPU paths that failed during a real export this session. A probe can pass while a driver
@@ -106,6 +108,14 @@ export async function getSizeLimitedEncoderCapabilities(): Promise<SizeLimitedEn
     if (info != null) usable[info.capability] = false;
   }
   return usable;
+}
+
+/**
+ * Finds the usable encoders in the background (a handful of short test encodes, ~2 s), so an export
+ * doesn't wait for it.
+ */
+export function prefetchEncoderCapabilities() {
+  getSizeLimitedEncoderCapabilities().catch((error: unknown) => console.warn('Could not check the encoders', error));
 }
 
 export function canUseHardwareDecode({ enabled, inputCount, width, height }: {

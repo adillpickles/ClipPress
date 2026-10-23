@@ -503,7 +503,8 @@ function ExportConfirm({
   const [encoderCapabilities, setEncoderCapabilities] = useState<SizeLimitedEncoderCapabilities>();
 
   useEffect(() => {
-    if (!isSizeLimited) return undefined;
+    // When the sheet opens, not at app start: the check runs test encodes (it's usually done already, see App).
+    if (!isSizeLimited || !visible) return undefined;
 
     let cancelled = false;
 
@@ -519,7 +520,7 @@ function ExportConfirm({
     return () => {
       cancelled = true;
     };
-  }, [customFfPath, isSizeLimited]);
+  }, [customFfPath, isSizeLimited, visible]);
 
   useEffect(() => {
     if (!isSizeLimited) return;

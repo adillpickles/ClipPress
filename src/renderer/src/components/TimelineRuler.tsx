@@ -1,4 +1,5 @@
-import { memo, useMemo } from 'react';
+import type { ReactNode } from 'react';
+import { memo, useMemo, useSyncExternalStore } from 'react';
 
 import styles from './TimelineRuler.module.css';
 import formatClockTime from '../util/clockTime';
@@ -26,7 +27,48 @@ function pickMinorInterval(interval: number, pxPerSecond: number) {
  * as the lanes, so they line up with clips even where retimed clips stretch or squeeze the lane.
  * Only ticks in (and just around) the visible window are drawn.
  */
-function TimelineRuler({ toLanePercent, lanePx, laneDuration, visibleStart, visibleEnd, fileDuration, hoverTime, hoverLabel, height }: {
+/** The time under the mouse: kept outside React state, so moving the mouse re-renders only the marker. */
+export interface HoverStore {
+  get: () => number | undefined,
+  set: (time: number | undefined) => void,
+  subscribe: (listener: () => void) => () => void,
+}
+
+export function createHoverStore(): HoverStore {
+  let value: number | undefined;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => value,
+    set: (time) => {
+      if (time === value) return;
+      value = time;
+      listeners.forEach((listener) => listener());
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+  };
+}
+
+/** The line and time label under the mouse, inside the ruler. */
+export const HoverMarker = memo(({ store, visible, toLanePercent, formatLabel }: {
+  store: HoverStore,
+  visible: boolean,
+  toLanePercent: (time: number) => number,
+  formatLabel: (time: number) => string,
+}) => {
+  const time = useSyncExternalStore(store.subscribe, store.get);
+  if (!visible || time == null) return null;
+  return (
+    <div className={styles['hover']} style={{ left: `${toLanePercent(time)}%` }}>
+      <span className={styles['hoverLabel']}>{formatLabel(time)}</span>
+    </div>
+  );
+});
+HoverMarker.displayName = 'HoverMarker';
+
+function TimelineRuler({ toLanePercent, lanePx, laneDuration, visibleStart, visibleEnd, fileDuration, height, children }: {
   toLanePercent: (time: number) => number,
   /** Width of the whole lane in pixels (wider than the view when zoomed). */
   lanePx: number,
@@ -35,9 +77,9 @@ function TimelineRuler({ toLanePercent, lanePx, laneDuration, visibleStart, visi
   visibleStart: number,
   visibleEnd: number,
   fileDuration: number,
-  hoverTime: number | undefined,
-  hoverLabel: string | undefined,
   height: number,
+  /** The hover marker. */
+  children?: ReactNode,
 }) {
   const ticks = useMemo(() => {
     if (lanePx <= 0 || laneDuration <= 0 || fileDuration <= 0) return { major: [], minor: [] };
@@ -82,11 +124,7 @@ function TimelineRuler({ toLanePercent, lanePx, laneDuration, visibleStart, visi
           {label != null && <span className={styles['label']}>{label}</span>}
         </div>
       ))}
-      {hoverTime != null && hoverLabel != null && (
-        <div className={styles['hover']} style={{ left: `${toLanePercent(hoverTime)}%` }}>
-          <span className={styles['hoverLabel']}>{hoverLabel}</span>
-        </div>
-      )}
+      {children}
     </div>
   );
 }
