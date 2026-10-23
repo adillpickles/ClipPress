@@ -58,7 +58,8 @@ function AudioLane({ peaks, height, segments, activeIndex, noneTicked, invertCut
     const css = getComputedStyle(canvas);
     const kept = css.getPropertyValue('--accent-9').trim() || '#3bb3bd';
     const cut = css.getPropertyValue('--gray-9').trim() || '#6e6e6e';
-    const clips = segments.filter((seg) => seg.end != null);
+    // The untouched whole-file placeholder isn't a clip: with "Removed" it removes nothing (the export keeps all).
+    const clips = segments.filter((seg) => seg.end != null && !(invertCutSegments && seg.initial));
     const exported = clips.filter((seg) => noneTicked || seg.selected);
     const isKept = invertCutSegments
       ? (time: number) => !clips.some((seg) => time >= seg.start && time < seg.end!)

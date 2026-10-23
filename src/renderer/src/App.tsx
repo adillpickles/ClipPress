@@ -6661,16 +6661,6 @@ function App() {
 
                             <PreviewSpinner busy={videoBusy && fileUri != null && !compatPlayerEnabled} />
 
-                            {clipVolumeEditor != null && clipVolumeEditorSegment != null && (
-                              <ClipVolumePopover
-                                anchor={clipVolumeEditor.anchor}
-                                clipLabel={clipVolumeEditorSegment.name || t('Clip {{number}}', { number: clipVolumeEditorIndex + 1 })}
-                                audioGainDb={clipVolumeEditorSegment.audioGainDb}
-                                audioMuted={clipVolumeEditorSegment.audioMuted === true}
-                                onChange={onClipVolumeChange}
-                                onClose={closeClipVolumeEditor}
-                              />
-                            )}
                             {filePath != null && compatPlayerEnabled && (
                             <MediaSourcePlayer
                               rotate={effectiveRotation}
@@ -6998,6 +6988,18 @@ function App() {
               </div>
 
               {/* Dialogs */}
+
+              {/* Outside the preview: portal events still bubble through React parents, e.g. a wheel to the crop editor. */}
+              {clipVolumeEditor != null && clipVolumeEditorSegment != null && (
+                <ClipVolumePopover
+                  anchor={clipVolumeEditor.anchor}
+                  clipLabel={clipVolumeEditorSegment.name || t('Clip {{number}}', { number: clipVolumeEditorIndex + 1 })}
+                  audioGainDb={clipVolumeEditorSegment.audioGainDb}
+                  audioMuted={clipVolumeEditorSegment.audioMuted === true}
+                  onChange={onClipVolumeChange}
+                  onClose={closeClipVolumeEditor}
+                />
+              )}
 
               <ExportConfirm
                 areWeCutting={areWeCutting}

@@ -1,10 +1,12 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, SyntheticEvent } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import styles from './AnchoredPopover.module.css';
 
 const margin = 8;
+
+const stopPropagation = (event: SyntheticEvent) => event.stopPropagation();
 
 /**
  * A small floating panel next to a point or element (above it when there's room), portalled to the app root.
@@ -65,6 +67,8 @@ export default function AnchoredPopover({ anchor, onClose, children, label, clas
   }, [anchor]);
 
   return createPortal(
+    // The handlers only keep events from bubbling (through React) to whatever rendered the popover.
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <div
       ref={ref}
       role="dialog"
@@ -73,6 +77,14 @@ export default function AnchoredPopover({ anchor, onClose, children, label, clas
       className={[styles['popover'], ...(className != null ? [className] : [])].join(' ')}
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
+      // Portalled, but React still bubbles its events to the component that rendered it (the timeline, the crop
+      // editor...): keep clicks, drags and the wheel inside the popover.
+      onPointerDown={stopPropagation}
+      onMouseDown={stopPropagation}
+      onClick={stopPropagation}
+      onDoubleClick={stopPropagation}
+      onContextMenu={stopPropagation}
+      onWheel={stopPropagation}
       style={position != null ? { top: position.top, left: position.left } : { top: -9999, left: -9999 }}
     >
       {children}
