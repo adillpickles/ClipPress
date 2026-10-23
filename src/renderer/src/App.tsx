@@ -4661,16 +4661,29 @@ function App() {
           // Where the setting saves first, then ClipPress's folder, the export folder and next to the recording.
           const storeEnv = getProjectStoreEnv();
           const storedPath = getStoredProjectPath(fp, storeEnv);
+          const found: { path: string, mtimeMs: number }[] = [];
           for (const candidate of getProjectLookupPaths(fp, projectFileLocation, cod, storeEnv)) {
             // MAS only allows fs.access (pathExists) if we don't have access to input dir yet, so check first if the file exists,
             // so we don't need to annoy the user by asking for permission if the project file doesn't exist
             if (await mainApi.pathExists(candidate)) {
-              // Ok, the file exists. Outside our own folder we may have to ask the user, because we need to read it
-              if (candidate !== storedPath) await ensureAccessToSourceDir(fp);
-              await loadProject(candidate);
-              if (projectFileLocation === 'app' && candidate !== storedPath) sidecarToRetire = candidate;
-              return;
+              let mtimeMs = 0;
+              try {
+                ({ mtimeMs } = await lstat(candidate));
+              } catch {
+                // Can't tell its age: it still counts, after any copy that can
+              }
+              found.push({ path: candidate, mtimeMs });
             }
+          }
+          // More than one copy (the setting was changed, or an older version saved next to the recording): the most
+          // recently saved edits win; on a tie, the place the setting points to (the order above).
+          const newest = found.reduce<{ path: string, mtimeMs: number } | undefined>((best, candidate) => (best == null || candidate.mtimeMs > best.mtimeMs ? candidate : best), undefined);
+          if (newest != null) {
+            // Ok, the file exists. Next to the recording we may have to ask the user, because we need to read it
+            if (dirname(newest.path) === dirname(fp)) await ensureAccessToSourceDir(fp);
+            await loadProject(newest.path);
+            if (projectFileLocation === 'app' && newest.path !== storedPath) sidecarToRetire = newest.path;
+            return;
           }
 
           // OK, we didn't find a project file, instead maybe try to create project (segments) from chapters
@@ -4998,7 +5011,11 @@ function App() {
         console.log({ mediaFileName });
         if (!mediaFileName) return;
 
-        const mediaFilePath = pathJoin(dirname(path), mediaFileName);
+        let mediaFilePath = pathJoin(dirname(path), mediaFileName);
+        // A project from ClipPress's own folder isn't next to its recording: it says where the recording is.
+        if (!(await mainApi.pathExists(mediaFilePath)) && project.mediaFilePath != null && await mainApi.pathExists(project.mediaFilePath)) {
+          mediaFilePath = project.mediaFilePath;
+        }
 
         // Note: MAS only allows fs.stat (pathExists) if we don't have access to input dir yet
         if (!(await mainApi.pathExists(mediaFilePath))) {

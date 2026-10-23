@@ -26,6 +26,14 @@ describe('project store', () => {
     // Same file on a case-insensitive file system (the hash is identical)
     expect(getStoredProjectFileName('d:/clips/VALORANT 2026.10.19 - 21.51.16.mp4', true).toLowerCase()).toBe(name.toLowerCase());
     expect(getStoredProjectFileName(String.raw`D:\Other\Valorant 2026.10.19 - 21.51.16.mp4`, true)).not.toBe(name);
+    // The same file written with "." / ".." / doubled separators
+    const hashOf = (p: string) => getStoredProjectFileName(p, true).slice(-20);
+    expect(hashOf(String.raw`D:\Clips\.\Valorant 2026.10.19 - 21.51.16.mp4`)).toBe(hashOf(media));
+    expect(hashOf(String.raw`D:\Clips\Sub\..\Valorant 2026.10.19 - 21.51.16.mp4`)).toBe(hashOf(media));
+    expect(hashOf(String.raw`D:\Clips\\Valorant 2026.10.19 - 21.51.16.mp4`)).toBe(hashOf(media));
+    expect(hashOf(String.raw`D:\..\Clips\Valorant 2026.10.19 - 21.51.16.mp4`)).toBe(hashOf(media));
+    // A network share stays a network share
+    expect(hashOf(String.raw`\\server\share\a.mp4`)).not.toBe(hashOf(String.raw`\server\share\a.mp4`));
     // Case matters where the file system says so
     expect(getStoredProjectFileName('/clips/a.mp4', false)).not.toBe(getStoredProjectFileName('/clips/A.mp4', false));
   });

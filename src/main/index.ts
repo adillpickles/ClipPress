@@ -17,7 +17,7 @@ import electronUnhandled from 'electron-unhandled';
 import type { Asyncify } from 'type-fest';
 import mitt from 'mitt';
 
-import logger from './logger.js';
+import logger, { loadFileLogger } from './logger.js';
 import menu from './menu.js';
 import * as configStore from './configStore.js';
 import { isLinux, isWindows, isMac, platform, arch, pathExists } from './util.js';
@@ -494,6 +494,7 @@ async function init() {
 
     if (!allowMultipleInstances && !safeRequestSingleInstanceLock({ argv: process.argv })) {
       logger.info('Found running instance, quitting');
+      await loadFileLogger().catch(() => undefined);
       app.quit();
       return;
     }
@@ -628,6 +629,7 @@ async function init() {
     createWindow();
     // Needed for the first FFmpeg run, but not to show the window.
     ffmpeg.loadExeca().catch((err: unknown) => logger.error('Failed to load execa', err));
+    loadFileLogger().catch((err: unknown) => logger.error('Failed to load the file log', err));
     // will also updateMenu and set about panel options
     await changeLanguage(language);
 
@@ -635,6 +637,8 @@ async function init() {
     reportPreservedCorruptConfig();
   } catch (err) {
     logger.error('Failed to initialize', err);
+    // The file log may not be loaded yet this early: load it, so the failure is in app.log.
+    await loadFileLogger().catch(() => undefined);
     electron.dialog.showErrorBox('ClipPress could not start', err instanceof Error ? err.message : String(err));
     app.quit();
   }

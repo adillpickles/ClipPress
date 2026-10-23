@@ -44,6 +44,7 @@ export function buildLlcProjectData({ mediaFileName, mediaFilePath, cutSegments,
   return {
     version: 3,
     mediaFileName,
+    mediaFilePath,
     cutSegments: mapSaveableSegments(cutSegments),
     streamEdits: serializeProjectStreamEdits({ mediaFilePath, customTagsByFile, paramsByStreamId }),
     ...(overlayClips != null && overlayClips.length > 0 ? { overlayClips } : {}),

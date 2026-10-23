@@ -26,10 +26,25 @@ function hash64(text: string) {
 }
 /* eslint-enable no-bitwise */
 
-/** The same recording, whichever way its path was written (slashes; case on Windows and macOS). */
+/**
+ * The same recording, whichever way its absolute path was written: slashes, "." and "..", doubled separators, and
+ * case on Windows and macOS.
+ */
 export function normaliseMediaPath(mediaPath: string, caseInsensitive: boolean) {
   const slashes = mediaPath.replaceAll('\\', '/');
-  return caseInsensitive ? slashes.toLowerCase() : slashes;
+  const isUnc = slashes.startsWith('//');
+  const parts: string[] = [];
+  slashes.split('/').forEach((part, index) => {
+    if (part === '.' || (part === '' && index > 0)) return;
+    if (part === '..') {
+      // Never above the drive or root
+      if (parts.length > 1) parts.pop();
+      return;
+    }
+    parts.push(part);
+  });
+  const normalised = `${isUnc ? '/' : ''}${parts.join('/')}`;
+  return caseInsensitive ? normalised.toLowerCase() : normalised;
 }
 
 /** "<recording name>-<hash>.llc": readable when browsing the folder, unique per recording. */

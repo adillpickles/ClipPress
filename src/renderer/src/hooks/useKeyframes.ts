@@ -108,6 +108,8 @@ function useKeyframes({ keyframesEnabled, filePath, commandedTime, videoStream, 
       setWorking({ text: t('Reading all keyframes') });
       const newFrames = await readFrames({ filePath, from: start, to: end, streamIndex: videoStream.index });
       const newKeyFrames = newFrames.filter((frame) => frame.keyframe);
+      // These replace what was read before, so only this stretch is known to be read now.
+      coveredRef.current = [{ from: start, to: end }];
       setNeighbouringKeyFrames(toObj(newKeyFrames));
       setMaxKeyframes(newKeyFrames.length);
     } catch (err) {

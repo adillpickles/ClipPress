@@ -116,6 +116,8 @@ export const llcProjectV2Schema = z.object({
 export const llcProjectV3Schema = z.object({
   version: z.literal(3),
   mediaFileName: z.string().optional(),
+  /** Where the recording is: a project kept in ClipPress's own folder isn't next to it. Older readers ignore it. */
+  mediaFilePath: z.string().optional(),
   cutSegments: llcProjectSaveableSegmentSchema.array(),
   streamEdits: z.object({
     customTags: z.record(z.string(), z.string()).optional(),
