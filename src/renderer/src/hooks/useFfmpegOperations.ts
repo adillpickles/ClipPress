@@ -1097,7 +1097,9 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     };
 
     try {
-      return await pMap(segments, cutSegment, { concurrency: 1 });
+      // Plain lossless cuts are mostly FFmpeg starting up and seeking, so two at a time finish sooner; encoding (smart
+      // cut, lossy) keeps one, as it's already busy on every core.
+      return await pMap(segments, cutSegment, { concurrency: isEncoding ? 1 : 2 });
     } finally {
       if (chaptersPath) await tryDeleteFiles([chaptersPath]);
     }
