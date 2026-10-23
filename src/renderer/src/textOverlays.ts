@@ -74,16 +74,29 @@ export function createDefaultTextOverlayClip({
   currentTime,
   fileDuration,
   overlayId,
+  existingClips = [],
 }: {
   currentTime: number,
   fileDuration: number | undefined,
   overlayId: string,
+  /** The texts already there: the new one goes where it doesn't cover any of them, when there's room. */
+  existingClips?: readonly Pick<OverlayClip, 'start' | 'end'>[] | undefined,
 }): TextOverlayClip {
   const safeCurrentTime = Math.max(0, currentTime);
   const safeDuration = fileDuration != null && Number.isFinite(fileDuration) && fileDuration > 0 ? fileDuration : undefined;
   const maxStart = safeDuration != null ? Math.max(0, safeDuration - minTextOverlayDuration) : safeCurrentTime;
-  const start = clamp(safeCurrentTime, 0, maxStart);
-  const preferredEnd = start + defaultTextOverlayDuration;
+  let start = clamp(safeCurrentTime, 0, maxStart);
+
+  // Adding a text with the playhead on another one would put the two on top of each other: start the new one
+  // where the texts in its way end instead, if that still leaves room before the end of the file.
+  const blockingEnd = (time: number) => existingClips.find((clip) => clip.start < time + minTextOverlayDuration && clip.end > time)?.end;
+  let freeStart = start;
+  for (let end = blockingEnd(freeStart); end != null; end = blockingEnd(freeStart)) freeStart = end;
+  if (Number.isFinite(freeStart) && (safeDuration == null || freeStart + minTextOverlayDuration <= safeDuration)) start = freeStart;
+
+  // ...and stop it where the next text starts.
+  const nextStart = Math.min(...existingClips.filter((clip) => clip.start > start).map((clip) => clip.start));
+  const preferredEnd = Math.max(start + minTextOverlayDuration, Math.min(start + defaultTextOverlayDuration, nextStart));
   let end = safeDuration != null
     ? Math.max(start + minTextOverlayDuration, Math.min(preferredEnd, safeDuration))
     : preferredEnd;
@@ -108,6 +121,72 @@ export function isOverlayActiveAtTime(overlayClip: OverlayClip, time: number) {
 
 export function doOverlayAndSegmentOverlap(overlayClip: OverlayClip, segment: { start: number, end: number }) {
   return overlayClip.start < segment.end && overlayClip.end > segment.start;
+}
+
+export interface TextLaneRow {
+  /** 0 is the top row. */
+  row: number,
+  /** How many rows the texts it overlaps (directly or through others) are split into; 1 when it overlaps none. */
+  rows: number,
+}
+
+type TextLaneClip = Pick<OverlayClip, 'overlayId' | 'start' | 'end'>;
+
+/** The text lane keeps its height, so more rows than this would be too thin to read, grab or delete. */
+const maxTextLaneRows = 2;
+
+/**
+ * Rows inside the one text lane, so texts that overlap in time sit one above the other instead of on top of
+ * each other. Each text takes the lowest row that is free for its whole time, in list order. A text that
+ * overlaps nothing gets the whole lane (rows: 1). There are at most two rows: with both taken, a text goes in
+ * the one where it shares the least time, on top of the text there (the timeline keeps the selected one on top).
+ *
+ * While a text is dragged (`drag`), the others keep the rows they had when the drag began and the dragged
+ * text takes the lowest row free of them, so nothing jumps between rows under the cursor.
+ */
+export function getTextLaneRows(clips: readonly TextLaneClip[], drag?: { overlayId: string, rows: ReadonlyMap<string, TextLaneRow> } | undefined) {
+  const overlaps = (a: TextLaneClip, b: TextLaneClip) => a.start < b.end && b.start < a.end;
+
+  const placed: { clip: TextLaneClip, row: number }[] = [];
+  const place = (clip: TextLaneClip, keptRow: number | undefined) => {
+    let row = keptRow;
+    if (row == null) {
+      // The time it shares with the texts already in each row: 0 where the row is free.
+      const shared = Array.from({ length: maxTextLaneRows }, () => 0);
+      placed.forEach((other) => {
+        if (overlaps(other.clip, clip)) shared[other.row] = (shared[other.row] ?? 0) + Math.min(other.clip.end, clip.end) - Math.max(other.clip.start, clip.start);
+      });
+      row = shared.indexOf(Math.min(...shared));
+    }
+    placed.push({ clip, row });
+  };
+  clips.forEach((clip) => {
+    if (clip.overlayId !== drag?.overlayId) place(clip, drag?.rows.get(clip.overlayId)?.row);
+  });
+  const dragged = drag != null ? clips.find((clip) => clip.overlayId === drag.overlayId) : undefined;
+  if (dragged != null) place(dragged, undefined);
+
+  // Groups of texts linked by overlaps (in time order, a group ends where the next text starts after all of it):
+  // every text in a group gets the group's row count, so the rows line up.
+  const result = new Map<string, TextLaneRow>();
+  const byStart = [...placed].sort((a, b) => a.clip.start - b.clip.start);
+  let group: typeof placed = [];
+  let groupEnd = Number.NEGATIVE_INFINITY;
+  const closeGroup = () => {
+    const rows = Math.max(0, ...group.map(({ row }) => row)) + 1;
+    group.forEach(({ clip, row }) => result.set(clip.overlayId, { row, rows }));
+  };
+  for (const item of byStart) {
+    if (group.length > 0 && item.clip.start >= groupEnd) {
+      closeGroup();
+      group = [];
+      groupEnd = Number.NEGATIVE_INFINITY;
+    }
+    group.push(item);
+    groupEnd = Math.max(groupEnd, item.clip.end);
+  }
+  if (group.length > 0) closeGroup();
+  return result;
 }
 
 function wrapTextLines({

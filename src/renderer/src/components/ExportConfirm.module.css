@@ -33,6 +33,11 @@
   color: var(--cp-text);
 }
 
+/* A notice with a button at its end (e.g. "Turn off"): centred, so the button lines up with short text too. */
+.noticeWithAction {
+  align-items: center;
+}
+
 .noticeBadge {
   display: inline-flex;
   align-items: center;
@@ -148,6 +153,28 @@
   width: 100%;
 }
 
+/* A field name with its "i" help next to it, centred on the first line of the control. */
+.fieldNameRow {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  min-height: 2rem;
+  min-width: 0;
+}
+
+/* A setting that can't be changed here, shown as plain text where a control would be. */
+.fieldValue {
+  color: var(--cp-text);
+  font-size: .8125rem;
+  line-height: 2rem;
+}
+
+/* A switch sits on the field's first line; its note goes under it. */
+.switchControl {
+  align-items: flex-start;
+  padding-top: .375rem;
+}
+
 
 
 
@@ -163,24 +190,15 @@
   line-height: 1.45;
 }
 
-.inlineLink {
-  all: unset;
-  cursor: pointer;
-  color: var(--cp-accent-text);
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.inlineLink:focus-visible {
-  box-shadow: var(--cp-focus-ring);
-  border-radius: 2px;
-}
-
 .sizeInput {
   display: flex;
   align-items: center;
   gap: .4rem;
+}
+
+/* The size limit box, emptied or half-typed: the last good limit still applies, and leaving the box puts it back. */
+.sheetContent input[aria-invalid='true'] {
+  border-color: var(--cp-warning);
 }
 
 .unit {
@@ -214,10 +232,14 @@
   transition: background-color .12s ease, border-color .12s ease, color .12s ease;
 }
 
+/* Full muted text in light mode, where the faded suffix was only ~3:1; dark mode keeps it softer. */
 .quickPick::after {
   content: 'MB';
   margin-left: .2em;
   font-weight: 400;
+}
+
+:global(.dark-theme) .quickPick::after {
   opacity: .7;
 }
 
@@ -374,6 +396,13 @@
   overflow-x: hidden;
 }
 
+/* The help and settings icons in the advanced table are keyboard buttons too. */
+.iconButton:focus-visible {
+  outline: 2px solid var(--cp-focus-color);
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+
 table.options {
   width: 100%;
   table-layout: fixed;
@@ -502,23 +531,29 @@ table.options td:nth-child(2) > div {
   align-items: center;
   justify-content: space-between;
   gap: .75rem;
-  margin-top: -.35rem;
-  font-size: .8125rem;
+  margin-top: -.5rem;
 }
 
+/* Looks and reads like "More options": the way in has to be easy to find. */
 .customToggle {
   all: unset;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: .3rem;
-  padding: .2rem .35rem .2rem .15rem;
-  border-radius: var(--cp-radius-sm);
-  color: var(--cp-text-subtle);
+  gap: .5rem;
+  padding: .35rem .6rem .35rem .4rem;
+  margin-left: -.4rem;
+  border-radius: var(--cp-radius);
+  color: var(--cp-text-muted);
+  font-size: .875rem;
   font-weight: 600;
 }
 
-.customToggle:hover,
+.customToggle:hover {
+  color: var(--cp-text);
+  background: var(--cp-hover);
+}
+
 .customToggleActive {
   color: var(--cp-text);
 }

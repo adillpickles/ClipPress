@@ -13,6 +13,8 @@ import { getSegmentSpeed } from './segmentSpeed';
 import type { FilmstripFrame } from './filmstrip';
 import styles from './TimelineSeg.module.css';
 import { dbToPercent, isClipVolumeChanged } from './util/audioGain';
+import formatClockTime from './util/clockTime';
+import { getSegBadgeStyle } from './colors';
 
 
 const markerButtonStyle: React.CSSProperties = { fontSize: 10, minWidth: 0, letterSpacing: '-.1em', color: 'white' };
@@ -108,7 +110,7 @@ function getClipFrames(filmstrip: readonly FilmstripFrame[], start: number, end:
 }
 
 function Segment({
-  seg, segNum, color, isActive, selected, onClick, getTimePercent, instant, formatTimecode, invertCutSegments, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmstrip, toLanePercent, fileEnd, onTrimHandleMouseDown,
+  seg, segNum, color, isActive, selected, onClick, getTimePercent, instant, formatTimecode, invertCutSegments, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmstrip, toLanePercent, fileEnd, onTrimHandleMouseDown, getCurrentTime, onSplit, onDuplicate, onRemove,
 }: {
   seg: Omit<StateSegment, 'end'> & { end: number },
   segNum: number,
@@ -130,6 +132,10 @@ function Segment({
   toLanePercent: (time: number) => number,
   fileEnd: number,
   onTrimHandleMouseDown: ((edge: 'start' | 'end') => (event: ReactMouseEvent<HTMLElement>) => void) | undefined,
+  getCurrentTime: (() => number) | undefined,
+  onSplit: ((index: number) => void) | undefined,
+  onDuplicate: ((segment: StateSegment) => void) | undefined,
+  onRemove: ((index: number, wholeSegment?: true) => void) | undefined,
 }) {
   const { darkMode, prefersReducedMotion, springAnimation, simpleMode } = useUserSettings();
   const { t } = useTranslation();
@@ -150,13 +156,18 @@ function Segment({
   const excluded = invertCutSegments || !selected;
 
   const title = useMemo(() => {
-    const parts = [
-      formatTimecode({ seconds: seg.start, shorten: true }),
-      `- ${formatTimecode({ seconds: seg.end, shorten: true })}`,
-    ];
+    // Simple mode writes times as the Clips panel does ("0:04–0:16"), not as timecodes.
+    const parts = simpleMode
+      ? [`${formatClockTime(seg.start)}–${formatClockTime(seg.end)}`]
+      : [
+        formatTimecode({ seconds: seg.start, shorten: true }),
+        `- ${formatTimecode({ seconds: seg.end, shorten: true })}`,
+      ];
     if (name) parts.push(name);
     return parts.join(' ');
-  }, [formatTimecode, name, seg.end, seg.start]);
+  }, [formatTimecode, name, seg.end, seg.start, simpleMode]);
+
+  const badgeStyle = useMemo(() => getSegBadgeStyle(color), [color]);
 
   const wrapperStyle = useMemo<MotionStyle>(() => {
     const cutSectionWidth = `calc(${getTimePercent(seg.end)} - ${getTimePercent(seg.start)})`;
@@ -199,14 +210,29 @@ function Segment({
     event.stopPropagation();
     onClick();
     const point = { x: event.clientX, y: event.clientY };
+    // Simple mode also has the everyday clip actions here, as the Clips panel's menu does for the same clip.
+    // The playhead is read when the menu opens, so playback never re-renders the clips. On an edge there's nothing to split.
+    const playhead = getCurrentTime?.();
+    const canSplit = playhead != null && playhead > seg.start && playhead < seg.end;
+    const clipActions = simpleMode && (onSplit != null || onDuplicate != null) ? [
+      ...(onSplit != null ? [{ label: t('Split clip at playhead'), enabled: canSplit, click: () => onSplit(segNum) }] : []),
+      ...(onDuplicate != null ? [{ label: t('Duplicate clip'), click: () => onDuplicate(seg) }] : []),
+      { type: 'separator' as const },
+    ] : [];
+    const removeAction = simpleMode && onRemove != null ? [
+      { type: 'separator' as const },
+      { label: t('Remove clip'), click: () => onRemove(segNum, true) },
+    ] : [];
     const remote = window.require('@electron/remote');
     remote.Menu.buildFromTemplate([
+      ...clipActions,
       { label: t('Speed controls'), type: 'checkbox', checked: speedControlsVisible, click: () => onToggleSpeedControls(seg.segId) },
       { label: t('Change speed…'), click: () => onEditSpeed(segNum) },
       { label: t('Remove speed change'), enabled: speed !== 1 || speedControlsVisible, click: () => onRemoveSpeed(seg.segId) },
       { type: 'separator' },
       { label: t('Zoom / Crop…'), click: () => onEditCrop(segNum) },
       ...(onEditVolume != null ? [{ label: getClipVolumeMenuLabel(), click: () => onEditVolume(segNum, point) }] : []),
+      ...removeAction,
     ]).popup({ window: remote.getCurrentWindow() });
   };
 
@@ -251,7 +277,7 @@ function Segment({
         )}
         <div className={styles['tint']} aria-hidden />
         <span className={styles['pill']}>
-          <span className={styles['num']} style={{ background: color.saturationl(Math.min(color.saturationl(), 70)).lightness(46).string() }}>{segNum + 1}</span>
+          <span className={styles['num']} style={badgeStyle}>{segNum + 1}</span>
           {name && <span className={styles['name']}>{name}</span>}
           {speed !== 1 && !speedBand && <span className={styles['speed']}>{`${Math.round(speed * 100)}%`}</span>}
         </span>
@@ -306,7 +332,7 @@ function Segment({
 }
 
 function SegmentOrMarker({
-  seg, toLanePercent, instant, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmstrip, fileEnd, onTrimHandleMouseDown,
+  seg, toLanePercent, instant, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmstrip, fileEnd, onTrimHandleMouseDown, getCurrentTime, onSplit, onDuplicate, onRemove,
 } : {
   seg: StateSegment,
   toLanePercent: (time: number) => number,
@@ -327,6 +353,12 @@ function SegmentOrMarker({
   fileEnd: number,
   /** Simple mode: start dragging an edge of the active clip. */
   onTrimHandleMouseDown?: ((edge: 'start' | 'end') => (event: ReactMouseEvent<HTMLElement>) => void) | undefined,
+  /** Read when the clip menu opens, to know whether the playhead is inside this clip. */
+  getCurrentTime?: (() => number) | undefined,
+  /** Simple mode's clip menu: split this clip at the playhead, duplicate it, remove it. */
+  onSplit?: ((index: number) => void) | undefined,
+  onDuplicate?: ((segment: StateSegment) => void) | undefined,
+  onRemove?: ((index: number, wholeSegment?: true) => void) | undefined,
 }) {
   const { getSegColor } = useSegColors();
 
@@ -337,7 +369,7 @@ function SegmentOrMarker({
   const onThisSegClick = useCallback(() => onSegClick(segNum), [onSegClick, segNum]);
 
   if (seg.end != null) {
-    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} instant={instant} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} speedControlsVisible={speedControlsVisible} onEditSpeed={onEditSpeed} onRemoveSpeed={onRemoveSpeed} onToggleSpeedControls={onToggleSpeedControls} onEditCrop={onEditCrop} onEditVolume={onEditVolume} filmstrip={filmstrip} toLanePercent={toLanePercent} fileEnd={fileEnd} onTrimHandleMouseDown={onTrimHandleMouseDown} />;
+    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} instant={instant} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} speedControlsVisible={speedControlsVisible} onEditSpeed={onEditSpeed} onRemoveSpeed={onRemoveSpeed} onToggleSpeedControls={onToggleSpeedControls} onEditCrop={onEditCrop} onEditVolume={onEditVolume} filmstrip={filmstrip} toLanePercent={toLanePercent} fileEnd={fileEnd} onTrimHandleMouseDown={onTrimHandleMouseDown} getCurrentTime={getCurrentTime} onSplit={onSplit} onDuplicate={onDuplicate} onRemove={onRemove} />;
   }
 
   return (

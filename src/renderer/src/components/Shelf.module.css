@@ -186,6 +186,13 @@
   border-color: color-mix(in srgb, var(--accent-9) 55%, transparent);
 }
 
+/* The clip being edited: a filled soft pill, so it reads as a status next to the outlined "Up next". */
+.tagCurrent {
+  color: var(--accent-11);
+  background: color-mix(in srgb, var(--accent-9) 24%, transparent);
+  border-color: transparent;
+}
+
 .done {
   flex-shrink: 0;
   display: grid;

@@ -660,9 +660,9 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     const seg = cutSegments[index];
     if (seg == null) return;
     const { name } = seg;
-    const value = await labelSegmentDialog({ currentName: name, maxLength: maxLabelLength });
+    const value = await labelSegmentDialog({ currentName: name, maxLength: maxLabelLength, simpleMode });
     if (value != null) updateSegAtIndex(index, { name: value });
-  }, [cutSegments, updateSegAtIndex, maxLabelLength]);
+  }, [cutSegments, updateSegAtIndex, maxLabelLength, simpleMode]);
 
   const selectSegments = useCallback((segmentsToSelect: { segId: string }[]) => {
     const segIdsToSelect = new Set(segmentsToSelect.map(({ segId }) => segId));
@@ -697,6 +697,23 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     selectSegments(findSegmentsAtCursor(relevantTime).flatMap((index) => (cutSegments[index] ? [cutSegments[index]] : [])));
   }, [cutSegments, findSegmentsAtCursor, getRelevantTime, selectSegments]);
 
+  const splitSegmentAtTime = useCallback((index: number, time: number) => {
+    const segment = cutSegments[index];
+    if (segment?.end == null) return;
+
+    const getNewName = (oldName: string, suffix: string) => oldName && `${segment.name} ${suffix}`;
+
+    if (time <= segment.start || time >= segment.end) return; // No point
+
+    const { speed, crop, audioGainDb, audioMuted } = segment;
+    const firstPart = createIndexedSegment({ segment: { name: getNewName(segment.name, '1'), start: segment.start, end: time, speed, crop, audioGainDb, audioMuted }, incrementCount: false });
+    const secondPart = createIndexedSegment({ segment: { name: getNewName(segment.name, '2'), start: time, end: segment.end, speed, crop, audioGainDb, audioMuted }, incrementCount: true });
+
+    const newSegments = [...cutSegments];
+    newSegments.splice(index, 1, firstPart, secondPart);
+    safeSetCutSegments(newSegments);
+  }, [createIndexedSegment, cutSegments, safeSetCutSegments]);
+
   const splitCurrentSegment = useCallback(() => {
     const relevantTime = getRelevantTime();
     const segmentsAtCursorIndexes = findSegmentsAtCursor(relevantTime);
@@ -704,25 +721,18 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     const firstSegmentAtCursorIndex = segmentsAtCursorIndexes[0];
 
     if (firstSegmentAtCursorIndex == null) {
-      errorToast(i18n.t('No segment to split. Please move cursor over the segment you want to split'));
+      errorToast(simpleMode ? i18n.t('Move the playhead onto the clip you want to split') : i18n.t('No segment to split. Please move cursor over the segment you want to split'));
       return;
     }
 
-    const segment = cutSegments[firstSegmentAtCursorIndex];
-    invariant(segment != null);
+    splitSegmentAtTime(firstSegmentAtCursorIndex, relevantTime);
+  }, [findSegmentsAtCursor, getRelevantTime, simpleMode, splitSegmentAtTime]);
 
-    const getNewName = (oldName: string, suffix: string) => oldName && `${segment.name} ${suffix}`;
-
-    if (segment.start === relevantTime || segment.end === relevantTime) return; // No point
-
-    const { speed, crop, audioGainDb, audioMuted } = segment;
-    const firstPart = createIndexedSegment({ segment: { name: getNewName(segment.name, '1'), start: segment.start, end: relevantTime, speed, crop, audioGainDb, audioMuted }, incrementCount: false });
-    const secondPart = createIndexedSegment({ segment: { name: getNewName(segment.name, '2'), start: relevantTime, end: segment.end, speed, crop, audioGainDb, audioMuted }, incrementCount: true });
-
-    const newSegments = [...cutSegments];
-    newSegments.splice(firstSegmentAtCursorIndex, 1, firstPart, secondPart);
-    safeSetCutSegments(newSegments);
-  }, [createIndexedSegment, cutSegments, findSegmentsAtCursor, getRelevantTime, safeSetCutSegments]);
+  // The timeline's clip menu splits the clip that was right-clicked. Copies of a clip overlap it,
+  // so the first clip under the playhead (as splitCurrentSegment takes) could be a different one.
+  const splitSegmentAtPlayhead = useCallback((index: number) => {
+    splitSegmentAtTime(index, getRelevantTime());
+  }, [getRelevantTime, splitSegmentAtTime]);
 
   const createNumSegments = useCallback(async () => {
     if (!checkFileOpened() || currentCutSegOrWholeTimeline.duration <= 0) return;
@@ -1000,6 +1010,7 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     setCutEnd,
     labelSegment,
     splitCurrentSegment,
+    splitSegmentAtPlayhead,
     focusSegmentAtCursor,
     selectSegmentsAtCursor,
     createNumSegments,

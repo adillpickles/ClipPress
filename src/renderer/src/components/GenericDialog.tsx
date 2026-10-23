@@ -3,7 +3,8 @@ import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } 
 import { useTranslation } from 'react-i18next';
 import invariant from 'tiny-invariant';
 import prettyBytes from 'pretty-bytes';
-import { FaCheckCircle, FaExclamationTriangle, FaInfoCircle } from 'react-icons/fa';
+import { FaCheckCircle, FaExclamationTriangle, FaFileVideo, FaInfoCircle } from 'react-icons/fa';
+import { FiChevronDown, FiChevronRight } from 'react-icons/fi';
 
 import * as Dialog from './Dialog';
 import * as AlertDialog from './AlertDialog';
@@ -12,7 +13,9 @@ import { readFileSize, showItemInFolder } from '../util';
 import type { CleanupChoice, CleanupChoicesType } from '../dialogs';
 import { ListItem, Notices, OutputIncorrectSeeHelpMenu, UnorderedList, Warnings } from '../dialogs';
 import Checkbox from './Checkbox';
+import HelpTip from './HelpTip';
 import { saveColor, warningColor } from '../colors';
+import styles from './GenericDialog.module.css';
 
 
 export interface GenericDialogParams {
@@ -55,26 +58,22 @@ function ExportDetails({ items, defaultOpen, label }: {
     <div style={{ marginTop: '1em' }}>
       <button
         type="button"
+        className={styles['disclosure']}
+        aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        style={{
-          background: 'none',
-          border: 'none',
-          padding: 0,
-          cursor: 'pointer',
-          color: 'inherit',
-          opacity: 0.75,
-          font: 'inherit',
-          fontSize: '.85em',
-        }}
       >
-        {open ? '▾' : '▸'}
-        {' '}
+        {open ? <FiChevronDown aria-hidden /> : <FiChevronRight aria-hidden />}
         {label}
       </button>
 
       {open && <UnorderedList>{items}</UnorderedList>}
     </div>
   );
+}
+
+/** The file name to show as the result, without the directory it landed in. */
+function getResultFileName(filePath: string) {
+  return filePath.split(/[/\\]/).pop() ?? filePath;
 }
 
 /**
@@ -85,10 +84,12 @@ function ExportDetails({ items, defaultOpen, label }: {
  * menu") at the same level as the result, which made a routine success read like a
  * report to work through.
  */
-function ExportResultBody({ hasWarnings, headline, subtitle, highlight, details, warningCount, sizeFilePath }: {
+function ExportResultBody({ hasWarnings, headline, subtitle, filePaths, highlight, details, warningCount, sizeFilePath }: {
   hasWarnings: boolean,
   headline: ReactNode,
   subtitle?: ReactNode,
+  /** Listed under the headline when there is more than one, so a multi-file export names every file it made. */
+  filePaths?: string[] | undefined,
   /** Something the user should see without opening Details (e.g. the original went to the Recycle Bin). */
   highlight?: ReactNode,
   details?: ReactNode,
@@ -120,6 +121,16 @@ function ExportResultBody({ hasWarnings, headline, subtitle, highlight, details,
           {subtitle != null && (
             <div style={{ opacity: 0.75, fontSize: '.9em', marginTop: '.15em' }}>{subtitle}</div>
           )}
+          {filePaths != null && filePaths.length > 1 && (
+            <ul className={styles['fileList']}>
+              {filePaths.map((path) => (
+                <li key={path} className={styles['fileItem']} title={path}>
+                  <FaFileVideo aria-hidden className={styles['fileIcon']} />
+                  <span className={styles['fileName']}>{getResultFileName(path)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 
@@ -139,11 +150,6 @@ function ExportResultBody({ hasWarnings, headline, subtitle, highlight, details,
       )}
     </div>
   );
-}
-
-/** The file name to show as the result, without the directory it landed in. */
-function getResultFileName(filePath: string) {
-  return filePath.split(/[/\\]/).pop() ?? filePath;
 }
 
 export type ShowGenericDialog = (dialog: GenericDialogParams) => void;
@@ -325,8 +331,10 @@ export function useDialog() {
     }
   }, [showGenericDialog, t]);
 
-  const openCutFinishedDialog = useCallback(async ({ filePath, warnings, notices, highlight, fileCount = 1 }: {
+  const openCutFinishedDialog = useCallback(async ({ filePath, filePaths, warnings, notices, highlight, fileCount = 1 }: {
     filePath: string,
+    /** Every file the export made, to name them all when there is more than one. */
+    filePaths?: string[] | undefined,
     warnings: string[],
     notices: string[],
     highlight?: string | undefined,
@@ -342,9 +350,14 @@ export function useDialog() {
         <ExportResultBody
           hasWarnings={hasWarnings}
           warningCount={warnings.length}
-          headline={fileCount === 0 ? t('No new files were written') : getResultFileName(filePath)}
+          // One bold file name read as if only one file was made, so several files lead with their count.
+          headline={(() => {
+            if (fileCount === 0) return t('No new files were written');
+            if (fileCount > 1) return t('{{count}} files exported', { count: fileCount });
+            return getResultFileName(filePath);
+          })()}
           sizeFilePath={fileCount === 1 ? filePath : undefined}
-          subtitle={fileCount > 1 ? t('{{count}} files exported', { count: fileCount }) : undefined}
+          filePaths={filePaths}
           highlight={highlight}
           details={(
             <>
@@ -360,8 +373,10 @@ export function useDialog() {
     });
   }, [openExportFinishedDialog, t]);
 
-  const openSizeLimitedFinishedDialog = useCallback(async ({ filePath, warnings, notices, summary, highlight }: {
+  const openSizeLimitedFinishedDialog = useCallback(async ({ filePath, filePaths, warnings, notices, summary, highlight }: {
     filePath: string,
+    /** Every file the export made, to name them all when there is more than one. */
+    filePaths?: string[] | undefined,
     warnings: string[],
     notices: string[],
     summary: SizeLimitedFinishedSummary,
@@ -369,7 +384,7 @@ export function useDialog() {
   }) => {
     const hasWarnings = warnings.length > 0;
     const wroteNewFiles = summary.createdCount > 0;
-    const fileName = getResultFileName(filePath);
+    const wroteSeveralFiles = summary.createdCount > 1;
 
     const sizeText = (() => {
       if (!wroteNewFiles) return undefined;
@@ -379,13 +394,17 @@ export function useDialog() {
         : summary.largestCreatedSizeLabel;
       if (actual == null) return t('Limit {{target}}', { target: summary.requestedLimitLabel });
 
-      return summary.createdCount === 1
-        ? t('{{actual}} of {{target}} limit', { actual, target: summary.requestedLimitLabel })
-        : t('{{count}} files, largest {{actual}} of {{target}} limit', {
-          count: summary.createdCount,
-          actual,
-          target: summary.requestedLimitLabel,
-        });
+      // With several files the headline already gives the count.
+      return wroteSeveralFiles
+        ? t('Largest {{actual}} of {{target}} limit', { actual, target: summary.requestedLimitLabel })
+        : t('{{actual}} of {{target}} limit', { actual, target: summary.requestedLimitLabel });
+    })();
+
+    // One bold file name read as if only one file was made, so several files lead with their count.
+    const headline = (() => {
+      if (!wroteNewFiles) return t('No new files were written');
+      if (wroteSeveralFiles) return t('{{count}} files exported', { count: summary.createdCount });
+      return getResultFileName(filePath);
     })();
 
     const detailItems = (warnings.length > 0 || notices.length > 0)
@@ -407,8 +426,9 @@ export function useDialog() {
         <ExportResultBody
           hasWarnings={hasWarnings}
           warningCount={warnings.length}
-          headline={wroteNewFiles ? fileName : t('No new files were written')}
+          headline={headline}
           subtitle={sizeText}
+          filePaths={filePaths}
           highlight={highlight}
           details={detailItems}
         />
@@ -449,7 +469,11 @@ export function useDialog() {
     });
   }, [openExportFinishedDialog, t]);
 
-  async function openCleanupFilesDialog(cleanupChoicesInitial: CleanupChoicesType) {
+  /**
+   * The clean-up choices. Opened to clean up (Clean up, or after an export) its button acts at once; opened from
+   * Settings (`saveOnly`) it only stores what should happen later, so the button just saves.
+   */
+  async function openCleanupFilesDialog(cleanupChoicesInitial: CleanupChoicesType, { saveOnly = false }: { saveOnly?: boolean | undefined } = {}) {
     return new Promise<CleanupChoicesType | undefined>((resolve) => {
       function CleanupChoices() {
         const [choices, setChoices] = useState(cleanupChoicesInitial);
@@ -498,20 +522,28 @@ export function useDialog() {
             </Dialog.Title>
 
             <Dialog.Description>
-              {t('What happens after an export, or when you choose Clean up.')}
+              {saveOnly
+                ? t('What happens after an export, or when you choose Clean up.')
+                : t('Choose what to clean up now. ClipPress keeps these choices for next time.')}
             </Dialog.Description>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '.55rem', marginBottom: '1.25rem' }}>
-              <Checkbox label={t('Close the recording')} checked={closeFile} disabled={trashSourceFile || trashTmpFiles} onCheckedChange={(checked) => onChange('closeFile', checked)} />
-              <Checkbox label={t('Move temporary preview files to the trash')} checked={trashTmpFiles} onCheckedChange={(checked) => onChange('trashTmpFiles', checked)} />
+              <div className={styles['choiceRow']}>
+                <Checkbox label={t('Close the recording')} checked={closeFile} disabled={trashSourceFile || trashTmpFiles} onCheckedChange={(checked) => onChange('closeFile', checked)} />
+                {(trashSourceFile || trashTmpFiles) && <HelpTip>{t('The recording has to be closed before its files can be moved.')}</HelpTip>}
+              </div>
+              <Checkbox label={t('Move temporary preview files to the Recycle Bin')} checked={trashTmpFiles} onCheckedChange={(checked) => onChange('trashTmpFiles', checked)} />
               <Checkbox label={t('Move the original recording to the Recycle Bin')} checked={trashSourceFile} onCheckedChange={(checked) => onChange('trashSourceFile', checked)} />
-              <Checkbox label={t('Move the project file (.llc) to the trash')} checked={trashProjectFile} onCheckedChange={(checked) => onChange('trashProjectFile', checked)} />
+              <Checkbox label={t('Move the project file (.llc) to the Recycle Bin')} checked={trashProjectFile} onCheckedChange={(checked) => onChange('trashProjectFile', checked)} />
               <Checkbox label={t('Delete temporary and project files permanently if the Recycle Bin can\'t take them')} disabled={!(trashTmpFiles || trashProjectFile || trashSourceFile)} checked={deleteIfTrashFails} onCheckedChange={(checked) => onChange('deleteIfTrashFails', checked)} />
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '.55rem', paddingTop: '1rem', borderTop: '1px solid var(--cp-line)' }}>
               <Checkbox label={t('Do this automatically after each export')} checked={cleanupAfterExport} onCheckedChange={(checked) => onChange('cleanupAfterExport', checked)} />
-              <Checkbox label={t('Ask me each time')} checked={askForCleanup} onCheckedChange={(checked) => onChange('askForCleanup', checked)} />
+              <div className={styles['choiceRow']}>
+                <Checkbox label={t('Ask before cleaning up')} checked={askForCleanup} onCheckedChange={(checked) => onChange('askForCleanup', checked)} />
+                <HelpTip>{t('When this is off, Clean up and the clean-up after each export use these choices without showing this window.')}</HelpTip>
+              </div>
             </div>
 
             <Dialog.ButtonRow>
@@ -519,7 +551,7 @@ export function useDialog() {
                 <DialogButton>{t('Cancel')}</DialogButton>
               </Dialog.Close>
 
-              <DialogButton ref={confirmRef} onClick={handleOkClick} primary>{t('Confirm')}</DialogButton>
+              <DialogButton ref={confirmRef} onClick={handleOkClick} primary>{saveOnly ? t('Save') : t('Clean up now')}</DialogButton>
             </Dialog.ButtonRow>
           </Dialog.Content>
         );

@@ -4,10 +4,11 @@ import { FiFilm, FiX } from 'react-icons/fi';
 
 import type { RecentFile } from '../../../common/types';
 import { getProjectLookupPaths, getProjectStoreEnv } from '../projectStore';
+import formatRelativeTime from '../util/relativeTime';
 import styles from './RecentFiles.module.css';
 
 const { stat } = window.require('fs/promises');
-const { basename, dirname } = window.require('path');
+const { basename, dirname, extname } = window.require('path');
 
 async function exists(path: string) {
   try {
@@ -21,18 +22,17 @@ async function exists(path: string) {
 interface FileState { missing: boolean, edited: boolean }
 
 function useRelativeTime() {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   return useMemo(() => {
     const format = new Intl.RelativeTimeFormat(i18n.language, { numeric: 'auto' });
-    return (ms: number) => {
-      const seconds = (ms - Date.now()) / 1000;
-      const units: [Intl.RelativeTimeFormatUnit, number][] = [['year', 31_536_000], ['month', 2_592_000], ['week', 604_800], ['day', 86_400], ['hour', 3600], ['minute', 60]];
-      for (const [unit, size] of units) {
-        if (Math.abs(seconds) >= size) return format.format(Math.round(seconds / size), unit);
-      }
-      return format.format(0, 'minute');
-    };
-  }, [i18n.language]);
+    const justNow = t('Just now');
+    return (ms: number) => formatRelativeTime(ms, Date.now(), format, justNow);
+  }, [i18n.language, t]);
+}
+
+/** The file's name as the shelf shows it, without the extension. */
+function displayName(path: string) {
+  return basename(path, extname(path));
 }
 
 /**
@@ -95,7 +95,7 @@ function RecentFiles({ files, customOutDir, onOpen, onRemove, onClear }: {
               >
                 <FiFilm aria-hidden className={styles['icon']} />
                 <span className={styles['text']}>
-                  <span className={styles['name']}>{basename(path)}</span>
+                  <span className={styles['name']}>{displayName(path)}</span>
                   <span className={styles['meta']}>
                     {dirname(path)}
                   </span>
@@ -106,7 +106,7 @@ function RecentFiles({ files, customOutDir, onOpen, onRemove, onClear }: {
                   <span className={styles['when']}>{formatRelative(openedAt)}</span>
                 </span>
               </button>
-              <button type="button" className={styles['remove']} onClick={() => onRemove(path)} title={t('Remove from this list')} aria-label={t('Remove {{name}} from this list', { name: basename(path) })}>
+              <button type="button" className={styles['remove']} onClick={() => onRemove(path)} title={t('Remove from this list')} aria-label={t('Remove {{name}} from this list', { name: displayName(path) })}>
                 <FiX aria-hidden />
               </button>
             </li>

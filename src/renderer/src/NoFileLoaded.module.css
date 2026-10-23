@@ -18,7 +18,8 @@
   align-items: center;
 }
 
-/* The visible drop target: a soft, rounded card with a dashed edge that lights up while a file is dragged over. */
+/* The visible drop target: a soft, rounded card with a dashed edge that lights up while a file is dragged over.
+   Clicking it opens a clip as well. */
 .dropCard {
   width: 100%;
   box-sizing: border-box;
@@ -32,7 +33,16 @@
     radial-gradient(28rem 12rem at 50% 0%, color-mix(in srgb, var(--accent-9) 7%, transparent), transparent 75%),
     color-mix(in srgb, var(--cp-panel) 88%, transparent);
   box-shadow: 0 18px 40px -24px rgb(0 0 0 / 55%);
+  cursor: pointer;
   transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+
+/* A quiet hint that the card is clickable, clearly weaker than a file being dragged over it. */
+.dropCard:not(.dropCardActive):hover {
+  border-color: color-mix(in srgb, var(--accent-9) 60%, var(--cp-line-strong));
+  background:
+    radial-gradient(28rem 12rem at 50% 0%, color-mix(in srgb, var(--accent-9) 11%, transparent), transparent 75%),
+    color-mix(in srgb, var(--cp-panel) 88%, transparent);
 }
 
 .dropCardActive {
@@ -148,6 +158,15 @@
   font-size: .8125rem;
   line-height: 1.5;
   color: var(--cp-text-muted);
+}
+
+/* Keycaps in the sentence: short enough to sit on its baseline without making that line taller than the rest,
+   and a monospace face whose capital I has serifs, so the I key can't be read as "|". */
+.stepText kbd {
+  padding: 1px 5px;
+  line-height: 11px;
+  vertical-align: baseline;
+  font-family: var(--cp-font-mono);
 }
 
 @media (max-width: 900px) {

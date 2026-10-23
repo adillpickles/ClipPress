@@ -99,7 +99,8 @@ function TimelineRuler({ toLanePercent, lanePx, laneDuration, visibleStart, visi
       const left = toLanePercent(time);
       const px = (left / 100) * lanePx;
       // Retimed (sped-up) clips squeeze time, so labels can collide there: skip the ones that would.
-      const label = px - lastLabelPx >= minDrawnLabelGapPx ? formatClockTime(time, { showHours: longFile, decimals: showTenths ? (interval < 0.1 ? 2 : 1) : 0 }) : undefined;
+      // No "0:00": the playhead's knob rests on it whenever a file opens, leaving a clipped label (the tick stays).
+      const label = i > 0 && px - lastLabelPx >= minDrawnLabelGapPx ? formatClockTime(time, { showHours: longFile, decimals: showTenths ? (interval < 0.1 ? 2 : 1) : 0 }) : undefined;
       if (label != null) lastLabelPx = px;
       major.push({ time, left, label });
     }

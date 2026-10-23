@@ -8,11 +8,13 @@ const margin = 8;
 
 const stopPropagation = (event: SyntheticEvent) => event.stopPropagation();
 
+const focusableSelector = 'input:not(:disabled), button:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
 /**
  * A small floating panel next to a point or element (above it when there's room), portalled to the app root.
  * Closes on a click outside it or Escape.
  */
-export default function AnchoredPopover({ anchor, onClose, children, label, className, align = 'center', dataShelf, onPointerEnter, onPointerLeave }: {
+export default function AnchoredPopover({ anchor, onClose, children, label, className, align = 'center', dataShelf, keyboardFocus = false, onPointerEnter, onPointerLeave }: {
   /** Where to open: an element, or a point (e.g. where the user right-clicked). */
   anchor: HTMLElement | { x: number, y: number },
   onClose: () => void,
@@ -23,6 +25,12 @@ export default function AnchoredPopover({ anchor, onClose, children, label, clas
   align?: 'center' | 'start' | undefined,
   /** Marks the shelf's popover, so focus inside it can be found. */
   dataShelf?: boolean | undefined,
+  /**
+   * Opened from the keyboard, focus moves to the popover's first control (it is portalled to the end of the app,
+   * so Tab wouldn't reach it soon), and Escape or a click outside gives it back to what opened it. Opened with
+   * the mouse, focus stays where it is.
+   */
+  keyboardFocus?: boolean | undefined,
   onPointerEnter?: (() => void) | undefined,
   onPointerLeave?: (() => void) | undefined,
 }) {
@@ -32,6 +40,19 @@ export default function AnchoredPopover({ anchor, onClose, children, label, clas
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
+
+  // What had focus when it opened, if that was from the keyboard (its focus ring showing).
+  const [opener] = useState(() => {
+    const active = document.activeElement;
+    return keyboardFocus && active instanceof HTMLElement && active.matches(':focus-visible') ? active : undefined;
+  });
+  const focusMovedRef = useRef(false);
+  useEffect(() => {
+    // Once placed: focusing it while it still waits off-screen would scroll.
+    if (opener == null || position == null || focusMovedRef.current) return;
+    focusMovedRef.current = true;
+    ref.current?.querySelector<HTMLElement>(focusableSelector)?.focus({ preventScroll: true });
+  }, [opener, position]);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -46,15 +67,21 @@ export default function AnchoredPopover({ anchor, onClose, children, label, clas
   }, [align, anchor]);
 
   useEffect(() => {
+    const close = () => {
+      // Also when focus fell to the page, e.g. its reset button turned disabled when pressed.
+      const focusInside = ref.current?.contains(document.activeElement) || document.activeElement === document.body;
+      if (opener != null && opener.isConnected && focusInside) opener.focus({ preventScroll: true });
+      onCloseRef.current();
+    };
     const onPointerDown = (e: PointerEvent) => {
       if (ref.current?.contains(e.target as Node)) return;
       if (anchor instanceof HTMLElement && anchor.contains(e.target as Node)) return;
-      onCloseRef.current();
+      close();
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.stopPropagation();
-      onCloseRef.current();
+      close();
     };
     // On the next tick, so the click that opened it doesn't close it.
     const timeout = setTimeout(() => window.addEventListener('pointerdown', onPointerDown, true));
@@ -64,7 +91,7 @@ export default function AnchoredPopover({ anchor, onClose, children, label, clas
       window.removeEventListener('pointerdown', onPointerDown, true);
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [anchor]);
+  }, [anchor, opener]);
 
   return createPortal(
     <div

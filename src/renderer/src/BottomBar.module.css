@@ -66,6 +66,59 @@
   white-space: pre;
 }
 
+/* Simple mode's timeline zoom: one soft pill of small round buttons, as tall as the toolbar buttons. */
+.timelineZoom {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  height: 1.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: .125rem;
+  padding: 0 .1875rem;
+  border-radius: 999px;
+  border: 1px solid var(--cp-line);
+  background: var(--cp-raised);
+}
+
+.zoomButton {
+  all: unset;
+  box-sizing: border-box;
+  min-width: 1.375rem;
+  height: 1.375rem;
+  padding: 0 .3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color .14s ease, color .14s ease, box-shadow .14s ease;
+}
+
+.zoomButton:hover:not(:disabled) {
+  background: var(--cp-hover);
+  color: var(--cp-text);
+}
+
+.zoomButton:active:not(:disabled) {
+  background: var(--cp-active);
+}
+
+.zoomButton:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.zoomButton:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+.zoomFit {
+  padding: 0 .5rem;
+}
+
 .playButton {
   all: unset;
   box-sizing: border-box;

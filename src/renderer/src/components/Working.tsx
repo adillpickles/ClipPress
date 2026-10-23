@@ -19,7 +19,9 @@ function Working({ text, detailText, progress, onAbortClick }: {
 
   const [startedAt] = useState(() => new Date());
   const [elapsedMs, setElapsedMs] = useState(0);
-  const progressPercent = progress != null ? `${(progress * 100).toFixed(1)}%` : undefined;
+  // Whole percents: a decimal changing several times a second only flickers. Rounded down, so it never reads
+  // 100% before it's done.
+  const progressPercent = progress != null ? `${Math.floor(progress * 100)}%` : undefined;
 
   // Reassure the user that the app is not frozen
   // This is because some ffmpeg operations can take a long time without giving any progress updates, which might make the user think that the app is frozen

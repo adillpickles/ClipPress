@@ -5,7 +5,8 @@ import useUserSettings from '../hooks/useUserSettings';
 import useUpdateStatus from '../hooks/useUpdateStatus';
 import Switch from './Switch';
 import Select from './Select';
-import UpdateControls from './UpdateControls';
+import { SettingsInInstallFolderWarning, UpdateActions } from './UpdateControls';
+import getUpdateMessage from '../util/updateMessage';
 import SettingRow from './SettingRow';
 import type { UpdateMode } from '../../../common/updates';
 
@@ -49,9 +50,21 @@ export default function UpdateSettings() {
         </SettingRow>
       )}
 
-      <SettingRow label={t('Status')}>
-        <UpdateControls status={status} />
-      </SettingRow>
+      {/* Offline, the row above already says why nothing is checked. The message is the row's live value, so
+          only the buttons sit on the right like every other row's control. */}
+      {status != null && status.reason !== 'offline' && (
+        <SettingRow
+          label={t('Status')}
+          value={(
+            <>
+              <span role="status" aria-live="polite">{getUpdateMessage(status, t, enableUpdateCheck)}</span>
+              <SettingsInInstallFolderWarning status={status} />
+            </>
+          )}
+        >
+          <UpdateActions status={status} align="end" />
+        </SettingRow>
+      )}
     </>
   );
 }

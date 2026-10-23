@@ -4,6 +4,7 @@ import { FaCaretDown } from 'react-icons/fa';
 
 import { segmentSpeedPresets } from '../segmentSpeed';
 import type { FormatTimecode } from '../types';
+import { formatClipLength } from '../util/clockTime';
 import styles from './SegmentSpeed.module.css';
 import LaneDeleteButton from './LaneDeleteButton';
 
@@ -24,7 +25,10 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
   outputDuration: number,
   isActive: boolean,
   dragging: boolean,
-  /** Drawn as a slim band along the bottom of the clip block (simple mode), so showing it doesn't add a lane. */
+  /**
+   * Drawn as a slim band along the bottom of the clip block (simple mode), so showing it doesn't add a lane.
+   * Only simple mode draws it, so it also gets simple mode's words and length style.
+   */
   overlay?: boolean,
   formatTimecode: FormatTimecode,
   onHandleMouseDown: (event: ReactMouseEvent<HTMLButtonElement>) => void,
@@ -80,10 +84,10 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
       </div>
 
       <div className={styles['retimeBody']}>
-        <button type="button" className={styles['retimeSpeed']} onClick={(event) => { event.stopPropagation(); openSpeedMenu(); }} title={t('Change segment speed')}>
+        <button type="button" className={styles['retimeSpeed']} onClick={(event) => { event.stopPropagation(); openSpeedMenu(); }} title={overlay ? t('Change speed') : t('Change segment speed')}>
           {Math.round(speed * 100)}%<FaCaretDown size={9} />
         </button>
-        <span className={styles['retimeDuration']}>{formatTimecode({ seconds: outputDuration, shorten: true })}</span>
+        <span className={styles['retimeDuration']}>{overlay ? formatClipLength(outputDuration) : formatTimecode({ seconds: outputDuration, shorten: true })}</span>
       </div>
 
       {isActive && !dragging && !overlay && (
@@ -99,7 +103,7 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
           if (committedSpeed !== 1) onChange(1);
         }}
         title={t('Drag right to slow down, left to speed up. Double-click to reset.')}
-        aria-label={`${t('Segment speed')} ${Math.round(speed * 100)}%`}
+        aria-label={`${overlay ? t('Clip speed') : t('Segment speed')} ${Math.round(speed * 100)}%`}
       />
     </div>
   );

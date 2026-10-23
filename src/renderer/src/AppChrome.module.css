@@ -17,6 +17,11 @@
   opacity: .9;
 }
 
+/* Maximised, the window buttons run to the screen's right edge (see .closeControl below). */
+.wrapperMaximized {
+  padding-right: 0;
+}
+
 .left {
   min-width: 0;
   display: flex;
@@ -78,35 +83,64 @@
   color: var(--cp-text);
 }
 
+/* Its menu is popped up: stays pressed, a little stronger than hover. */
+.menuButtonOpen,
+.menuButtonOpen:hover {
+  background: color-mix(in srgb, var(--gray-5) 75%, transparent);
+  color: var(--cp-text);
+}
+
+.menuButton:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
 .windowControls {
   display: flex;
-  align-items: center;
+  align-self: stretch;
+  align-items: stretch;
   gap: .15rem;
   margin-left: auto;
   -webkit-app-region: no-drag;
 }
 
+/* The full-height hit area; the visible button is the pill inside. */
 .windowControl {
   all: unset;
+  width: 2.55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cp-text-muted);
+  cursor: pointer;
+}
+
+.wrapperMaximized .closeControl {
+  /* Takes over the bar's right padding, so the corner pixel closes the window and the pill stays where it was. */
+  padding-right: .35rem;
+}
+
+.windowControlPill {
   width: 2.55rem;
   height: 2.1rem;
   border-radius: .75rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--cp-text-muted);
-  cursor: pointer;
-  transition: background-color .14s ease, color .14s ease;
+  transition: background-color .14s ease, color .14s ease, box-shadow .14s ease;
 }
 
-.windowControl:hover,
-.windowControl:focus-visible {
+.windowControl:hover .windowControlPill,
+.windowControl:focus-visible .windowControlPill {
   background: color-mix(in srgb, var(--gray-4) 55%, transparent);
   color: var(--cp-text);
 }
 
-.closeControl:hover,
-.closeControl:focus-visible {
+.windowControl:focus-visible .windowControlPill {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.closeControl:hover .windowControlPill,
+.closeControl:focus-visible .windowControlPill {
   background: color-mix(in srgb, var(--red-9) 22%, transparent);
   color: var(--red-11);
 }

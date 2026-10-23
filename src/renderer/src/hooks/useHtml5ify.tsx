@@ -58,15 +58,15 @@ export default function useHtml5ify({ filePath, hasVideo, hasAudio, workingRef, 
     initialOption?: Html5ifyMode | undefined,
     batch?: boolean | undefined,
   }) => {
-    // One instant and one smooth choice up front; the rest (including the remuxes, which often fail) are under More options (#19).
+    // One instant and one smooth choice up front; the rest (including the quick copies, which often fail) are under More options (#19).
     const availOptions: Record<Html5ifyMode, { title: string, description: string }> = {
-      fastest: { title: i18n.t('Instant preview'), description: i18n.t('Plays through FFmpeg without making a copy. Starts right away; seeking is slower.') },
-      'slow-audio': { title: i18n.t('Smooth preview copy'), description: i18n.t('Makes a lighter copy that plays and seeks smoothly. Takes a little while.') },
+      fastest: { title: i18n.t('Instant preview'), description: i18n.t('Plays right away without making a copy. Skipping around is slower.') },
+      'slow-audio': { title: i18n.t('Smooth preview copy'), description: i18n.t('Makes a lighter copy that plays and skips around smoothly. Takes a little while.') },
       slow: { title: i18n.t('Smooth preview copy, no sound'), description: i18n.t('Makes a lighter copy of the video only. Takes a little while.') },
       slowest: { title: i18n.t('High-quality preview copy'), description: i18n.t('Sharper picture, but takes longer to make.') },
-      'fast-audio-remux': { title: i18n.t('Quick remux'), description: i18n.t('Repackages the video and sound without converting them. Often fails.') },
-      'fast-audio': { title: i18n.t('Quick remux, convert sound'), description: i18n.t('Fails if the video format itself is not supported.') },
-      fast: { title: i18n.t('Quick remux, no sound'), description: i18n.t('Repackages the video only. Often fails.') },
+      'fast-audio-remux': { title: i18n.t('Quick preview copy'), description: i18n.t('Repackages the video and sound without converting them. Often fails.') },
+      'fast-audio': { title: i18n.t('Quick preview copy, convert sound'), description: i18n.t('Fails if the video format itself is not supported.') },
+      fast: { title: i18n.t('Quick preview copy, no sound'), description: i18n.t('Repackages the video only. Often fails.') },
     };
     const order: Html5ifyMode[] = ['fastest', 'slow-audio', 'slow', 'slowest', 'fast-audio-remux', 'fast-audio', 'fast'];
     const options = order.filter((mode) => allowedOptions.includes(mode));

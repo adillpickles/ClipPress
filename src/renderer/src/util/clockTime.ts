@@ -21,3 +21,11 @@ export default function formatClockTime(seconds: number, { showHours = false, de
   const fractionStr = decimals > 0 ? `.${padStart(String(fraction), decimals, '0')}` : '';
   return `${sign}${withHours ? `${hours}:` : ''}${minutesStr}:${padStart(String(secs), 2, '0')}${fractionStr}`;
 }
+
+/**
+ * How long something lasts (a clip, the export), e.g. `0:12.6` or `1:30.0`. Simple mode writes every length
+ * this one way, so the Clips panel, its total and the speed band can be compared at a glance.
+ */
+export function formatClipLength(seconds: number) {
+  return formatClockTime(seconds, { decimals: 1 });
+}

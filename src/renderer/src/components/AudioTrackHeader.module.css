@@ -31,7 +31,8 @@
 }
 
 .iconButton:focus-visible,
-.pill:focus-visible {
+.pill:focus-visible,
+.resetButton:focus-visible {
   box-shadow: var(--cp-focus-ring);
 }
 
@@ -62,16 +63,13 @@
   color: var(--cp-text);
 }
 
+/* The title with its "i" beside it (the help that used to be a line of text under it). */
 .popoverTitle {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
   font-size: .875rem;
   font-weight: 650;
-}
-
-.popoverHint {
-  margin-top: -.45rem;
-  color: var(--cp-text-subtle);
-  font-size: .75rem;
-  line-height: 1.4;
 }
 
 .gainItem {
@@ -112,9 +110,15 @@
   color: var(--cp-text-subtle);
 }
 
-.resetButton:hover {
+.resetButton:hover:not(:disabled) {
   background: var(--cp-hover);
   color: var(--cp-text);
+}
+
+/* Already at 100%. */
+.resetButton:disabled {
+  cursor: default;
+  opacity: .35;
 }
 
 .slider {

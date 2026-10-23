@@ -22,6 +22,10 @@
 .clear {
   all: unset;
   cursor: pointer;
+  /* Room for a pill-shaped focus ring; the negative margin keeps the text lined up with the list's edge. */
+  padding: .1rem .4rem;
+  margin-right: -.4rem;
+  border-radius: 999px;
   color: var(--cp-text-subtle);
   font-size: .75rem;
 }
@@ -33,7 +37,6 @@
 
 .clear:focus-visible {
   box-shadow: var(--cp-focus-ring);
-  border-radius: 2px;
 }
 
 .list {
@@ -126,8 +129,8 @@
 
 .badge,
 .badgeMissing {
-  padding: .1rem .4rem;
-  border-radius: 4px;
+  padding: .1rem .5rem;
+  border-radius: 999px;
   font-size: .6875rem;
   font-weight: 600;
 }

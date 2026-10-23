@@ -30,52 +30,45 @@ function Step({ icon, title, children }: { icon: ReactNode, title: string, child
 
 let welcomeShown = false;
 
-function NoFileLoaded({ onClick, onOpenFolderClick, keyBindingByAction, showSteps, children }: {
+function NoFileLoaded({ onClick, onOpenFolderClick, keyBindingByAction, dragging, showSteps, children }: {
   onClick: () => void,
   onOpenFolderClick: () => void,
   keyBindingByAction: Record<string, KeyBinding>,
+  /** A file is being dragged over the window (from App: files only, and it clears itself when the drag stops). */
+  dragging: boolean,
   /** The three steps of making a clip, for people who haven't opened anything yet. */
   showSteps: boolean,
   /** Shown under the buttons (recent recordings). */
   children?: ReactNode,
 }) {
   const { t } = useTranslation();
-  const [dragging, setDragging] = useState(false);
+  // This screen only goes away when a file opens, so coming back to it means one was opened this session.
   const [shownBefore] = useState(() => welcomeShown);
   useEffect(() => {
     welcomeShown = true;
   }, []);
+  // The first-run steps are for people who haven't opened anything yet. Once there has been something to pick up
+  // (recent clips, or a file opened this session) they stay away, so clearing the recent list doesn't bring them back.
+  const [stepsRetired, setStepsRetired] = useState(() => shownBefore || !showSteps);
+  if (!showSteps && !stepsRetired) setStepsRetired(true);
 
   return (
     <motion.div
       // Shown at once when the app starts (a fade there only delays the first picture); faded in when you come back.
       initial={shownBefore ? { opacity: 0 } : false}
       animate={{ opacity: 1 }}
-      onDragEnter={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={(e) => {
-        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-        setDragging(false);
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragging(false);
-      }}
-      className={[
-        'no-user-select',
-        styles['dropzone'],
-        ...(dragging ? [styles['dropzoneDragging']] : []),
-      ].join(' ')}
+      className={['no-user-select', styles['dropzone']].join(' ')}
     >
       <div className={styles['content']}>
-        {/* The whole window takes drops; this card is where it looks like you can. */}
-        <div className={[styles['dropCard'], ...(dragging ? [styles['dropCardActive']] : [])].join(' ')}>
+        {/* The whole window takes drops (App handles them); this card is where it looks like you can.
+            Clicking its empty space opens a clip too, like a drop area usually does; the buttons stay the keyboard path. */}
+        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+        <div
+          className={[styles['dropCard'], ...(dragging ? [styles['dropCardActive']] : [])].join(' ')}
+          onClick={(e) => {
+            if ((e.target as Element).closest('button, a, input') == null) onClick();
+          }}
+        >
           <div className={styles['dropIcon']}><FiDownload aria-hidden /></div>
 
           <h1 className={styles['title']}>{dragging ? t('Drop to open') : t('Drop a clip to get started')}</h1>
@@ -93,7 +86,7 @@ function NoFileLoaded({ onClick, onOpenFolderClick, keyBindingByAction, showStep
           </div>
         </div>
 
-        {showSteps && (
+        {showSteps && !stepsRetired && (
         <div className={styles['steps']}>
           <Step icon={<FiScissors aria-hidden />} title={t('Mark the moment')}>
             {keyBindingByAction['setCutStart'] != null && keyBindingByAction['setCutEnd'] != null ? (

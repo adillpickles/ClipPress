@@ -44,6 +44,7 @@ function ShelfRowInner({ item, state, thumbnail, requestThumbnail, onOpen }: {
       className={[styles['row'], ...(state === 'open' ? [styles['rowOpen']] : []), ...(exported ? [styles['rowExported']] : [])].join(' ')}
       onClick={() => onOpen(file.path)}
       disabled={state === 'open'}
+      aria-current={state === 'open' ? 'true' : undefined}
       title={file.name}
     >
       <span className={styles['thumb']}>
@@ -56,7 +57,8 @@ function ShelfRowInner({ item, state, thumbnail, requestThumbnail, onOpen }: {
           {file.edited && !exported && <span className={styles['edited']}> · {t('Edited')}</span>}
         </span>
       </span>
-      {state === 'open' && <span className={styles['tag']}>{t('Open')}</span>}
+      {/* A status, not an action, so it isn't worded or drawn like a button. */}
+      {state === 'open' && <span className={[styles['tag'], styles['tagCurrent']].join(' ')}>{t('Editing')}</span>}
       {state === 'next' && <span className={[styles['tag'], styles['tagNext']].join(' ')}>{t('Up next')}</span>}
       {state == null && exported && <span className={styles['done']} title={t('Exported')}><FiCheck aria-label={t('Exported')} /></span>}
     </button>

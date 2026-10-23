@@ -5,15 +5,12 @@ import { useTranslation } from 'react-i18next';
 
 import AnchoredPopover from './AnchoredPopover';
 import styles from './ClipVolumePopover.module.css';
-import { dbToPercent, maxClipVolumePercent, percentToDb } from '../util/audioGain';
+import { dbToPercent, maxClipVolumePercent, percentToDb, snapToFullVolume } from '../util/audioGain';
 
 export interface ClipVolumeChange {
   audioGainDb: number | undefined,
   audioMuted: boolean,
 }
-
-/** Dragging near 100% snaps to it, so "back to normal" is easy to hit. */
-const detentPercent = 4;
 
 /**
  * A clip's own volume: a mute switch that remembers the level, a 0–200% slider and a reset. Opened by
@@ -43,7 +40,7 @@ function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, onChang
 
   const onSlide = (value: number) => {
     // Snap only for the pointer: with the arrow keys, 99 and 101 must stay reachable.
-    const snapped = pointerDownRef.current && Math.abs(value - 100) <= detentPercent ? 100 : value;
+    const snapped = pointerDownRef.current ? snapToFullVolume(value) : value;
     if (snapped <= 0) {
       onChange({ audioGainDb: pointerDownRef.current ? levelBeforeDragRef.current : audioGainDb, audioMuted: true }, dragIdRef.current);
       return;
@@ -59,7 +56,8 @@ function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, onChang
   };
 
   return (
-    <AnchoredPopover anchor={anchor} onClose={onClose} label={t('Clip volume')}>
+    // Opened from the clip's volume badge with the keyboard, focus moves into it (see AnchoredPopover).
+    <AnchoredPopover anchor={anchor} onClose={onClose} label={t('Clip volume')} keyboardFocus>
       <div className={styles['heading']}>
         <span className={styles['title']}>{t('Clip volume')}</span>
         <span className={styles['clipName']}>{clipLabel}</span>

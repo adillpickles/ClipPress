@@ -12,7 +12,9 @@
   border-radius: 999px;
   background: rgb(17 17 17 / 72%);
   box-shadow: 0 0 0 1px rgb(255 255 255 / 8%), 0 8px 24px rgb(0 0 0 / 40%);
-  color: var(--accent-11);
+  /* The disc is dark in both themes (it sits over the video), so the icon keeps the dark theme's light teal
+     (accent-11) instead of following the theme: light mode's dark teal is hard to see on it. */
+  color: #6fd6de;
   font-size: 1.35rem;
   pointer-events: none;
   animation: fade-in .2s ease;

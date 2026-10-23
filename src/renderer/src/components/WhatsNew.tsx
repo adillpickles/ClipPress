@@ -1,6 +1,6 @@
+import type { KeyboardEvent } from 'react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import i18n from 'i18next';
 import { FiCode, FiFileText } from 'react-icons/fi';
 
 import * as Dialog from './Dialog';
@@ -13,6 +13,7 @@ import Button, { DialogButton } from './Button';
 
 import styles from './WhatsNew.module.css';
 import { compareReleasesUrl, getReleaseUrl } from '../../../common/constants';
+import formatVersion from '../../../common/formatVersion';
 
 
 // Loaded only when there are notes to show: the Markdown parser isn't needed at every start.
@@ -23,12 +24,6 @@ const versions: { version: string, highlightsMd?: string | undefined }[] = versi
 
 const remote = window.require('@electron/remote');
 const { shell } = remote;
-
-// "0.1.0-beta.5" reads as "Beta 5"; anything else keeps its version number.
-function formatVersion(version: string) {
-  const beta = /^\d+\.\d+\.\d+-beta\.(\d+)$/.exec(version);
-  return beta != null ? i18n.t('Beta {{number}}', { number: beta[1] }) : `v${version}`;
-}
 
 export default function WhatsNew() {
   const { t } = useTranslation();
@@ -46,11 +41,17 @@ export default function WhatsNew() {
 
   const doneRef = useRef<HTMLButtonElement>(null);
 
-  // Start on "Got it" rather than outlining the first link.
+  // Focus the dialog, not a button, so it opens without a focus ring (Chromium ignores focusVisible: false);
+  // Enter still means "Got it".
   const handleOpenAutoFocus = useCallback((e: Event) => {
-    if (doneRef.current == null) return;
     e.preventDefault();
-    doneRef.current.focus({ focusVisible: false } as FocusOptions);
+    (e.currentTarget as HTMLElement | null)?.focus({ preventScroll: true });
+  }, []);
+
+  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Enter' || e.target !== e.currentTarget) return;
+    e.preventDefault();
+    doneRef.current?.click();
   }, []);
 
   if (matchingVersions.length === 0) return null;
@@ -59,7 +60,7 @@ export default function WhatsNew() {
     <Dialog.Root defaultOpen>
       <Dialog.Portal>
         <Dialog.Overlay />
-        <Dialog.Content style={{ width: 'min(36rem, 92vw)' }} aria-describedby={undefined} onOpenAutoFocus={handleOpenAutoFocus}>
+        <Dialog.Content style={{ width: 'min(36rem, 92vw)' }} aria-describedby={undefined} onOpenAutoFocus={handleOpenAutoFocus} onKeyDown={handleKeyDown}>
           <Dialog.Title>
             {t('What\'s new in ClipPress')}
           </Dialog.Title>

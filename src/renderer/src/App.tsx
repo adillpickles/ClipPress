@@ -13,7 +13,6 @@ import { useTranslation } from 'react-i18next';
 import { produce } from 'immer';
 import screenfull from 'screenfull';
 import type { IpcRendererEvent } from 'electron';
-import { IoMdMenu } from 'react-icons/io';
 import { FiDownload } from 'react-icons/fi';
 import fromPairs from 'lodash/fromPairs';
 import sum from 'lodash/sum';
@@ -90,6 +89,8 @@ import {
 } from './sizeLimitedNaming';
 import { resolveEffectiveSizeLimitedTransformSettings } from './sizeLimitedResolution';
 import { getSegColor } from './util/colors';
+import formatClockTime from './util/clockTime';
+import { parseDuration } from './util/duration';
 import type { FileFfprobeMeta } from './ffmpeg';
 import {
   getStreamFps,
@@ -285,6 +286,7 @@ import ClipVolumePopover from './components/ClipVolumePopover';
 import { ShelfUpNext } from './components/Shelf';
 import useShelf, { listShelfFolder } from './hooks/useShelf';
 import { buildShelfQueue, pickNextClip, rememberShelfExport } from './shelf';
+import formatSizeLimitedProgressText from './sizeLimitedProgressText';
 import { getProjectLookupPaths, getProjectSavePath, getProjectStoreEnv, getStoredProjectPath } from './projectStore';
 import type { ProjectFileLocation } from '../../common/types';
 import type { ClipVolumeChange } from './components/ClipVolumePopover';
@@ -423,6 +425,8 @@ function App() {
   const lastOpenedPathRef = useRef<string>();
   const loadGenerationRef = useRef(0);
   const [showRightBar, setShowRightBar] = useState(true);
+  // The clip being renamed in place in the Clips panel; here so "Rename clip…" in the menu can start it too.
+  const [renamingSegId, setRenamingSegId] = useState<string>();
   const [lastCommandsVisible, setLastCommandsVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [tunerVisible, setTunerVisible] = useState<TunerType>();
@@ -444,6 +448,9 @@ function App() {
   const [batchFiles, setBatchFiles] = useState<BatchFile[]>([]);
   // The shelf's folder: the open clip's, kept after it closes so the next clip is one click away.
   const [shelfFolder, setShelfFolder] = useState<string>();
+  // The clip the shelf counts on from: the open one, and after it closes still that one, so "Up next" on the
+  // welcome screen is the clip after it and never the one just closed.
+  const [shelfAnchorPath, setShelfAnchorPath] = useState<string>();
   const [selectedBatchFiles, setSelectedBatchFiles] = useState<string[]>([]);
 
   const allUserSettings = useUserSettingsRoot();
@@ -564,7 +571,7 @@ function App() {
     setShelfOrder,
   } = allUserSettings;
 
-  const shelf = useShelf({ folder: shelfFolder, order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac, currentPath: filePath });
+  const shelf = useShelf({ folder: shelfFolder, order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac, currentPath: filePath ?? shelfAnchorPath });
   const { refresh: refreshShelf, nextClip } = shelf;
 
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(!simpleMode);
@@ -808,7 +815,11 @@ function App() {
     [appendLastCommandsLog],
   );
 
-  const toggleSegmentsList = useCallback(() => setShowRightBar((v) => !v), []);
+  const toggleSegmentsList = useCallback(() => {
+    setShowRightBar((v) => !v);
+    // A rename left open when the panel closed would otherwise start again when it reopens.
+    setRenamingSegId(undefined);
+  }, []);
 
   const toggleSafeOutputFileName = useCallback(
     () => setSafeOutputFileName((v) => {
@@ -858,8 +869,9 @@ function App() {
   const mainVideoStream = useMemo(() => videoStreams[0], [videoStreams]);
   const mainAudioStream = useMemo(() => audioStreams[0], [audioStreams]);
 
+  // Without the extension: this names the exports, and "clip.mp4" looked like renaming the recording itself.
   useEffect(() => {
-    setCurrentClipName(filePath != null ? basename(filePath) : undefined);
+    setCurrentClipName(filePath != null ? parsePath(filePath).name : undefined);
   }, [filePath]);
 
   const exportBaseName = useMemo(() => {
@@ -955,14 +967,18 @@ function App() {
 
   const addTextOverlay = useCallback(() => {
     if (mainVideoStream == null) return;
+    const currentTime = getRelevantTime();
     const overlayClip = createDefaultTextOverlayClip({
-      currentTime: getRelevantTime(),
+      currentTime,
       fileDuration,
       overlayId: nanoid(),
+      existingClips: overlayClips,
     });
     setOverlayClips((existingClips) => [...existingClips, overlayClip]);
     setSelectedOverlayId(overlayClip.overlayId);
-  }, [fileDuration, getRelevantTime, mainVideoStream, setOverlayClips]);
+    // Moved past a text already under the playhead: go to the new one, so it shows in the preview ready to edit.
+    if (overlayClip.start !== currentTime) seekAbs(overlayClip.start);
+  }, [fileDuration, getRelevantTime, mainVideoStream, overlayClips, seekAbs, setOverlayClips]);
 
   useEffect(() => {
     if (selectedOverlayId == null) return;
@@ -1070,6 +1086,7 @@ function App() {
     setCutEnd,
     labelSegment,
     splitCurrentSegment,
+    splitSegmentAtPlayhead,
     focusSegmentAtCursor,
     selectSegmentsAtCursor,
     createNumSegments,
@@ -1387,6 +1404,25 @@ function App() {
   useEffect(() => {
     segmentAtCursorRef.current = firstSegmentAtCursor;
   }, [firstSegmentAtCursor]);
+
+  // Simple mode's Split button: the playhead has to be inside a clip, not on its edge, where splitting does nothing.
+  // Uses the same time and clip as splitCurrentSegment.
+  const canSplitAtPlayhead = useMemo(() => {
+    if (!simpleMode) return false;
+    const segment = cutSegments[findSegmentsAtCursor(relevantTime)[0] ?? -1];
+    return segment?.end != null && relevantTime > segment.start && relevantTime < segment.end;
+  }, [cutSegments, findSegmentsAtCursor, relevantTime, simpleMode]);
+
+  // Simple mode renames a clip in place in the Clips panel, as its pencil does, opening the panel if it's hidden.
+  const labelCurrentSegment = useCallback(() => {
+    const segment = cutSegments[currentSegIndexSafe];
+    if (simpleMode && !invertCutSegments && segment != null) {
+      setShowRightBar(true);
+      setRenamingSegId(segment.segId);
+      return;
+    }
+    labelSegment(currentSegIndexSafe);
+  }, [currentSegIndexSafe, cutSegments, invertCutSegments, labelSegment, simpleMode]);
 
   const seekRelPercent = useCallback(
     (val: number) => {
@@ -1926,6 +1962,7 @@ function App() {
     setFilePath(undefined);
     setProjectSession(undefined);
     setCurrentClipName(undefined);
+    setRenamingSegId(undefined);
     setExternalFilesMeta({});
     setCustomTagsByFile({});
     streamParamsHistory.reset(new Map());
@@ -2817,12 +2854,12 @@ function App() {
     return true;
   }, [batchListRemoveFile, clearSegments, resetState, setWorking, whenProjectSaved]);
 
-  const askForCleanupChoices = useCallback(async () => {
+  const askForCleanupChoices = useCallback(async ({ saveOnly = false }: { saveOnly?: boolean } = {}) => {
     const trashResponse = await openCleanupFilesDialog({
       ...cleanupChoices,
       // An unattended "move the original after each export" is the Export switch; show it as such.
       ...(cleanupChoices.cleanupAfterExport && !cleanupChoices.askForCleanup ? { trashSourceFile: trashSourceAfterExport } : {}),
-    });
+    }, { saveOnly });
     if (trashResponse != null) {
       setCleanupChoices(trashResponse); // Store for next time, if not canceled
       // ...and choosing it there (unattended) turns the switch on or off, so both always agree.
@@ -2830,6 +2867,9 @@ function App() {
     }
     return trashResponse;
   }, [cleanupChoices, openCleanupFilesDialog, setCleanupChoices, setTrashSourceAfterExport, trashSourceAfterExport]);
+
+  // Settings > After exporting > "Choose…" only picks what happens later, so its dialog saves instead of cleaning up.
+  const changeCleanupChoices = useCallback(() => askForCleanupChoices({ saveOnly: true }), [askForCleanupChoices]);
 
   const cleanupFilesDialog = useCallback(async () => {
     if (!isFileOpened || workingRef.current) return;
@@ -2888,52 +2928,21 @@ function App() {
     [formatSizeLimitedMbValue],
   );
 
-  const formatSizeLimitedStageText = useCallback(
-    (metadata: SizeLimitedProgressMetadata | undefined) => {
-      if (metadata == null) return undefined;
-
-      const parts: string[] = [];
-      if (metadata.attemptNumber > 1) {
-        parts.push(i18n.t('Attempt {{attempt}}/{{maxAttempts}}', { attempt: metadata.attemptNumber, maxAttempts: metadata.maxAttempts }));
-      }
-      if (metadata.phaseCount > 1) {
-        parts.push(
-          i18n.t('Pass {{phase}}/{{phaseCount}}', {
-            phase: metadata.phaseNumber,
-            phaseCount: metadata.phaseCount,
-          }),
-        );
-      }
-      return parts.length > 0 ? parts.join(' - ') : undefined;
-    },
-    [],
-  );
-
   const formatSizeLimitedJobStageText = useCallback(
-    ({
-      jobIndex,
-      totalJobs,
-      metadata,
-    }: {
+    ({ jobIndex, totalJobs, clipCount, metadata }: {
       jobIndex: number;
       totalJobs: number;
+      clipCount: number;
       metadata: SizeLimitedProgressMetadata | undefined;
-    }) => {
-      const stageText = formatSizeLimitedStageText(metadata);
-      if (totalJobs <= 1) return stageText;
-      if (stageText == null) {
-        return i18n.t('File {{current}}/{{total}}', {
-          current: jobIndex + 1,
-          total: totalJobs,
-        });
-      }
-      return i18n.t('File {{current}}/{{total}} - {{stage}}', {
-        current: jobIndex + 1,
-        total: totalJobs,
-        stage: stageText,
-      });
-    },
-    [formatSizeLimitedStageText],
+    }) => formatSizeLimitedProgressText({
+      jobIndex,
+      totalJobs,
+      clipCount,
+      metadata,
+      simpleMode,
+      t: (key, options) => i18n.t(key, options),
+    }),
+    [simpleMode],
   );
 
   const sanitizeSizeLimitedNamePart = useCallback(
@@ -3483,6 +3492,7 @@ function App() {
             detailText: formatSizeLimitedJobStageText({
               jobIndex,
               totalJobs,
+              clipCount: shouldProduceSeparateOutputs ? sizeLimitedSegmentsForExport.length : 0,
               metadata,
             }),
           });
@@ -3522,6 +3532,7 @@ function App() {
               detailText: formatSizeLimitedJobStageText({
                 jobIndex: index,
                 totalJobs,
+                clipCount: shouldProduceSeparateOutputs ? sizeLimitedSegmentsForExport.length : 0,
                 metadata: undefined,
               }),
             });
@@ -3579,6 +3590,7 @@ function App() {
             detailText: formatSizeLimitedJobStageText({
               jobIndex: mergedJobIndex,
               totalJobs,
+              clipCount: shouldProduceSeparateOutputs ? sizeLimitedSegmentsForExport.length : 0,
               metadata: undefined,
             }),
           });
@@ -3706,6 +3718,7 @@ function App() {
           showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
           openSizeLimitedFinishedDialog({
             filePath: revealPath,
+            filePaths: exportedPaths,
             warnings: [...warnings],
             notices: [...notices],
             highlight: [...highlights][0],
@@ -3917,6 +3930,7 @@ function App() {
           showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
           openCutFinishedDialog({
             filePath: revealPath,
+            filePaths: exportedPaths,
             warnings: [...warnings],
             notices: [...notices],
             highlight: [...highlights][0],
@@ -4142,6 +4156,7 @@ function App() {
         showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
         openCutFinishedDialog({
           filePath: revealPath,
+          filePaths: exportedPaths,
           warnings: [...warnings],
           notices: [...notices],
           highlight: [...highlights][0],
@@ -4934,6 +4949,7 @@ function App() {
         if (sidecarsToRetire.length > 0) sidecarRetirementRef.current = { sessionId: generation, paths: sidecarsToRetire };
         setRecentFiles((list) => addRecentFile(list, fp, Date.now(), isWindows || isMac));
         setShelfFolder(dirname(fp));
+        setShelfAnchorPath(fp);
         // This needs to be last, because it triggers <video> to load the video
         // If not, onVideoError might be triggered before setWorking() has been cleared.
         // https://github.com/mifi/lossless-cut/issues/515
@@ -5151,7 +5167,18 @@ function App() {
 
   const goToTimecode = useCallback(async () => {
     if (!filePath) return;
-    const timecode = await promptTimecode({
+    // Simple mode writes the time like the clock that opened this (0:12.40) and always reads it that way,
+    // whatever the advanced time format is set to. Its typing tips sit behind an "i" rather than on screen.
+    const showHours = (fileDuration ?? 0) >= 3600;
+    const timecode = await promptTimecode(simpleMode ? {
+      initialValue: formatClockTime(commandedTimeRef.current, { decimals: 2, showHours }),
+      title: i18n.t('Go to a time'),
+      help: i18n.t('Type a time like 1:30, or +5 or -5 to jump from where you are.'),
+      allowRelative: true,
+      inputPlaceholder: formatClockTime(0, { decimals: 2, showHours }),
+      parse: (value) => parseDuration(value),
+      invalidMessage: i18n.t("That isn't a time. Try something like 1:30."),
+    } : {
       initialValue: formatTimecode({ seconds: commandedTimeRef.current }),
       title: i18n.t('Seek to timecode'),
       description: i18n.t('Use + and - for relative seek'),
@@ -5165,6 +5192,8 @@ function App() {
     else seekAbs(timecode.duration);
   }, [
     filePath,
+    fileDuration,
+    simpleMode,
     promptTimecode,
     formatTimecode,
     commandedTimeRef,
@@ -5824,7 +5853,7 @@ function App() {
       removeCurrentCutpoint: () => removeSegment(currentSegIndexSafe),
       undo: () => editHistoryOrder.undo(editHistories),
       redo: () => editHistoryOrder.redo(editHistories),
-      labelCurrentSegment: () => labelSegment(currentSegIndexSafe),
+      labelCurrentSegment,
       addSegment,
       duplicateCurrentSegment,
       toggleSegmentSpeedControls,
@@ -6019,7 +6048,7 @@ function App() {
     batchFileJump,
     removeSegment,
     currentSegIndexSafe,
-    labelSegment,
+    labelCurrentSegment,
     onExportPress,
     userHtml5ifyCurrentFile,
     toggleKeyframeCut,
@@ -6445,7 +6474,7 @@ function App() {
     return () => element?.removeEventListener('drop', onDrop);
   }, [userOpenFiles]);
 
-  // Show where a dragged file will go while a clip is open (the welcome screen has its own drop card).
+  // Show where a dragged file will go: the overlay while a clip is open, the welcome screen's drop card otherwise.
   useEffect(() => {
     const element = appDropRef.current;
     if (element == null) return undefined;
@@ -6654,6 +6683,8 @@ function App() {
                   shelf={shelfProps}
                   nextClipName={simpleMode ? nextClip?.name : undefined}
                   onOpenNextClip={openNextClip}
+                  clipsPanelShown={showRightBar}
+                  onShowClipsPanel={toggleSegmentsList}
                   onExportPress={onExportPress}
                   segmentsToExport={segmentsToExport}
                 />
@@ -6685,7 +6716,8 @@ function App() {
                         onClick={openFilesDialog}
                         onOpenFolderClick={openDirDialog}
                         keyBindingByAction={keyBindingByAction}
-                        showSteps={recentFiles.length === 0}
+                        dragging={fileDragActive && !working}
+                        showSteps={recentFiles.length === 0 && nextClip == null}
                       >
                         {nextClip != null && (
                           <ShelfUpNext
@@ -6731,6 +6763,7 @@ function App() {
                             rotation={effectiveRotation}
                             crop={previewCrop}
                             editing={editingCropSegment != null && !bigWaveformEnabled}
+                            clipLabel={editingCropSegment != null ? (editingCropSegment.name || t('Clip {{number}}', { number: currentSegIndexSafe + 1 })) : undefined}
                             onChange={changeSegmentCrop}
                             onDone={() => setEditingCropSegmentId(undefined)}
                           >
@@ -6893,16 +6926,6 @@ function App() {
                           }
                           />
                           )}
-
-                          {!showRightBar && (
-                          <IoMdMenu
-                            title={t('Show clips')}
-                            size={30}
-                            role="button"
-                            className={styles['sidebarToggle']}
-                            onClick={toggleSegmentsList}
-                          />
-                          )}
                         </div>
                       </div>
 
@@ -6959,6 +6982,8 @@ function App() {
                           onAddTextOverlay={addTextOverlay}
                           onEditSegmentCrop={editCurrentSegmentCrop}
                           canEditSegmentCrop={!invertCutSegments && currentCutSeg?.end != null}
+                          onSplitClip={splitCurrentSegment}
+                          canSplitClip={canSplitAtPlayhead}
                           relevantTime={relevantTime}
                           fileDuration={fileDuration}
                           goToTimecode={goToTimecode}
@@ -7020,6 +7045,9 @@ function App() {
                           onEditSegmentCrop={editSegmentCrop}
                           onToggleSegmentSpeedControls={toggleSpeedControlsForSegment}
                           onRemoveSegmentSpeed={removeSegmentSpeed}
+                          onSplitSegment={splitSegmentAtPlayhead}
+                          onDuplicateSegment={duplicateSegment}
+                          onRemoveSegment={removeSegment}
                           hasVideo={hasVideo}
                         />
                       </div>
@@ -7082,6 +7110,8 @@ function App() {
                       getSegEstimatedSize={getSegEstimatedSize}
                       onEditSpeed={editSegmentSpeed}
                       onEditCrop={editSegmentCrop}
+                      renamingSegId={renamingSegId}
+                      setRenamingSegId={setRenamingSegId}
                     />
                   )}
                 </AnimatePresence>
@@ -7250,7 +7280,7 @@ function App() {
                         onKeyboardShortcutsDialogRequested={
                           toggleKeyboardShortcuts
                         }
-                        askForCleanupChoices={askForCleanupChoices}
+                        askForCleanupChoices={changeCleanupChoices}
                         onProjectFileLocationChange={changeProjectFileLocation}
                         showAdvancedSettings={showAdvancedSettings}
                         setShowAdvancedSettings={setShowAdvancedSettings}
@@ -7357,7 +7387,7 @@ function App() {
               )}
 
               <WhatsNew />
-              <UpdateNotice visible={!settingsVisible} />
+              <UpdateNotice visible={!settingsVisible} overClipsPanel={showRightBar && isFileOpened && filePath != null} />
 
               <ErrorDialog
                 error={genericError}

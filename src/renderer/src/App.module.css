@@ -177,13 +177,6 @@ video.video::-webkit-media-text-track-display {
   border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
-.sidebarToggle {
-  margin-right: .75rem;
-  color: #fff;
-  opacity: .8;
-  cursor: pointer;
-}
-
 .settingsDialogHeader {
   flex-shrink: 0;
   display: flex;

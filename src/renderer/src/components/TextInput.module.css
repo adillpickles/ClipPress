@@ -20,8 +20,8 @@
 .input:focus,
 .input:focus-visible {
   outline: none;
-  border-color: var(--accent-9);
-  box-shadow: 0 0 0 1px var(--accent-9);
+  border-color: var(--cp-focus-color);
+  box-shadow: 0 0 0 1px var(--cp-focus-color);
 }
 
 .input:disabled {

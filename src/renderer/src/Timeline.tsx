@@ -19,7 +19,8 @@ import type { FormatTimecode, InverseCutSegment, OverviewWaveform, OverlayClip, 
 import Button from './components/Button';
 import type { UseSegments } from './hooks/useSegments';
 import { keyMap } from './hooks/useTimelineScroll';
-import { minTextOverlayDuration } from './textOverlays';
+import { getTextLaneRows, minTextOverlayDuration } from './textOverlays';
+import type { TextLaneRow } from './textOverlays';
 import SegmentRetimeBar from './components/SegmentRetimeBar';
 import LaneDeleteButton from './components/LaneDeleteButton';
 import TimelineRuler, { createHoverStore, HoverMarker } from './components/TimelineRuler';
@@ -153,6 +154,25 @@ const retimeLaneHeight = 38;
 const thumbnailsHeight = 63;
 /** Extra lane space (fraction of the visible width) kept past the end while retiming. */
 const retimeTrailingSpace = 0.15;
+/**
+ * Texts that share their time split the text lane into (at most two, see getTextLaneRows) rows of 11px; the
+ * lane keeps its height (so the preview keeps its size).
+ */
+const stackedTextInset = 2;
+const stackedTextGap = 1;
+
+function getStackedTextGeometry({ row, rows }: TextLaneRow) {
+  // The lane's top border takes a pixel.
+  const height = (textLaneHeight - 1 - (2 * stackedTextInset) - ((rows - 1) * stackedTextGap)) / rows;
+  return { top: stackedTextInset + (row * (height + stackedTextGap)), height };
+}
+
+/**
+ * The speed band's inset from its clip's edges. It clears TimelineSeg's 10px trim handles, so pressing a selected
+ * clip's edge always trims. Every band has it, selected clip or not: pressing a band selects its clip, and the
+ * band mustn't then move under the cursor.
+ */
+const retimeOverlayInset = 12;
 
 function Timeline({
   fileDurationNonZero,
@@ -208,6 +228,9 @@ function Timeline({
   onEditSegmentCrop,
   onToggleSegmentSpeedControls,
   onRemoveSegmentSpeed,
+  onSplitSegment,
+  onDuplicateSegment,
+  onRemoveSegment,
   hasVideo,
 } : {
   fileDurationNonZero: number,
@@ -268,6 +291,10 @@ function Timeline({
   onEditSegmentCrop: (index: number) => void,
   onToggleSegmentSpeedControls: (segmentId: string) => void,
   onRemoveSegmentSpeed: (segmentId: string) => void,
+  /** Simple mode's clip-block menu: split a clip at the playhead, duplicate it, remove it. */
+  onSplitSegment?: ((index: number) => void) | undefined,
+  onDuplicateSegment?: ((segment: StateSegment) => void) | undefined,
+  onRemoveSegment?: ((index: number, wholeSegment?: true) => void) | undefined,
   /** Media with video can have text: its lane is then always shown, so adding text doesn't resize the preview. */
   hasVideo: boolean,
 }) {
@@ -297,6 +324,14 @@ function Timeline({
   const [retimeDrag, setRetimeDrag] = useState<{ segId: string, speed: number, scaleDuration: number }>();
   // A clip edge being dragged follows the cursor exactly, rather than springing after it.
   const [segmentDragging, setSegmentDragging] = useState(false);
+
+  // The text being dragged, and the text lane's rows when the drag began: the other texts keep theirs meanwhile.
+  const [textDrag, setTextDrag] = useState<{ overlayId: string, rows: ReadonlyMap<string, TextLaneRow> }>();
+  const textLaneRows = useMemo(() => getTextLaneRows(overlayClips, textDrag), [overlayClips, textDrag]);
+  const textLaneRowsRef = useRef(textLaneRows);
+  useEffect(() => {
+    textLaneRowsRef.current = textLaneRows;
+  }, [textLaneRows]);
 
   // Only clips at another speed shape the map: keyed on them, so a plain trim or edit keeps the same map (and the
   // same toLanePercent), and the other clips, the filmstrip and the ruler don't re-render.
@@ -607,6 +642,7 @@ function Timeline({
       if (!scrubbing) {
         scrubbing = true;
         onScrubbingChange(true);
+        setTextDrag({ overlayId: overlayClip.overlayId, rows: textLaneRowsRef.current });
       }
       const mouseDragTimelinePos = getMouseTimelinePos(e2);
       seekAbs(mouseDragTimelinePos);
@@ -648,7 +684,10 @@ function Timeline({
       overlayInteractionRef.current = undefined;
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('mousemove', onMouseMove);
-      if (scrubbing) onScrubbingChange(false);
+      if (scrubbing) {
+        onScrubbingChange(false);
+        setTextDrag(undefined);
+      }
     }
 
     window.addEventListener('mouseup', onMouseUp, { once: true });
@@ -717,12 +756,13 @@ function Timeline({
     onSelectOverlay(overlayClip.overlayId);
     const menu = Menu.buildFromTemplate([
       {
-        label: t('Delete text clip'),
+        // In simple mode a "clip" is a part of the recording; the lane just says "Text".
+        label: simpleMode ? t('Delete text') : t('Delete text clip'),
         click: () => onDeleteOverlayClip(overlayClip.overlayId),
       },
     ]);
     menu.popup({ window: remote.getCurrentWindow() });
-  }, [onDeleteOverlayClip, onSelectOverlay, t]);
+  }, [onDeleteOverlayClip, onSelectOverlay, simpleMode, t]);
 
   const onMouseMove = useCallback<MouseEventHandler<HTMLDivElement>>((e) => {
     if (!mouseDownRef.current) { // no button pressed
@@ -737,7 +777,7 @@ function Timeline({
     { label: simpleMode ? t('Start a clip at the playhead') : t('Start current segment at current time'), click: setCutStart },
     { label: simpleMode ? t('End the clip at the playhead') : t('End current segment at current time'), click: setCutEnd },
     { type: 'separator' as const },
-    { label: t('Seek to timecode'), click: goToTimecode },
+    { label: simpleMode ? t('Go to a time…') : t('Seek to timecode'), click: goToTimecode },
   ], [goToTimecode, setCutEnd, setCutStart, simpleMode, t]);
 
   useContextMenu(timelineScrollerRef, contextMenuTemplate);
@@ -859,17 +899,21 @@ function Timeline({
                   const left = calculateTimelinePercent(overlayClip.start);
                   const width = `${Math.max(toLanePercent(overlayClip.end) - toLanePercent(overlayClip.start), 0.5)}%`;
                   const selected = overlayClip.overlayId === selectedOverlayId;
+                  const laneRow = textLaneRows.get(overlayClip.overlayId);
+                  // Sharing its time with other texts: one row of the lane rather than all of it.
+                  const stacked = laneRow != null && laneRow.rows > 1 ? getStackedTextGeometry(laneRow) : undefined;
+                  const deleteLabel = simpleMode ? t('Delete text') : t('Delete text clip');
 
                   return (
                     <div
                       key={overlayClip.overlayId}
                       role="button"
                       tabIndex={-1}
-                      className={[styles['textClip'], ...(selected ? [styles['textClipSelected']] : [])].join(' ')}
+                      className={[styles['textClip'], ...(selected ? [styles['textClipSelected']] : []), ...(stacked != null ? [styles['textClipStacked']] : [])].join(' ')}
                       title={overlayClip.text}
                       onMouseDown={onOverlayMouseDown(overlayClip, 'move')}
                       onContextMenuCapture={onOverlayContextMenu(overlayClip)}
-                      style={{ left, width }}
+                      style={stacked != null ? { left, width, top: stacked.top, bottom: 'auto', height: stacked.height } : { left, width }}
                     >
                       <button
                         type="button"
@@ -878,9 +922,10 @@ function Timeline({
                         className={[styles['textClipHandle'], styles['textClipHandleStart']].join(' ')}
                         onMouseDown={onOverlayMouseDown(overlayClip, 'start')}
                       />
-                      <div className={styles['textClipLabel']} style={{ marginRight: selected ? 28 : 8 }}>{overlayClip.text || t('Text')}</div>
+                      <div className={styles['textClipLabel']} style={{ marginRight: selected ? (stacked != null ? 18 : 28) : 8 }}>{overlayClip.text || t('Text')}</div>
                       {selected && (
-                        <LaneDeleteButton title={t('Delete text clip')} onDelete={() => onDeleteOverlayClip(overlayClip.overlayId)} />
+                        // A smaller button fits a stacked row.
+                        <LaneDeleteButton title={deleteLabel} onDelete={() => onDeleteOverlayClip(overlayClip.overlayId)} style={stacked != null ? { right: 3, width: stacked.height, height: stacked.height } : undefined} />
                       )}
                       <button
                         type="button"
@@ -968,6 +1013,10 @@ function Timeline({
                     filmstrip={filmstrip}
                     fileEnd={fileDurationNonZero}
                     onTrimHandleMouseDown={simpleMode ? onTrimHandleMouseDown : undefined}
+                    getCurrentTime={getCurrentTime}
+                    onSplit={simpleMode ? onSplitSegment : undefined}
+                    onDuplicate={simpleMode ? onDuplicateSegment : undefined}
+                    onRemove={simpleMode ? onRemoveSegment : undefined}
                   />
                 );
               })}
@@ -980,8 +1029,9 @@ function Timeline({
                   <SegmentRetimeBar
                     key={seg.segId}
                     overlay
-                    left={`${left}%`}
-                    width={`calc(${toLanePercent(seg.end) - left}% - 4px)`}
+                    left={`calc(${left}% + ${retimeOverlayInset}px)`}
+                    // max(): a clip narrower than the insets gets no band rather than a negative width.
+                    width={`max(0px, calc(${toLanePercent(seg.end) - left}% - ${retimeOverlayInset * 2}px))`}
                     speed={speed}
                     committedSpeed={getSegmentSpeed(seg)}
                     outputDuration={getSegmentOutputDuration({ ...seg, speed })}

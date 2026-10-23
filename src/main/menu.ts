@@ -4,6 +4,7 @@ import electron from 'electron';
 import { t } from 'i18next';
 
 import { homepageUrl, licensesUrl, thanksUrl, usageUrl, faqUrl, troubleshootingUrl, featureRequestUrl } from '../common/constants.js';
+import formatVersion from '../common/formatVersion.js';
 import { logFilePath } from './logger.js';
 import { getConfigPath } from './configStore.js';
 
@@ -533,7 +534,7 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
       label: esc(t('New version!')),
       submenu: [
         {
-          label: esc(t('View update {{version}}', { version: newVersion })),
+          label: esc(t('View update {{version}}', { version: formatVersion(newVersion) })),
           click: onCheckForUpdates,
         },
       ],

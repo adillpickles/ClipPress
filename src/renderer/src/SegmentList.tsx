@@ -17,10 +17,10 @@ import prettyBytes from 'pretty-bytes';
 
 import useContextMenu from './hooks/useContextMenu';
 import useUserSettings from './hooks/useUserSettings';
-import { saveColor, primaryTextColor, darkModeTransition } from './colors';
+import { saveColor, primaryTextColor, darkModeTransition, getSegBadgeStyle } from './colors';
 import { useSegColors } from './contexts';
 import { getSegmentsTotalDuration, getSegmentTags } from './segments';
-import formatClockTime from './util/clockTime';
+import formatClockTime, { formatClipLength } from './util/clockTime';
 import TagEditor from './components/TagEditor';
 import type { ContextMenuTemplate, DefiniteSegmentBase, FormatTimecode, GetFrameCount, InverseCutSegment, SegmentBase, SegmentColorIndex, SegmentTags, StateSegment } from './types';
 import type { UseSegments } from './hooks/useSegments';
@@ -28,6 +28,7 @@ import * as Dialog from './components/Dialog';
 import { DialogButton } from './components/Button';
 import getSwal from './swal';
 import { getSegmentOutputDuration, getSegmentSpeed } from './segmentSpeed';
+import { hasSegmentCrop } from './segmentCrop';
 import styles from './SegmentList.module.css';
 
 
@@ -37,19 +38,6 @@ const buttonBaseStyle: CSSProperties = {
 
 const disabledButtonStyle = { color: 'var(--gray-10)', backgroundColor: 'var(--gray-6)' };
 const neutralButtonColor = 'var(--gray-9)';
-
-function formatSimpleDuration(seconds: number) {
-  if (seconds < 60) return `${seconds.toFixed(1)} s`;
-
-  const roundedSeconds = Math.round(seconds);
-  const hours = Math.floor(roundedSeconds / 3600);
-  const minutes = Math.floor((roundedSeconds % 3600) / 60);
-  const secs = roundedSeconds % 60;
-
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  if (secs === 0) return `${minutes} min`;
-  return `${minutes}m ${secs}s`;
-}
 
 /** Edits a clip's name in place: Enter or leaving the field saves, Escape cancels. */
 function ClipNameInput({ name, placeholder, maxLength, onDone }: {
@@ -219,7 +207,8 @@ const Segment = memo(({
 
         { type: 'separator' },
 
-        { label: t('Remove clip'), click: () => onRemovePress(index) },
+        // The whole clip, as the title bar's Remove clip does; without `true` it only takes off the end and leaves a marker.
+        { label: t('Remove clip'), click: () => onRemovePress(index, true) },
       ];
     }
 
@@ -285,6 +274,8 @@ const Segment = memo(({
     if (!simpleMode || invertCutSegments || !('segColorIndex' in seg)) return undefined;
     return getSegColor(seg);
   }, [getSegColor, invertCutSegments, seg, simpleMode]);
+  // Same tone and readable digits as the clip's number on the timeline (getSegBadgeStyle).
+  const badgeStyle = useMemo(() => (simpleSegColor != null ? getSegBadgeStyle(simpleSegColor) : undefined), [simpleSegColor]);
 
   function renderNumber() {
     if (simpleMode) {
@@ -382,16 +373,19 @@ const Segment = memo(({
   if (simpleMode && !invertCutSegments) {
     const name = 'name' in seg ? seg.name : '';
     const speed = getSegmentSpeed(seg);
+    // Crop applies to one clip only, so say which ones have it (as speed does).
+    const cropped = hasSegmentCrop(seg);
     const details = [
       ...(name ? [timeStr] : []),
-      ...(duration != null ? [formatSimpleDuration(duration)] : []),
+      ...(duration != null ? [formatClipLength(duration)] : []),
       ...(speed !== 1 ? [`${Math.round(speed * 100)}%`] : []),
+      ...(cropped ? [t('Cropped')] : []),
     ];
     const sizeStr = estimatedSize != null ? prettyBytes(estimatedSize, { space: true, maximumFractionDigits: 1, minimumFractionDigits: 0 }) : undefined;
     const tooltip = [
       ...(name ? [name] : []),
       timeStr,
-      ...(duration != null ? [`${t('Length')}: ${formatSimpleDuration(duration)}${speed !== 1 ? ` (${Math.round(speed * 100)}%)` : ''}`] : []),
+      ...(duration != null ? [`${t('Length')}: ${formatClipLength(duration)}${speed !== 1 ? ` (${Math.round(speed * 100)}%)` : ''}`] : []),
       ...(sizeStr != null ? [`${t('Size at source quality')}: ~${sizeStr}`] : []),
     ].join('\n');
     const ticked = selected !== false;
@@ -417,7 +411,7 @@ const Segment = memo(({
           title={tooltip}
           onClick={handleDraggableClick}
         >
-          <span className={styles['clipBadge']} style={{ background: simpleSegColor?.saturationl(Math.min(simpleSegColor.saturationl(), 72)).lightness(darkMode ? 44 : 60).string() }}>{index + 1}</span>
+          <span className={styles['clipBadge']} style={badgeStyle}>{index + 1}</span>
           <span className={styles['clipText']}>
             {renaming ? (
               <ClipNameInput
@@ -496,13 +490,11 @@ const Segment = memo(({
       {duration != null && (
         <>
           <div style={{ fontSize: simpleMode ? '.82em' : '.75em', marginTop: simpleMode ? '.32rem' : 0, color: simpleMode ? 'var(--gray-10)' : undefined, lineHeight: 1.35 }}>
-            {simpleMode ? formatSimpleDuration(duration) : `${t('Duration')} ${formatTimecode({ seconds: duration, shorten: true })}`}
+            {simpleMode ? formatClipLength(duration) : `${t('Duration')} ${formatTimecode({ seconds: duration, shorten: true })}`}
             {getSegmentSpeed(seg) !== 1 && <span> · {Math.round(getSegmentSpeed(seg) * 100)}%</span>}
-            {estimatedSize != null && (
-              <span style={{ fontSize: simpleMode ? '1em' : '.9em' }}>
-                {simpleMode ? ' · ~' : ', ~'}
-                {prettyBytes(estimatedSize, { space: simpleMode, maximumFractionDigits: 1, minimumFractionDigits: 0 })}
-              </span>
+            {/* Advanced mode shows the size on the ms/frames line below, so only once. */}
+            {simpleMode && estimatedSize != null && (
+              <span> · ~{prettyBytes(estimatedSize, { space: true, maximumFractionDigits: 1, minimumFractionDigits: 0 })}</span>
             )}
           </div>
           {!simpleMode && (
@@ -571,6 +563,7 @@ function SegmentList({
   onEditSegmentTags,
   getSegEstimatedSize,
   onEditSpeed, onEditCrop, maxLabelLength,
+  renamingSegId, setRenamingSegId,
 }: {
   width: number,
   fileDuration: number | undefined,
@@ -616,11 +609,12 @@ function SegmentList({
   onEditSpeed: (segmentIndex: number) => void,
   onEditCrop: (segmentIndex: number) => void,
   maxLabelLength: number,
+  /** The clip whose name is being edited in place. Held by the app, so "Rename clip…" in the menu can start it too. */
+  renamingSegId: string | undefined,
+  setRenamingSegId: Dispatch<SetStateAction<string | undefined>>,
 }) {
   const { t } = useTranslation();
   const { getSegColor, nextSegColorIndex } = useSegColors();
-
-  const [renamingSegId, setRenamingSegId] = useState<string>();
 
   // Looked up by id, since a clip's position can change while its name is being edited.
   const onFinishRename = useCallback((segId: string, newName: string | undefined) => {
@@ -629,7 +623,7 @@ function SegmentList({
     const index = cutSegments.findIndex((seg) => seg.segId === segId);
     const existing = cutSegments[index];
     if (existing != null && newName !== (existing.name ?? '')) updateSegAtIndex(index, { name: newName });
-  }, [cutSegments, updateSegAtIndex]);
+  }, [cutSegments, setRenamingSegId, updateSegAtIndex]);
   const [draggingId, setDraggingId] = useState<UniqueIdentifier | undefined>();
 
   const { invertCutSegments, simpleMode, darkMode, springAnimation } = useUserSettings();
@@ -647,6 +641,12 @@ function SegmentList({
   const segmentsOrInverse: (InverseCutSegment | StateSegment)[] = invertCutSegments ? inverseCutSegments : cutSegments;
   // With no clip ticked, the export falls back to all of them (useSegments).
   const noneTicked = !invertCutSegments && cutSegments.some((seg) => seg.end != null) && cutSegments.every((seg) => seg.end == null || !seg.selected);
+  // Counted from the clips themselves: `selectedSegments` leaves out the whole-file clip a new file starts with,
+  // which would read "0 of 1" while that clip is ticked. Markers aren't clips, so they don't count either.
+  const { clipCount, tickedCount } = useMemo(() => {
+    const clips = cutSegments.filter((seg) => seg.end != null);
+    return { clipCount: clips.length, tickedCount: clips.filter((seg) => seg.selected).length };
+  }, [cutSegments]);
 
   const sortableList = useMemo(() => segmentsOrInverse.map((seg) => ({ id: seg.segId, seg })), [segmentsOrInverse]);
 
@@ -655,7 +655,7 @@ function SegmentList({
   // The clip went away (removed, file closed), so don't bring it back mid-rename if an undo restores it.
   useEffect(() => {
     if (renamingSegId != null && renamingIndex === -1) setRenamingSegId(undefined);
-  }, [renamingIndex, renamingSegId]);
+  }, [renamingIndex, renamingSegId, setRenamingSegId]);
 
   // Keep the row being renamed rendered when it scrolls out of view, so what was typed isn't lost.
   const rangeExtractor = useCallback((range: Range) => {
@@ -680,10 +680,10 @@ function SegmentList({
     if (noneTicked) {
       return t('None ticked, so all clips are exported');
     }
-    if (!invertCutSegments && selectedSegments.length < segmentsOrInverse.length) {
-      return t('{{selected}} of {{count}} in the export', { selected: selectedSegments.length, count: segmentsOrInverse.length });
+    if (!invertCutSegments && tickedCount < clipCount) {
+      return t('{{selected}} of {{count}} in the export', { selected: tickedCount, count: clipCount });
     }
-    return t('{{count}} clips', { count: segmentsOrInverse.length });
+    return t('{{count}} clips', { count: invertCutSegments ? segmentsOrInverse.length : clipCount });
   }
 
   const onReorderSegs = useCallback(async (index: number) => {
@@ -769,7 +769,7 @@ function SegmentList({
 
         <div className={styles['footer']}>
           <div className={styles['footerLabel']}>{simpleMode ? t('Export length') : t('Segments total')}</div>
-          <div className={styles['footerValue']}>{simpleMode ? formatClockTime(segmentsTotal, { decimals: 1 }) : formatTimecode({ seconds: segmentsTotal })}</div>
+          <div className={styles['footerValue']}>{simpleMode ? formatClipLength(segmentsTotal) : formatTimecode({ seconds: segmentsTotal })}</div>
         </div>
       </>
     );

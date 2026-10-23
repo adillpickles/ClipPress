@@ -20,7 +20,7 @@ import {
   FaImages,
   FaKey,
 } from 'react-icons/fa';
-import { FiCrop, FiScissors, FiType } from 'react-icons/fi';
+import { FiCrop, FiScissors, FiType, FiZoomIn, FiZoomOut } from 'react-icons/fi';
 import { GiSoundWaves } from 'react-icons/gi';
 // import useTraceUpdate from 'use-trace-update';
 import invariant from 'tiny-invariant';
@@ -44,6 +44,7 @@ import { withBlur, mirrorTransform } from './util';
 import getSwal from './swal';
 import { getSegColor as getSegColorRaw } from './util/colors';
 import { isExactDurationMatch } from './util/duration';
+import { zoomMax } from './util/constants';
 import useUserSettings from './hooks/useUserSettings';
 import { askForPlaybackRate, checkAppPath } from './dialogs';
 import type {
@@ -380,6 +381,8 @@ function BottomBar({
   onAddTextOverlay,
   onEditSegmentCrop,
   canEditSegmentCrop,
+  onSplitClip,
+  canSplitClip,
   relevantTime,
   fileDuration,
   goToTimecode,
@@ -434,6 +437,9 @@ function BottomBar({
   onAddTextOverlay: () => void;
   onEditSegmentCrop: () => void;
   canEditSegmentCrop: boolean;
+  /** Simple mode's Split button: splits the clip under the playhead in two. */
+  onSplitClip: () => void;
+  canSplitClip: boolean;
   relevantTime: number;
   fileDuration: number | undefined;
   goToTimecode: () => void;
@@ -589,6 +595,10 @@ function BottomBar({
     ? (simpleMode ? formatClockTime(fileDuration + startTimeOffset, { decimals: 2, showHours }) : formatTimecode({ seconds: fileDuration + startTimeOffset }))
     : undefined;
 
+  // Simple mode's timeline zoom stops where about a second fills the timeline; closer than that is
+  // only reachable with Ctrl+wheel, and the buttons shouldn't run on into an empty-looking timeline.
+  const maxTimelineZoom = fileDuration != null && fileDuration > 0 ? Math.min(zoomMax, Math.max(2, fileDuration)) : zoomMax;
+
   const PlayPauseIcon = playing ? FaPause : FaPlay;
   const playButton = (
     <button
@@ -616,10 +626,44 @@ function BottomBar({
             {durationLabel != null && <span className={styles['timeDuration']}>{` / ${durationLabel}`}</span>}
           </button>
 
+          {/* Advanced mode has its zoom select in the row below; simple mode gets these so zooming isn't Ctrl+wheel only. */}
+          {simpleMode && isFileOpened && (
+            <div className={styles['timelineZoom']} role="group" aria-label={t('Timeline zoom')}>
+              <button
+                type="button"
+                className={styles['zoomButton']}
+                onClick={() => setZoom((z) => z / 2)}
+                disabled={zoom <= 1}
+                title={shortcutTitle(t('Zoom out on the timeline'), 'timelineZoomOut')}
+                aria-label={t('Zoom out on the timeline')}
+              >
+                <FiZoomOut aria-hidden />
+              </button>
+              <button
+                type="button"
+                className={styles['zoomButton']}
+                onClick={() => setZoom((z) => Math.min(z * 2, maxTimelineZoom))}
+                disabled={zoom >= maxTimelineZoom}
+                title={shortcutTitle(t('Zoom in on the timeline'), 'timelineZoomIn')}
+                aria-label={t('Zoom in on the timeline')}
+              >
+                <FiZoomIn aria-hidden />
+              </button>
+              <button
+                type="button"
+                className={[styles['zoomButton'], styles['zoomFit']].join(' ')}
+                onClick={() => setZoom(() => 1)}
+                disabled={zoom <= 1}
+                title={t('Fit the whole recording on the timeline')}
+              >
+                {t('Fit')}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className={styles['transportCenter']}>
-          {/* Simple mode keeps the transport to Play; clips start and end with I / O, the timeline's right-click menu or the clip handles. */}
+          {/* Simple mode keeps the middle to Play; Split sits with the other clip tools on the right. */}
           {simpleMode && playButton}
 
           {!simpleMode && (
@@ -767,6 +811,17 @@ function BottomBar({
         </div>
 
         <div className={styles['transportRight']}>
+          {simpleMode && isFileOpened && (
+            <Button
+              size="sm"
+              onClick={onSplitClip}
+              disabled={!canSplitClip}
+              title={canSplitClip ? shortcutTitle(t('Split the clip at the playhead'), 'splitCurrentSegment') : t('Move the playhead onto the clip you want to split')}
+            >
+              <FiScissors aria-hidden />
+              {t('Split')}
+            </Button>
+          )}
           {hasVideo && (
             <Button size="sm" onClick={onEditSegmentCrop} disabled={!canEditSegmentCrop} title={shortcutTitle(t('Zoom in on part of the picture for this clip'), 'editCurrentSegmentCrop')}>
               <FiCrop aria-hidden />

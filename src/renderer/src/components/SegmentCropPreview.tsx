@@ -20,13 +20,15 @@ const corners: CropCorner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-r
  * text box editor: an accent frame with a label tab, round corner handles, and one compact
  * toolbar over the video, so the picture keeps its size when editing starts.
  */
-export default function SegmentCropPreview({ children, videoWidth, videoHeight, rotation, crop, editing, onChange, onDone }: {
+export default function SegmentCropPreview({ children, videoWidth, videoHeight, rotation, crop, editing, clipLabel, onChange, onDone }: {
   children: ReactNode,
   videoWidth: number,
   videoHeight: number,
   rotation: number | undefined,
   crop: SegmentCrop,
   editing: boolean,
+  /** The clip being cropped, named on the frame's tab: a crop is per clip, not for the whole export. */
+  clipLabel?: string | undefined,
   onChange: (nextCrop: SegmentCrop) => void,
   onDone: () => void,
 }) {
@@ -240,6 +242,7 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
             <div className={styles['grid']} />
             <div className={styles['tab']} onPointerDown={(event) => begin(event)}>
               {t('Crop')}
+              {clipLabel != null && clipLabel !== '' && <span className={styles['tabClip']} title={clipLabel}>{clipLabel}</span>}
               <span className={styles['tabDetail']}>{pixels.width}×{pixels.height}</span>
             </div>
             {corners.map((corner) => (

@@ -9,7 +9,7 @@ import classes from './Checkbox.module.css';
 export default function Checkbox({ label, disabled, style, ...props }: CheckboxProps & { label?: string | undefined }) {
   const id = useId();
   return (
-    <div style={{ display: 'flex', alignItems: 'center', ...style }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', ...style }}>
       {/* eslint-disable-next-line react/jsx-props-no-spreading */}
       <Root className={classes['CheckboxRoot']} disabled={disabled} {...props} id={id}>
         <Indicator className={classes['CheckboxIndicator']}>

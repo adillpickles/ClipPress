@@ -1,5 +1,5 @@
 import type { FormEventHandler } from 'react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { FormatTimecode, ParseTimecode } from '../types';
@@ -13,6 +13,7 @@ import * as Dialog from '../components/Dialog';
 import TextInput from '../components/TextInput';
 import { ButtonRow } from '../components/Dialog';
 import { DialogButton } from '../components/Button';
+import HelpTip from '../components/HelpTip';
 import { dangerColor } from '../colors';
 
 
@@ -64,17 +65,24 @@ export default ({ detectedFps, timecodeFormat, showGenericDialog }: {
     return `${timeStr} (${frameCount ?? '0'})`;
   }, [detectedFps, timecodeFormat, getFrameCount]);
 
-  const promptTimecode = useCallback(async ({ initialValue, title, description, inputPlaceholder, allowRelative = false }: {
+  const promptTimecode = useCallback(async ({ initialValue, title, description, help, inputPlaceholder, allowRelative = false, parse, invalidMessage }: {
     initialValue?: string | undefined,
     title: string,
     description?: string | undefined,
+    /** Tips kept behind an "i" next to the title instead of a line of text that is always shown. */
+    help?: string | undefined,
     inputPlaceholder: string,
     allowRelative?: boolean,
+    /** Reads what was typed. Defaults to the user's timecode format; simple mode passes its own clock format. */
+    parse?: ((value: string) => number | undefined) | undefined,
+    invalidMessage?: string | undefined,
   }) => new Promise<{ duration: number, relDirection: number | undefined } | undefined>((resolve) => {
     function TimecodeDialog() {
       const { t } = useTranslation();
       const [value, setValue] = useState(initialValue ?? '');
       const [error, setError] = useState<string | undefined>();
+      const descriptionId = useId();
+      const inputRef = useRef<HTMLInputElement>(null);
 
       const { onOpenChange } = useGenericDialogContext();
 
@@ -89,9 +97,9 @@ export default ({ detectedFps, timecodeFormat, showGenericDialog }: {
 
         const withoutPrefix = allowRelative ? value.replace(/^[+-]/, '') : value;
 
-        const duration = parseTimecode(withoutPrefix);
+        const duration = (parse ?? parseTimecode)(withoutPrefix);
 
-        setError(duration == null ? t('Invalid timecode format') : undefined);
+        setError(duration == null ? (invalidMessage ?? t('Invalid timecode format')) : undefined);
 
         if (duration != null) {
           resolve({ duration, relDirection });
@@ -99,23 +107,41 @@ export default ({ detectedFps, timecodeFormat, showGenericDialog }: {
         }
       }, [onOpenChange, t, value]);
 
-      return (
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        <Dialog.Content aria-describedby={undefined} style={{ width: '80vw' }}>
-          <Dialog.Title>{title}</Dialog.Title>
+      // Start in the field with the time selected, so typing replaces it, even when the "i" comes first.
+      const handleOpenAutoFocus = useCallback((e: Event) => {
+        if (inputRef.current == null) return;
+        e.preventDefault();
+        inputRef.current.focus();
+        inputRef.current.select();
+      }, []);
 
-          {description && <Dialog.Description>{description}</Dialog.Description>}
+      return (
+        // One short field, so a narrow dialog like the app's other small prompts.
+        <Dialog.Content aria-describedby={description ? descriptionId : undefined} style={{ width: 'min(24rem, 92vw)' }} onOpenAutoFocus={handleOpenAutoFocus}>
+          {help ? (
+            // The "i" sits beside the title, not inside it, so it stays out of the dialog's name.
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.35rem', margin: '0 2.5rem .35rem 0' }}>
+              <Dialog.Title style={{ margin: 0 }}>{title}</Dialog.Title>
+              <HelpTip label={t('How to type a time')}>{help}</HelpTip>
+            </div>
+          ) : (
+            <Dialog.Title>{title}</Dialog.Title>
+          )}
+
+          {description && <Dialog.Description id={descriptionId}>{description}</Dialog.Description>}
 
           <form onSubmit={handleSubmit}>
             <TextInput
+              ref={inputRef}
               value={value}
               placeholder={inputPlaceholder}
+              aria-label={title}
               onChange={(e) => setValue(e.target.value)}
-              style={{ margin: '1em 0', width: '100%', boxSizing: 'border-box' }}
+              style={{ margin: '.5rem 0 0', width: '100%', boxSizing: 'border-box' }}
             />
 
             {error != null && (
-              <div style={{ color: dangerColor, fontWeight: 'bold' }}>
+              <div role="alert" style={{ color: dangerColor, fontWeight: 'bold', marginTop: '.5rem' }}>
                 {error}
               </div>
             )}

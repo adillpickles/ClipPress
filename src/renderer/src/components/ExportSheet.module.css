@@ -76,3 +76,9 @@
   gap: .5rem;
   flex-shrink: 0;
 }
+
+/* Focus rests on the sheet itself when it opens with nothing to preselect, or after a click on its background;
+   its controls show their own ring. */
+.box:focus {
+  outline: none;
+}

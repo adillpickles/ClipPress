@@ -16,7 +16,9 @@ export interface SizeLimitedAutoNameItem {
 function sanitizeAutoNamePart(value: string, safeOutputFileName: boolean) {
   const trimmed = value.trim();
   if (trimmed.length === 0) return '';
-  return safeOutputFileName ? trimmed.replaceAll(/[^\p{L}\p{N} .-_]/gu, '_') : trimmed;
+  // Keeps letters, numbers, spaces, '.', '_' and '-' (last, so it's a literal and not a range),
+  // which keeps a recording's " - " and drops everything Windows forbids (<>:"/\|?*).
+  return safeOutputFileName ? trimmed.replaceAll(/[^\p{L}\p{N} ._-]/gu, '_') : trimmed;
 }
 
 function getModeLabel({

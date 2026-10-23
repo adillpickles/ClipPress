@@ -23,6 +23,9 @@
 .error { color: var(--red-11); font-size: .85rem; margin-top: .6rem; }
 .retimeBar {
   --retime-color: var(--accent-9);
+  /* The speed label's colour. The -9 fills are too pale for text on the light theme's bands, so it uses the
+     -11 text shade there; the dark theme keeps the fill colour (below). */
+  --retime-text: var(--cp-accent-text);
   position: absolute;
   top: 3px;
   bottom: 3px;
@@ -39,7 +42,9 @@
   user-select: none;
   container-type: inline-size;
 }
-.retimeBar[data-tone="slow"] { --retime-color: var(--amber-9); }
+.retimeBar[data-tone="slow"] { --retime-color: var(--amber-9); --retime-text: var(--cp-warning); }
+/* After the tone rule (same specificity), so it also covers slow bars. */
+:global(.dark-theme) .retimeBar { --retime-text: var(--retime-color); }
 .retimeBar[data-active="true"] { border-color: var(--retime-color); }
 .retimeHeader {
   position: relative;
@@ -67,7 +72,6 @@
   min-height: 0;
 }
 .retimeSpeed {
-  color: inherit;
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -76,7 +80,7 @@
   align-items: center;
   gap: 1px;
   padding: 0 3px;
-  color: var(--retime-color);
+  color: var(--retime-text);
   font-size: 11px;
   font-weight: 700;
   border-radius: 3px;
@@ -111,18 +115,21 @@
 
 /* Simple mode: a slim band along the bottom of the clip block instead of a lane of its own, so turning speed
    controls on doesn't change the timeline's height (and with it the preview's size). */
+/* Its inset from the clip's edges is set by the timeline, clear of the trim handles; its corners no longer line up
+   with the clip's, so all of them are round. */
 .retimeBar[data-overlay="true"] {
   top: auto;
   bottom: 7px;
   height: 15px;
-  margin: 0 2px;
   z-index: 1;
   flex-direction: row;
   border: 0;
   border-top: 1px solid color-mix(in srgb, var(--retime-color) 60%, transparent);
-  border-radius: 0 0 5px 5px;
-  background: color-mix(in srgb, var(--gray-1) 72%, transparent);
+  border-radius: 5px;
+  /* A bit more opaque in the light theme, so the label stays readable over bright frames. */
+  background: color-mix(in srgb, var(--gray-1) 85%, transparent);
 }
+:global(.dark-theme) .retimeBar[data-overlay="true"] { background: color-mix(in srgb, var(--gray-1) 72%, transparent); }
 .retimeBar[data-overlay="true"] .retimeHeader {
   position: absolute;
   inset: 0;

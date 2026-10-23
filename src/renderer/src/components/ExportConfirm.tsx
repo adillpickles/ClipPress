@@ -1,7 +1,7 @@
 import type {
   CSSProperties,
-  ChangeEvent,
   Dispatch,
+  KeyboardEvent,
   ReactNode,
   SetStateAction,
 } from 'react';
@@ -27,6 +27,7 @@ import Select from './Select';
 import Switch from './Switch';
 import Button from './Button';
 import SegmentedControl from './SegmentedControl';
+import HelpTip from './HelpTip';
 
 import { primaryTextColor, warningColor } from '../colors';
 import { withBlur } from '../util';
@@ -73,6 +74,7 @@ import { getSizeLimitedEncoderCapabilities } from '../sizeLimitedExport';
 import { resolveSizeLimitedStrategy } from '../sizeLimitedStrategy';
 import { gpuVendorLabels, pickGpuEncoder } from '../gpuEncoders';
 import formatClockTime from '../util/clockTime';
+import parseSizeLimitMb from '../util/sizeLimitMb';
 import {
   getSizeLimitedSimpleFpsOptions,
   getSizeLimitedSimpleResolutionOptions,
@@ -115,6 +117,15 @@ const h264CpuPresetOptions = [
   'veryslow',
 ] as const satisfies readonly SizeLimitAdvancedH264CpuPreset[];
 
+// Icon buttons in the advanced table; Tab reaches them and Enter or Space presses them, like any button.
+function onIconButtonKeyDown(onClick: () => void) {
+  return (e: KeyboardEvent<SVGElement>) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    onClick();
+  };
+}
+
 const HelpIcon = ({
   onClick,
   style,
@@ -124,7 +135,11 @@ const HelpIcon = ({
 }) => (
   <IoIosHelpCircle
     role="button"
+    tabIndex={0}
+    aria-label={i18n.t('Help')}
+    className={styles['iconButton']}
     onClick={withBlur(onClick)}
+    onKeyDown={onIconButtonKeyDown(onClick)}
     style={{
       cursor: 'pointer',
       color: primaryTextColor,
@@ -277,15 +292,10 @@ function AutoNamePreview({
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '.75rem', marginBottom: '.4rem' }}>
         <div className={styles['summaryLabel']}>{title}</div>
-        {simpleMode ? (
-          <Button size="sm" variant="ghost" onClick={onCustomize}>
-            {t('Use custom filename')}
-          </Button>
-        ) : (
-          <Button size="sm" onClick={onCustomize}>
-            {t('Edit filename')}
-          </Button>
-        )}
+        {/* Outlined like the "Change" buttons below it, so it reads as something to click and not a second label. */}
+        <Button size="sm" onClick={onCustomize}>
+          {simpleMode ? t('Use custom filename') : t('Edit filename')}
+        </Button>
       </div>
       <div>
         {/*
@@ -300,6 +310,69 @@ function AutoNamePreview({
       </div>
     </div>
   );
+}
+
+/**
+ * The size limit box. It keeps its own text, so it can be emptied or hold a half-typed "0." while the last good
+ * limit stays in use. A controlled number field snapped the old value back instead: backspacing "20" to type 8
+ * gave 28. Leaving the box (or Enter) with nothing usable in it puts the current limit back.
+ */
+function SizeLimitMbInput({ value, onChange, id, style }: {
+  value: number,
+  onChange: (mb: number) => void,
+  id?: string | undefined,
+  style?: CSSProperties | undefined,
+}) {
+  const [draft, setDraft] = useState(() => String(value));
+  const [shownValue, setShownValue] = useState(value);
+
+  // Follow a change made elsewhere (a quick pick, the other mode's box), but leave a draft such as "8." alone
+  // while it already means that number.
+  if (value !== shownValue) {
+    setShownValue(value);
+    if (parseSizeLimitMb(draft) !== value) setDraft(String(value));
+  }
+
+  const isValid = parseSizeLimitMb(draft) != null;
+  const restoreIfInvalid = () => {
+    if (!isValid) setDraft(String(value));
+  };
+
+  return (
+    <TextInput
+      id={id}
+      inputMode="decimal"
+      autoComplete="off"
+      value={draft}
+      aria-invalid={!isValid}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        const parsed = parseSizeLimitMb(e.target.value);
+        if (parsed != null) onChange(parsed);
+      }}
+      onBlur={restoreIfInvalid}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') restoreIfInvalid();
+      }}
+      style={style}
+    />
+  );
+}
+
+/**
+ * Arrow keys move between the cards of a radio group and choose the one they land on, as radio buttons do.
+ * Only the chosen card is a Tab stop, so Tab moves past the whole group in one step.
+ */
+function onRadioGroupKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+  const step = ({ ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 } as Record<string, number>)[e.key];
+  if (step == null) return;
+  const radios = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]:not(:disabled)')];
+  const index = radios.indexOf(document.activeElement as HTMLButtonElement);
+  if (index === -1) return;
+  e.preventDefault();
+  const next = radios[(index + step + radios.length) % radios.length];
+  next?.focus();
+  next?.click();
 }
 
 function ExportConfirm({
@@ -465,6 +538,16 @@ function ExportConfirm({
   >();
   const [showSeparateNameEditor, setShowSeparateNameEditor] = useState(false);
   const [showMergedNameEditor, setShowMergedNameEditor] = useState(false);
+  // "Use custom filename" opens the name field for this visit to the sheet and this quality only. The sheet stays
+  // mounted and also closes through Escape and Export, so a kept flag made a later open jump into the name field
+  // (where the E shortcut then typed over the name), and Fit a file size showed the field Original quality opened.
+  const nameEditorScope = visible ? exportEncodeMode : undefined;
+  const [shownNameEditorScope, setShownNameEditorScope] = useState(nameEditorScope);
+  if (nameEditorScope !== shownNameEditorScope) {
+    setShownNameEditorScope(nameEditorScope);
+    setShowSeparateNameEditor(false);
+    setShowMergedNameEditor(false);
+  }
   const showAdvanced = showAdvancedOverride ?? !simpleMode;
   const togglePreserveChapters = useCallback(
     () => setPreserveChapters((val) => !val),
@@ -486,10 +569,9 @@ function ExportConfirm({
     () => setPreserveMetadataOnMerge((v) => !v),
     [setPreserveMetadataOnMerge],
   );
+  const turnOffSmartCut = useCallback(() => setEnableSmartCut(false), [setEnableSmartCut]);
   const handleClosePress = useCallback(() => {
     setShowAdvancedOverride(undefined);
-    setShowSeparateNameEditor(false);
-    setShowMergedNameEditor(false);
     onClosePress();
   }, [onClosePress]);
   const toggleAdvanced = useCallback(() => {
@@ -723,7 +805,11 @@ function ExportConfirm({
       specific,
       totalNum:
         generic.filter((n) => n.warning).length
-        + Object.values(specific).filter((n) => n != null && n.warning).length,
+        // Of the specific ones, simple mode only shows the tracks and smart cut warnings (the rest sit in the
+        // advanced table), so the footer doesn't count warnings that can't be found.
+        + (simpleMode
+          ? [specific.problematicStreams, isSizeLimited ? undefined : specific.smartCut].filter((n) => n?.warning).length
+          : Object.values(specific).filter((n) => n != null && n.warning).length),
     };
   }, [
     segmentsToExport,
@@ -746,6 +832,7 @@ function ExportConfirm({
     needSmartCut,
     outputPlaybackRate,
     preserveMovData,
+    simpleMode,
     t,
     willMerge,
   ]);
@@ -810,9 +897,7 @@ function ExportConfirm({
   const onOutFmtHelpPress = useCallback(() => {
     showHelpText({
       text: isSizeLimited
-        ? t(
-          'Size-limited export is forced to MP4 in MVP so the result is immediately shareable.',
-        )
+        ? t('Fit a file size always makes an MP4, so it plays almost everywhere.')
         : i18n.t(
           "Defaults to same format as input file. You can losslessly change the file format (container) of the file with this option. Not all formats support all codecs. Matroska/MP4/MOV support the most common codecs. Sometimes it's even impossible to export to the same output format as input.",
         ),
@@ -931,15 +1016,6 @@ function ExportConfirm({
       }
     },
     [setAutoDeleteMergedSegments, setAutoMerge, setSegmentsToChaptersOnly],
-  );
-
-  const handleSizeLimitMbChange = useCallback(
-    (e: ChangeEvent<HTMLInputElement>) => {
-      const nextValue = Number(e.target.value);
-      if (Number.isNaN(nextValue) || nextValue <= 0) return;
-      setSizeLimitMb(nextValue);
-    },
-    [setSizeLimitMb],
   );
 
   const handleSizeLimitedResolutionChange = useCallback(
@@ -1244,6 +1320,19 @@ function ExportConfirm({
     }
   }, [sizeLimitAdvancedEncoder]);
 
+  // The Speed list in Custom settings. The raw values run in opposite directions (AV1 CPU 13 is the fastest,
+  // GPU p1 is the fastest), so every list here goes fastest first and the two ends say what they mean.
+  const customSpeedOptions = useMemo(() => {
+    const values = sizeLimitAdvancedEncoder === 'av1_cpu'
+      ? [...av1CpuPresetOptions].reverse().map(String)
+      : advancedPresetOptions.map(({ value }) => value);
+    return values.map((value, index) => {
+      if (index === 0) return { value, label: `${value} · ${t('fastest')}` };
+      if (index === values.length - 1) return { value, label: `${value} · ${t('best picture, slowest')}` };
+      return { value, label: value };
+    });
+  }, [advancedPresetOptions, sizeLimitAdvancedEncoder, t]);
+
   const onKeyframeCutHelpPress = useCallback(() => {
     showHelpText({
       text: i18n.t(
@@ -1264,9 +1353,7 @@ function ExportConfirm({
   const onTracksHelpPress = useCallback(() => {
     showHelpText({
       text: isSizeLimited
-        ? t(
-          'Size-limited export keeps only the main video plus one audio track in MVP to keep the output shareable and predictable.',
-        )
+        ? t('Fit a file size keeps the main video and one audio track, so the file is easy to share.')
         : i18n.t(
           'Not all formats support all track types, and ClipPress is unable to properly cut some track types, so you may have to sacrifice some tracks by disabling them in order to get correct result.',
         ),
@@ -1426,92 +1513,135 @@ function ExportConfirm({
 
   const handlePresetChoice = useCallback((value: SizeLimitPreset | 'custom') => {
     if (value === 'custom') {
+      // Custom keeps its own Resolution and Frame rate. Start them from what's on screen, so opening Custom
+      // doesn't quietly switch them (e.g. from Auto to Keep source, which looks worse under a tight limit).
+      setSizeLimitAdvancedResolution(selectedSizeLimitedResolution);
+      setSizeLimitAdvancedFps(selectedSizeLimitedFps);
       setSizeLimitControlMode('advanced');
       return;
     }
     setSizeLimitControlMode('simple');
     setSizeLimitPreset(value);
-  }, [setSizeLimitControlMode, setSizeLimitPreset]);
-  const shouldRenderAdvancedTable = !simpleMode || showAdvanced;
+  }, [selectedSizeLimitedFps, selectedSizeLimitedResolution, setSizeLimitAdvancedFps, setSizeLimitAdvancedResolution, setSizeLimitControlMode, setSizeLimitPreset]);
+  // Simple mode has its own short "More options" panel; the full table is for advanced mode.
+  const shouldRenderAdvancedTable = !simpleMode;
+
+  // Original quality in simple mode names files automatically too, shown read-only like Fit a file size; only
+  // "Use custom filename" opens the editor. A live field there saved its preview as a fixed name on a mere click
+  // or Tab, freezing one clip's times and label into every later export.
+  const generateLosslessAutoCutFileNames = useCallback(
+    () => generateCutFileNames(defaultCutFileTemplate),
+    [generateCutFileNames],
+  );
+  const generateLosslessAutoCutMergedFileNames = useCallback(
+    () => generateCutMergedFileNames(defaultCutMergedFileTemplate),
+    [generateCutMergedFileNames],
+  );
+  const isAutoNameTemplate = (template: string | undefined, defaultTemplate: string) => template == null || template === defaultTemplate;
+
+  let separateAutoFileNames: (() => Promise<GeneratedOutFileNames>) | undefined;
+  if (isSizeLimited) {
+    if (sizeLimitSeparateNamingMode === 'auto') separateAutoFileNames = generateAutoCutFileNames;
+  } else if (simpleMode && isAutoNameTemplate(cutFileTemplate, defaultCutFileTemplate)) {
+    separateAutoFileNames = generateLosslessAutoCutFileNames;
+  }
+
+  let mergedAutoFileNames: (() => Promise<GeneratedOutFileNames>) | undefined;
+  if (isSizeLimited) {
+    if (sizeLimitMergedNamingMode === 'auto') mergedAutoFileNames = generateAutoCutMergedFileNames;
+  } else if (simpleMode && isAutoNameTemplate(cutMergedFileTemplate, defaultCutMergedFileTemplate)) {
+    mergedAutoFileNames = generateLosslessAutoCutMergedFileNames;
+  }
+
+  // Simple mode always has a way back to automatic names, Original quality included.
+  let resetSeparateName: (() => void) | undefined;
+  let resetMergedName: (() => void) | undefined;
+  if (isSizeLimited) {
+    resetSeparateName = () => {
+      setSizeLimitSeparateNamingMode('auto');
+      setShowSeparateNameEditor(false);
+    };
+    resetMergedName = () => {
+      setSizeLimitMergedNamingMode('auto');
+      setShowMergedNameEditor(false);
+    };
+  } else if (simpleMode) {
+    resetSeparateName = () => {
+      setCutFileTemplate(undefined);
+      setShowSeparateNameEditor(false);
+    };
+    resetMergedName = () => {
+      setCutMergedFileTemplate(undefined);
+      setShowMergedNameEditor(false);
+    };
+  }
+  const autoNamingLabel = isSizeLimited || simpleMode ? t('Use auto naming') : undefined;
+  // Each quality has its own name template. A fresh editor per quality starts from the right one: a reused one
+  // kept the other quality's text (and could write it into this quality's template).
+  const nameEditorKey = isSizeLimited ? 'size-limited' : 'lossless';
 
   const separateFileName = (
-    isSizeLimited
-      && sizeLimitSeparateNamingMode === 'auto'
-      && generateAutoCutFileNames != null
-      && !showSeparateNameEditor ? (
-        <AutoNamePreview
-          title={willMerge && canEditSegTemplate ? t('Clip file names') : t('File name')}
-          generateFileNames={generateAutoCutFileNames}
-          currentSegIndexSafe={currentSegIndexSafe}
-          onCustomize={openSeparateNameEditor}
-        />
-      ) : (
-        <FileNameTemplateEditor
-          mode="separate"
-          template={
-            isSizeLimited
-              ? (sizeLimitCutFileTemplate ?? defaultSizeLimitedCutFileTemplate)
-              : (cutFileTemplate ?? defaultCutFileTemplate)
-          }
-          setTemplate={isSizeLimited ? setSizeLimitCutFileTemplate : setCutFileTemplate}
-          defaultTemplate={
-            isSizeLimited
-              ? defaultSizeLimitedCutFileTemplate
-              : defaultCutFileTemplate
-          }
-          generateFileNames={generateCutFileNames}
-          currentSegIndexSafe={currentSegIndexSafe}
-          onReset={
-            isSizeLimited
-              ? () => {
-                setSizeLimitSeparateNamingMode('auto');
-                setShowSeparateNameEditor(false);
-              }
-              : undefined
-          }
-          resetLabel={isSizeLimited ? t('Use auto naming') : undefined}
-        />
-      )
+    separateAutoFileNames != null && !showSeparateNameEditor ? (
+      <AutoNamePreview
+        title={willMerge && canEditSegTemplate ? t('Clip file names') : t('File name')}
+        generateFileNames={separateAutoFileNames}
+        currentSegIndexSafe={currentSegIndexSafe}
+        onCustomize={openSeparateNameEditor}
+      />
+    ) : (
+      <FileNameTemplateEditor
+        key={nameEditorKey}
+        mode="separate"
+        template={
+          isSizeLimited
+            ? (sizeLimitCutFileTemplate ?? defaultSizeLimitedCutFileTemplate)
+            : (cutFileTemplate ?? defaultCutFileTemplate)
+        }
+        setTemplate={isSizeLimited ? setSizeLimitCutFileTemplate : setCutFileTemplate}
+        defaultTemplate={
+          isSizeLimited
+            ? defaultSizeLimitedCutFileTemplate
+            : defaultCutFileTemplate
+        }
+        generateFileNames={generateCutFileNames}
+        currentSegIndexSafe={currentSegIndexSafe}
+        onReset={resetSeparateName}
+        resetLabel={autoNamingLabel}
+        autoFocus={showSeparateNameEditor}
+      />
+    )
   );
 
   const mergedFileName = willMerge ? (
-    isSizeLimited
-      && sizeLimitMergedNamingMode === 'auto'
-      && generateAutoCutMergedFileNames != null
-      && !showMergedNameEditor ? (
-        <AutoNamePreview
-          title={t('Merged file name')}
-          generateFileNames={generateAutoCutMergedFileNames}
-          onCustomize={openMergedNameEditor}
-        />
-      ) : (
-        <FileNameTemplateEditor
-          mode="merge-segments"
-          template={
-            isSizeLimited
-              ? (sizeLimitCutMergedFileTemplate
-                ?? defaultSizeLimitedCutMergedFileTemplate)
-              : (cutMergedFileTemplate
-                ?? defaultCutMergedFileTemplate)
-          }
-          setTemplate={isSizeLimited ? setSizeLimitCutMergedFileTemplate : setCutMergedFileTemplate}
-          defaultTemplate={
-            isSizeLimited
-              ? defaultSizeLimitedCutMergedFileTemplate
-              : defaultCutMergedFileTemplate
-          }
-          generateFileNames={generateCutMergedFileNames}
-          onReset={
-            isSizeLimited
-              ? () => {
-                setSizeLimitMergedNamingMode('auto');
-                setShowMergedNameEditor(false);
-              }
-              : undefined
-          }
-          resetLabel={isSizeLimited ? t('Use auto naming') : undefined}
-        />
-      )
+    mergedAutoFileNames != null && !showMergedNameEditor ? (
+      <AutoNamePreview
+        title={t('Merged file name')}
+        generateFileNames={mergedAutoFileNames}
+        onCustomize={openMergedNameEditor}
+      />
+    ) : (
+      <FileNameTemplateEditor
+        key={nameEditorKey}
+        mode="merge-segments"
+        template={
+          isSizeLimited
+            ? (sizeLimitCutMergedFileTemplate
+              ?? defaultSizeLimitedCutMergedFileTemplate)
+            : (cutMergedFileTemplate
+              ?? defaultCutMergedFileTemplate)
+        }
+        setTemplate={isSizeLimited ? setSizeLimitCutMergedFileTemplate : setCutMergedFileTemplate}
+        defaultTemplate={
+          isSizeLimited
+            ? defaultSizeLimitedCutMergedFileTemplate
+            : defaultCutMergedFileTemplate
+        }
+        generateFileNames={generateCutMergedFileNames}
+        onReset={resetMergedName}
+        resetLabel={autoNamingLabel}
+        autoFocus={showMergedNameEditor}
+      />
+    )
   ) : null;
 
   return (
@@ -1549,11 +1679,14 @@ function ExportConfirm({
             <section className={styles['section']}>
               <div className={styles['sectionHeading']}>{t('Quality')}</div>
 
-              <div className={styles['qualityChoices']} role="radiogroup" aria-label={t('Quality')}>
+              {/* The chosen card takes focus when the sheet opens (data-autofocus, see ExportSheet). */}
+              <div className={styles['qualityChoices']} role="radiogroup" aria-label={t('Quality')} onKeyDown={onRadioGroupKeyDown}>
                 <button
                   type="button"
                   role="radio"
                   aria-checked={!isSizeLimited}
+                  tabIndex={!isSizeLimited ? 0 : -1}
+                  data-autofocus={!isSizeLimited || undefined}
                   className={[styles['choiceCard'], ...(!isSizeLimited ? [styles['choiceCardActive']] : [])].join(' ')}
                   onClick={() => handleExportEncodeModeChange('lossless')}
                 >
@@ -1564,6 +1697,8 @@ function ExportConfirm({
                   type="button"
                   role="radio"
                   aria-checked={isSizeLimited}
+                  tabIndex={isSizeLimited ? 0 : -1}
+                  data-autofocus={isSizeLimited || undefined}
                   className={[styles['choiceCard'], ...(isSizeLimited ? [styles['choiceCardActive']] : [])].join(' ')}
                   onClick={() => handleExportEncodeModeChange('size_limited')}
                 >
@@ -1572,19 +1707,26 @@ function ExportConfirm({
                 </button>
               </div>
 
+              {/* Smart cut can only be switched on in advanced mode, but it still changes an Original quality
+                  export here, so say so and offer a way to turn it off. */}
+              {!isSizeLimited && notices.specific['smartCut'] != null && (
+                <div className={[styles['notice'], styles['noticeWarning'], styles['noticeWithAction']].join(' ')}>
+                  {renderNoticeIcon({ warning: true }, { fontSize: '1em' })}
+                  <span style={{ flexGrow: 1 }}>{t('Smart cut is on (set in advanced mode). It\'s experimental and doesn\'t work with every file.')}</span>
+                  <Button size="sm" onClick={turnOffSmartCut}>{t('Turn off')}</Button>
+                </div>
+              )}
+
               {isSizeLimited && (
                 <div className={styles['fields']}>
                   <div className={styles['field']}>
                     <label className={styles['fieldName']} htmlFor="size-limit-mb">{t('Size limit')}</label>
                     <div className={[styles['fieldControl'], styles['sizeControl']].join(' ')}>
                       <div className={styles['sizeInput']}>
-                        <TextInput
+                        <SizeLimitMbInput
                           id="size-limit-mb"
-                          type="number"
-                          min={1}
-                          step={0.1}
                           value={sizeLimitMb}
-                          onChange={handleSizeLimitMbChange}
+                          onChange={setSizeLimitMb}
                           style={{ width: '5.5em', flexGrow: 0, textAlign: 'right' }}
                         />
                         <span className={styles['unit']}>{t('MB')}</span>
@@ -1604,7 +1746,7 @@ function ExportConfirm({
                     </div>
                   </div>
 
-                  <div className={styles['presetCards']} role="radiogroup" aria-label={t('Preset')}>
+                  <div className={styles['presetCards']} role="radiogroup" aria-label={t('Preset')} onKeyDown={onRadioGroupKeyDown}>
                     {([
                       { value: 'max_quality', title: t('Max Quality'), body: t('Best picture, slower') },
                       { value: 'quality', title: t('Quality'), body: t('The everyday choice') },
@@ -1617,6 +1759,8 @@ function ExportConfirm({
                           type="button"
                           role="radio"
                           aria-checked={checked}
+                          // With Custom on, no card is chosen; the last preset stays the group's Tab stop.
+                          tabIndex={sizeLimitPreset === value ? 0 : -1}
                           className={[styles['presetCard'], ...(checked ? [styles['presetCardActive']] : [])].join(' ')}
                           onClick={() => handlePresetChoice(value)}
                         >
@@ -1637,9 +1781,6 @@ function ExportConfirm({
                       {isCustomSizeLimit ? <FiChevronDown aria-hidden /> : <FiChevronRight aria-hidden />}
                       {t('Custom settings')}
                     </button>
-                    {isCustomSizeLimit && (
-                      <button type="button" className={styles['inlineLink']} onClick={() => handlePresetChoice(sizeLimitPreset)}>{t('Use a preset')}</button>
-                    )}
                   </div>
 
                   {isCustomSizeLimit && (
@@ -1667,22 +1808,28 @@ function ExportConfirm({
                         </div>
                       </div>
                       <div className={styles['field']}>
-                        <label className={styles['fieldName']} htmlFor="size-limit-encoder-preset">{t('Speed')}</label>
+                        <div className={styles['fieldNameRow']}>
+                          <label className={styles['fieldName']} htmlFor="size-limit-encoder-preset">{t('Speed')}</label>
+                          <HelpTip>{t('Faster finishes sooner. Slower takes longer but looks better at the same file size.')}</HelpTip>
+                        </div>
                         <div className={styles['fieldControl']}>
                           <Select
                             id="size-limit-encoder-preset"
                             value={advancedPresetValue}
                             onChange={withBlur((e) => handleAdvancedPresetChange(e.target.value))}
                           >
-                            {advancedPresetOptions.map(({ value, label }) => (
+                            {customSpeedOptions.map(({ value, label }) => (
                               <option key={value} value={value}>{label}</option>
                             ))}
                           </Select>
                         </div>
                       </div>
                       <div className={styles['field']}>
-                        <div className={styles['fieldName']}>{t('2-pass')}</div>
-                        <div className={styles['fieldControl']}>
+                        <div className={styles['fieldNameRow']}>
+                          <div className={styles['fieldName']}>{t('2-pass')}</div>
+                          <HelpTip>{t('Goes over the clip twice to land closer to the size limit and look a little better, but takes longer. NVIDIA graphics cards do both in a single go; AMD and Intel cards always go over it once.')}</HelpTip>
+                        </div>
+                        <div className={[styles['fieldControl'], styles['switchControl']].join(' ')}>
                           <Switch checked={sizeLimitAdvancedTwoPass} onCheckedChange={setSizeLimitAdvancedTwoPass} aria-label={t('2-pass')} />
                         </div>
                       </div>
@@ -1796,6 +1943,39 @@ function ExportConfirm({
               {showAdvanced ? <FiChevronDown aria-hidden /> : <FiChevronRight aria-hidden />}
               <span>{t('More options')}</span>
             </button>
+
+            {/* Just the two choices an everyday export can need. The full table (keyframes, timestamps,
+                metadata) stays in advanced mode, where those words mean something. */}
+            {showAdvanced && (
+              <div className={styles['fields']}>
+                <div className={styles['field']}>
+                  <div className={styles['fieldNameRow']}>
+                    <div className={styles['fieldName']}>{t('Format')}</div>
+                    <HelpTip>
+                      {isSizeLimited
+                        ? t('Fit a file size always makes an MP4, so it plays almost everywhere.')
+                        : t('The same as the recording unless you pick another. Not every format can hold every track.')}
+                    </HelpTip>
+                  </div>
+                  <div className={styles['fieldControl']}>
+                    {isSizeLimited ? <div className={styles['fieldValue']}>MP4</div> : renderOutFmt({})}
+                  </div>
+                </div>
+
+                <div className={styles['field']}>
+                  <div className={styles['fieldNameRow']}>
+                    <label className={styles['fieldName']} htmlFor="export-overwrite">{t('Overwrite')}</label>
+                    <HelpTip>{t('Replace a file in the save folder that already has the same name. When this is off, that file is kept and the new one isn\'t saved.')}</HelpTip>
+                  </div>
+                  <div className={[styles['fieldControl'], styles['switchControl']].join(' ')}>
+                    <Switch id="export-overwrite" checked={enableOverwriteOutput} onCheckedChange={setEnableOverwriteOutput} />
+                    {enableOverwriteOutput && (
+                      <div className={styles['fieldWarning']}>{t('Files with the same name will be replaced.')}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <>
@@ -1936,12 +2116,9 @@ function ExportConfirm({
                               width: '100%',
                             }}
                           >
-                            <TextInput
-                              type="number"
-                              min={1}
-                              step={0.1}
+                            <SizeLimitMbInput
                               value={sizeLimitMb}
-                              onChange={handleSizeLimitMbChange}
+                              onChange={setSizeLimitMb}
                               style={{
                                 width: '6em',
                                 flexGrow: 0,
@@ -2755,8 +2932,12 @@ function ExportConfirm({
                         <IoIosSettings
                           size={24}
                           role="button"
+                          tabIndex={0}
+                          aria-label={t('Settings')}
+                          className={styles['iconButton']}
                           onClick={toggleSettings}
-                          style={{ marginLeft: 5 }}
+                          onKeyDown={onIconButtonKeyDown(toggleSettings)}
+                          style={{ marginLeft: 5, cursor: 'pointer' }}
                         />
                       </td>
                       <td />

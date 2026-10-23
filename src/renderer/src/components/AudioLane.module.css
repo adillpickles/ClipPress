@@ -38,6 +38,12 @@
 .clipExcluded,
 .clipExcluded:hover {
   background: transparent;
+  /* A theme line colour: a white outline vanishes on the light lane. */
+  box-shadow: inset 0 0 0 1px var(--cp-line-strong);
+}
+
+:global(.dark-theme) .clipExcluded,
+:global(.dark-theme) .clipExcluded:hover {
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 14%);
 }
 

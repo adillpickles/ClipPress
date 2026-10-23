@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import formatClockTime from './clockTime';
+import formatClockTime, { formatClipLength } from './clockTime';
 
 describe('formatClockTime', () => {
   test('short times have unpadded minutes', () => {
@@ -22,5 +22,13 @@ describe('formatClockTime', () => {
 
   test('negative times keep their sign', () => {
     expect(formatClockTime(-5)).toBe('-0:05');
+  });
+
+  test('lengths always read m:ss.s, so a row and the total agree', () => {
+    expect(formatClipLength(12.65)).toBe('0:12.6');
+    expect(formatClipLength(25)).toBe('0:25.0');
+    expect(formatClipLength(89.6)).toBe('1:29.6');
+    expect(formatClipLength(90)).toBe('1:30.0');
+    expect(formatClipLength(3723.25)).toBe('1:02:03.2');
   });
 });

@@ -18,6 +18,8 @@ function AppChrome() {
   // The menu buttons, fetched in one call now and whenever the main process rebuilds the menu (language or
   // interface mode changed). Reading remote menu items here instead costs a synchronous call per property.
   const [menuItems, setMenuItems] = useState<{ index: number, key: string, label: string }[]>([]);
+  // The menu that is popped up, so its button stays pressed like a native menu bar's while the pointer is in the menu.
+  const [openIndex, setOpenIndex] = useState<number>();
 
   useEffect(() => {
     if (!shouldUseCustomChrome) return undefined;
@@ -63,10 +65,13 @@ function AppChrome() {
     const submenu = Menu.getApplicationMenu()?.items[index]?.submenu;
     if (button == null || submenu == null) return;
     const rect = button.getBoundingClientRect();
+    setOpenIndex(index);
     submenu.popup({
       window: remote.getCurrentWindow(),
       x: Math.round(rect.left),
       y: Math.round(rect.bottom + 6),
+      // Only clear our own menu: another one may have opened before this close arrived.
+      callback: () => setOpenIndex((current) => (current === index ? undefined : current)),
     });
   }, []);
 
@@ -87,7 +92,7 @@ function AppChrome() {
   if (!shouldUseCustomChrome) return null;
 
   return (
-    <div className={[styles['wrapper'], ...(!isFocused ? [styles['wrapperInactive']] : [])].join(' ')}>
+    <div className={[styles['wrapper'], ...(!isFocused ? [styles['wrapperInactive']] : []), ...(isMaximized ? [styles['wrapperMaximized']] : [])].join(' ')}>
       <div className={styles['left']}>
         <div className={styles['brand']}>
           <div className={styles['brandMark']}>
@@ -101,9 +106,11 @@ function AppChrome() {
             <button
               key={item.key}
               type="button"
-              className={styles['menuButton']}
+              className={[styles['menuButton'], ...(openIndex === item.index ? [styles['menuButtonOpen']] : [])].join(' ')}
               onClick={(event) => openMenu(item.index, event.currentTarget)}
-              title={item.label || t('Menu')}
+              aria-haspopup="menu"
+              aria-expanded={openIndex === item.index}
+              aria-label={item.label ? undefined : t('Menu')}
             >
               {item.label}
             </button>
@@ -111,15 +118,17 @@ function AppChrome() {
         </div>
       </div>
 
+      {/* Each button fills the bar's full height (and reaches the right edge when maximised), so throwing the
+          pointer into the top or the corner hits it, as on a native title bar; the rounded pill inside is the look. */}
       <div className={styles['windowControls']}>
         <button type="button" className={styles['windowControl']} onClick={handleMinimize} title={t('Minimize')}>
-          <FiMinus />
+          <span className={styles['windowControlPill']}><FiMinus /></span>
         </button>
         <button type="button" className={styles['windowControl']} onClick={handleToggleMaximize} title={isMaximized ? t('Restore down') : t('Maximize')}>
-          {isMaximized ? <FiCopy /> : <FiSquare />}
+          <span className={styles['windowControlPill']}>{isMaximized ? <FiCopy /> : <FiSquare />}</span>
         </button>
         <button type="button" className={[styles['windowControl'], styles['closeControl']].join(' ')} onClick={handleClose} title={t('Close')}>
-          <FiX />
+          <span className={styles['windowControlPill']}><FiX /></span>
         </button>
       </div>
     </div>

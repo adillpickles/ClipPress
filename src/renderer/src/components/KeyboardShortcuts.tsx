@@ -502,7 +502,7 @@ const KeyboardShortcuts = memo(({
         category: segmentsAndCutpointsCategory,
       },
       toggleSegmentsList: {
-        name: t('Show sidebar'),
+        name: simpleMode ? t('Show or hide the clips panel') : t('Show sidebar'),
         category: segmentsAndCutpointsCategory,
       },
       selectOnlyCurrentSegment: {
@@ -796,7 +796,7 @@ const KeyboardShortcuts = memo(({
       extraLinesPerCategory,
       actionsMap,
     };
-  }, [currentCutSeg, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, mouseWheelZoomModifierKey, segmentMouseModifierKey, t]);
+  }, [currentCutSeg, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, mouseWheelZoomModifierKey, segmentMouseModifierKey, simpleMode, t]);
 
   useEffect(() => {
     updateKeyboardLayout();
@@ -834,17 +834,16 @@ const KeyboardShortcuts = memo(({
   const categoriesWithActions = useMemo(() => Object.entries(groupBy(actionEntries, ([, { category }]) => category)), [actionEntries]);
 
   const onDeleteBindingClick = useCallback(async ({ action, keys }: { action: KeyboardAction, keys: string }) => {
-    if (!(await confirmDialog({ description: t('Are you sure?') }))) return;
+    if (!(await confirmDialog({ title: t('Remove this shortcut?'), description: t('These keys will no longer run "{{name}}".', { name: actionsMap[action]?.name ?? action }), confirmButtonText: t('Remove') }))) return;
 
     console.log('Delete key binding', action, keys);
     setKeyBindings((existingBindings) => existingBindings.filter((existingBinding) => !(existingBinding.keys === keys && existingBinding.action === action)));
-  }, [confirmDialog, setKeyBindings, t]);
+  }, [actionsMap, confirmDialog, setKeyBindings, t]);
 
 
   const onResetClick = useCallback(async () => {
-    // Double confirmation!
-    if (!(await confirmDialog({ description: t('Are you sure you want to reset all keyboard bindings?') }))) return;
-    if (!(await confirmDialog({ description: t('Are you sure you want to reset all keyboard bindings?') }))) return;
+    // One clear question (Cancel keeps focus), rather than the same one twice.
+    if (!(await confirmDialog({ title: t('Reset all shortcuts?'), description: t('Your own shortcuts will be replaced by the defaults.'), confirmButtonText: t('Reset') }))) return;
 
     resetKeyBindings();
   }, [confirmDialog, resetKeyBindings, t]);
@@ -862,7 +861,7 @@ const KeyboardShortcuts = memo(({
     const duplicate = keyBindings.find((existingBinding) => existingBinding.keys === keysStr);
     let shouldReplaceDuplicate: KeyBinding | undefined;
     if (duplicate) {
-      const isConfirmed = await confirmDialog({ confirmButtonText: t('Replace'), description: t('Combination is already bound to "{{alreadyBoundKey}}". Do you want to replace the existing binding?', { alreadyBoundKey: actionsMap[duplicate.action]?.name }) });
+      const isConfirmed = await confirmDialog({ confirmButtonText: t('Replace'), description: t('These keys already run "{{alreadyBoundKey}}". Use them for this instead?', { alreadyBoundKey: actionsMap[duplicate.action]?.name }) });
 
       if (isConfirmed) {
         shouldReplaceDuplicate = duplicate;
@@ -882,6 +881,7 @@ const KeyboardShortcuts = memo(({
   return (
     <>
       <div style={{ marginBottom: '1em' }}>
+        {/* Sticks to the top of the scrolling list, so searching never means scrolling back up. */}
         <div className={styles['search']}>
           <TextInput ref={searchInputRef} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder={t('Search shortcuts')} aria-label={t('Search shortcuts')} style={{ width: '100%' }} />
         </div>
@@ -898,7 +898,7 @@ const KeyboardShortcuts = memo(({
 
               return (
                 <div key={action} className={styles['row']}>
-                  <div className={styles['rowName']} title={t('API action name: {{action}}', { action })}>
+                  <div className={styles['rowName']} title={simpleMode ? undefined : t('API action name: {{action}}', { action })}>
                     {beforeContent}
                     <span>{actionName}</span>
                     {!simpleMode && (
@@ -910,14 +910,14 @@ const KeyboardShortcuts = memo(({
                     {bindingsForThisAction.map(({ keys }) => (
                       <div key={keys} className={styles['binding']}>
                         {renderKeys(splitKeyboardKeys(keys))}
-                        <Button size="sm" variant="ghost" className={styles['bindingRemove']} title={t('Remove key binding')} aria-label={t('Remove key binding')} onClick={() => onDeleteBindingClick({ action, keys })}><FaTrash aria-hidden style={{ fontSize: '.75em' }} /></Button>
+                        <Button size="sm" variant="ghost" className={styles['bindingRemove']} title={t('Remove shortcut')} aria-label={t('Remove shortcut')} onClick={() => onDeleteBindingClick({ action, keys })}><FaTrash aria-hidden style={{ fontSize: '.75em' }} /></Button>
                       </div>
                     ))}
 
-                    {bindingsForThisAction.length === 0 && <span className={styles['noBinding']}>{t('No binding')}</span>}
+                    {bindingsForThisAction.length === 0 && <span className={styles['noBinding']}>{t('None')}</span>}
                   </div>
 
-                  <Button size="sm" variant="ghost" title={t('Bind new key to action')} aria-label={t('Bind new key to action')} onClick={() => onAddBindingClick(action)}><FaPlus aria-hidden style={{ fontSize: '.75em' }} /></Button>
+                  <Button size="sm" variant="ghost" title={t('Add a shortcut')} aria-label={t('Add a shortcut')} onClick={() => onAddBindingClick(action)}><FaPlus aria-hidden style={{ fontSize: '.75em' }} /></Button>
                 </div>
               );
             })}
@@ -960,7 +960,7 @@ function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
         { label: t('New clip'), actions: ['addSegment'] },
         { label: t('Split the clip'), actions: ['splitCurrentSegment'] },
         { label: t('Previous / next clip'), actions: ['jumpPrevSegment', 'jumpNextSegment'] },
-        { label: t('Go to the start / end of the clip'), actions: ['jumpCutStart', 'jumpCutEnd'] },
+        { label: t('Go to clip start / end'), actions: ['jumpCutStart', 'jumpCutEnd'] },
         { label: t('Rename the clip'), actions: ['labelCurrentSegment'] },
       ],
     },
@@ -990,39 +990,47 @@ function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
   // The first binding of each action (most have one); unbound actions show a dash.
   const keysFor = (action: KeyboardAction) => keyBindings.find((binding) => binding.action === action)?.keys;
 
+  // Two columns that each stack their own groups (Playback over Editing, Clips over Export and more), so a
+  // short group doesn't leave a gap beside a long one.
+  const columns = [['playback', 'editing'], ['clips', 'export']].map((ids) => groups.filter((group) => ids.includes(group.id)));
+
   return (
     <div className={styles['essentials']}>
-      {groups.map((group) => (
-        <section key={group.id} className={styles['essentialsGroup']}>
-          <div className={styles['categoryTitle']}>{group.title}</div>
-          {group.items.map((item) => (
-            <div key={item.label} className={styles['essentialsRow']}>
-              <span>{item.label}</span>
-              <span className={styles['essentialsKeys']}>
-                {item.actions.map((action, i) => {
-                  const keys = keysFor(action);
-                  return (
-                    <Fragment key={action}>
-                      {i > 0 && <span className={styles['slash']}>/</span>}
-                      {keys != null ? renderKeys(splitKeyboardKeys(keys)) : <span className={styles['noBinding']}>–</span>}
-                    </Fragment>
-                  );
-                })}
-              </span>
-            </div>
+      {columns.map((column) => (
+        <div key={column.map((group) => group.id).join(',')} className={styles['essentialsColumn']}>
+          {column.map((group) => (
+            <section key={group.id} className={styles['essentialsGroup']}>
+              <div className={styles['categoryTitle']}>{group.title}</div>
+              {group.items.map((item) => (
+                <div key={item.label} className={styles['essentialsRow']}>
+                  <span>{item.label}</span>
+                  <span className={styles['essentialsKeys']}>
+                    {item.actions.map((action, i) => {
+                      const keys = keysFor(action);
+                      return (
+                        <Fragment key={action}>
+                          {i > 0 && <span className={styles['slash']}>/</span>}
+                          {keys != null ? renderKeys(splitKeyboardKeys(keys)) : <span className={styles['noBinding']}>–</span>}
+                        </Fragment>
+                      );
+                    })}
+                  </span>
+                </div>
+              ))}
+              {group.id === 'clips' && (
+                <div className={styles['essentialsRow']}>
+                  <span>{t('Move or resize a clip')}</span>
+                  <span className={styles['essentialsKeys']}>
+                    <kbd>{getModifier(segmentMouseModifierKey)}</kbd>
+                    <span className={styles['slash']}>+</span>
+                    <FaMouse aria-hidden />
+                    <span className={styles['noBinding']} style={{ marginLeft: '.3em' }}>{t('drag')}</span>
+                  </span>
+                </div>
+              )}
+            </section>
           ))}
-          {group.id === 'clips' && (
-            <div className={styles['essentialsRow']}>
-              <span>{t('Move or resize a clip')}</span>
-              <span className={styles['essentialsKeys']}>
-                <kbd>{getModifier(segmentMouseModifierKey)}</kbd>
-                <span className={styles['slash']}>+</span>
-                <FaMouse aria-hidden />
-                <span className={styles['noBinding']} style={{ marginLeft: '.3em' }}>{t('drag')}</span>
-              </span>
-            </div>
-          )}
-        </section>
+        </div>
       ))}
     </div>
   );
@@ -1053,7 +1061,18 @@ function KeyboardShortcutsDialog({
     <Dialog.Root open={isShown} onOpenChange={(v) => v === false && onHide()}>
       <Dialog.Portal>
         <Dialog.Overlay />
-        <Dialog.Content style={{ width: '44rem' }} aria-describedby={undefined}>
+        <Dialog.Content
+          // Only the list scrolls: the title, the close button and the view switch stay put.
+          style={{ width: '44rem', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+          aria-describedby={undefined}
+          // Focus the dialog itself, so it opens without a focus ring on "Essentials". The "All shortcuts" view
+          // has already focused its search box as it mounted: leave that.
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            const content = e.currentTarget as HTMLElement | null;
+            if (content != null && !content.contains(document.activeElement)) content.focus({ preventScroll: true });
+          }}
+        >
           <Dialog.Title>{t('Keyboard shortcuts')}</Dialog.Title>
 
           <div className={styles['viewSwitch']}>
@@ -1069,11 +1088,13 @@ function KeyboardShortcutsDialog({
             />
           </div>
 
-          {effectiveView === 'essentials' ? (
-            <Essentials keyBindings={keyBindings} />
-          ) : (
-            <KeyboardShortcuts keyBindings={keyBindings} setKeyBindings={setKeyBindings} currentCutSeg={currentCutSeg} resetKeyBindings={resetKeyBindings} onTriggerActionClick={handleTriggerActionClick} />
-          )}
+          <div className={styles['body']}>
+            {effectiveView === 'essentials' ? (
+              <Essentials keyBindings={keyBindings} />
+            ) : (
+              <KeyboardShortcuts keyBindings={keyBindings} setKeyBindings={setKeyBindings} currentCutSeg={currentCutSeg} resetKeyBindings={resetKeyBindings} onTriggerActionClick={handleTriggerActionClick} />
+            )}
+          </div>
 
           <Dialog.CloseButton />
         </Dialog.Content>

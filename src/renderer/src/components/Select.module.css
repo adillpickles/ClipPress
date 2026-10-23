@@ -12,6 +12,8 @@
   outline: none;
   border: 1px solid var(--cp-line);
   cursor: pointer;
+  /* One line, like every other control, even when an option's text is long. */
+  white-space: nowrap;
   transition:
     background-color .14s ease,
     border-color .14s ease,
@@ -51,17 +53,24 @@
     appearance: base-select;
   }
 
+  /* overflow: a long choice is cut at the field's edge rather than spilling past it (it can't wrap, see above). */
   .select {
     display: inline-flex;
     align-items: center;
+    overflow: hidden;
   }
 
   .select::picker-icon {
     display: none;
   }
 
+  /* Open below the field, like a dropdown should, and above it only when the list doesn't fit below (Chromium
+     otherwise picks whichever side has more room). The fixed height cap is what lets a list that is too tall
+     for the space below flip, instead of shrinking to fit; the margin keeps the gap on either side. */
   .select::picker(select) {
-    margin-top: .3rem;
+    margin-block: .3rem;
+    max-block-size: 18rem;
+    position-try-order: normal;
     padding: .3rem;
     border: 1px solid var(--cp-line-strong);
     border-radius: var(--cp-radius);

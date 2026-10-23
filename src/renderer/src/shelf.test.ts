@@ -60,6 +60,18 @@ describe('shelf', () => {
     expect(pickNextClip(allDone, b.path, true)).toBeUndefined();
   });
 
+  it('after a clip closes, offers the one after it and never the closed clip again', () => {
+    // The app passes the clip that was open last once the editor closes (App's shelfAnchorPath).
+    const queue = buildShelfQueue(files, { order: 'date', exports: [], caseInsensitive: true });
+    // b, c, a, d
+    expect(pickNextClip(queue, c.path, true)).toBe(a);
+    expect(pickNextClip(queue, d.path, true)).toBe(b);
+    // A folder with just the one video: nothing is up next, Recent already lists it.
+    const single = buildShelfQueue([a], { order: 'date', exports: [], caseInsensitive: true });
+    expect(pickNextClip(single, a.path, true)).toBeUndefined();
+    expect(pickNextClip(single, a.path.toUpperCase().replaceAll('\\', '/'), true)).toBeUndefined();
+  });
+
   it('remembers each export once, newest first, and keeps the list short', () => {
     let list = rememberShelfExport([], { source: a.path, outputs: ['x.mp4'], exportedAt: 1 }, true);
     list = rememberShelfExport(list, { source: b.path, outputs: ['y.mp4'], exportedAt: 2 }, true);

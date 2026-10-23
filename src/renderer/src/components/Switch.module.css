@@ -29,13 +29,44 @@
   background-color: white;
   border-radius: 9999px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  transition: transform 120ms ease;
+  transition: transform 120ms ease, background-color 120ms ease;
   transform: translateX(2px);
   will-change: transform;
   margin-top: 1px;
 }
 .SwitchThumb[data-state='checked'] {
   transform: translateX(17px);
+}
+
+/* Off, light theme: an outlined track with a smaller grey knob (the Windows 11 look). A pale filled track
+   with a white knob all but disappears on the light panels. */
+.SwitchRoot[data-state='unchecked'] {
+  background-color: var(--cp-bg);
+  border-color: var(--gray-9);
+}
+.SwitchRoot[data-state='unchecked']:hover {
+  background-color: var(--cp-hover);
+  border-color: var(--gray-10);
+}
+.SwitchThumb[data-state='unchecked'] {
+  background-color: var(--gray-10);
+  box-shadow: none;
+  transform: translateX(2px) scale(.75);
+}
+
+/* Off, dark theme: unchanged, the white knob already stands out on the dark track. */
+:global(.dark-theme) .SwitchRoot[data-state='unchecked'] {
+  background-color: var(--gray-6);
+  border-color: var(--gray-7);
+}
+:global(.dark-theme) .SwitchRoot[data-state='unchecked']:hover {
+  background-color: var(--gray-6);
+  border-color: var(--gray-8);
+}
+:global(.dark-theme) .SwitchThumb[data-state='unchecked'] {
+  background-color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transform: translateX(2px);
 }
 .SwitchRoot:disabled,
 .SwitchRoot[data-disabled] {

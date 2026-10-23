@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { combineAudioGain, dbToPercent, getVolumeFilter, isClipVolumeChanged, minAudioGainDb, percentToDb, sanitizeClipGainDb } from './audioGain';
+import { combineAudioGain, dbToPercent, formatVolumePercent, getVolumeFilter, isClipVolumeChanged, minAudioGainDb, percentToDb, sanitizeClipGainDb, sliderPercentToTrackGainDb, snapToFullVolume, trackGainToSliderPercent } from './audioGain';
 import { createSegment, mapSaveableSegments } from '../segments';
 import { buildSegmentConcatFilters } from '../exportSegmentMath';
 import { getClipVolumeFactorAt } from '../hooks/usePreviewAudioGain';
@@ -14,6 +14,37 @@ describe('clip volume', () => {
     expect(dbToPercent(6.02)).toBe(200);
     expect(dbToPercent(-6.02)).toBe(50);
     for (const percent of [1, 7, 33, 99, 101, 150, 199]) expect(dbToPercent(percentToDb(percent))).toBe(percent);
+  });
+
+  it('snaps a dragged slider to 100% only when close to it', () => {
+    expect(snapToFullVolume(96)).toBe(100);
+    expect(snapToFullVolume(104)).toBe(100);
+    expect(snapToFullVolume(95)).toBe(95);
+    expect(snapToFullVolume(105)).toBe(105);
+    expect(snapToFullVolume(0)).toBe(0);
+  });
+
+  it('shows a volume in % with a label at the minimum', () => {
+    expect(formatVolumePercent(0, 'Muted')).toBe('100%');
+    expect(formatVolumePercent(-6.02, 'Muted')).toBe('50%');
+    expect(formatVolumePercent(6.02, 'Muted')).toBe('200%');
+    expect(formatVolumePercent(minAudioGainDb, 'Muted')).toBe('Muted');
+    // A level set in dB in advanced mode still reads right, past the slider's end.
+    expect(formatVolumePercent(20, 'Muted')).toBe('1000%');
+  });
+
+  it('puts a track volume on the 0–200% slider and back', () => {
+    expect(trackGainToSliderPercent(0)).toBe(100);
+    expect(trackGainToSliderPercent(-6.02)).toBe(50);
+    expect(trackGainToSliderPercent(minAudioGainDb)).toBe(0);
+    // Louder than the slider goes: it pins at the end.
+    expect(trackGainToSliderPercent(20)).toBe(200);
+
+    expect(sliderPercentToTrackGainDb(0)).toBe(minAudioGainDb);
+    expect(sliderPercentToTrackGainDb(100)).toBe(0);
+    expect(sliderPercentToTrackGainDb(50)).toBe(-6.02);
+    expect(sliderPercentToTrackGainDb(200)).toBe(6.02);
+    for (const percent of [1, 33, 99, 101, 150, 200]) expect(trackGainToSliderPercent(sliderPercentToTrackGainDb(percent))).toBe(percent);
   });
 
   it('adds the clip volume to the track volume, and either one muted means silence', () => {

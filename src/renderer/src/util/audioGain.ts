@@ -28,6 +28,25 @@ export const maxClipVolumePercent = 200;
 export const percentToDb = (percent: number) => Math.round(2000 * Math.log10(percent / 100)) / 100;
 export const dbToPercent = (audioGainDb: number) => Math.round(100 * 10 ** (audioGainDb / 20));
 
+/** Dragging a volume slider near 100% snaps to it, so "back to normal" is easy to hit. */
+export const snapToFullVolume = (percent: number) => (Math.abs(percent - 100) <= 4 ? 100 : percent);
+
+/** A volume as people read it: "100%" is unchanged; at the minimum it is `mutedLabel`. */
+export const formatVolumePercent = (audioGainDb: number, mutedLabel: string) => (isMutedAudioGain(audioGainDb) ? mutedLabel : `${dbToPercent(audioGainDb)}%`);
+
+/**
+ * A track volume on the same 0–200% slider as a clip's. Advanced mode sets it in dB up to +50: a louder level
+ * pins the slider at its end (its text still says how loud it is).
+ */
+export const trackGainToSliderPercent = (audioGainDb: number) => (isMutedAudioGain(audioGainDb) ? 0 : Math.min(dbToPercent(audioGainDb), maxClipVolumePercent));
+
+/** A 0–200% slider position as a track volume: 0% mutes and 100% is no change. */
+export function sliderPercentToTrackGainDb(percent: number) {
+  if (percent <= 0) return minAudioGainDb;
+  if (percent === 100) return defaultAudioGainDb;
+  return percentToDb(percent);
+}
+
 export const isClipVolumeChanged = (clip: ClipVolume) => clip.audioMuted === true || !isNeutralAudioGain(clip.audioGainDb);
 
 /** Saved projects may carry anything; keep a usable value instead of rejecting the project. */

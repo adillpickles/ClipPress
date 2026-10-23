@@ -1,11 +1,10 @@
-import type { ChangeEventHandler } from 'react';
+import type { ChangeEventHandler, KeyboardEventHandler } from 'react';
 import { memo, useCallback, useId, useMemo, useState } from 'react';
 import { FiFolder, FiX } from 'react-icons/fi';
 import { FaRegKeyboard } from 'react-icons/fa';
 import { useTranslation } from 'react-i18next';
 import invariant from 'tiny-invariant';
 
-import CaptureFormatButton from './CaptureFormatButton';
 import AutoExportToggler from './AutoExportToggler';
 import Switch from './Switch';
 import UpdateSettings from './UpdateSettings';
@@ -14,15 +13,17 @@ import { askForFfPath } from '../dialogs';
 import { getEnableImportChaptersOptions, isMasBuild, isStoreBuild } from '../util';
 import type { SupportedLanguage } from '../../../common/i18n';
 import { langNames } from '../../../common/i18n';
-import type { Config, EnableImportChapters, ModifierKey, ProjectFileLocation, TimecodeFormat } from '../../../common/types.js';
+import type { CaptureFormat, Config, EnableImportChapters, ModifierKey, ProjectFileLocation, TimecodeFormat } from '../../../common/types.js';
 import { getProjectsDir, getProjectStoreEnv } from '../projectStore';
 import styles from './Settings.module.css';
 import Select from './Select';
 import Button from './Button';
 import { getModifierKeyNames } from '../hooks/useTimelineScroll';
 import type { TunerType } from '../types';
-import OutDirSelector from './OutDirSelector.js';
 import SettingRow from './SettingRow';
+import getAfterExportAction from '../afterExportAction';
+import type { AfterExportAction } from '../afterExportAction';
+import { DirectoryAccessDeclinedError } from '../../errors';
 
 function ModifierKeySetting({ label, description, value, setValue }: { label: string, description?: string, value: ModifierKey, setValue: (v: ModifierKey) => void }) {
   const id = useId();
@@ -61,7 +62,7 @@ function Settings({
     window.require('electron').shell.openPath(getProjectsDir(getProjectStoreEnv())).catch?.(() => undefined);
   }, []);
 
-  const { customOutDir, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, invertTimelineScroll, setInvertTimelineScroll, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey, setSegmentMouseModifierKey, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport } = useUserSettings();
+  const { customOutDir, setCustomOutDir, changeOutDir, ensureWritableOutDirWithFilePath, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, wheelSensitivity, waveformHeight, keyboardNormalSeekSpeed, keyboardSeekSpeed2, keyboardSeekSpeed3, keyboardSeekAccFactor, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, invertTimelineScroll, setInvertTimelineScroll, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey, setSegmentMouseModifierKey, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport } = useUserSettings();
 
   const onLangChange = useCallback<ChangeEventHandler<HTMLSelectElement>>((e) => {
     const { value } = e.target;
@@ -86,6 +87,31 @@ function Settings({
     setCustomFfPath(undefined);
   }, [setCustomFfPath]);
 
+  // Back to saving next to the recording, once that folder can be written to (as the folder dialog does).
+  const saveNextToRecording = useCallback(async () => {
+    try {
+      await ensureWritableOutDirWithFilePath({ outDir: undefined });
+      setCustomOutDir(undefined);
+    } catch (err) {
+      if (err instanceof DirectoryAccessDeclinedError) return;
+      throw err;
+    }
+  }, [ensureWritableOutDirWithFilePath, setCustomOutDir]);
+
+  const afterExportLabels = useMemo<Record<AfterExportAction, string>>(() => ({
+    nothing: t('Keep the recording open'),
+    close: t('Close the recording'),
+    ask: t('Ask each time'),
+    binTemp: t('Move temporary files to the Recycle Bin'),
+    closeAndBinTemp: t('Close the recording and move temporary files to the Recycle Bin'),
+    binProject: t('Move the project file to the Recycle Bin'),
+    closeAndBinProject: t('Close the recording and move its project file to the Recycle Bin'),
+    binTempAndProject: t('Move temporary and project files to the Recycle Bin'),
+    closeAndBinTempAndProject: t('Close the recording and move temporary and project files to the Recycle Bin'),
+  }), [t]);
+
+  const formatSeconds = useCallback((seconds: number) => t('{{seconds}} s', { seconds: Number(seconds.toFixed(2)) }), [t]);
+
   const categories = useMemo(() => ([
     { id: 'general', label: t('General') },
     { id: 'interface', label: t('Appearance') },
@@ -108,7 +134,28 @@ function Settings({
   const outputDateId = useId();
   const sourceDateId = useId();
   const chaptersId = useId();
+  const captureFormatId = useId();
   const advancedToggleId = useId();
+  const tabsId = useId();
+  const getTabId = (id: Category) => `${tabsId}-tab-${id}`;
+  const panelId = `${tabsId}-panel`;
+
+  // The categories are tabs: one Tab stop, and the arrow keys (or Home and End) move between them.
+  const onTabListKeyDown: KeyboardEventHandler<HTMLDivElement> = (e) => {
+    const index = categories.findIndex((c) => c.id === activeCategory);
+    const targets: Partial<Record<string, number>> = {
+      ArrowDown: (index + 1) % categories.length,
+      ArrowUp: (index - 1 + categories.length) % categories.length,
+      Home: 0,
+      End: categories.length - 1,
+    };
+    const next = targets[e.key];
+    const nextCategory = next != null ? categories[next] : undefined;
+    if (next == null || nextCategory == null) return;
+    e.preventDefault();
+    setCategory(nextCategory.id);
+    e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+  };
 
   function renderCategory() {
     switch (activeCategory) {
@@ -172,16 +219,19 @@ function Settings({
               </Select>
             </SettingRow>
 
-            <SettingRow label={t('Time format')} description={t('How times are shown in advanced mode.')} controlId={timecodeId}>
-              <Select id={timecodeId} value={timecodeFormat} onChange={(e) => setTimecodeFormat(e.target.value as TimecodeFormat)}>
-                {Object.entries(timecodeFormatOptions).map(([key, value]) => (
-                  <option key={key} value={key}>{value}</option>
-                ))}
-              </Select>
-            </SettingRow>
+            {/* Simple mode writes times its own way, so this only matters with the advanced options. */}
+            {showAdvancedSettings && (
+              <SettingRow label={t('Time format')} description={t('How times are shown in advanced mode and in exported file names.')} controlId={timecodeId}>
+                <Select id={timecodeId} value={timecodeFormat} onChange={(e) => setTimecodeFormat(e.target.value as TimecodeFormat)}>
+                  {Object.entries(timecodeFormatOptions).map(([key, value]) => (
+                    <option key={key} value={key}>{value}</option>
+                  ))}
+                </Select>
+              </SettingRow>
+            )}
 
             {showAdvancedSettings && (
-              <SettingRow label={t('Waveform height')}>
+              <SettingRow label={t('Waveform height')} value={t('{{height}} px', { height: Math.round(waveformHeight) })}>
                 <Button onClick={() => onTunerRequested('waveformHeight')}>{t('Adjust')}</Button>
               </SettingRow>
             )}
@@ -194,8 +244,8 @@ function Settings({
           <>
             <SettingRow
               label={t('Clips are')}
-              value={invertCutSegments ? t('Removed: the export keeps everything except the clips.') : t('Kept: the export contains only the clips.')}
-              details={t('"Keep" is the usual way to make clips. "Remove" cuts the marked parts out of the recording instead, for example to drop a pause or a loading screen.')}
+              value={invertCutSegments ? t('The export keeps everything except the clips.') : t('The export contains only the clips.')}
+              details={t('"Kept" is the usual way to make clips. "Removed" cuts the marked parts out of the recording instead, for example to drop a pause or a loading screen.')}
             >
               <Select value={invertCutSegments ? 'remove' : 'keep'} onChange={(e) => setInvertCutSegments(e.target.value === 'remove')} aria-label={t('Clips are')}>
                 <option value="keep">{t('Kept')}</option>
@@ -234,7 +284,7 @@ function Settings({
             <SettingRow
               label={t('Use the GPU')}
               description={t('Faster exports on NVIDIA, AMD or Intel graphics.')}
-              details={t('Decodes video on the graphics card (NVIDIA, AMD or Intel) and re-encodes regular exports with its H.264 encoder. ClipPress switches to the CPU automatically if the GPU fails. Size-limited exports pick their encoder from the preset.')}
+              details={t('Decodes video on the graphics card and re-encodes regular exports with its H.264 encoder. ClipPress switches to the CPU automatically if the GPU fails. Size-limited exports pick their encoder from the preset.')}
             >
               <Switch checked={exportGpuAcceleration} onCheckedChange={setExportGpuAcceleration} aria-label={t('Use the GPU')} />
             </SettingRow>
@@ -243,12 +293,18 @@ function Settings({
               label={t('Save exports to')}
               value={customOutDir ?? t('The same folder as the recording.')}
             >
-              <OutDirSelector>
-                <Button>
+              {/* Straight to the folder picker; the small x goes back to the recording's folder. */}
+              <div className={styles['controlGroup']}>
+                <Button onClick={changeOutDir}>
                   <FiFolder aria-hidden />
                   {t('Change…')}
                 </Button>
-              </OutDirSelector>
+                {customOutDir != null && (
+                  <Button variant="ghost" onClick={saveNextToRecording} title={t('Save next to the recording')} aria-label={t('Save next to the recording')}>
+                    <FiX aria-hidden />
+                  </Button>
+                )}
+              </div>
             </SettingRow>
 
             <SettingRow
@@ -262,8 +318,9 @@ function Settings({
             <SettingRow
               label={t('After exporting')}
               description={t('Close the recording, or move temporary and project files to the Recycle Bin.')}
+              value={afterExportLabels[getAfterExportAction(cleanupChoices, simpleMode)]}
             >
-              <Button onClick={askForCleanupChoices}>{t('Change…')}</Button>
+              <Button onClick={askForCleanupChoices}>{t('Choose…')}</Button>
             </SettingRow>
 
             {showAdvancedSettings && (
@@ -298,14 +355,14 @@ function Settings({
               <SettingRow label={t('Date of exported files')} controlId={outputDateId}>
                 <Select id={outputDateId} value={typeof treatOutputFileModifiedTimeAsStart === 'boolean' ? String(treatOutputFileModifiedTimeAsStart) : 'disabled'} onChange={(e) => setTreatOutputFileModifiedTimeAsStart(e.target.value === 'disabled' ? null : (e.target.value === 'true'))}>
                   <option value="disabled">{t('Current time')}</option>
-                  <option value="true">{t('Source file\'s time plus segment start cut time')}</option>
-                  <option value="false">{t('Source file\'s time minus segment end cut time')}</option>
+                  <option value="true">{t('Recording time + clip start')}</option>
+                  <option value="false">{t('Recording time − clip end')}</option>
                 </Select>
               </SettingRow>
             )}
 
             {showAdvancedSettings && (
-              <SettingRow label={t('Treat source file modification date/time as:')} controlId={sourceDateId}>
+              <SettingRow label={t('Treat the recording\'s date as')} details={t('The recording file\'s modified date and time.')} controlId={sourceDateId}>
                 <Select id={sourceDateId} disabled={treatOutputFileModifiedTimeAsStart == null} value={String(treatInputFileModifiedTimeAsStart)} onChange={(e) => setTreatInputFileModifiedTimeAsStart((e.target.value === 'true'))}>
                   <option value="true">{t('Start of video')}</option>
                   <option value="false">{t('End of video')}</option>
@@ -319,21 +376,35 @@ function Settings({
       case 'snapshots': {
         return (
           <>
-            <SettingRow label={t('Image format')} description={t('For frames captured from the video.')}>
-              <CaptureFormatButton showIcon />
+            <SettingRow label={t('Image format')} description={t('For frames captured from the video.')} controlId={captureFormatId}>
+              <Select id={captureFormatId} value={captureFormat} onChange={(e) => setCaptureFormat(e.target.value as CaptureFormat)}>
+                <option value="jpeg">JPEG</option>
+                <option value="png">PNG</option>
+                <option value="webp">WebP</option>
+              </Select>
             </SettingRow>
 
-            <SettingRow label={t('Image quality')} value={`${Math.round(captureFrameQuality * 100)}%`}>
-              <input
-                type="range"
-                className={styles['range']}
-                aria-label={t('Image quality')}
-                min={1}
-                max={1000}
-                value={Math.round(captureFrameQuality * 1000)}
-                onChange={(e) => setCaptureFrameQuality(Math.max(Math.min(1, parseInt(e.target.value, 10) / 1000), 0))}
-              />
-            </SettingRow>
+            {/* PNG is lossless, so quality only matters there for the copies to the clipboard (always JPEG):
+                that stays reachable with the advanced options. */}
+            {(captureFormat !== 'png' || showAdvancedSettings) && (
+              <SettingRow
+                label={t('Image quality')}
+                value={`${Math.round(captureFrameQuality * 100)}%`}
+                details={t('Also used for snapshots copied to the clipboard.')}
+              >
+                <input
+                  type="range"
+                  className={styles['range']}
+                  aria-label={t('Image quality')}
+                  aria-valuetext={`${Math.round(captureFrameQuality * 100)}%`}
+                  min={1}
+                  max={100}
+                  step={1}
+                  value={Math.round(captureFrameQuality * 100)}
+                  onChange={(e) => setCaptureFrameQuality(Math.max(Math.min(1, parseInt(e.target.value, 10) / 100), 0.01))}
+                />
+              </SettingRow>
+            )}
 
             {showAdvancedSettings && (
               <SettingRow
@@ -375,31 +446,37 @@ function Settings({
             <ModifierKeySetting label={t('Move or resize a clip')} description={t('Hold this key and drag a clip\'s edge on the timeline.')} value={segmentMouseModifierKey} setValue={setSegmentMouseModifierKey} />
             <ModifierKeySetting label={t('Zoom with the wheel')} value={mouseWheelZoomModifierKey} setValue={setMouseWheelZoomModifierKey} />
             <ModifierKeySetting label={t('Step frames with the wheel')} value={mouseWheelFrameSeekModifierKey} setValue={setMouseWheelFrameSeekModifierKey} />
-            <ModifierKeySetting label={t('Jump keyframes with the wheel')} value={mouseWheelKeyframeSeekModifierKey} setValue={setMouseWheelKeyframeSeekModifierKey} />
+            {showAdvancedSettings && (
+              <ModifierKeySetting label={t('Jump keyframes with the wheel')} value={mouseWheelKeyframeSeekModifierKey} setValue={setMouseWheelKeyframeSeekModifierKey} />
+            )}
 
             <SettingRow label={t('Reverse wheel direction')} description={t('On the timeline.')}>
               <Switch checked={invertTimelineScroll ?? false} onCheckedChange={setInvertTimelineScroll} aria-label={t('Reverse wheel direction')} />
             </SettingRow>
 
-            <SettingRow label={t('Wheel and trackpad sensitivity')}>
+            <SettingRow label={t('Wheel and trackpad sensitivity')} value={wheelSensitivity.toFixed(2)}>
               <Button onClick={() => onTunerRequested('wheelSensitivity')}>{t('Adjust')}</Button>
             </SettingRow>
 
-            <SettingRow label={t('Arrow key seek step')} description={t('How far the arrow keys move.')}>
+            <SettingRow label={t('Arrow key seek step')} description={t('How far the arrow keys move.')} value={formatSeconds(keyboardNormalSeekSpeed)}>
               <Button onClick={() => onTunerRequested('keyboardNormalSeekSpeed')}>{t('Adjust')}</Button>
             </SettingRow>
 
-            <SettingRow label={t('Longer seek step')}>
-              <Button onClick={() => onTunerRequested('keyboardSeekSpeed2')}>{t('Adjust')}</Button>
-            </SettingRow>
+            {showAdvancedSettings && (
+              <>
+                <SettingRow label={t('Longer seek step')} value={formatSeconds(keyboardSeekSpeed2)}>
+                  <Button onClick={() => onTunerRequested('keyboardSeekSpeed2')}>{t('Adjust')}</Button>
+                </SettingRow>
 
-            <SettingRow label={t('Longest seek step')}>
-              <Button onClick={() => onTunerRequested('keyboardSeekSpeed3')}>{t('Adjust')}</Button>
-            </SettingRow>
+                <SettingRow label={t('Longest seek step')} value={formatSeconds(keyboardSeekSpeed3)}>
+                  <Button onClick={() => onTunerRequested('keyboardSeekSpeed3')}>{t('Adjust')}</Button>
+                </SettingRow>
 
-            <SettingRow label={t('Seek acceleration')} description={t('How quickly holding a seek key speeds up.')}>
-              <Button onClick={() => onTunerRequested('keyboardSeekAccFactor')}>{t('Adjust')}</Button>
-            </SettingRow>
+                <SettingRow label={t('Seek acceleration')} description={t('How quickly holding a seek key speeds up.')} value={`×${keyboardSeekAccFactor.toFixed(2)}`}>
+                  <Button onClick={() => onTunerRequested('keyboardSeekAccFactor')}>{t('Adjust')}</Button>
+                </SettingRow>
+              </>
+            )}
           </>
         );
       }
@@ -416,22 +493,37 @@ function Settings({
 
             <SettingRow
               label={t('Where edits are kept')}
-              description={t('In ClipPress, your recording folders stay clean. Next to the recording, a project file (.llc) sits beside each edited recording.')}
+              description={t('Where ClipPress saves the clips, text and settings for each recording.')}
+              details={(
+                <>
+                  {t('In ClipPress: your recording folders stay clean.')}
+                  <br />
+                  {t('Next to the recording: a small project file beside each edited recording.')}
+                  <br />
+                  {t('In the export folder: a project file beside your exports, or next to the recording while none is chosen.')}
+                </>
+              )}
+              controlId={projectLocationId}
             >
               <div className={styles['inlineControls']}>
+                {/* The saved choice, even when it waits for an export folder (its label says so): showing "Next to the
+                    recording" instead would make that option impossible to pick, and leave a later export folder
+                    quietly taking the project files. */}
                 <Select
                   id={projectLocationId}
                   value={projectFileLocation}
                   disabled={!autoSaveProjectFile}
                   onChange={(e) => onProjectFileLocationChange(e.target.value as ProjectFileLocation)}
-                  aria-label={t('Where edits are kept')}
                 >
                   <option value="app">{t('In ClipPress')}</option>
                   <option value="recording">{t('Next to the recording')}</option>
-                  <option value="exportFolder" disabled={customOutDir == null}>{t('In the export folder')}</option>
+                  <option value="exportFolder" disabled={customOutDir == null}>{customOutDir == null ? t('In the export folder (choose one under Export)') : t('In the export folder')}</option>
                 </Select>
                 {projectFileLocation === 'app' && (
-                  <Button onClick={showProjectsFolder} title={t('Show the folder ClipPress keeps edits in')}>{t('Show')}</Button>
+                  <Button onClick={showProjectsFolder}>
+                    <FiFolder aria-hidden />
+                    {t('Show folder')}
+                  </Button>
                 )}
               </div>
             </SettingRow>
@@ -496,13 +588,16 @@ function Settings({
   return (
     <div className={styles['layout']}>
       <nav className={styles['nav']} aria-label={t('Settings categories')}>
-        <div className={styles['navList']} role="tablist" aria-orientation="vertical">
+        <div className={styles['navList']} role="tablist" aria-orientation="vertical" onKeyDown={onTabListKeyDown}>
           {categories.map((c) => (
             <button
               key={c.id}
+              id={getTabId(c.id)}
               type="button"
               role="tab"
               aria-selected={c.id === activeCategory}
+              aria-controls={c.id === activeCategory ? panelId : undefined}
+              tabIndex={c.id === activeCategory ? 0 : -1}
               className={[styles['navItem'], ...(c.id === activeCategory ? [styles['navItemActive']] : [])].join(' ')}
               onClick={() => setCategory(c.id)}
             >
@@ -517,7 +612,8 @@ function Settings({
         </div>
       </nav>
 
-      <div className={`consistent-scrollbar ${styles['content']}`} role="tabpanel" aria-label={activeLabel}>
+      {/* Keyed by tab, so each one opens scrolled to the top. */}
+      <div key={activeCategory} id={panelId} className={`consistent-scrollbar ${styles['content']}`} role="tabpanel" aria-labelledby={getTabId(activeCategory)}>
         <h2 className={styles['contentTitle']}>{activeLabel}</h2>
         {renderCategory()}
       </div>

@@ -36,12 +36,19 @@
   transition:
     border-color .15s ease,
     background-color .15s ease,
+    box-shadow .15s ease,
     transform .15s ease;
 }
 
 .simpleStreamButton:hover {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--gray-9) 42%, transparent);
+}
+
+/* The app's rounded teal ring instead of the browser's white one (the dialog focuses the first row when it opens). */
+.simpleStreamButton:focus-visible {
+  outline: none;
+  box-shadow: var(--cp-focus-ring);
 }
 
 .simpleStreamButtonActive {

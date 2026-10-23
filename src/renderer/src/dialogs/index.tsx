@@ -520,10 +520,12 @@ export async function openYouTubeChaptersDialog(text: string) {
   }
 }
 
-export async function labelSegmentDialog({ currentName, maxLength }: { currentName: string, maxLength: number }) {
+export async function labelSegmentDialog({ currentName, maxLength, simpleMode = false }: { currentName: string, maxLength: number, simpleMode?: boolean }) {
   const { value } = await getSwal().Swal.fire({
     showCancelButton: true,
-    title: i18n.t('Label current segment'),
+    // Simple mode calls these clips and renames them, as the Clips panel's own rename does.
+    title: simpleMode ? i18n.t('Rename clip') : i18n.t('Label current segment'),
+    ...(simpleMode && { confirmButtonText: i18n.t('Rename'), inputPlaceholder: i18n.t('Clip name') }),
     inputValue: currentName,
     input: currentName.includes('\n') ? 'textarea' : 'text',
     inputValidator: (v: string) => (v.length > maxLength ? `${i18n.t('Max length')} ${maxLength}` : null),

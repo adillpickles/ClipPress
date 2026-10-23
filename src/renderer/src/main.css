@@ -40,6 +40,8 @@ light values inside the dark theme.
   --accent-11: #0d7680;
   --accent-12: #0d3a3f;
   --accent-contrast: #041416;
+  /* Keyboard focus ring. Light accent-8 is only ~2.5:1 on the light surfaces, under the 3:1 a focus ring needs. */
+  --cp-focus-color: var(--accent-11);
 }
 
 .dark-theme {
@@ -57,6 +59,7 @@ light values inside the dark theme.
   --accent-11: #6fd6de;
   --accent-12: #c6f1f4;
   --accent-contrast: #041416;
+  --cp-focus-color: var(--accent-8);
 }
 
 :root, .dark-theme {
@@ -92,7 +95,7 @@ light values inside the dark theme.
   --cp-radius-lg: 16px;
   --cp-radius-xl: 22px;
 
-  --cp-focus-ring: 0 0 0 2px var(--cp-bg), 0 0 0 4px var(--accent-8);
+  --cp-focus-ring: 0 0 0 2px var(--cp-bg), 0 0 0 4px var(--cp-focus-color);
   --cp-shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.18);
   --cp-shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.2);
   /* The app's surface, title bar included: the base colour with a very faint accent glow from the top left,
@@ -101,6 +104,13 @@ light values inside the dark theme.
     radial-gradient(70rem 26rem at 0% -6rem, color-mix(in srgb, var(--accent-9) 12%, transparent), transparent 72%),
     radial-gradient(50rem 22rem at 100% -8rem, color-mix(in srgb, var(--accent-9) 6%, transparent), transparent 70%),
     var(--cp-bg);
+}
+
+/* Light theme only: gray-10 is ~3.7:1 on the light surfaces, too faint for the small menu labels, times and counts
+   that use it. This mix is ~5:1 and stays a step lighter than --cp-text-muted, so the two text levels differ.
+   It has to come after the shared block (same specificity); .dark-theme keeps the shared gray-10 value. */
+:root {
+  --cp-text-subtle: color-mix(in srgb, var(--gray-10) 30%, var(--gray-11));
 }
 
 html {
@@ -214,7 +224,7 @@ code.highlighted {
 }
 
 input:focus-visible, select:focus-visible, textarea:focus-visible {
-  outline: 2px solid var(--accent-8);
+  outline: 2px solid var(--cp-focus-color);
   outline-offset: 0;
 }
 

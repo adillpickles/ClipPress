@@ -44,13 +44,25 @@ export default ({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfi
     if (exportConfirmOpen) {
       // (Escape on an open dropdown list never gets here: see selectEscapeGuard.ts.)
       if (isEscape) {
-        closeExportConfirm();
-        e.preventDefault();
-        e.stopPropagation();
+        // A field that used this Escape itself (e.g. to cancel editing a file name) keeps the sheet open.
+        if (!e.defaultPrevented) {
+          closeExportConfirm();
+          e.preventDefault();
+          e.stopPropagation();
+        }
         return;
       }
       if (action !== 'export') {
         return; // stop here, don't allow other key actions than export while dialog is open
+      }
+      // The export sheet holds focus while it's open, so its own shortcut (export) also works from inside it,
+      // but not while typing in one of its fields.
+      const target = e.target instanceof Element ? e.target : undefined;
+      if (target?.closest('[data-export-sheet]') != null && target.closest('input, textarea, select, [contenteditable="true"]') == null) {
+        getKeyboardAction(action)();
+        e.preventDefault();
+        e.stopPropagation();
+        return;
       }
     }
 
