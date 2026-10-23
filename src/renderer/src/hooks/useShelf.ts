@@ -5,19 +5,26 @@ import { buildShelfQueue, isShelfVideo, pickNextClip } from '../shelf';
 import type { ShelfFile } from '../shelf';
 import type { ShelfExport, ShelfOrder } from '../../../common/types';
 import { renderShelfThumbnail } from '../ffmpeg';
+import { getProjectsDir, getProjectStoreEnv, getStoredProjectFileName, projectSuffix } from '../projectStore';
 
-const { join } = window.require('path');
+const { join, parse } = window.require('path');
 const { readdir, stat } = window.require('fs/promises');
 
 /** The videos directly inside a folder (not its subfolders). */
 export async function listShelfFolder(folder: string): Promise<ShelfFile[]> {
   const entries: { name: string, isFile: () => boolean }[] = await readdir(folder, { withFileTypes: true });
   const videos = entries.filter((entry) => entry.isFile() && isShelfVideo(entry.name));
+  // Which have saved edits: one listing of ClipPress's projects folder, and project files next to the videos.
+  const storeEnv = getProjectStoreEnv();
+  const storedProjects = new Set<string>((await readdir(getProjectsDir(storeEnv)).catch(() => [])).map((name: string) => name.toLowerCase()));
+  const folderNames = new Set(entries.map((entry) => entry.name.toLowerCase()));
+  const hasEdits = (path: string, name: string) => storedProjects.has(getStoredProjectFileName(path, storeEnv.caseInsensitive).toLowerCase())
+    || folderNames.has(`${parse(name).name}-${projectSuffix}`.toLowerCase());
   const files = await pMap(videos, async (entry): Promise<ShelfFile[]> => {
     const path: string = join(folder, entry.name);
     try {
       const info = await stat(path);
-      return [{ path, name: entry.name, modifiedAt: info.mtimeMs, size: info.size }];
+      return [{ path, name: entry.name, modifiedAt: info.mtimeMs, size: info.size, edited: hasEdits(path, entry.name) }];
     } catch {
       return [];
     }

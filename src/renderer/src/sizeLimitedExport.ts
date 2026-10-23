@@ -34,6 +34,7 @@ import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } f
 import createAsyncCache from './util/asyncCache';
 import { getGpuEncoderInfo, getHardwareDecodeArgs, gpuEncoderLabels, gpuEncoders, isGpuEncoderAvailable, runWithGpuFallbacksCore, shouldUseHardwareDecode } from './gpuEncoders';
 import type { GpuEncoderName } from './gpuEncoders';
+import { getTempWorkDir } from './util/tempFiles';
 
 const { access, constants: { W_OK }, mkdir, mkdtemp, rmdir, stat, writeFile } = window.require('fs/promises');
 const { dirname, join } = window.require('path');
@@ -242,13 +243,11 @@ interface PreparedTextOverlayAsset {
 
 async function prepareTextOverlayAssets({
   overlayClips,
-  outputDir,
   videoWidth,
   videoHeight,
   rotation,
 }: {
   overlayClips: OverlayClip[],
-  outputDir: string,
   videoWidth: number,
   videoHeight: number,
   rotation: number | undefined,
@@ -260,7 +259,8 @@ async function prepareTextOverlayAssets({
     for (const [index, overlayClip] of overlayClips.entries()) {
       const width = Math.max(8, Math.round(rotatedVideoDimensions.width * overlayClip.box.width));
       const imageData = await renderTextOverlayPng({ text: overlayClip.text, width, fontSize: getOverlayFontSize(overlayClip) * rotatedVideoDimensions.height });
-      const imagePath = join(outputDir, `clippress-size-limit-text-overlay-${Date.now()}-${index}.png`);
+      // In ClipPress's temporary folder, so nothing appears next to the export while it runs.
+      const imagePath = join(getTempWorkDir(), `size-limit-text-overlay-${Date.now()}-${index}.png`);
       try {
         await writeFile(imagePath, imageData, { flag: 'wx' });
       } catch (err) {
@@ -720,7 +720,6 @@ export async function exportSizeLimitedSegment({
     && overlayVideoHeight != null
     ? await prepareTextOverlayAssets({
       overlayClips,
-      outputDir: dirname(outPath),
       videoWidth: overlayVideoWidth,
       videoHeight: overlayVideoHeight,
       rotation: sourceRotation ?? rotation,
@@ -995,7 +994,6 @@ export async function exportSizeLimitedMerge({
     && overlayVideoHeight != null
     ? await prepareTextOverlayAssets({
       overlayClips,
-      outputDir: dirname(outPath),
       videoWidth: overlayVideoWidth,
       videoHeight: overlayVideoHeight,
       rotation: sourceRotation ?? rotation,

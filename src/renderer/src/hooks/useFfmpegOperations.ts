@@ -28,6 +28,7 @@ import type { LossyMode } from '../../../main';
 import { UserFacingError } from '../../errors';
 import mainApi from '../mainApi';
 import { getHwaccelArgs } from '../../../common/util';
+import { getTempWorkDir } from '../util/tempFiles';
 
 const { join, resolve, dirname } = window.require('path');
 const { writeFile, mkdir, access, constants: { W_OK } } = window.require('fs/promises');
@@ -40,10 +41,11 @@ export class OutputNotWritableError extends Error {
   }
 }
 
-async function writeChaptersFfmetadata(outDir: string, chapters: Chapter[] | undefined) {
+// The folder each caller used to pass is kept in the signature; the file goes to ClipPress's temporary folder.
+async function writeChaptersFfmetadata(_outDir: string, chapters: Chapter[] | undefined) {
   if (!chapters || chapters.length === 0) return undefined;
 
-  const path = join(outDir, `ffmetadata-${nanoid()}.txt`);
+  const path = join(getTempWorkDir(), `ffmetadata-${nanoid()}.txt`);
 
   const ffmetadata = chapters.map(({ start, end, name }) => (
     `[CHAPTER]\nTIMEBASE=1/1000\nSTART=${Math.floor(start * 1000)}\nEND=${Math.floor(end * 1000)}\ntitle=${name || ''}`
@@ -129,23 +131,30 @@ interface PreparedTextOverlayAsset {
 
 async function prepareTextOverlayAssets({
   overlayClips,
-  outputDir,
   videoWidth,
   videoHeight,
   rotation,
 }: {
   overlayClips: OverlayClip[],
-  outputDir: string,
   videoWidth: number,
   videoHeight: number,
   rotation: number | undefined,
 }) {
   const rotatedVideoDimensions = getRotatedVideoDimensions({ width: videoWidth, height: videoHeight, rotation });
+  const written: string[] = [];
   const assets = await pMap(overlayClips, async (overlayClip, index) => {
     const width = Math.max(8, Math.round(rotatedVideoDimensions.width * overlayClip.box.width));
     const imageData = await renderTextOverlayPng({ text: overlayClip.text, width, fontSize: getOverlayFontSize(overlayClip) * rotatedVideoDimensions.height });
-    const imagePath = join(outputDir, `clippress-text-overlay-${Date.now()}-${index}.png`);
-    await writeFile(imagePath, imageData, { flag: 'wx' });
+    // In ClipPress's temporary folder, so nothing appears next to the export while it runs (#51).
+    const imagePath = join(getTempWorkDir(), `text-overlay-${nanoid()}-${index}.png`);
+    try {
+      await writeFile(imagePath, imageData, { flag: 'wx' });
+    } catch (err) {
+      // A partly written image, and the ones before it: the export that would remove them never starts.
+      await tryDeleteFiles([imagePath, ...written]);
+      throw err;
+    }
+    written.push(imagePath);
     return {
       overlayId: overlayClip.overlayId,
       imagePath,
@@ -646,7 +655,6 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     try {
       const { assets: preparedOverlayAssets } = await prepareTextOverlayAssets({
         overlayClips,
-        outputDir,
         videoWidth,
         videoHeight,
         rotation,

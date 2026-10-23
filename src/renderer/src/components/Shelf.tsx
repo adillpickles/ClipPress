@@ -51,7 +51,10 @@ function ShelfRowInner({ item, state, thumbnail, requestThumbnail, onOpen }: {
       </span>
       <span className={styles['text']}>
         <span className={styles['name']}>{basename(file.name, extname(file.name))}</span>
-        <span className={styles['meta']}>{dateFormat.format(file.modifiedAt)} · {prettyBytes(file.size, { maximumFractionDigits: 0 })}</span>
+        <span className={styles['meta']}>
+          {dateFormat.format(file.modifiedAt)} · {prettyBytes(file.size, { maximumFractionDigits: 0 })}
+          {file.edited && !exported && <span className={styles['edited']}> · {t('Edited')}</span>}
+        </span>
       </span>
       {state === 'open' && <span className={styles['tag']}>{t('Open')}</span>}
       {state === 'next' && <span className={[styles['tag'], styles['tagNext']].join(' ')}>{t('Up next')}</span>}

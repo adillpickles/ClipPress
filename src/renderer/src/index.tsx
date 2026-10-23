@@ -6,6 +6,7 @@ import type Remote from '@electron/remote';
 import type path from 'node:path';
 import type fs from 'node:fs';
 import type fsPromises from 'node:fs/promises';
+import type os from 'node:os';
 import type mimeTypes from 'mime-types';
 import type i18nextFsBackend from 'i18next-fs-backend';
 import type cueParser from 'cue-parser';
@@ -43,6 +44,7 @@ declare global {
       T extends 'node:path' ? typeof path :
       T extends 'fs' ? typeof fs :
       T extends 'fs/promises' ? typeof fsPromises :
+      T extends 'os' ? typeof os :
       T extends 'node:fs/promises' ? typeof fsPromises :
       T extends 'mime-types' ? typeof mimeTypes :
       T extends 'i18next-fs-backend' ? typeof i18nextFsBackend :
@@ -83,3 +85,8 @@ root.render(
     </ErrorBoundary>
   </StrictMode>,
 );
+
+// Later, once the app is idle: leftovers of exports that were killed, in ClipPress's temporary folder.
+setTimeout(() => {
+  import('./util/tempFiles').then(({ purgeOldTempFiles }) => purgeOldTempFiles()).catch((err) => console.warn('Could not tidy the temporary folder', err));
+}, 15_000);

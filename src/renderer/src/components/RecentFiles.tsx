@@ -3,14 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { FiFilm, FiX } from 'react-icons/fi';
 
 import type { RecentFile } from '../../../common/types';
-import { getSuffixedOutPath } from '../util';
+import { getProjectLookupPaths, getProjectStoreEnv } from '../projectStore';
 import styles from './RecentFiles.module.css';
 
 const { stat } = window.require('fs/promises');
 const { basename, dirname } = window.require('path');
-
-/** The project file names autosave uses (see useSegmentsAutoSave). */
-const projectSuffix = 'proj.llc';
 
 async function exists(path: string) {
   try {
@@ -39,8 +36,8 @@ function useRelativeTime() {
 }
 
 /**
- * Recordings opened lately, on the welcome screen. Marks the ones with saved edits (a project file
- * next to them or in the export folder) so it is easy to pick up where you left off (#64).
+ * Recordings opened lately, on the welcome screen. Marks the ones with saved edits (in ClipPress's folder, next to
+ * them or in the export folder), so it is easy to pick up where you left off (#64).
  */
 function RecentFiles({ files, customOutDir, onOpen, onRemove, onClear }: {
   files: RecentFile[],
@@ -65,10 +62,7 @@ function RecentFiles({ files, customOutDir, onOpen, onRemove, onClear }: {
     let cancelled = false;
     (async () => {
       const entries = await Promise.all(files.map(async ({ path }) => {
-        const projectPaths = [
-          getSuffixedOutPath({ filePath: path, nameSuffix: projectSuffix }),
-          ...(customOutDir != null ? [getSuffixedOutPath({ customOutDir, filePath: path, nameSuffix: projectSuffix })] : []),
-        ];
+        const projectPaths = getProjectLookupPaths(path, 'app', customOutDir, getProjectStoreEnv());
         const [mediaExists, ...projectsExist] = await Promise.all([exists(path), ...projectPaths.map((projectPath) => exists(projectPath))]);
         return [path, { missing: !mediaExists, edited: projectsExist.some(Boolean) }] as const;
       }));

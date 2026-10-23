@@ -166,6 +166,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+.edited {
+  color: var(--accent-11);
+  font-weight: 600;
+}
+
 .tag {
   flex-shrink: 0;
   padding: .1rem .5rem;

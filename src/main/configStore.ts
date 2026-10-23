@@ -157,6 +157,7 @@ const defaults: Config = {
   keyBindings: defaultKeyBindings,
   customFfPath: undefined,
   storeProjectInWorkingDir: true,
+  projectFileLocation: 'app',
   enableOverwriteOutput: true,
   mouseWheelZoomModifierKey: 'ctrl',
   mouseWheelFrameSeekModifierKey: 'alt',
@@ -283,6 +284,9 @@ let customStoragePath: string | undefined;
  * "show config file" menu item.
  */
 export const getConfigPath = () => join(customStoragePath ?? app.getPath('userData'), configFileName);
+
+/** The folder ClipPress keeps its own files in: the portable settings folder if there is one, else app data. */
+export const getDataDir = () => customStoragePath ?? app.getPath('userData');
 
 async function tryBackupConfigFile(oldConfigVersion: number, appVersion: string) {
   try {

@@ -140,3 +140,9 @@
   width: 12rem;
   accent-color: var(--accent-9);
 }
+
+.inlineControls {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}

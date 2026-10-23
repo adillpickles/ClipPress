@@ -8,6 +8,8 @@ import createProjectFilePathKey from '../projectFilePathKey';
 import type { ProjectSession, ProjectSnapshot } from '../projectAutoSave';
 import { getSuffixedOutPath, isWindows } from '../util';
 import type { CustomTagsByFile, OverlayClip, ParamsByStreamId, StateSegment } from '../types';
+import type { ProjectFileLocation } from '../../../common/types';
+import { getProjectSavePath, getProjectStoreEnv } from '../projectStore';
 import { errorToast } from '../swal';
 import i18n from '../i18n';
 
@@ -27,9 +29,9 @@ async function fileExists(filePath: string) {
 }
 
 
-export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, projectSession, customOutDir, fileDuration, cutSegments, customTagsByFile, paramsByStreamId, overlayClips }: {
+export default ({ autoSaveProjectFile, projectFileLocation, filePath, projectSession, customOutDir, fileDuration, cutSegments, customTagsByFile, paramsByStreamId, overlayClips }: {
   autoSaveProjectFile: boolean,
-  storeProjectInWorkingDir: boolean,
+  projectFileLocation: ProjectFileLocation,
   filePath: string | undefined,
   /** The open of `filePath` the state belongs to. */
   projectSession: ProjectSession | undefined,
@@ -41,10 +43,11 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
   overlayClips: OverlayClip[],
 }) => {
   const projectSuffix = 'proj.llc';
-  // New LLC format can be stored along with input file or in working dir (customOutDir)
+  // A project next to a file (or in the export folder): older versions, and the opt-in settings.
   const getEdlFilePath = useCallback((fp?: string, cod?: string) => getSuffixedOutPath({ customOutDir: cod, filePath: fp, nameSuffix: projectSuffix }), []);
-  const getProjectFileSavePath = useCallback((storeProjectInWorkingDirIn: boolean) => getEdlFilePath(filePath, storeProjectInWorkingDirIn ? customOutDir : undefined), [getEdlFilePath, filePath, customOutDir]);
-  const projectFileSavePath = useMemo(() => getProjectFileSavePath(storeProjectInWorkingDir), [getProjectFileSavePath, storeProjectInWorkingDir]);
+  // By default in ClipPress's own folder, so recording folders stay clean (see projectStore.ts).
+  const getProjectFileSavePath = useCallback((location: ProjectFileLocation) => (filePath != null ? getProjectSavePath(filePath, location, customOutDir, getProjectStoreEnv()) : undefined), [filePath, customOutDir]);
+  const projectFileSavePath = useMemo(() => getProjectFileSavePath(projectFileLocation), [getProjectFileSavePath, projectFileLocation]);
 
   const [autoSave] = useState(() => new ProjectAutoSave({
     // Closing the file or the app saves at once (see `flushProject`), as does leaving the window.

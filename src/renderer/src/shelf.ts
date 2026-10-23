@@ -7,6 +7,8 @@ export interface ShelfFile {
   /** Milliseconds since the epoch: when the recording was last written, which survives copying. */
   modifiedAt: number,
   size: number,
+  /** It has saved edits (a project in ClipPress's folder, or one next to it). */
+  edited?: boolean | undefined,
 }
 
 export interface ShelfItem {

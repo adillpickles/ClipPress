@@ -285,6 +285,8 @@ import ClipVolumePopover from './components/ClipVolumePopover';
 import { ShelfUpNext } from './components/Shelf';
 import useShelf, { listShelfFolder } from './hooks/useShelf';
 import { buildShelfQueue, pickNextClip, rememberShelfExport } from './shelf';
+import { getProjectLookupPaths, getProjectStoreEnv, getStoredProjectPath } from './projectStore';
+import type { ProjectFileLocation } from '../../common/types';
 import type { ClipVolumeChange } from './components/ClipVolumePopover';
 import { combineAudioGain, isClipVolumeChanged, sanitizeClipGainDb } from './util/audioGain';
 import { recycleOriginal, verifyExportedFiles } from './originalRecycling';
@@ -484,7 +486,7 @@ function App() {
     keyBindings,
     enableSmartCut,
     customFfPath,
-    storeProjectInWorkingDir,
+    projectFileLocation,
     enableOverwriteOutput,
     mouseWheelZoomModifierKey,
     mouseWheelFrameSeekModifierKey,
@@ -537,7 +539,7 @@ function App() {
     setSafeOutputFileName,
     setKeyBindings,
     resetKeyBindings,
-    setStoreProjectInWorkingDir,
+    setProjectFileLocation,
     setCleanupChoices,
     setTrashSourceAfterExport,
     toggleDarkMode,
@@ -1255,9 +1257,9 @@ function App() {
     setEditingCropSegmentId(undefined);
   }, [filePath, speedControlsHistory]);
 
-  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved, saveProjectNow, flushProject, hasUnsavedProjectChanges, deleteProjectFile } = useSegmentsAutoSave({
+  const { projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved, saveProjectNow, flushProject, hasUnsavedProjectChanges, deleteProjectFile } = useSegmentsAutoSave({
     autoSaveProjectFile,
-    storeProjectInWorkingDir,
+    projectFileLocation,
     filePath,
     projectSession,
     customOutDir,
@@ -1267,6 +1269,22 @@ function App() {
     paramsByStreamId,
     overlayClips,
   });
+
+  // Edits found next to the recording (where older versions saved them) move to ClipPress's folder: once autosave has
+  // written them there, the old file goes to the Recycle Bin. If that save can't happen, the old file stays.
+  const sidecarRetirementRef = useRef<{ sessionId: number, path: string }>();
+  useEffect(() => {
+    const pending = sidecarRetirementRef.current;
+    if (pending == null || projectSession?.id !== pending.sessionId || projectFileSavePath == null) return;
+    sidecarRetirementRef.current = undefined;
+    if (pending.path === projectFileSavePath) return;
+    (async () => {
+      saveProjectNow();
+      await whenProjectSaved();
+      if (!(await mainApi.pathExists(projectFileSavePath))) return;
+      await trashFile(pending.path);
+    })().catch((err) => console.warn('Could not move the old project file to the Recycle Bin', err));
+  }, [projectFileSavePath, projectSession, saveProjectNow, whenProjectSaved]);
 
   // The window (and with it the app, and a downloaded update's installation) only closes once
   // the project is saved, or the user has chosen to close without saving.
@@ -1494,11 +1512,10 @@ function App() {
     [ensureWritableOutDir, filePath],
   );
 
-  const toggleStoreProjectInWorkingDir = useCallback(async () => {
-    const newValue = !storeProjectInWorkingDir;
-    const path = getProjectFileSavePath(newValue);
-    if (path) {
-      // path will be falsy if no file loaded
+  const changeProjectFileLocation = useCallback(async (location: ProjectFileLocation) => {
+    const path = getProjectFileSavePath(location);
+    // Next to a recording (path is undefined with no file open), the folder may need permission first.
+    if (path != null && location !== 'app') {
       try {
         await ensureAccessToSourceDir(path);
       } catch (err) {
@@ -1506,12 +1523,11 @@ function App() {
         console.error(err);
       }
     }
-    setStoreProjectInWorkingDir(newValue);
+    setProjectFileLocation(location);
   }, [
     ensureAccessToSourceDir,
     getProjectFileSavePath,
-    setStoreProjectInWorkingDir,
-    storeProjectInWorkingDir,
+    setProjectFileLocation,
   ]);
 
   const userSettingsContext = useMemo<UserSettingsContextType>(() => {
@@ -4618,13 +4634,8 @@ function App() {
         loadedProjectPath = path;
       }
 
-      async function tryOpenProjectPath(path: string) {
-        if (!(await mainApi.pathExists(path))) return false;
-        await loadProject(path);
-        return true;
-      }
-
-      const storeProjectInSourceDir = !storeProjectInWorkingDir;
+      // A project found in an older place (next to the recording), to move to ClipPress's folder once it is saved there.
+      let sidecarToRetire: string | undefined;
 
       async function tryFindAndLoadProjectFile({
         chapters,
@@ -4634,18 +4645,19 @@ function App() {
         cod: string | undefined;
       }) {
         try {
-          // First try to open from from working dir
-          if (await tryOpenProjectPath(getEdlFilePath(fp, cod))) return;
-
-          // then try to open project from source file dir
-          const sameDirEdlFilePath = getEdlFilePath(fp);
-          // MAS only allows fs.access (pathExists) if we don't have access to input dir yet, so check first if the file exists,
-          // so we don't need to annoy the user by asking for permission if the project file doesn't exist
-          if (await mainApi.pathExists(sameDirEdlFilePath)) {
-            // Ok, the file exists. now we have to ask the user, because we need to read that file
-            await ensureAccessToSourceDir(fp);
-            // Ok, we got access from the user (or already have access), now read the project file
-            await loadProject(sameDirEdlFilePath);
+          // Where the setting saves first, then ClipPress's folder, the export folder and next to the recording.
+          const storeEnv = getProjectStoreEnv();
+          const storedPath = getStoredProjectPath(fp, storeEnv);
+          for (const candidate of getProjectLookupPaths(fp, projectFileLocation, cod, storeEnv)) {
+            // MAS only allows fs.access (pathExists) if we don't have access to input dir yet, so check first if the file exists,
+            // so we don't need to annoy the user by asking for permission if the project file doesn't exist
+            if (await mainApi.pathExists(candidate)) {
+              // Ok, the file exists. Outside our own folder we may have to ask the user, because we need to read it
+              if (candidate !== storedPath) await ensureAccessToSourceDir(fp);
+              await loadProject(candidate);
+              if (projectFileLocation === 'app' && candidate !== storedPath) sidecarToRetire = candidate;
+              return;
+            }
           }
 
           // OK, we didn't find a project file, instead maybe try to create project (segments) from chapters
@@ -4731,8 +4743,8 @@ function App() {
           outDir: customOutDir,
         });
 
-        // if storeProjectInSourceDir is true, we will be writing project file to input path's dir, so ensure that one too
-        if (storeProjectInSourceDir) await ensureAccessToSourceDir(fp);
+        // Projects saved next to the recording are written to its folder, so ensure access to that one too
+        if (projectFileLocation === 'recording') await ensureAccessToSourceDir(fp);
 
         const existingHtml5FriendlyFile = await findExistingHtml5FriendlyFile(
           fp,
@@ -4866,6 +4878,7 @@ function App() {
         if (isStale()) return;
         // Autosave compares later changes with the state opened here.
         setProjectSession({ id: generation, loadedProjectPath });
+        if (sidecarToRetire != null) sidecarRetirementRef.current = { sessionId: generation, path: sidecarToRetire };
         setRecentFiles((list) => addRecentFile(list, fp, Date.now(), isWindows || isMac));
         setShelfFolder(dirname(fp));
         // This needs to be last, because it triggers <video> to load the video
@@ -4885,9 +4898,8 @@ function App() {
       }
     },
     [
-      storeProjectInWorkingDir,
+      projectFileLocation,
       setWorking,
-      getEdlFilePath,
       enableImportChapters,
       ensureAccessToSourceDir,
       loadCutSegments,
@@ -7151,9 +7163,7 @@ function App() {
                           toggleKeyboardShortcuts
                         }
                         askForCleanupChoices={askForCleanupChoices}
-                        toggleStoreProjectInWorkingDir={
-                          toggleStoreProjectInWorkingDir
-                        }
+                        onProjectFileLocationChange={changeProjectFileLocation}
                         showAdvancedSettings={showAdvancedSettings}
                         setShowAdvancedSettings={setShowAdvancedSettings}
                       />

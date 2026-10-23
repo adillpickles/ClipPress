@@ -49,6 +49,9 @@ export type SizeLimitNamingMode = 'auto' | 'custom_template';
 
 export type ShelfOrder = 'date' | 'name';
 
+/** Where autosave keeps a recording's edits: ClipPress's own folder, next to the recording, or the export folder. */
+export type ProjectFileLocation = 'app' | 'recording' | 'exportFolder';
+
 /** An export the shelf remembers: the clip it came from, and the files it wrote. */
 export interface ShelfExport {
   source: string,
@@ -128,6 +131,7 @@ export interface Config {
   keyBindings: KeyBinding[],
   customFfPath: string | undefined,
   storeProjectInWorkingDir: boolean,
+  projectFileLocation: ProjectFileLocation,
   enableOverwriteOutput: boolean,
   mouseWheelZoomModifierKey: ModifierKey,
   mouseWheelFrameSeekModifierKey: ModifierKey,

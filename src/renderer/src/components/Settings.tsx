@@ -14,7 +14,8 @@ import { askForFfPath } from '../dialogs';
 import { getEnableImportChaptersOptions, isMasBuild, isStoreBuild } from '../util';
 import type { SupportedLanguage } from '../../../common/i18n';
 import { langNames } from '../../../common/i18n';
-import type { Config, EnableImportChapters, ModifierKey, TimecodeFormat } from '../../../common/types.js';
+import type { Config, EnableImportChapters, ModifierKey, ProjectFileLocation, TimecodeFormat } from '../../../common/types.js';
+import { getProjectsDir, getProjectStoreEnv } from '../projectStore';
 import styles from './Settings.module.css';
 import Select from './Select';
 import Button from './Button';
@@ -42,21 +43,25 @@ function Settings({
   onTunerRequested,
   onKeyboardShortcutsDialogRequested,
   askForCleanupChoices,
-  toggleStoreProjectInWorkingDir,
+  onProjectFileLocationChange,
   showAdvancedSettings,
   setShowAdvancedSettings,
 }: {
   onTunerRequested: (type: TunerType) => void,
   onKeyboardShortcutsDialogRequested: () => void,
   askForCleanupChoices: () => Promise<unknown>,
-  toggleStoreProjectInWorkingDir: () => Promise<void>,
+  onProjectFileLocationChange: (location: ProjectFileLocation) => Promise<void>,
   showAdvancedSettings: boolean,
   setShowAdvancedSettings: (v: boolean) => void,
 }) {
   const { t } = useTranslation();
   const [category, setCategory] = useState<Category>('general');
+  const projectLocationId = useId();
+  const showProjectsFolder = useCallback(() => {
+    window.require('electron').shell.openPath(getProjectsDir(getProjectStoreEnv())).catch?.(() => undefined);
+  }, []);
 
-  const { customOutDir, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, invertTimelineScroll, setInvertTimelineScroll, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, storeProjectInWorkingDir, mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey, setSegmentMouseModifierKey, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport } = useUserSettings();
+  const { customOutDir, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, invertTimelineScroll, setInvertTimelineScroll, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey, setSegmentMouseModifierKey, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport } = useUserSettings();
 
   const onLangChange = useCallback<ChangeEventHandler<HTMLSelectElement>>((e) => {
     const { value } = e.target;
@@ -404,19 +409,31 @@ function Settings({
           <>
             <SettingRow
               label={t('Save edits automatically')}
-              description={t('Your clips, text and settings are kept in a project file (.llc).')}
-              details={t('Opening the same recording again brings your edits back. The project file is named after the recording, with "-proj.llc" at the end.')}
+              description={t('Opening the same recording again brings back your clips, text and settings.')}
             >
               <Switch checked={autoSaveProjectFile} onCheckedChange={setAutoSaveProjectFile} aria-label={t('Save edits automatically')} />
             </SettingRow>
 
             <SettingRow
-              label={t('Project file location')}
-              value={storeProjectInWorkingDir ? t('In the export folder.') : t('Next to the recording.')}
+              label={t('Where edits are kept')}
+              description={t('In ClipPress, your recording folders stay clean. Next to the recording, a project file (.llc) sits beside each edited recording.')}
             >
-              <Button disabled={!autoSaveProjectFile} onClick={toggleStoreProjectInWorkingDir}>
-                {storeProjectInWorkingDir ? t('Store next to the recording') : t('Store in the export folder')}
-              </Button>
+              <div className={styles['inlineControls']}>
+                <Select
+                  id={projectLocationId}
+                  value={projectFileLocation}
+                  disabled={!autoSaveProjectFile}
+                  onChange={(e) => onProjectFileLocationChange(e.target.value as ProjectFileLocation)}
+                  aria-label={t('Where edits are kept')}
+                >
+                  <option value="app">{t('In ClipPress')}</option>
+                  <option value="recording">{t('Next to the recording')}</option>
+                  <option value="exportFolder" disabled={customOutDir == null}>{t('In the export folder')}</option>
+                </Select>
+                {projectFileLocation === 'app' && (
+                  <Button onClick={showProjectsFolder} title={t('Show the folder ClipPress keeps edits in')}>{t('Show')}</Button>
+                )}
+              </div>
             </SettingRow>
           </>
         );

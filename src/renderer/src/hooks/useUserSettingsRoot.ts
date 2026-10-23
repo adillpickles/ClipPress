@@ -151,6 +151,8 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ customFfPath }), [customFfPath]);
   const [storeProjectInWorkingDir, setStoreProjectInWorkingDir] = useState(safeGetConfigInitial('storeProjectInWorkingDir'));
   useEffect(() => safeSetConfig({ storeProjectInWorkingDir }), [storeProjectInWorkingDir]);
+  const [projectFileLocation, setProjectFileLocation] = useState(safeGetConfigInitial('projectFileLocation'));
+  useEffect(() => safeSetConfig({ projectFileLocation }), [projectFileLocation]);
   const [enableOverwriteOutput, setEnableOverwriteOutput] = useState(safeGetConfigInitial('enableOverwriteOutput'));
   useEffect(() => safeSetConfig({ enableOverwriteOutput }), [enableOverwriteOutput]);
   const [mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey] = useState(safeGetConfigInitial('mouseWheelZoomModifierKey'));
@@ -338,6 +340,7 @@ export default function useUserSettingsRoot() {
     enableSmartCut,
     customFfPath,
     storeProjectInWorkingDir,
+    projectFileLocation,
     enableOverwriteOutput,
     mouseWheelZoomModifierKey,
     mouseWheelFrameSeekModifierKey,
@@ -434,6 +437,7 @@ export default function useUserSettingsRoot() {
     enableSmartCut,
     customFfPath,
     storeProjectInWorkingDir,
+    projectFileLocation,
     enableOverwriteOutput,
     mouseWheelZoomModifierKey,
     mouseWheelFrameSeekModifierKey,
@@ -547,6 +551,7 @@ export default function useUserSettingsRoot() {
     setEnableSmartCut,
     setCustomFfPath,
     setStoreProjectInWorkingDir,
+    setProjectFileLocation,
     setEnableOverwriteOutput,
     setMouseWheelZoomModifierKey,
     setMouseWheelFrameSeekModifierKey,
