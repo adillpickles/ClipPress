@@ -12,10 +12,8 @@ import remote from '@electron/remote/main/index.js';
 import { stat } from 'node:fs/promises';
 import assert from 'node:assert';
 import timers from 'node:timers/promises';
-import { z } from 'zod';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import electronUnhandled from 'electron-unhandled';
-import { fileTypeFromFile } from 'file-type/node';
 import type { Asyncify } from 'type-fest';
 import mitt from 'mitt';
 
@@ -430,11 +428,17 @@ function parseCliArgs(rawArgv = process.argv) {
 
 const argv = parseCliArgs();
 
-const lossyModeSchema = z.object({ videoEncoder: z.union([z.literal('libx264'), z.literal('libx265'), z.literal('libsvtav1')]) });
+// Checked by hand: zod would add about 40 ms to every start for this one option.
+const lossyVideoEncoders = ['libx264', 'libx265', 'libsvtav1'] as const;
+export interface LossyMode { videoEncoder: typeof lossyVideoEncoders[number] }
+function parseLossyMode(value: unknown): LossyMode {
+  const videoEncoder = typeof value === 'object' && value != null ? (value as { videoEncoder?: unknown }).videoEncoder : undefined;
+  if (!lossyVideoEncoders.includes(videoEncoder as LossyMode['videoEncoder'])) throw new Error(`--lossy-mode needs videoEncoder: ${lossyVideoEncoders.join(', ')}`);
+  return { videoEncoder: videoEncoder as LossyMode['videoEncoder'] };
+}
 // eslint-disable-next-line prefer-destructuring
-const lossyMode = argv['lossyMode'] ? lossyModeSchema.parse(JSON5.parse(argv['lossyMode'])) : undefined;
+const lossyMode = argv['lossyMode'] ? parseLossyMode(JSON5.parse(argv['lossyMode'])) : undefined;
 
-export type LossyMode = z.infer<typeof lossyModeSchema>;
 
 if (argv['localesPath'] != null) i18nCommon.setCustomLocalesPath(argv['localesPath']);
 
@@ -622,6 +626,8 @@ async function init() {
     }
 
     createWindow();
+    // Needed for the first FFmpeg run, but not to show the window.
+    ffmpeg.loadExeca().catch((err: unknown) => logger.error('Failed to load execa', err));
     // will also updateMenu and set about panel options
     await changeLanguage(language);
 
@@ -658,10 +664,23 @@ function sendOsNotification(options: NotificationConstructorOptions) {
   notification.show();
 }
 
+/** The title bar's menu buttons, as plain data in one call (reading a remote menu item costs a call per property). */
+function getMenuBarItems() {
+  const applicationMenu = electron.Menu.getApplicationMenu();
+  if (applicationMenu == null) return [];
+  return applicationMenu.items.flatMap((item, index) => (
+    item.visible !== false && item.submenu != null && item.role !== 'appMenu'
+      ? [{ index, key: String(item.id || item.label || index), label: item.label }]
+      : []
+  ));
+}
+
 const remoteApi = {
   pathExists,
+  getMenuBarItems,
   downloadMediaUrl,
-  fileTypeFromFile,
+  // Loaded when first used, not at every start.
+  fileTypeFromFile: async (path: string) => (await import('file-type/node')).fileTypeFromFile(path),
   focusWindow,
   quitApp,
   setProgressBar,

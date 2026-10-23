@@ -92,6 +92,8 @@ export default ({ filePath }: { filePath: string | undefined }) => {
   const onPlayingChange = useCallback((val: boolean) => {
     playingRef.current = val;
     setPlaying(val);
+    // Timeupdates are only kept while playing, so start from where the video is.
+    if (val && videoRef.current) setPlayerTime(videoRef.current.currentTime);
     if (!val && videoRef.current) {
       // A seek still on its way (e.g. playback paused for a scrub) is where the user asked to be.
       setCommandedTime(seekQueue.latestTarget() ?? videoRef.current.currentTime);

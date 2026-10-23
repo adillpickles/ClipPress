@@ -1,9 +1,9 @@
 import { memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FiCopy, FiMinus, FiSquare, FiX } from 'react-icons/fi';
-import type { MenuItem } from 'electron';
 
 import ClipPressMark from './components/ClipPressMark';
+import mainApi from './mainApi';
 import styles from './AppChrome.module.css';
 
 const remote = window.require('@electron/remote');
@@ -14,54 +14,56 @@ const shouldUseCustomChrome = process.platform !== 'darwin';
 function AppChrome() {
   const { t } = useTranslation();
   const [isMaximized, setIsMaximized] = useState(false);
-  const [isFocused, setIsFocused] = useState(true);
-  // Bumped when the main process rebuilds the menu (language or interface mode changed).
-  const [, setMenuVersion] = useState(0);
+  const [isFocused, setIsFocused] = useState(() => document.hasFocus());
+  // The menu buttons, fetched in one call now and whenever the main process rebuilds the menu (language or
+  // interface mode changed). Reading remote menu items here instead costs a synchronous call per property.
+  const [menuItems, setMenuItems] = useState<{ index: number, key: string, label: string }[]>([]);
 
   useEffect(() => {
     if (!shouldUseCustomChrome) return undefined;
     const { ipcRenderer } = window.require('electron');
-    const onMenuUpdated = () => setMenuVersion((v) => v + 1);
-    ipcRenderer.on('menuUpdated', onMenuUpdated);
-    return () => { ipcRenderer.removeListener('menuUpdated', onMenuUpdated); };
+    let latest = 0;
+    const refresh = () => {
+      latest += 1;
+      const request = latest;
+      mainApi.getMenuBarItems()
+        .then((items) => { if (request === latest) setMenuItems(items); })
+        .catch((err: unknown) => console.error('Failed to read the menu', err));
+    };
+    ipcRenderer.on('menuUpdated', refresh);
+    refresh();
+    return () => { ipcRenderer.removeListener('menuUpdated', refresh); };
   }, []);
 
   useEffect(() => {
     if (!shouldUseCustomChrome) return undefined;
 
-    const currentWindow = remote.getCurrentWindow();
-    const syncState = () => {
-      setIsMaximized(currentWindow.isMaximized());
-      setIsFocused(currentWindow.isFocused());
-    };
+    // Focus from the page's own events: asking the main process (each a synchronous call) on every focus change
+    // made switching back to the app stall.
+    const onFocus = () => setIsFocused(true);
+    const onBlur = () => setIsFocused(false);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
 
-    syncState();
-    currentWindow.on('maximize', syncState);
-    currentWindow.on('unmaximize', syncState);
-    currentWindow.on('focus', syncState);
-    currentWindow.on('blur', syncState);
+    const currentWindow = remote.getCurrentWindow();
+    const syncMaximized = () => setIsMaximized(currentWindow.isMaximized());
+    syncMaximized();
+    currentWindow.on('maximize', syncMaximized);
+    currentWindow.on('unmaximize', syncMaximized);
 
     return () => {
-      currentWindow.removeListener('maximize', syncState);
-      currentWindow.removeListener('unmaximize', syncState);
-      currentWindow.removeListener('focus', syncState);
-      currentWindow.removeListener('blur', syncState);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
+      currentWindow.removeListener('maximize', syncMaximized);
+      currentWindow.removeListener('unmaximize', syncMaximized);
     };
   }, []);
 
-  const menuItems = (() => {
-    if (!shouldUseCustomChrome) return [];
-
-    const applicationMenu = Menu.getApplicationMenu();
-    if (applicationMenu == null) return [];
-
-    return applicationMenu.items.filter((item: MenuItem) => item.visible !== false && item.submenu != null && item.role !== 'appMenu');
-  })();
-
-  const openMenu = useCallback((item: MenuItem, button: HTMLButtonElement | null) => {
-    if (button == null || item.submenu == null) return;
+  const openMenu = useCallback((index: number, button: HTMLButtonElement | null) => {
+    const submenu = Menu.getApplicationMenu()?.items[index]?.submenu;
+    if (button == null || submenu == null) return;
     const rect = button.getBoundingClientRect();
-    item.submenu.popup({
+    submenu.popup({
       window: remote.getCurrentWindow(),
       x: Math.round(rect.left),
       y: Math.round(rect.bottom + 6),
@@ -97,11 +99,11 @@ function AppChrome() {
         <div className={styles['menuBar']}>
           {menuItems.map((item) => (
             <button
-              key={item.id ?? item.label}
+              key={item.key}
               type="button"
               className={styles['menuButton']}
-              onClick={(event) => openMenu(item, event.currentTarget)}
-              title={item.label ?? t('Menu')}
+              onClick={(event) => openMenu(item.index, event.currentTarget)}
+              title={item.label || t('Menu')}
             >
               {item.label}
             </button>

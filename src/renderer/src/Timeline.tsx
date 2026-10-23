@@ -86,11 +86,13 @@ const FilmTape = memo(({ frames, toLanePercent, fileEnd }: {
   fileEnd: number,
 }) => (
   <div className={styles['filmTape']} aria-hidden>
-    {frames.map((frame, i) => {
-      const left = toLanePercent(frame.time);
-      const width = toLanePercent(frames[i + 1]?.time ?? fileEnd) - left;
-      return <img key={frame.url} src={frame.url} alt="" draggable={false} style={{ left: `${left}%`, width: `${width}%` }} />;
-    })}
+    <div className={styles['filmFrames']}>
+      {frames.map((frame, i) => {
+        const left = toLanePercent(frame.time);
+        const width = toLanePercent(frames[i + 1]?.time ?? fileEnd) - left;
+        return <img key={frame.url} src={frame.url} alt="" draggable={false} style={{ left: `${left}%`, width: `${width}%` }} />;
+      })}
+    </div>
   </div>
 ));
 
@@ -99,22 +101,26 @@ const FilmTape = memo(({ frames, toLanePercent, fileEnd }: {
  * every display frame, written straight to the element (no React render, no easing), so it moves smoothly
  * rather than in steps each time the video reports its position (about 4 times a second).
  */
-function Playhead({ playing, commandedTime, getCurrentTime, calculateTimelinePos }: {
+function Playhead({ playing, commandedTime, getCurrentTime, calculateTimelinePos, lanePx }: {
   playing: boolean,
   commandedTime: number,
   getCurrentTime: () => number,
   calculateTimelinePos: (time: number | undefined) => number | undefined,
+  /** The lane's width: the playhead moves with a transform (no layout or repaint of the lanes each frame). */
+  lanePx: number,
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const calculateTimelinePosRef = useRef(calculateTimelinePos);
+  const lanePxRef = useRef(lanePx);
 
   useLayoutEffect(() => {
     calculateTimelinePosRef.current = calculateTimelinePos;
+    lanePxRef.current = lanePx;
     const el = ref.current;
     if (el == null) return;
     const pos = calculateTimelinePos(playing ? getCurrentTime() : commandedTime);
-    el.style.left = `${(pos ?? 0) * 100}%`;
-  }, [calculateTimelinePos, commandedTime, getCurrentTime, playing]);
+    el.style.transform = `translateX(${(pos ?? 0) * lanePx}px)`;
+  }, [calculateTimelinePos, commandedTime, getCurrentTime, lanePx, playing]);
 
   useEffect(() => {
     if (!playing) return undefined;
@@ -122,7 +128,7 @@ function Playhead({ playing, commandedTime, getCurrentTime, calculateTimelinePos
       const el = ref.current;
       if (el != null) {
         const pos = calculateTimelinePosRef.current(getCurrentTime());
-        if (pos != null) el.style.left = `${pos * 100}%`;
+        if (pos != null) el.style.transform = `translateX(${pos * lanePxRef.current}px)`;
       }
       frame = requestAnimationFrame(follow);
     });
@@ -279,11 +285,8 @@ function Timeline({
 
   const isZoomed = zoom > 1;
 
-  const keyFramesInZoomWindow = useMemo(() => (zoomWindowEndTime == null ? [] : neighbouringKeyFrames.filter((f) => f.time >= zoomWindowStartTime && f.time <= zoomWindowEndTime)), [neighbouringKeyFrames, zoomWindowEndTime, zoomWindowStartTime]);
+  const zoomWindowLength = zoomWindowEndTime != null ? zoomWindowEndTime - zoomWindowStartTime : undefined;
 
-  // Don't show keyframes if too packed together (at current zoom)
-  // See https://github.com/mifi/lossless-cut/issues/259
-  const areKeyframesTooClose = keyFramesInZoomWindow.length > zoom * 200;
 
   const retimeSegments = useMemo(() => cutSegments.flatMap((seg, index) => (
     seg.end != null && speedControlsSegmentIds.has(seg.segId) ? [{ seg: { ...seg, end: seg.end }, index }] : []
@@ -291,12 +294,19 @@ function Timeline({
 
   // The live speed of the segment being retimed, plus the timeline length when the drag began.
   const [retimeDrag, setRetimeDrag] = useState<{ segId: string, speed: number, scaleDuration: number }>();
+  // A clip edge being dragged follows the cursor exactly, rather than springing after it.
+  const [segmentDragging, setSegmentDragging] = useState(false);
 
-  const timelineMap = useMemo(() => {
-    if (invertCutSegments) return createTimelineMap([], fileDurationNonZero);
-    const segments = retimeDrag == null ? cutSegments : cutSegments.map((seg) => (seg.segId === retimeDrag.segId ? { ...seg, speed: retimeDrag.speed } : seg));
-    return createTimelineMap(segments, fileDurationNonZero);
-  }, [cutSegments, fileDurationNonZero, invertCutSegments, retimeDrag]);
+  // Only clips at another speed shape the map: keyed on them, so a plain trim or edit keeps the same map (and the
+  // same toLanePercent), and the other clips, the filmstrip and the ruler don't re-render.
+  const retimedSegments = (retimeDrag == null ? cutSegments : cutSegments.map((seg) => (seg.segId === retimeDrag.segId ? { ...seg, speed: retimeDrag.speed } : seg)))
+    .filter((seg) => seg.end != null && seg.end > seg.start && (seg.speed ?? 1) !== 1);
+  const retimedKey = invertCutSegments ? '' : retimedSegments.map((seg) => `${seg.start}:${seg.end}:${seg.speed}`).join('|');
+  const timelineMap = useMemo(
+    () => createTimelineMap(invertCutSegments ? [] : retimedSegments, fileDurationNonZero),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [retimedKey, fileDurationNonZero, invertCutSegments],
+  );
 
   // While retiming, the pixel scale stays fixed so the edge tracks the cursor: lanes grow or
   // shrink and scroll (with room to keep dragging) instead of the whole timeline refitting.
@@ -408,8 +418,29 @@ function Timeline({
     return () => observer.disconnect();
   }, []);
 
+  // The visible start while scrolling is kept here, updated once per frame, and handed to the editor only once
+  // scrolling stops (it's only used there for thumbnails): scrolling and auto-pan don't re-render the whole editor.
+  const [visibleStart, setVisibleStart] = useState(zoomWindowStartTime);
+  const [propStart, setPropStart] = useState(zoomWindowStartTime);
+  if (zoomWindowStartTime !== propStart) {
+    // The editor moved it (e.g. a new file): follow.
+    setPropStart(zoomWindowStartTime);
+    setVisibleStart(zoomWindowStartTime);
+  }
+  const scrollFrameRef = useRef(0);
+  const reportTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => {
+    cancelAnimationFrame(scrollFrameRef.current);
+    clearTimeout(reportTimerRef.current);
+  }, []);
   const onTimelineScroll = useCallback(() => {
-    onZoomWindowStartTimeChange(calcZoomWindowStartTime());
+    cancelAnimationFrame(scrollFrameRef.current);
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      const start = calcZoomWindowStartTime();
+      setVisibleStart(start);
+      clearTimeout(reportTimerRef.current);
+      reportTimerRef.current = setTimeout(() => onZoomWindowStartTimeChange(start), 250);
+    });
   }, [calcZoomWindowStartTime, onZoomWindowStartTimeChange]);
 
   // Keep cursor in middle while scrolling
@@ -468,6 +499,7 @@ function Timeline({
       } else if (currentCutSeg.end != null && mouseTimelinePos >= currentCutSeg.start && mouseTimelinePos <= currentCutSeg.end) {
         resizingSegmentRef.current = { operation: 'move', offset: mouseTimelinePos - currentCutSeg.start };
       }
+      if (resizingSegmentRef.current != null) setSegmentDragging(true);
     }
 
     mouseDownRef.current = e.target;
@@ -498,6 +530,7 @@ function Timeline({
     function onMouseUp() {
       mouseDownRef.current = undefined;
       resizingSegmentRef.current = undefined;
+      setSegmentDragging(false);
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('mousemove', onMouseMove);
       if (scrubbing) onScrubbingChange(false);
@@ -520,6 +553,7 @@ function Timeline({
     if (currentCutSeg == null) return;
     seekAbs(edge === 'start' ? currentCutSeg.start : (currentCutSeg.end ?? currentCutSeg.start));
     resizingSegmentRef.current = { operation: edge };
+    setSegmentDragging(true);
     mouseDownRef.current = e.target;
     let scrubbing = false;
 
@@ -540,6 +574,7 @@ function Timeline({
     function onMouseUp() {
       mouseDownRef.current = undefined;
       resizingSegmentRef.current = undefined;
+      setSegmentDragging(false);
       window.removeEventListener('mousemove', onMouseMove);
       if (scrubbing) onScrubbingChange(false);
     }
@@ -723,11 +758,15 @@ function Timeline({
   const retimeOverlay = simpleMode;
   const showRetimeLane = !retimeOverlay && retimeSegments.length > 0;
   const lanePx = scrollerWidth * (laneWidthPercent / 100);
+  const keyFramesInZoomWindow = useMemo(() => (zoomWindowLength == null ? [] : neighbouringKeyFrames.filter((f) => f.time >= visibleStart && f.time <= visibleStart + zoomWindowLength)), [neighbouringKeyFrames, visibleStart, zoomWindowLength]);
+  // Don't show keyframes if too packed together (at current zoom)
+  // See https://github.com/mifi/lossless-cut/issues/259
+  const areKeyframesTooClose = keyFramesInZoomWindow.length > zoom * 200;
   const pxToTime = useCallback((px: number) => timelineMap.toSource((px / Math.max(lanePx, 1)) * laneDuration), [laneDuration, lanePx, timelineMap]);
   // The visible stretch of the lane, in source time. Retimed clips stretch or squeeze the lane, so
   // this is mapped from lane time rather than taken as a fixed share of the file.
   const visibleEnd = lanePx > 0
-    ? timelineMap.toSource(Math.min(laneDuration, timelineMap.toDisplay(zoomWindowStartTime) + (scrollerWidth / lanePx) * laneDuration))
+    ? timelineMap.toSource(Math.min(laneDuration, timelineMap.toDisplay(visibleStart) + (scrollerWidth / lanePx) * laneDuration))
     : (zoomWindowEndTime ?? fileDurationNonZero);
 
   const hoverLabel = useMemo(() => {
@@ -769,7 +808,7 @@ function Timeline({
               toLanePercent={toLanePercent}
               lanePx={lanePx}
               laneDuration={laneDuration}
-              visibleStart={zoomWindowStartTime}
+              visibleStart={visibleStart}
               visibleEnd={visibleEnd}
               fileDuration={fileDurationNonZero}
               hoverTime={showHoverTime ? hoveringTime : undefined}
@@ -896,7 +935,7 @@ function Timeline({
                   key={seg.segId}
                   left={toLanePercent(seg.start)}
                   width={toLanePercent(seg.end) - toLanePercent(seg.start)}
-                  instant={retimeDragging}
+                  instant={retimeDragging || segmentDragging}
                   invertCutSegments={invertCutSegments}
                 />
               ))}
@@ -913,7 +952,7 @@ function Timeline({
                     onSegClick={setCurrentSegIndex}
                     isActive={i === currentSegIndexSafe}
                     toLanePercent={toLanePercent}
-                    instant={retimeDragging}
+                    instant={retimeDragging || segmentDragging}
                     invertCutSegments={invertCutSegments}
                     formatTimecode={formatTimecode}
                     selected={selected}
@@ -972,14 +1011,14 @@ function Timeline({
                 toLanePercent={toLanePercent}
                 pxToTime={pxToTime}
                 lanePx={lanePx}
-                visibleStartPx={(toLanePercent(zoomWindowStartTime) / 100) * lanePx}
+                visibleStartPx={(toLanePercent(visibleStart) / 100) * lanePx}
                 viewportPx={scrollerWidth}
                 onClipClick={setCurrentSegIndex}
                 onClipContextMenu={onEditClipVolume}
               />
             )}
 
-            <Playhead playing={playing} commandedTime={commandedTime} getCurrentTime={getCurrentTime} calculateTimelinePos={calculateTimelinePos} />
+            <Playhead playing={playing} commandedTime={commandedTime} getCurrentTime={getCurrentTime} calculateTimelinePos={calculateTimelinePos} lanePx={lanePx} />
           </div>
         </div>
       </div>

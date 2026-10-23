@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from 'i18next';
 import { FiCode, FiFileText } from 'react-icons/fi';
-import Markdown from 'react-markdown';
 
 import * as Dialog from './Dialog';
 import useUserSettings from '../hooks/useUserSettings';
@@ -15,6 +14,9 @@ import Button, { DialogButton } from './Button';
 import styles from './WhatsNew.module.css';
 import { compareReleasesUrl, getReleaseUrl } from '../../../common/constants';
 
+
+// Loaded only when there are notes to show: the Markdown parser isn't needed at every start.
+const WhatsNewMarkdown = lazy(() => import('./WhatsNewMarkdown'));
 
 // see also generateVersions.ts
 const versions: { version: string, highlightsMd?: string | undefined }[] = versionsJson;
@@ -72,17 +74,9 @@ export default function WhatsNew() {
                   {!(isMasBuild && matchingVersions.length === 1) && <h2>{formatVersion(version)}</h2>}
 
                   {highlightsMd != null && (
-                    <Markdown
-                      components={{
-                        // eslint-disable-next-line react/no-unstable-nested-components
-                        code(props) {
-                          // eslint-disable-next-line react/jsx-props-no-spreading
-                          return <code className="highlighted" {...props} />;
-                        },
-                      }}
-                    >
-                      {highlightsMd}
-                    </Markdown>
+                    <Suspense fallback={<div style={{ minHeight: '3em' }} />}>
+                      <WhatsNewMarkdown>{highlightsMd}</WhatsNewMarkdown>
+                    </Suspense>
                   )}
 
                   {/* The highlights stay short; everything else is one click away. */}

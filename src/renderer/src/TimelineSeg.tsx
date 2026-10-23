@@ -66,6 +66,7 @@ function Marker({
     <motion.div
       style={style}
       layout={!prefersReducedMotion}
+      layoutDependency={seg.start}
       transition={springAnimation}
       initial={{ opacity: 0, scale: 0 }}
       animate={{ opacity: selected ? 1 : 0.5, scale: 1 }}
@@ -229,6 +230,8 @@ function Segment({
           backgroundColor: hasFrames ? 'transparent' : backgroundColor,
         }}
         layout={!prefersReducedMotion && !instant}
+        // Measured only when this clip moves, not on every render of the timeline.
+        layoutDependency={`${seg.start}:${seg.end}`}
         transition={instant ? { duration: 0 } : springAnimation}
         initial={{ opacity: 0, scaleX: 0 }}
         animate={{ opacity: 1, scaleX: 1 }}
@@ -266,6 +269,7 @@ function Segment({
     <motion.div
       style={wrapperStyle}
       layout={!prefersReducedMotion && !instant}
+      layoutDependency={`${seg.start}:${seg.end}`}
       transition={instant ? { duration: 0 } : springAnimation}
       initial={{ opacity: 0, scaleX: 0 }}
       animate={{ opacity: 1, scaleX: 1, backgroundColor }}

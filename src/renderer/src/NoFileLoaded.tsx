@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Fragment, memo, useState } from 'react';
+import { Fragment, memo, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Trans, useTranslation } from 'react-i18next';
 import { FiDownload, FiFolder, FiScissors, FiShare, FiType } from 'react-icons/fi';
@@ -28,6 +28,8 @@ function Step({ icon, title, children }: { icon: ReactNode, title: string, child
   );
 }
 
+let welcomeShown = false;
+
 function NoFileLoaded({ onClick, onOpenFolderClick, keyBindingByAction, showSteps, children }: {
   onClick: () => void,
   onOpenFolderClick: () => void,
@@ -39,10 +41,15 @@ function NoFileLoaded({ onClick, onOpenFolderClick, keyBindingByAction, showStep
 }) {
   const { t } = useTranslation();
   const [dragging, setDragging] = useState(false);
+  const [shownBefore] = useState(() => welcomeShown);
+  useEffect(() => {
+    welcomeShown = true;
+  }, []);
 
   return (
     <motion.div
-      initial={{ opacity: 0 }}
+      // Shown at once when the app starts (a fade there only delays the first picture); faded in when you come back.
+      initial={shownBefore ? { opacity: 0 } : false}
       animate={{ opacity: 1 }}
       onDragEnter={(e) => {
         e.preventDefault();

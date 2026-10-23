@@ -4,7 +4,7 @@ import prettyBytes from 'pretty-bytes';
 import sortBy from 'lodash/sortBy';
 import type { Options } from 'p-retry';
 import type { ExecaError } from 'execa';
-import confetti from 'canvas-confetti';
+import type confetti from 'canvas-confetti';
 import invariant from 'tiny-invariant';
 
 import { ffmpegExtractWindow } from './util/constants';
@@ -434,7 +434,8 @@ export const getEnableImportChaptersOptions = (): Record<EnableImportChapters, s
 export const dialogButtonOrder = isWindows ? 'rtl' : 'ltr'; // use ltr for mac and linux, rtl for windows
 
 export function shootConfetti(options?: confetti.Options) {
-  confetti({
+  // Loaded when first needed (after an export), not at every start.
+  import('canvas-confetti').then(({ default: confettiFn }) => confettiFn({
     particleCount: 30,
     angle: 110,
     startVelocity: 30,
@@ -447,5 +448,5 @@ export function shootConfetti(options?: confetti.Options) {
       y: 1.03,
     },
     ...options,
-  });
+  })).catch((err: unknown) => console.warn('Confetti failed', err));
 }

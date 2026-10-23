@@ -2,7 +2,6 @@ import { join } from 'node:path';
 import { stat } from 'node:fs/promises';
 import readline from 'node:readline';
 import type { Options as ExecaOptions, ResultPromise } from 'execa';
-import { execa } from 'execa';
 import assert from 'node:assert';
 import type { Readable } from 'node:stream';
 // eslint-disable-next-line import/no-extraneous-dependencies
@@ -123,6 +122,24 @@ function getExecaBufferOptions(opts: ExecaOptions = {}) {
 }
 
 // todo collect warnings from ffmpeg output and show them after export? example: https://github.com/mifi/lossless-cut/issues/1469
+/*
+ * execa takes about 80 ms to load, so it isn't loaded while the app starts: index.ts loads it right after the window
+ * is created, and every function here that starts a process awaits it first.
+ */
+let execaModule: typeof import('execa') | undefined;
+let execaLoading: Promise<typeof import('execa')> | undefined;
+export function loadExeca() {
+  execaLoading ??= import('execa').then((module) => {
+    execaModule = module;
+    return module;
+  });
+  return execaLoading;
+}
+function getExeca() {
+  if (execaModule == null) throw new Error('execa is not loaded yet');
+  return execaModule.execa;
+}
+
 function runFfmpegProcess(args: readonly string[], customExecaOptions?: ExecaOptions, additionalOptions?: { logCli?: boolean }) {
   const ffmpegPath = getFfmpegPath();
   const { logCli = true } = additionalOptions ?? {};
@@ -135,7 +152,7 @@ function runFfmpegProcess(args: readonly string[], customExecaOptions?: ExecaOpt
   // signal so both per-task cancellation and the global Abort button work.
   callerSignal?.addEventListener('abort', abort, { once: true });
   if (callerSignal?.aborted) abort();
-  const process = execa(ffmpegPath, args, getExecaBufferOptions({ ...customExecaOptions, cancelSignal: abortController.signal }));
+  const process = getExeca()(ffmpegPath, args, getExecaBufferOptions({ ...customExecaOptions, cancelSignal: abortController.signal }));
 
   const wrapped = { process, abortController };
 
@@ -159,6 +176,7 @@ export async function runFfmpegConcat({ ffmpegArgs, concatTxt, totalDuration, on
   totalDuration: number,
   onProgress: (a: number) => void,
 }) {
+  await loadExeca();
   const process = runFfmpegProcess(ffmpegArgs);
 
   handleProgress(process, totalDuration, onProgress);
@@ -174,6 +192,7 @@ export async function runFfmpegWithProgress({ ffmpegArgs, duration, onProgress }
   duration?: number | undefined,
   onProgress: (a: number) => void,
 }) {
+  await loadExeca();
   const process = runFfmpegProcess(ffmpegArgs);
   assert(process.stderr != null);
   handleProgress(process, duration, onProgress);
@@ -183,7 +202,8 @@ export async function runFfmpegWithProgress({ ffmpegArgs, duration, onProgress }
 export async function runFfprobe(args: readonly string[], { timeout = isDev ? 10000 : 30000, logCli = true } = {}) {
   const ffprobePath = getFfprobePath();
   if (logCli) logger.info(getFfCommandLine('ffprobe', args));
-  const ps = execa(ffprobePath, args, getExecaBufferOptions());
+  await loadExeca();
+  const ps = getExeca()(ffprobePath, args, getExecaBufferOptions());
   const timer = setTimeout(() => {
     logger.warn('killing timed out ffprobe');
     ps.kill();
@@ -205,6 +225,7 @@ export async function renderWaveformPng({ filePath, start, duration, resample, c
   timeout?: number,
   signal?: AbortSignal,
 }): Promise<Waveform> {
+  await loadExeca();
   const args1 = [
     '-hide_banner',
     '-i', filePath,
@@ -298,6 +319,7 @@ export async function detectSceneChanges({ filePath, streamId, minChange, onProg
   to: number,
   ffmpegHwaccel: FfmpegHwAccel,
 }) {
+  await loadExeca();
   const args = [
     '-hide_banner',
     ...getHwaccelArgs(ffmpegHwaccel),
@@ -344,6 +366,7 @@ async function detectIntervals({ filePath, customArgs, onProgress, onSegmentDete
   boundingMode: boolean,
   ffmpegHwaccel: FfmpegHwAccel,
 }) {
+  await loadExeca();
   const args = [
     '-hide_banner',
     ...getHwaccelArgs(ffmpegHwaccel),
@@ -480,6 +503,7 @@ export async function captureFrames({ from, to, videoPath, outPathTemplate, qual
   onProgress: (p: number) => void,
   captureFormat: CaptureFormat,
 }) {
+  await loadExeca();
   const args = [
     '-ss', String(from),
     '-i', videoPath,
@@ -535,6 +559,7 @@ export async function captureFrameToClipboard({ timestamp, videoPath, quality }:
   videoPath: string,
   quality: number,
 }) {
+  await loadExeca();
   const args = [
     ...getCaptureFrameArgs({ timestamp, videoPath, quality }),
     '-c:v', 'mjpeg',
@@ -552,6 +577,7 @@ export async function captureFrameToFile({ timestamp, videoPath, outPath, qualit
   outPath: string,
   quality: number,
 }) {
+  await loadExeca();
   const collision = await findSourceFileCollision({ outPaths: [outPath], protectedPaths: [videoPath], stat: (path) => stat(path, { bigint: true }) });
   if (collision != null) throw new Error('ClipPress will not save a frame onto its source file.');
   const args = [
@@ -742,7 +768,7 @@ export function createMediaSourceProcess({ path, videoStreamIndex, audioStreamIn
 
   logger.info(getFfCommandLine('ffmpeg', args));
 
-  return execa(getFfmpegPath(), args, getExecaOptions({ buffer: { stdout: false, stderr: true }, encoding: 'utf8' }));
+  return getExeca()(getFfmpegPath(), args, getExecaOptions({ buffer: { stdout: false, stderr: true }, encoding: 'utf8' }));
 }
 
 export async function downloadMediaUrl(url: string, outPath: string) {
@@ -769,4 +795,7 @@ export async function downloadMediaUrl(url: string, outPath: string) {
 }
 
 // Don't pass complex objects over the bridge (the process), so just convert it to a promise
-export const runFfmpeg = async (...args: Parameters<typeof runFfmpegProcess>) => runFfmpegProcess(...args);
+export const runFfmpeg = async (...args: Parameters<typeof runFfmpegProcess>) => {
+  await loadExeca();
+  return runFfmpegProcess(...args);
+};

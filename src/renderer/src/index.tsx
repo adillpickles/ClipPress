@@ -61,6 +61,9 @@ declare global {
 }
 
 
+// Every imported module has been evaluated by now (for measuring startup; costs nothing).
+performance.mark('clippress:modules-evaluated');
+
 enableMapSet();
 
 const { app } = window.require('@electron/remote');

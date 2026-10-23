@@ -551,7 +551,8 @@ function ExportConfirm({
   const areWeCuttingProblematicStreams = areWeCutting && mainCopiedThumbnailStreams.length > 0;
 
   const haveSegmentWithProblematicKeyframe = useMemo(() => {
-    if (neighbouringKeyFrames.length === 0) return false;
+    // Only shown in the open sheet; while it's closed, edits and seeks shouldn't pay for this scan.
+    if (!visible || neighbouringKeyFrames.length === 0) return false;
     return segmentsToExport.some(({ start, end }) => {
       const previousKeyframeTime = findNearestKeyFrameTime({ time: start, direction: -1 }) ?? 0;
       const segmentDuration = end - start;
@@ -559,7 +560,7 @@ function ExportConfirm({
       // if estimated actual output length of segment is more than 1.5 times the intended segment duration, then we consider it problematic and warn the user about it.
       return estimatedExportedSegmentDuration > segmentDuration * 1.5;
     });
-  }, [neighbouringKeyFrames.length, segmentsToExport, findNearestKeyFrameTime]);
+  }, [visible, neighbouringKeyFrames.length, segmentsToExport, findNearestKeyFrameTime]);
 
   const notices = useMemo(() => {
     const specific: Record<

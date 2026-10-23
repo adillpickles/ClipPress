@@ -138,6 +138,7 @@
   box-shadow: 0 0 0 1px rgb(0 0 0 / 35%);
   pointer-events: none;
   z-index: 2;
+  will-change: transform;
 }
 
 .playheadHandle {
@@ -178,13 +179,19 @@
   pointer-events: none;
 }
 
+/* The frames, dimmed once as a group rather than each of its (hundreds of) images; the hatching stays as is. */
+.filmFrames {
+  position: absolute;
+  inset: 0;
+  filter: grayscale(1) brightness(.4) contrast(.85);
+}
+
 .filmTape img {
   position: absolute;
   top: 0;
   height: 100%;
   object-fit: cover;
   display: block;
-  filter: grayscale(1) brightness(.4) contrast(.85);
 }
 
 .filmTape::after {

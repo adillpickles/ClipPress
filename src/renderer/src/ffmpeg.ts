@@ -198,11 +198,19 @@ export function getSafeCutTime(frames: Frame[], cutTime: number, nextMode: boole
 
 export function findNearestKeyFrameTime({ frames, time, direction, fps }: { frames: Frame[], time: number, direction: number, fps: number | undefined }) {
   const sigma = fps ? (1 / fps) : 0.1;
-  const keyframes = frames.filter((f) => f.keyframe && (direction > 0 ? f.time > time + sigma : f.time < time - sigma));
-  if (keyframes.length === 0) return undefined;
-  const nearestKeyFrame = sortBy(keyframes, (keyframe) => (direction > 0 ? keyframe.time - time : time - keyframe.time))[0];
-  if (!nearestKeyFrame) return undefined;
-  return nearestKeyFrame.time;
+  // One pass, no copies or sorting: this runs for every clip, over thousands of frames.
+  let nearest: number | undefined;
+  let nearestDistance = Infinity;
+  for (const f of frames) {
+    if (f.keyframe && (direction > 0 ? f.time > time + sigma : f.time < time - sigma)) {
+      const distance = direction > 0 ? f.time - time : time - f.time;
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = f.time;
+      }
+    }
+  }
+  return nearest;
 }
 
 export function tryMapChaptersToEdl(chapters: FFprobeChapter[]) {

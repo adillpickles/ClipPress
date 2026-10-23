@@ -4,7 +4,7 @@ import type {
   FocusEventHandler,
   DragEventHandler,
 } from 'react';
-import { memo, useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { lazy, memo, Suspense, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { FaRegTimesCircle } from 'react-icons/fa';
 import { MdRotate90DegreesCcw } from 'react-icons/md';
 import { AnimatePresence, MotionConfig } from 'motion/react';
@@ -66,7 +66,6 @@ import VolumeControl from './components/VolumeControl';
 import PlaybackStreamSelector from './components/PlaybackStreamSelector';
 import BatchFilesList from './components/BatchFilesList';
 import ConcatDialog from './components/ConcatDialog';
-import KeyboardShortcuts from './components/KeyboardShortcuts';
 import Working from './components/Working';
 import OutputFormatSelect from './components/OutputFormatSelect';
 import * as Dialog from './components/Dialog';
@@ -303,6 +302,7 @@ import WhatsNew from './components/WhatsNew';
 import UpdateNotice from './components/UpdateNotice';
 import mainApi from './mainApi.js';
 import type { AppEvent } from '../../main/index.js';
+
 import {
   createDefaultTextOverlayClip,
   getVideoStreamRotation,
@@ -352,7 +352,14 @@ function addSourceSafetyNotice(
 
 type EditDomain = 'segments' | 'overlays' | 'streamParams' | 'speedControls';
 
+// Loaded the first time the shortcuts open, not at every start.
+const KeyboardShortcuts = lazy(() => import('./components/KeyboardShortcuts'));
+
 function App() {
+  // For measuring startup (read by tests; costs nothing).
+  useEffect(() => {
+    performance.mark('clippress:app-mounted');
+  }, []);
   const { t } = useTranslation();
 
   // Per project state
@@ -1557,6 +1564,8 @@ function App() {
     toggleSimpleMode,
   ]);
 
+  // A boolean, not the segments: the context (read by every clip and list row) shouldn't change on every edit.
+  const onlyInitialSegment = isInitialSegment(cutSegments);
   const segColorsContext = useMemo<SegColorsContextType>(
     () => ({
       getSegColor: (seg: SegmentColorIndex | undefined) => {
@@ -1565,11 +1574,11 @@ function App() {
           ? color
           : color.desaturate(0.25);
       },
-      nextSegColorIndex: isInitialSegment(cutSegments)
+      nextSegColorIndex: onlyInitialSegment
         ? segColorCounter
         : segColorCounter + 1,
     }),
-    [cutSegments, preferStrongColors, segColorCounter],
+    [onlyInitialSegment, preferStrongColors, segColorCounter],
   );
 
   const onActiveSubtitleChange = useCallback(
@@ -2092,6 +2101,9 @@ function App() {
   const onTimeUpdate = useCallback<ReactEventHandler<HTMLVideoElement>>(
     (e) => {
       const { currentTime } = e.currentTarget;
+      // Paused, the commanded time is what's shown (relevantTime ignores the player's); a landed seek's
+      // timeupdate shouldn't re-render the whole editor a second time.
+      if (!playingRef.current) return;
       if (playerTime === currentTime) return;
       setPlayerTime(currentTime);
 
@@ -4680,6 +4692,7 @@ function App() {
         }
       }
 
+      performance.mark('clippress:load-start');
       setWorking({ text: i18n.t('Loading file') });
       try {
         // Need to check if file is actually readable
@@ -4707,7 +4720,9 @@ function App() {
           return;
         }
 
+        performance.mark('clippress:load-probe-start');
         const ffprobeMeta = await readFileFfprobeMeta(fp);
+        performance.mark('clippress:load-probed');
         const fileStats = await readFileStats(fp);
         // console.log('file meta read', fileMeta);
 
@@ -4798,6 +4813,7 @@ function App() {
         await whenProjectSaved();
         if (isStale()) return;
 
+        performance.mark('clippress:load-before-project');
         // eslint-disable-next-line unicorn/prefer-ternary
         if (projectPath) {
           await loadProject(projectPath);
@@ -4884,6 +4900,7 @@ function App() {
         // This needs to be last, because it triggers <video> to load the video
         // If not, onVideoError might be triggered before setWorking() has been cleared.
         // https://github.com/mifi/lossless-cut/issues/515
+        performance.mark('clippress:load-file-set');
         setFilePath(fp);
       } catch (err) {
         // A superseded load must not reset the newer file's state nor surface its error,
@@ -6451,14 +6468,24 @@ function App() {
     [setWaveformMode],
   );
 
+  // FFmpeg's self-check starts two processes; at launch it waits a moment so it doesn't compete with opening the
+  // first file (a broken FFmpeg shows up then anyway). A changed FFmpeg path is checked at once.
+  const startupCheckedRef = useRef(false);
   useEffect(() => {
-    (async () => {
-      setFfmpegInfo(
-        await runStartupCheck({
-          onError: ({ title, message }) => setGenericError({ title, err: message }),
-        }),
-      );
-    })();
+    let cancelled = false;
+    const check = async () => {
+      startupCheckedRef.current = true;
+      const info = await runStartupCheck({
+        onError: ({ title, message }) => setGenericError({ title, err: message }),
+      });
+      if (!cancelled) setFfmpegInfo(info);
+    };
+    const delay = startupCheckedRef.current ? 0 : 3000;
+    const timer = setTimeout(() => { check(); }, delay);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [customFfPath, setGenericError]);
 
   const appContext = useMemo<AppContextType>(
@@ -6483,6 +6510,34 @@ function App() {
   );
 
   const showLeftBar = batchFiles.length > 0;
+
+  // Stable props for memoised children: a new object or arrow each render would re-render them every time
+  // anything in the editor changes.
+  const shelfProps = useMemo(() => ({
+    folder: shelfFolder,
+    queue: shelf.queue,
+    currentPath: filePath,
+    nextPath: nextClip?.path,
+    caseInsensitive: isWindows || isMac,
+    order: shelfOrder,
+    onOrderChange: setShelfOrder,
+    onOpen: openShelfClip,
+    onChooseFolder: chooseShelfFolder,
+    thumbnails: shelf.thumbnails,
+    requestThumbnail: shelf.requestThumbnail,
+  }), [chooseShelfFolder, filePath, nextClip?.path, openShelfClip, setShelfOrder, shelf.queue, shelf.requestThumbnail, shelf.thumbnails, shelfFolder, shelfOrder]);
+  const audioHeader = useMemo(() => (
+    <AudioTrackHeader
+      previewVolume={playbackVolume}
+      onPreviewVolumeChange={setPlaybackVolume}
+      onTogglePreviewMuted={toggleMuted}
+      gainControls={previewAudioGainControls}
+      onGainChange={updateAudioGainForStream}
+    />
+  ), [playbackVolume, previewAudioGainControls, setPlaybackVolume, toggleMuted, updateAudioGainForStream]);
+  const editCurrentSegmentCrop = useCallback(() => editSegmentCrop(currentSegIndexSafe), [currentSegIndexSafe, editSegmentCrop]);
+  const closeConcatDialog = useCallback(() => setConcatDialogOpen(false), []);
+  const closeKeyboardShortcuts = useCallback(() => setKeyboardShortcutsVisible(false), [setKeyboardShortcutsVisible]);
 
   function renderSubtitles() {
     if (!activeSubtitle) return null;
@@ -6540,26 +6595,14 @@ function App() {
                 <TopMenu
                   filePath={filePath}
                   currentClipName={currentClipName}
-                  onCurrentClipNameChange={(name) => setCurrentClipName(name)}
+                  onCurrentClipNameChange={setCurrentClipName}
                   toggleSettings={toggleSettings}
                   numStreamsToCopy={numStreamsToCopy}
                   numStreamsTotal={numStreamsTotal}
                   setStreamsSelectorShown={setStreamsSelectorShown}
                   onOpenFiles={openFilesDialog}
                   onShelfShown={refreshShelf}
-                  shelf={{
-                    folder: shelfFolder,
-                    queue: shelf.queue,
-                    currentPath: filePath,
-                    nextPath: nextClip?.path,
-                    caseInsensitive: isWindows || isMac,
-                    order: shelfOrder,
-                    onOrderChange: setShelfOrder,
-                    onOpen: openShelfClip,
-                    onChooseFolder: chooseShelfFolder,
-                    thumbnails: shelf.thumbnails,
-                    requestThumbnail: shelf.requestThumbnail,
-                  }}
+                  shelf={shelfProps}
                   nextClipName={simpleMode ? nextClip?.name : undefined}
                   onOpenNextClip={openNextClip}
                   onExportPress={onExportPress}
@@ -6663,7 +6706,11 @@ function App() {
                               onSeeked={onSeeked}
                               onLoadStart={() => setVideoBusy(true)}
                               onWaiting={() => setVideoBusy(true)}
-                              onLoadedData={() => setVideoBusy(false)}
+                              onLoadedData={() => {
+                                setVideoBusy(false);
+                                // For measuring how fast a file opens (read by tests; costs nothing).
+                                performance.mark('clippress:video-loaded');
+                              }}
                               onCanPlay={() => setVideoBusy(false)}
                               onPlaying={() => setVideoBusy(false)}
                               onEmptied={() => setVideoBusy(false)}
@@ -6861,7 +6908,7 @@ function App() {
                           currentFrame={currentFrame}
                           playbackMode={playbackMode}
                           onAddTextOverlay={addTextOverlay}
-                          onEditSegmentCrop={() => editSegmentCrop(currentSegIndexSafe)}
+                          onEditSegmentCrop={editCurrentSegmentCrop}
                           canEditSegmentCrop={!invertCutSegments && currentCutSeg?.end != null}
                           relevantTime={relevantTime}
                           fileDuration={fileDuration}
@@ -6884,15 +6931,7 @@ function App() {
                           audioPeaks={audioPeaks}
                           showAudioLane={showAudioLane}
                           onEditClipVolume={hasAudio && !invertCutSegments ? editClipVolume : undefined}
-                          audioHeader={(
-                            <AudioTrackHeader
-                              previewVolume={playbackVolume}
-                              onPreviewVolumeChange={setPlaybackVolume}
-                              onTogglePreviewMuted={toggleMuted}
-                              gainControls={previewAudioGainControls}
-                              onGainChange={updateAudioGainForStream}
-                            />
-                          )}
+                          audioHeader={audioHeader}
                           getCurrentTime={getRelevantTime}
                           onScrubbingChange={onTimelineScrubbingChange}
                           commandedTime={commandedTime}
@@ -7199,7 +7238,7 @@ function App() {
 
               <ConcatDialog
                 isShown={batchFiles.length > 0 && concatDialogOpen}
-                onHide={() => setConcatDialogOpen(false)}
+                onHide={closeConcatDialog}
                 paths={batchFilePaths}
                 mergedFileTemplate={mergedFileTemplateOrDefault}
                 generateMergedFileNames={generateMergedFileNames}
@@ -7213,15 +7252,20 @@ function App() {
                 onOutputFormatUserChange={onOutputFormatUserChange}
               />
 
-              <KeyboardShortcuts
-                isShown={keyboardShortcutsVisible}
-                onHide={() => setKeyboardShortcutsVisible(false)}
-                keyBindings={keyBindings}
-                setKeyBindings={setKeyBindings}
-                currentCutSeg={currentCutSeg}
-                resetKeyBindings={resetKeyBindings}
-                getKeyboardAction={getKeyboardAction}
-              />
+              {/* Loaded the first time it's opened, not at every start */}
+              {keyboardShortcutsVisible && (
+                <Suspense fallback={null}>
+                  <KeyboardShortcuts
+                    isShown={keyboardShortcutsVisible}
+                    onHide={closeKeyboardShortcuts}
+                    keyBindings={keyBindings}
+                    setKeyBindings={setKeyBindings}
+                    currentCutSeg={currentCutSeg}
+                    resetKeyBindings={resetKeyBindings}
+                    getKeyboardAction={getKeyboardAction}
+                  />
+                </Suspense>
+              )}
 
               {isFileOpened && fileDragActive && !working && (
                 <div className={styles['dropOverlay']} aria-hidden>

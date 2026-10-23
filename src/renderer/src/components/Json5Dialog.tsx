@@ -1,12 +1,10 @@
-import { Light as SyntaxHighlighter } from 'react-syntax-highlighter';
-import javascript from 'react-syntax-highlighter/dist/esm/languages/hljs/javascript';
-import { tomorrow as lightSyntaxStyle, tomorrowNight as darkSyntaxStyle } from 'react-syntax-highlighter/dist/esm/styles/hljs';
+import { lazy, Suspense } from 'react';
 import JSON5 from 'json5';
 
 import * as Dialog from './Dialog';
 import useUserSettings from '../hooks/useUserSettings';
 
-SyntaxHighlighter.registerLanguage('javascript', javascript);
+const JsonHighlight = lazy(() => import('./JsonHighlight'));
 
 export default function Json5Dialog({ title, json, children }: {
   title: string;
@@ -28,9 +26,9 @@ export default function Json5Dialog({ title, json, children }: {
             {title}
           </Dialog.Title>
 
-          <SyntaxHighlighter language="javascript" style={darkMode ? darkSyntaxStyle : lightSyntaxStyle} customStyle={{ textAlign: 'left', maxHeight: '50vh', overflowY: 'auto', fontSize: 14 }}>
-            {JSON5.stringify(json, null, 2)}
-          </SyntaxHighlighter>
+          <Suspense fallback={<pre style={{ textAlign: 'left', maxHeight: '50vh', overflowY: 'auto', fontSize: 14 }}>{JSON5.stringify(json, null, 2)}</pre>}>
+            <JsonHighlight text={JSON5.stringify(json, null, 2)} darkMode={darkMode} />
+          </Suspense>
 
           <Dialog.CloseButton />
         </Dialog.Content>
