@@ -32,6 +32,9 @@ describe('project store', () => {
     expect(hashOf(String.raw`D:\Clips\Sub\..\Valorant 2026.10.19 - 21.51.16.mp4`)).toBe(hashOf(media));
     expect(hashOf(String.raw`D:\Clips\\Valorant 2026.10.19 - 21.51.16.mp4`)).toBe(hashOf(media));
     expect(hashOf(String.raw`D:\..\Clips\Valorant 2026.10.19 - 21.51.16.mp4`)).toBe(hashOf(media));
+    // ".." stays within a network share
+    expect(hashOf(String.raw`\\srv\share\..\other\a.mp4`)).toBe(hashOf(String.raw`\\srv\share\other\a.mp4`));
+    expect(hashOf(String.raw`\\srv\share\..\other\a.mp4`)).not.toBe(hashOf(String.raw`\\srv\other\a.mp4`));
     // A network share stays a network share
     expect(hashOf(String.raw`\\server\share\a.mp4`)).not.toBe(hashOf(String.raw`\server\share\a.mp4`));
     // Case matters where the file system says so

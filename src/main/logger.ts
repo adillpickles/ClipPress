@@ -64,3 +64,18 @@ export function loadFileLogger() {
   })();
   return loading;
 }
+
+/** Before quitting early (a failed start, a second instance): every message written to the file. */
+export async function flushFileLogger() {
+  await loadFileLogger();
+  const created = fileLogger;
+  if (created == null) return;
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, 2000);
+    created.on('finish', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    created.end();
+  });
+}

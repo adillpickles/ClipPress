@@ -17,7 +17,7 @@ import electronUnhandled from 'electron-unhandled';
 import type { Asyncify } from 'type-fest';
 import mitt from 'mitt';
 
-import logger, { loadFileLogger } from './logger.js';
+import logger, { flushFileLogger, loadFileLogger } from './logger.js';
 import menu from './menu.js';
 import * as configStore from './configStore.js';
 import { isLinux, isWindows, isMac, platform, arch, pathExists } from './util.js';
@@ -494,7 +494,7 @@ async function init() {
 
     if (!allowMultipleInstances && !safeRequestSingleInstanceLock({ argv: process.argv })) {
       logger.info('Found running instance, quitting');
-      await loadFileLogger().catch(() => undefined);
+      await flushFileLogger().catch(() => undefined);
       app.quit();
       return;
     }
@@ -637,8 +637,8 @@ async function init() {
     reportPreservedCorruptConfig();
   } catch (err) {
     logger.error('Failed to initialize', err);
-    // The file log may not be loaded yet this early: load it, so the failure is in app.log.
-    await loadFileLogger().catch(() => undefined);
+    // The file log may not be loaded yet this early: load and flush it, so the failure is in app.log.
+    await flushFileLogger().catch(() => undefined);
     electron.dialog.showErrorBox('ClipPress could not start', err instanceof Error ? err.message : String(err));
     app.quit();
   }

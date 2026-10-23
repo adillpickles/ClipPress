@@ -285,7 +285,7 @@ import ClipVolumePopover from './components/ClipVolumePopover';
 import { ShelfUpNext } from './components/Shelf';
 import useShelf, { listShelfFolder } from './hooks/useShelf';
 import { buildShelfQueue, pickNextClip, rememberShelfExport } from './shelf';
-import { getProjectLookupPaths, getProjectStoreEnv, getStoredProjectPath } from './projectStore';
+import { getProjectLookupPaths, getProjectSavePath, getProjectStoreEnv, getStoredProjectPath } from './projectStore';
 import type { ProjectFileLocation } from '../../common/types';
 import type { ClipVolumeChange } from './components/ClipVolumePopover';
 import { combineAudioGain, isClipVolumeChanged, sanitizeClipGainDb } from './util/audioGain';
@@ -311,7 +311,7 @@ import {
 } from './textOverlays';
 
 const electron = window.require('electron');
-const { lstat } = window.require('fs/promises');
+const { lstat, rename } = window.require('fs/promises');
 const {
   parse: parsePath,
   join: pathJoin,
@@ -1280,19 +1280,26 @@ function App() {
 
   // Edits found next to the recording (where older versions saved them) move to ClipPress's folder: once autosave has
   // written them there, the old file goes to the Recycle Bin. If that save can't happen, the old file stays.
-  const sidecarRetirementRef = useRef<{ sessionId: number, path: string }>();
+  const sidecarRetirementRef = useRef<{ sessionId: number, path: string, loadedAt: number }>();
   useEffect(() => {
     const pending = sidecarRetirementRef.current;
     if (pending == null || projectSession?.id !== pending.sessionId || projectFileSavePath == null) return;
     sidecarRetirementRef.current = undefined;
-    if (pending.path === projectFileSavePath) return;
+    // Autosave off: nothing is saved in ClipPress's folder, so the old file stays where it is.
+    if (pending.path === projectFileSavePath || !autoSaveProjectFile) return;
     (async () => {
       saveProjectNow();
       await whenProjectSaved();
-      if (!(await mainApi.pathExists(projectFileSavePath))) return;
-      await trashFile(pending.path);
+      // Only once this session has really written it there (a failed save, or a file from before, doesn't count).
+      let written = false;
+      try {
+        written = (await lstat(projectFileSavePath)).mtimeMs >= pending.loadedAt;
+      } catch {
+        // Not there
+      }
+      if (written) await trashFile(pending.path);
     })().catch((err) => console.warn('Could not move the old project file to the Recycle Bin', err));
-  }, [projectFileSavePath, projectSession, saveProjectNow, whenProjectSaved]);
+  }, [autoSaveProjectFile, projectFileSavePath, projectSession, saveProjectNow, whenProjectSaved]);
 
   // The window (and with it the app, and a downloaded update's installation) only closes once
   // the project is saved, or the user has chosen to close without saving.
@@ -4681,6 +4688,14 @@ function App() {
           if (newest != null) {
             // Ok, the file exists. Next to the recording we may have to ask the user, because we need to read it
             if (dirname(newest.path) === dirname(fp)) await ensureAccessToSourceDir(fp);
+            // Autosave is about to save the loaded copy where the setting points. A different copy already there
+            // would be replaced without a word (file times can mislead, e.g. a restored old copy): keep it under
+            // another name next to it instead.
+            const savePath = getProjectSavePath(fp, projectFileLocation, customOutDir, storeEnv);
+            if (autoSaveProjectFile && newest.path !== savePath && found.some(({ path }) => path === savePath)) {
+              const stamp = new Date().toISOString().replaceAll(/[:.]/g, '-');
+              await rename(savePath, savePath.replace(/\.llc$/, `.replaced-${stamp}.llc`));
+            }
             await loadProject(newest.path);
             if (projectFileLocation === 'app' && newest.path !== storedPath) sidecarToRetire = newest.path;
             return;
@@ -4908,7 +4923,7 @@ function App() {
         if (isStale()) return;
         // Autosave compares later changes with the state opened here.
         setProjectSession({ id: generation, loadedProjectPath });
-        if (sidecarToRetire != null) sidecarRetirementRef.current = { sessionId: generation, path: sidecarToRetire };
+        if (sidecarToRetire != null) sidecarRetirementRef.current = { sessionId: generation, path: sidecarToRetire, loadedAt: Date.now() };
         setRecentFiles((list) => addRecentFile(list, fp, Date.now(), isWindows || isMac));
         setShelfFolder(dirname(fp));
         // This needs to be last, because it triggers <video> to load the video
@@ -4930,6 +4945,7 @@ function App() {
     },
     [
       projectFileLocation,
+      autoSaveProjectFile,
       setWorking,
       enableImportChapters,
       ensureAccessToSourceDir,

@@ -33,12 +33,13 @@ function hash64(text: string) {
 export function normaliseMediaPath(mediaPath: string, caseInsensitive: boolean) {
   const slashes = mediaPath.replaceAll('\\', '/');
   const isUnc = slashes.startsWith('//');
+  // What ".." can't go above: the drive or root, or a network path's server and share
+  const rootParts = isUnc ? 3 : 1;
   const parts: string[] = [];
   slashes.split('/').forEach((part, index) => {
     if (part === '.' || (part === '' && index > 0)) return;
     if (part === '..') {
-      // Never above the drive or root
-      if (parts.length > 1) parts.pop();
+      if (parts.length > rootParts) parts.pop();
       return;
     }
     parts.push(part);
