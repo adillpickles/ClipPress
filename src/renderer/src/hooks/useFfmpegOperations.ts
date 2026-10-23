@@ -1099,7 +1099,21 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     try {
       // Plain lossless cuts are mostly FFmpeg starting up and seeking, so two at a time finish sooner; encoding (smart
       // cut, lossy) keeps one, as it's already busy on every core.
-      return await pMap(segments, cutSegment, { concurrency: isEncoding ? 1 : 2 });
+      // When a cut fails, no new one starts, and the one still running is let finish before the error is reported:
+      // nothing may still be writing (or need the chapters file) once the user can export again.
+      let failed = false;
+      const outcomes = await pMap(segments, async (segment, i): Promise<{ result?: Awaited<ReturnType<typeof cutSegment>>, error?: unknown } | undefined> => {
+        if (failed) return undefined;
+        try {
+          return { result: await cutSegment(segment, i) };
+        } catch (error) {
+          failed = true;
+          return { error };
+        }
+      }, { concurrency: isEncoding ? 1 : 2 });
+      const failure = outcomes.find((outcome) => outcome != null && 'error' in outcome);
+      if (failure != null) throw failure.error;
+      return outcomes.map((outcome) => outcome!.result!);
     } finally {
       if (chaptersPath) await tryDeleteFiles([chaptersPath]);
     }

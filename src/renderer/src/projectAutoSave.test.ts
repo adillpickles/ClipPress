@@ -146,6 +146,24 @@ describe('ProjectAutoSave', () => {
     expect(t.disk.get(path)?.overlayClips).toBeUndefined();
   });
 
+  it('tells when the open session has its project where it saves, not before, not after a failed save', async () => {
+    const t = setup();
+    const elsewhere = '/elsewhere/clip-proj.llc';
+    t.show({ id: 1, loadedProjectPath: elsewhere }, withText);
+    expect(t.autoSave.hasSaved(1, elsewhere)).toBe(true);
+    expect(t.autoSave.hasSaved(1, path)).toBe(false);
+    t.failNextWrite();
+    t.autoSave.saveNow();
+    await t.wait(20);
+    expect(t.errors).toHaveLength(1);
+    expect(t.autoSave.hasSaved(1, path)).toBe(false);
+    t.show({ id: 1, loadedProjectPath: elsewhere }, withTrim);
+    await t.wait(delayMs + 20);
+    expect(t.autoSave.hasSaved(1, path)).toBe(true);
+    // Another open of the file is another session
+    expect(t.autoSave.hasSaved(2, path)).toBe(false);
+  });
+
   it('saves segments created on open (from chapters) without a project file, as before', async () => {
     const t = setup();
     t.show({ id: 1 }, withTrim);

@@ -89,6 +89,7 @@ export default ({ autoSaveProjectFile, projectFileLocation, filePath, projectSes
   const saveProjectNow = useCallback(() => autoSave.saveNow(), [autoSave]);
   const flushProject = useCallback(() => autoSave.flush(), [autoSave]);
   const hasUnsavedProjectChanges = useCallback(() => autoSave.hasUnsavedChanges(), [autoSave]);
+  const hasSavedProject = useCallback((sessionId: number, projectPath: string) => autoSave.hasSaved(sessionId, projectPath), [autoSave]);
   const deleteProjectFile = useCallback((projectPath: string, remove: () => Promise<void>) => autoSave.deleteFile(projectPath, { remove, exists: fileExists }), [autoSave]);
 
   return {
@@ -100,6 +101,7 @@ export default ({ autoSaveProjectFile, projectFileLocation, filePath, projectSes
     saveProjectNow,
     flushProject,
     hasUnsavedProjectChanges,
+    hasSavedProject,
     deleteProjectFile,
   };
 };

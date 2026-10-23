@@ -311,7 +311,7 @@ import {
 } from './textOverlays';
 
 const electron = window.require('electron');
-const { lstat, rename } = window.require('fs/promises');
+const { copyFile, lstat, rename } = window.require('fs/promises');
 const {
   parse: parsePath,
   join: pathJoin,
@@ -1265,7 +1265,7 @@ function App() {
     setEditingCropSegmentId(undefined);
   }, [filePath, speedControlsHistory]);
 
-  const { projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved, saveProjectNow, flushProject, hasUnsavedProjectChanges, deleteProjectFile } = useSegmentsAutoSave({
+  const { projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved, saveProjectNow, flushProject, hasUnsavedProjectChanges, hasSavedProject, deleteProjectFile } = useSegmentsAutoSave({
     autoSaveProjectFile,
     projectFileLocation,
     filePath,
@@ -1278,28 +1278,28 @@ function App() {
     overlayClips,
   });
 
-  // Edits found next to the recording (where older versions saved them) move to ClipPress's folder: once autosave has
-  // written them there, the old file goes to the Recycle Bin. If that save can't happen, the old file stays.
-  const sidecarRetirementRef = useRef<{ sessionId: number, path: string, loadedAt: number }>();
+  // Edits found next to the recording or in the export folder (where older versions saved them) move to ClipPress's
+  // folder: once autosave has the project there, the old files go to the Recycle Bin. If that save can't happen, they
+  // stay, and the next open tries again.
+  const sidecarRetirementRef = useRef<{ sessionId: number, paths: string[] }>();
   useEffect(() => {
     const pending = sidecarRetirementRef.current;
     if (pending == null || projectSession?.id !== pending.sessionId || projectFileSavePath == null) return;
     sidecarRetirementRef.current = undefined;
-    // Autosave off: nothing is saved in ClipPress's folder, so the old file stays where it is.
-    if (pending.path === projectFileSavePath || !autoSaveProjectFile) return;
+    const oldPaths = pending.paths.filter((oldPath) => oldPath !== projectFileSavePath);
+    // Autosave off: nothing is saved in ClipPress's folder, so the old files stay where they are.
+    if (oldPaths.length === 0 || !autoSaveProjectFile) return;
     (async () => {
       saveProjectNow();
       await whenProjectSaved();
-      // Only once this session has really written it there (a failed save, or a file from before, doesn't count).
-      let written = false;
-      try {
-        written = (await lstat(projectFileSavePath)).mtimeMs >= pending.loadedAt;
-      } catch {
-        // Not there
+      // Only once this session has the project there: it wrote it (a failed save doesn't count), or loaded it from there.
+      if (!hasSavedProject(pending.sessionId, projectFileSavePath)) return;
+      for (const oldPath of oldPaths) {
+        // eslint-disable-next-line no-await-in-loop
+        await trashFile(oldPath);
       }
-      if (written) await trashFile(pending.path);
-    })().catch((err) => console.warn('Could not move the old project file to the Recycle Bin', err));
-  }, [autoSaveProjectFile, projectFileSavePath, projectSession, saveProjectNow, whenProjectSaved]);
+    })().catch((err) => console.warn('Could not move an old project file to the Recycle Bin', err));
+  }, [autoSaveProjectFile, hasSavedProject, projectFileSavePath, projectSession, saveProjectNow, whenProjectSaved]);
 
   // The window (and with it the app, and a downloaded update's installation) only closes once
   // the project is saved, or the user has chosen to close without saving.
@@ -4654,8 +4654,9 @@ function App() {
         loadedProjectPath = path;
       }
 
-      // A project found in an older place (next to the recording), to move to ClipPress's folder once it is saved there.
-      let sidecarToRetire: string | undefined;
+      // Projects found in older places (next to the recording, the export folder), to move to the Recycle Bin once the
+      // project is saved in ClipPress's folder.
+      let sidecarsToRetire: string[] = [];
 
       async function tryFindAndLoadProjectFile({
         chapters,
@@ -4694,10 +4695,17 @@ function App() {
             const savePath = getProjectSavePath(fp, projectFileLocation, customOutDir, storeEnv);
             if (autoSaveProjectFile && newest.path !== savePath && found.some(({ path }) => path === savePath)) {
               const stamp = new Date().toISOString().replaceAll(/[:.]/g, '-');
-              await rename(savePath, savePath.replace(/\.llc$/, `.replaced-${stamp}.llc`));
+              const backupPath = savePath.replace(/\.llc$/, `.replaced-${stamp}.llc`);
+              try {
+                await rename(savePath, backupPath);
+              } catch (renameErr) {
+                // Locked, or the folder doesn't allow renaming: a copy keeps it just as well. And if even that fails,
+                // the newer edits still load (a file that can't be read can't be written over either).
+                await copyFile(savePath, backupPath).catch((copyErr: unknown) => console.warn('Could not keep a copy of the project before replacing it', savePath, renameErr, copyErr));
+              }
             }
             await loadProject(newest.path);
-            if (projectFileLocation === 'app' && newest.path !== storedPath) sidecarToRetire = newest.path;
+            if (projectFileLocation === 'app') sidecarsToRetire = found.map(({ path }) => path).filter((path) => path !== storedPath);
             return;
           }
 
@@ -4923,7 +4931,7 @@ function App() {
         if (isStale()) return;
         // Autosave compares later changes with the state opened here.
         setProjectSession({ id: generation, loadedProjectPath });
-        if (sidecarToRetire != null) sidecarRetirementRef.current = { sessionId: generation, path: sidecarToRetire, loadedAt: Date.now() };
+        if (sidecarsToRetire.length > 0) sidecarRetirementRef.current = { sessionId: generation, paths: sidecarsToRetire };
         setRecentFiles((list) => addRecentFile(list, fp, Date.now(), isWindows || isMac));
         setShelfFolder(dirname(fp));
         // This needs to be last, because it triggers <video> to load the video

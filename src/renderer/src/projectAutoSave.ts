@@ -199,6 +199,15 @@ export default class ProjectAutoSave {
   }
 
   /**
+   * Whether open session `sessionId` has the project at `path` on disk as it knows it: it wrote it there, or loaded
+   * it from there. Not true of a save that failed, nor of a file that was there before.
+   */
+  hasSaved(sessionId: number, path: string) {
+    const { session } = this;
+    return session != null && session.id === sessionId && session.saved.has(this.key(path));
+  }
+
+  /**
    * Whether anything is not on disk yet: a change waiting for the delay or being written, or a
    * failed save. While autosave is turned off, nothing is saved, so nothing counts as unsaved.
    */
