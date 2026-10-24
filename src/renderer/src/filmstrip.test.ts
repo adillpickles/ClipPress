@@ -141,18 +141,23 @@ describe('filmstrip', () => {
     // Two tiles per keyframe would show each twice.
     expect(getDetailRequest({ view: { from: 60, to: 68, tileSeconds: 0.5 }, baseFrames, duration: 120 })?.spacing).toBe(0.5);
     const wanted = getDetailRequest({ view: { from: 60, to: 64, tileSeconds: 0.24 }, baseFrames, duration: 120 })!;
-    expect(wanted.spacing).toBe(0.125);
+    expect(wanted).toMatchObject({ spacing: 0.125, keyframes: false });
     expect(wanted.from).toBeCloseTo(59.4);
     expect(wanted.to).toBeCloseTo(64.6);
     // At the deepest zoom, every frame.
     expect(getDetailRequest({ view: { from: 60, to: 60.007, tileSeconds: 0.0004 }, baseFrames, duration: 120 })!.spacing).toBe(1 / 128);
-    // Never decode a long stretch (recordings with keyframes far apart).
-    expect(getDetailRequest({ view: { from: 0, to: 60, tileSeconds: 3 }, baseFrames: [{ time: 0 }, { time: 30 }], duration: 120 })).toBeUndefined();
+    // A long window (a long recording's sparse strip) gets its keyframes rather than every frame decoded.
+    const hour = Array.from({ length: 240 }, (_, i) => ({ time: i * 15 }));
+    expect(getDetailRequest({ view: { from: 1800, to: 1856, tileSeconds: 3.1 }, baseFrames: hour, duration: 3600 })).toMatchObject({ spacing: 2, keyframes: true });
+    expect(getDetailRequest({ view: { from: 1800, to: 1814, tileSeconds: 0.78 }, baseFrames: hour, duration: 3600 })).toMatchObject({ spacing: 0.5, keyframes: false });
 
     const view = { from: 60, to: 64, tileSeconds: 0.24 };
     expect(servesView(wanted, view, wanted)).toBe(true);
     expect(servesView(wanted, { from: 60.5, to: 64.5, tileSeconds: 0.24 }, wanted)).toBe(true);
     expect(servesView(wanted, { from: 62, to: 66, tileSeconds: 0.24 }, getDetailRequest({ view: { from: 62, to: 66, tileSeconds: 0.24 }, baseFrames, duration: 120 })!)).toBe(false);
     expect(servesView({ ...wanted, spacing: 0.25 }, view, wanted)).toBe(false);
+    // Keyframes only don't serve a window that wants every frame; every frame serves one that wants keyframes.
+    expect(servesView({ ...wanted, keyframes: true }, view, wanted)).toBe(false);
+    expect(servesView(wanted, view, { ...wanted, keyframes: true })).toBe(true);
   });
 });

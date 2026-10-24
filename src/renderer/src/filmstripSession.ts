@@ -35,7 +35,10 @@ export interface FilmstripSessionOptions {
   onChange: () => void,
 }
 
-/** One FFmpeg pass over [from, to]: a stretch of the default strip, or denser frames (`spacing`) for a zoomed-in window. */
+/**
+ * One FFmpeg pass over [from, to]: a stretch of the default strip, or denser frames (`spacing`, of any frame or
+ * of keyframes only) for a zoomed-in window.
+ */
 class FilmPass {
   readonly from: number;
 
@@ -43,6 +46,8 @@ class FilmPass {
   to: number;
 
   readonly spacing: number;
+
+  readonly keyframes: boolean;
 
   state: 'waiting' | 'running' | 'done' = 'waiting';
 
@@ -53,10 +58,11 @@ class FilmPass {
 
   readonly abortController = new AbortController();
 
-  constructor({ from, to, spacing = 0 }: { from: number, to: number, spacing?: number }) {
+  constructor({ from, to, spacing = 0, keyframes = true }: { from: number, to: number, spacing?: number, keyframes?: boolean }) {
     this.from = from;
     this.to = to;
     this.spacing = spacing;
+    this.keyframes = keyframes;
     this.readTo = from;
   }
 
@@ -257,7 +263,10 @@ export default class FilmstripSession {
 
   private async runDetail(pass: FilmPass) {
     const { filePath, frameHeight } = this.options;
-    const result = await this.runPass(pass, getFilmstripDetailArgs({ filePath, from: pass.from, length: pass.to - pass.from, spacing: pass.spacing, height: frameHeight }));
+    const params = { filePath, from: pass.from, length: pass.to - pass.from, height: frameHeight };
+    const getKeyframeArgs = packetFilterUnsupported ? getFilmstripFallbackArgs : getFilmstripArgs;
+    const args = pass.keyframes ? getKeyframeArgs({ ...params, interval: pass.spacing }) : getFilmstripDetailArgs({ ...params, spacing: pass.spacing });
+    const result = await this.runPass(pass, args);
     if (pass.abortController.signal.aborted) return;
     // Cut short: it covers what it made, so a later look at the rest asks again.
     if (typeof result === 'number') pass.finish();

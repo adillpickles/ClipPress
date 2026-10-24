@@ -189,6 +189,40 @@ describe('FilmstripSession', () => {
     session.dispose();
   });
 
+  it('makes a long zoomed-in window of a long recording from its keyframes, and closer in from every frame', async () => {
+    vi.useFakeTimers();
+    const session = create({ duration: 3600 });
+    session.setView({ from: 1800, to: 1856, tileSeconds: 3.1 });
+    session.start();
+    while (!session.done) {
+      runner.runs.filter((run) => !run.finished).forEach((run) => {
+        const from = Number(run.args[run.args.indexOf('-ss') + 1] ?? 0);
+        for (let t = 0; t < 600; t += 15) run.frame(from + t);
+        run.finish();
+      });
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    await vi.advanceTimersByTimeAsync(250);
+    const keyframes = runner.runs.at(-1)!;
+    expect(keyframes.args).toContain('-discard:v');
+    expect(keyframes.args.slice(keyframes.args.indexOf('-ss'), keyframes.args.indexOf('-ss') + 2)).toEqual(['-ss', '1791.600']);
+    expect(keyframes.args[keyframes.args.indexOf('-bsf:v') + 1]).toContain('2.000');
+    keyframes.frame(1802);
+    keyframes.finish();
+    await vi.advanceTimersByTimeAsync(0);
+    // Within it: nothing more to make.
+    const count = runner.runs.length;
+    session.setView({ from: 1805, to: 1861, tileSeconds: 3.1 });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(runner.runs).toHaveLength(count);
+    // Closer in: every frame of a short window.
+    session.setView({ from: 1820, to: 1834, tileSeconds: 0.78 });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(runner.runs).toHaveLength(count + 1);
+    expect(runner.runs.at(-1)!.args).not.toContain('-discard:v');
+    session.dispose();
+  });
+
   it('keeps the denser frames bounded', async () => {
     vi.useFakeTimers();
     const session = create({ duration: 3600 });

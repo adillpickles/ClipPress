@@ -3,8 +3,8 @@
  * freed when it closes; nothing is written to disk.
  * - The default strip comes from one pass per stretch of the recording that reads and decodes only the keyframes
  *   it shows (about one per `interval`).
- * - Zoomed in past what those cover, denser frames (any frame, not just keyframes) are made for the visible
- *   window, and dropped again when zooming back out.
+ * - Zoomed in past what those cover, denser frames are made for the visible window (any frame, or for a long
+ *   window its keyframes), and dropped again when zooming back out.
  * FFmpeg sends each image as soon as it's made (multipart JPEG, every part with its length) and its time on
  * stderr (showinfo), so frames show up while the pass is still running.
  */
@@ -313,9 +313,18 @@ export function getFilmTiles({ frames, covered, tileWidth, fromPx, toPx, lanePx,
 /** What the timeline shows: a stretch of the recording, and how much of it one tile spans. */
 export interface FilmstripView { from: number, to: number, tileSeconds: number }
 
-export interface DetailRequest { from: number, to: number, spacing: number }
+export interface DetailRequest {
+  from: number,
+  to: number,
+  spacing: number,
+  /** Only the keyframes (as for the default strip, `spacing` apart): the window is too long to decode all of it. */
+  keyframes: boolean,
+}
 
-/** Never decode more than this much of the recording for one zoomed-in window (long-GOP recordings). */
+/**
+ * Every frame is decoded for windows up to this long; a longer one (zoomed in on a long recording, whose default
+ * strip is sparse) gets its keyframes, which are quick to read.
+ */
 export const maxDetailSeconds = 30;
 
 /**
@@ -335,14 +344,15 @@ export function getDetailRequest({ view, baseFrames, duration }: {
   const margin = length * 0.15;
   const from = Math.max(0, view.from - margin);
   const to = Math.min(duration, view.to + margin);
-  if (to - from > maxDetailSeconds) return undefined;
-  return { from, to, spacing: Math.max(1 / 128, 2 ** Math.floor(Math.log2(view.tileSeconds))) };
+  return { from, to, spacing: Math.max(1 / 128, 2 ** Math.floor(Math.log2(view.tileSeconds))), keyframes: to - from > maxDetailSeconds };
 }
 
 /**
  * Whether frames already made (or being made) for `made` serve `view`, for which getDetailRequest asked for
- * `wanted`: as dense, and all of the view that's within the recording.
+ * `wanted`: as dense (keyframes only don't do for a window that wants every frame), and all of the view that's
+ * within the recording.
  */
 export function servesView(made: DetailRequest, view: FilmstripView, wanted: DetailRequest) {
-  return made.spacing <= wanted.spacing && made.from <= Math.max(0, view.from) && made.to >= Math.min(wanted.to, view.to);
+  return made.spacing <= wanted.spacing && (wanted.keyframes || !made.keyframes)
+    && made.from <= Math.max(0, view.from) && made.to >= Math.min(wanted.to, view.to);
 }
