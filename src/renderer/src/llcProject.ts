@@ -1,3 +1,5 @@
+import isEqual from 'lodash/isEqual';
+
 import { isDurationValid, mapSaveableSegments } from './segments';
 import type { CustomTagsByFile, LlcProject, OverlayClip, ParamsByStreamId, StateSegment, StreamParams } from './types';
 
@@ -95,6 +97,22 @@ export function getProjectSegmentsToLoad(project: LlcProject) {
   const [first, ...rest] = project.cutSegments;
   const isWholeFile = first == null || (rest.length === 0 && first.initial === true && first.selected !== false);
   return isWholeFile ? [] : project.cutSegments;
+}
+
+/**
+ * What a project file holds as it loads: its segments with the defaults a load gives them, its text and its stream
+ * edits. Not what only describes the file (the recording's name, path and length) nor how it was written.
+ */
+function getLoadedEdits(project: LlcProject) {
+  const cutSegments = getProjectSegmentsToLoad(project).map(({ start, end, name, tags, selected, speed, crop, audioGainDb, audioMuted }) => ({
+    start, end, name: name ?? '', tags, selected: selected ?? true, speed, crop, audioGainDb, audioMuted: audioMuted === true ? true : undefined,
+  }));
+  return { cutSegments, streamEdits: project.streamEdits, overlayClips: project.overlayClips ?? [] };
+}
+
+/** Whether two project files hold the same edits: they load the same, however each was written. */
+export function isSameProjectEdits(a: LlcProject, b: LlcProject) {
+  return isEqual(getLoadedEdits(a), getLoadedEdits(b));
 }
 
 /** Whether a project holds anything that opening its media file would not produce by itself. */

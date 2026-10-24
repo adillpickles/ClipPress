@@ -1,7 +1,7 @@
 import JSON5 from 'json5';
 import { describe, expect, it } from 'vitest';
 
-import { buildLlcProjectData, encodeLlcProjectFile, getProjectSegmentsToLoad, getProjectSegmentsToSave, hasProjectEdits, withMediaDuration } from './llcProject';
+import { buildLlcProjectData, encodeLlcProjectFile, getProjectSegmentsToLoad, getProjectSegmentsToSave, hasProjectEdits, isSameProjectEdits, withMediaDuration } from './llcProject';
 import { llcProjectSaveableSegmentSchema, llcProjectV3Schema } from './types';
 import type { OverlayClip, ParamsByStreamId, StateSegment } from './types';
 
@@ -134,5 +134,25 @@ describe('the recording\'s length in the project file', () => {
   it('is ignored by older readers', () => {
     const olderSchema = llcProjectV3Schema.omit({ mediaDuration: true });
     expect(olderSchema.parse(JSON5.parse(JSON5.stringify(withMediaDuration(trimmed, 9.5))))).toEqual(trimmed);
+  });
+});
+
+describe('two copies of a project', () => {
+  const saved = encodeLlcProjectFile(project({ cutSegments: [{ start: 2, end: 8, name: 'Ace', segId: 'b', selected: true, segColorIndex: 0 }], overlayClips: [textClip] }), 8);
+
+  it('hold the same edits however each was written', () => {
+    // As an older version or a person wrote it: no path, no length, no "selected", keys in another order.
+    const older = roundTrip({ version: 3, overlayClips: [textClip], mediaFileName: 'clip.mp4', cutSegments: [{ name: 'Ace', end: 8, start: 2 }] });
+    expect(isSameProjectEdits(roundTrip(withMediaDuration(saved, 8)), older)).toBe(true);
+    // The untouched whole recording, with or without its length
+    const whole = project({ overlayClips: [textClip] });
+    expect(isSameProjectEdits(roundTrip(encodeLlcProjectFile(whole, 8)), roundTrip(encodeLlcProjectFile(whole, undefined)))).toBe(true);
+  });
+
+  it('differ when what loads differs', () => {
+    const other = roundTrip({ ...saved, cutSegments: [{ start: 2, end: 9, name: 'Ace', selected: true }] });
+    expect(isSameProjectEdits(roundTrip(saved), other)).toBe(false);
+    expect(isSameProjectEdits(roundTrip(saved), roundTrip({ ...saved, overlayClips: [] }))).toBe(false);
+    expect(isSameProjectEdits(roundTrip(saved), roundTrip({ ...saved, cutSegments: [{ start: 2, end: 8, name: 'Ace', selected: false }] }))).toBe(false);
   });
 });

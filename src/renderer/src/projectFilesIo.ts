@@ -1,13 +1,15 @@
 // File-system glue for the project files: copies, backups and the clean-up (kept apart so projectCleanup.ts and
 // projectCopies.ts stay pure and testable).
 import JSON5 from 'json5';
-import isEqual from 'lodash/isEqual';
 
 import { cleanUpProjects, isCleanupDue, parseCleanupState } from './projectCleanup';
 import type { ProjectCleanupState, RecordingPresence } from './projectCleanup';
 import { findProjectCopies } from './projectCopies';
 import type { ProjectMediaRef } from './projectCopies';
 import { getProjectsDir, getProjectStoreEnv, getReplacedBackupPath } from './projectStore';
+import { loadLlcProject } from './edlStore';
+import { isSameProjectEdits } from './llcProject';
+import type { LlcProject } from './types';
 import { createWriteFileAtomically } from './util/atomicWrite';
 import { trashFile } from './util';
 import mainApi from './mainApi';
@@ -120,28 +122,26 @@ export async function filterNotNewerThan(paths: readonly string[], reference: st
   return kept;
 }
 
-async function readJson5(path: string): Promise<unknown> {
-  return JSON5.parse(await readFile(path, 'utf8'));
-}
+const readProject = (path: string): Promise<LlcProject | undefined> => loadLlcProject(path).catch(() => undefined);
 
 /**
  * Before autosave writes the edits being opened (loaded from `sourcePath`) to `savePaths`: a different copy already in
  * one of those places would be replaced without a word (file times can mislead, e.g. a restored old copy), so it is
- * kept under another name next to it instead (see `getReplacedBackupPath`). A copy of the same edits needs none:
- * resolves with those, which already hold what is loaded.
+ * kept under another name next to it instead (see `getReplacedBackupPath`). A copy of the same edits, however it was
+ * written, needs none: resolves with those, which already hold what is loaded.
  */
 export async function keepCopiesAboutToBeReplaced(savePaths: readonly string[], sourcePath: string) {
   const same: string[] = [];
-  let incoming: Promise<unknown> | undefined;
+  let incoming: Promise<LlcProject | undefined> | undefined;
   for (const savePath of savePaths) {
     // eslint-disable-next-line no-await-in-loop, no-continue
     if (savePath === sourcePath || await getModifiedAt(savePath) == null) continue;
-    incoming ??= readJson5(sourcePath).catch(() => undefined);
+    incoming ??= readProject(sourcePath);
     // eslint-disable-next-line no-await-in-loop
-    const [existing, loaded] = await Promise.all([readJson5(savePath).catch(() => undefined), incoming]);
+    const [existing, loaded] = await Promise.all([readProject(savePath), incoming]);
     // Edits that can't be read won't load, so nothing will be written over the copy.
-    if (loaded === undefined) return [];
-    if (existing !== undefined && isEqual(existing, loaded)) {
+    if (loaded == null) return [];
+    if (existing != null && isSameProjectEdits(existing, loaded)) {
       same.push(savePath);
       // eslint-disable-next-line no-continue
       continue;

@@ -1310,8 +1310,9 @@ function App() {
     overlayClips,
   });
 
-  // Old backups, and the edits of recordings gone for 30 days, go to the Recycle Bin while ClipPress is idle (#91).
-  useProjectCleanup({ isBusy: () => workingRef.current, deleteProjectFile });
+  // Old backups, and the edits of recordings gone for 30 days, go to the Recycle Bin while ClipPress is idle (#91): not
+  // while it opens a clip or exports, nor while a dialog waits for an answer (such as where a recording went).
+  useProjectCleanup({ isBusy: () => workingRef.current || genericDialog != null, deleteProjectFile });
   // "Can't find the recording": opening edits whose recording was moved or renamed (#16).
   const relocateRecording = useRelocateRecording({ showGenericDialog, confirmDialog, customOutDir });
 
@@ -4769,11 +4770,11 @@ function App() {
           if (newest != null) {
             // Ok, the file exists. Next to the recording we may have to ask the user, because we need to read it
             if (dirname(newest.path) === dirname(fp)) await ensureAccessToSourceDir(fp);
+            await loadProject(newest.path);
             // Autosave is about to save the loaded copy everywhere the setting points: a different copy already
-            // there is kept under another name next to it.
+            // there is kept under another name next to it. (Only once loaded: edits that don't load replace nothing.)
             const savePaths = getProjectSavePaths(fp, projectFileLocation, customOutDir, storeEnv);
             if (autoSaveProjectFile) sameCopyPaths = await keepCopiesAboutToBeReplaced(savePaths.filter((savePath) => found.some(({ path }) => path === savePath)), newest.path);
-            await loadProject(newest.path);
             sidecarsToRetire = [...sidecarsToRetire, ...getProjectCopiesToRetire(found.map(({ path }) => path), projectFileLocation, savePaths, isWindows || isMac)];
             return;
           }
@@ -4921,9 +4922,9 @@ function App() {
 
         performance.mark('clippress:load-before-project');
         if (projectPath) {
+          await loadProject(projectPath);
           // Edits opened on purpose (or a relocated recording's) replace what this recording had: kept as a backup.
           if (autoSaveProjectFile) sameCopyPaths = await keepCopiesAboutToBeReplaced(getProjectSavePaths(fp, projectFileLocation, customOutDir, getProjectStoreEnv()), projectPath);
-          await loadProject(projectPath);
         } else {
           await tryFindAndLoadProjectFile({
             chapters: ffprobeMeta.chapters,
