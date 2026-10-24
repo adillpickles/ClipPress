@@ -3294,11 +3294,11 @@ function App() {
             ? i18n.t('2-pass')
             : i18n.t('1-pass');
           if (strategy.fallbackReason === 'nvidia_unavailable') {
-            notices.add(i18n.t('No NVIDIA GPU was found, so Advanced mode used {{encoder}} instead.', { encoder }));
+            notices.add(i18n.t('No NVIDIA GPU was found, so Custom settings used {{encoder}} instead.', { encoder }));
           }
           notices.add(
             i18n.t(
-              'Advanced mode used {{encoder}} {{passLabel}} with preset {{preset}}.',
+              'Custom settings used {{encoder}} {{passLabel}} with preset {{preset}}.',
               {
                 encoder,
                 passLabel,
