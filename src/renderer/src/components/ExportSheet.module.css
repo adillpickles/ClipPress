@@ -1,3 +1,6 @@
+/* The sheet's top edge stays put while its content changes (a quality, Custom settings, "Both" adding a second
+   name), so nothing jumps: it grows downward, and scrolls inside once it reaches the bottom. It starts where the
+   tallest sheet would if it were centred, so it isn't stuck to the top of a big window. */
 .sheet {
   position: fixed;
   inset: 0;
@@ -6,8 +9,8 @@
   overflow: hidden;
   display: flex;
   justify-content: center;
-  align-items: center;
-  padding: 1.5rem;
+  align-items: flex-start;
+  padding: max(1.5rem, calc((100vh - 56rem) / 2)) 1.5rem 1.5rem;
 }
 
 .box {
@@ -48,11 +51,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The scrollbar's 10px gutter (.consistent-scrollbar) is always kept, so the content doesn't get narrower when
+   the sheet grows long enough to scroll; the right padding gives those 10px back. */
 .scrollArea {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 1.5rem 1.25rem;
+  scrollbar-gutter: stable;
+  padding: 0 calc(1.5rem - 10px) 1.25rem 1.5rem;
 }
 
 .footer {

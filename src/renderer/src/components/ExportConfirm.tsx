@@ -18,6 +18,7 @@ import { FiChevronDown, FiChevronRight } from 'react-icons/fi';
 import type { SweetAlertIcon } from 'sweetalert2';
 import { getSegmentOutputDuration, getSegmentSpeed } from '../segmentSpeed';
 import { hasSegmentCrop } from '../segmentCrop';
+import getExportActionLabel from '../exportActionLabel';
 
 import ExportButton from './ExportButton';
 import ExportModeButton from './ExportModeButton';
@@ -1481,12 +1482,13 @@ function ExportConfirm({
     sizeLimitMergedNamingMode,
   ]);
 
-  const exportActionLabel = useMemo(() => {
-    if (effectiveExportMode === 'merge') return t('Export merged clip');
-    if (effectiveExportMode === 'merge+separate') return t('Export all');
-    if (effectiveExportMode === 'separate' && areWeCutting) return t('Export {{count}} clips', { count: segmentsToExport.length });
-    return t('Export');
-  }, [areWeCutting, effectiveExportMode, segmentsToExport.length, t]);
+  const exportActionLabel = useMemo(() => getExportActionLabel({
+    clipCount: segmentsToExport.length,
+    willMerge,
+    keepClipFiles: !autoDeleteMergedSegments,
+    areWeCutting,
+    t: (key, options) => t(key, options),
+  }), [areWeCutting, autoDeleteMergedSegments, segmentsToExport.length, t, willMerge]);
 
   const exportSummary = useMemo(() => {
     const parts: string[] = [];

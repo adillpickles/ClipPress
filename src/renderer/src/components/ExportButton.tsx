@@ -26,7 +26,7 @@ const ExportButton = forwardRef<HTMLButtonElement, Props>(({
 }, ref) => {
   const { t } = useTranslation();
 
-  const { autoMerge, simpleMode } = useUserSettings();
+  const { simpleMode } = useUserSettings();
 
   let title = titleOverride ?? t('Export');
   if (titleOverride == null && segmentsToExport.length === 1) {
@@ -34,8 +34,6 @@ const ExportButton = forwardRef<HTMLButtonElement, Props>(({
   } else if (titleOverride == null && segmentsToExport.length > 1) {
     title = t('Export {{ num }} segments', { num: segmentsToExport.length });
   }
-
-  const text = label ?? (autoMerge && segmentsToExport && segmentsToExport.length > 1 ? t('Export all') : t('Export'));
 
   return (
     <button
@@ -47,7 +45,8 @@ const ExportButton = forwardRef<HTMLButtonElement, Props>(({
       title={title}
     >
       <FiShare aria-hidden style={{ fontSize: '1em', flexShrink: 0 }} />
-      {text}
+      {/* Always "Export" here: what it makes depends on the export options, and their own button says it. */}
+      {label ?? t('Export')}
     </button>
   );
 });
