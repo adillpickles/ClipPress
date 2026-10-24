@@ -19,7 +19,7 @@ import Warning from './Warning';
 import Button, { DialogButton } from './Button';
 import Action from './Action';
 import TextInput from './TextInput';
-import Kbd from './Kbd';
+import renderKeys from './renderKeys';
 import SegmentedControl from './SegmentedControl';
 import { useAppContext } from '../contexts';
 import { normalizeQuickExportPresets, quickExportPresetActions } from '../../../common/quickExport';
@@ -31,13 +31,6 @@ type Category = string;
 
 type ActionsMap = Record<KeyboardAction, { name: string, category?: Category, before?: ReactNode }>;
 
-
-export const renderKeys = (keys: string[]) => keys.map((key, i) => (
-  <Fragment key={key}>
-    {i > 0 && <FaPlus style={{ verticalAlign: 'middle', fontSize: '.4em', opacity: 0.8, marginLeft: '.4em', marginRight: '.4em' }} />}
-    <Kbd code={key} />
-  </Fragment>
-));
 
 // For modifier keys you can use shift, ctrl, alt, or meta.
 // You can substitute option for alt and command for meta.

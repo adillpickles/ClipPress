@@ -6,7 +6,7 @@ import { normalizeQuickExportPresets, quickExportPresetActions } from '../../../
 import type { ExportEncodeMode, KeyboardAction, QuickExportPreset, SizeLimitPreset } from '../../../common/types';
 import { splitKeyboardKeys } from '../util';
 import { describeExportQuality } from '../quickExport';
-import { renderKeys } from './KeyboardShortcuts';
+import renderKeys from './renderKeys';
 import HelpTip from './HelpTip';
 import Select from './Select';
 import TextInput from './TextInput';
