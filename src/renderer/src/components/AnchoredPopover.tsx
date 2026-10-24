@@ -26,9 +26,9 @@ export default function AnchoredPopover({ anchor, onClose, children, label, clas
   /** Marks the shelf's popover, so focus inside it can be found. */
   dataShelf?: boolean | undefined,
   /**
-   * Opened from the keyboard, focus moves to the popover's first control (it is portalled to the end of the app,
-   * so Tab wouldn't reach it soon), and Escape or a click outside gives it back to what opened it. Opened with
-   * the mouse, focus stays where it is.
+   * Opened from the keyboard, focus moves to the popover's control marked `data-autofocus`, else its first one (it
+   * is portalled to the end of the app, so Tab wouldn't reach it soon), and Escape or a click outside gives it back
+   * to what opened it. Opened with the mouse, focus stays where it is.
    */
   keyboardFocus?: boolean | undefined,
   onPointerEnter?: (() => void) | undefined,
@@ -51,7 +51,8 @@ export default function AnchoredPopover({ anchor, onClose, children, label, clas
     // Once placed: focusing it while it still waits off-screen would scroll.
     if (opener == null || position == null || focusMovedRef.current) return;
     focusMovedRef.current = true;
-    ref.current?.querySelector<HTMLElement>(focusableSelector)?.focus({ preventScroll: true });
+    const el = ref.current;
+    (el?.querySelector<HTMLElement>('[data-autofocus]') ?? el?.querySelector<HTMLElement>(focusableSelector))?.focus({ preventScroll: true });
   }, [opener, position]);
 
   useLayoutEffect(() => {

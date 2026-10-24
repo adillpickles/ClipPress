@@ -68,10 +68,11 @@ function AudioTrackHeader({ previewVolume, onPreviewVolumeChange, onTogglePrevie
     </button>
   );
 
-  // The same 0–200% scale as a clip's volume.
-  const renderSlider = ({ streamIndex, label, audioGainDb }: TrackGainControl) => (
+  // The same 0–200% scale as a clip's volume. Opened from the keyboard, focus starts on the first one, not the "i".
+  const renderSlider = ({ streamIndex, label, audioGainDb }: TrackGainControl, first: boolean) => (
     <input
       className={styles['slider']}
+      data-autofocus={first || undefined}
       type="range"
       min={0}
       max={maxClipVolumePercent}
@@ -116,14 +117,14 @@ function AudioTrackHeader({ previewVolume, onPreviewVolumeChange, onTogglePrevie
               </>
             )}
           </div>
-          {single != null ? renderSlider(single) : gainControls.map((control) => (
+          {single != null ? renderSlider(single, true) : gainControls.map((control, i) => (
             <div key={control.streamIndex} className={styles['gainItem']}>
               <div className={styles['gainHeader']}>
                 <span className={styles['gainLabel']}>{control.label}</span>
                 <span className={styles['gainValue']}>{formatVolumePercent(control.audioGainDb, t('Muted'))}</span>
                 {renderReset(control)}
               </div>
-              {renderSlider(control)}
+              {renderSlider(control, i === 0)}
             </div>
           ))}
           <datalist id={ticksId}>
