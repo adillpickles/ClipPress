@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import AnchoredPopover from './AnchoredPopover';
 import styles from './ClipVolumePopover.module.css';
-import { dbToPercent, maxClipVolumePercent, percentToDb, snapToFullVolume } from '../util/audioGain';
+import { dbToPercent, formatVolumePercent, getClipPlaysAtPercent, isMutedAudioGain, isNeutralAudioGain, maxClipVolumePercent, percentToDb, snapToFullVolume } from '../util/audioGain';
 
 export interface ClipVolumeChange {
   audioGainDb: number | undefined,
@@ -14,13 +14,16 @@ export interface ClipVolumeChange {
 
 /**
  * A clip's own volume: a mute switch that remembers the level, a 0–200% slider and a reset. Opened by
- * right-clicking the clip on the audio track. It changes the export, on top of the track volume.
+ * right-clicking the clip on the audio track. It changes the export, on top of the track volume (when that isn't
+ * 100%, a line says what the clip really plays at).
  */
-function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, onChange, onClose }: {
+function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, trackGainDb, onChange, onClose }: {
   anchor: HTMLElement | { x: number, y: number },
   clipLabel: string,
   audioGainDb: number | undefined,
   audioMuted: boolean,
+  /** The track volume under the clip's (undefined when tracks differ). */
+  trackGainDb: number | undefined,
   /** `dragId` while the slider moves: changes with the same id are one undo step. */
   onChange: (volume: ClipVolumeChange, dragId: number | undefined) => void,
   onClose: () => void,
@@ -37,6 +40,13 @@ function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, onChang
   const percent = audioMuted ? 0 : levelPercent;
   const changed = audioMuted || percent !== 100;
   const MuteIcon = audioMuted ? FiVolumeX : FiVolume2;
+
+  let playsAt: string | undefined;
+  if (trackGainDb != null && !isNeutralAudioGain(trackGainDb) && !audioMuted) {
+    playsAt = isMutedAudioGain(trackGainDb)
+      ? t('Silent: the track is muted')
+      : t('Plays at {{volume}} (track at {{track}})', { volume: `${getClipPlaysAtPercent(trackGainDb, { audioGainDb })}%`, track: formatVolumePercent(trackGainDb, t('Muted')) });
+  }
 
   const onSlide = (value: number) => {
     // Snap only for the pointer: with the arrow keys, 99 and 101 must stay reachable.
@@ -107,6 +117,7 @@ function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, onChang
           <FaUndo size={10} />
         </button>
       </div>
+      {playsAt != null && <div className={styles['playsAt']}>{playsAt}</div>}
     </AnchoredPopover>
   );
 }

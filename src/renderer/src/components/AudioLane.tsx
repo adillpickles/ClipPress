@@ -12,10 +12,13 @@ import styles from './AudioLane.module.css';
 /**
  * The audio track under the clips: the waveform, drawn only for the visible stretch (so zooming in costs
  * nothing), bright inside kept clips and faint elsewhere, with each clip outlined like on the clips lane.
- * A clip's own volume scales its waveform and shows as a small badge; right-click a clip to change it.
+ * The track volume scales the whole waveform, and a clip's own volume its stretch on top (as they play); a clip's
+ * volume also shows as a small badge. Right-click a clip to change it.
  */
-function AudioLane({ peaks, height, segments, activeIndex, noneTicked, invertCutSegments, toLanePercent, pxToTime, lanePx, visibleStartPx, viewportPx, onClipContextMenu, onClipClick }: {
+function AudioLane({ peaks, trackGainDb, height, segments, activeIndex, noneTicked, invertCutSegments, toLanePercent, pxToTime, lanePx, visibleStartPx, viewportPx, onClipContextMenu, onClipClick }: {
   peaks: AudioPeaks | undefined,
+  /** The volume of the drawn track, under every clip's. */
+  trackGainDb: number | undefined,
   height: number,
   segments: StateSegment[],
   activeIndex: number,
@@ -68,7 +71,8 @@ function AudioLane({ peaks, height, segments, activeIndex, noneTicked, invertCut
     const active = segments[activeIndex];
     const ordered = active != null ? [active, ...segments.filter((seg) => seg !== active)] : segments;
     const louder = invertCutSegments ? [] : ordered.flatMap((seg) => (seg.end != null ? [{ start: seg.start, end: seg.end, factor: getPreviewGainFactor(combineAudioGain(undefined, seg)) }] : []));
-    const volumeAt = (time: number) => louder.find((clip) => time >= clip.start && time < clip.end)?.factor ?? 1;
+    const trackFactor = getPreviewGainFactor(trackGainDb);
+    const volumeAt = (time: number) => trackFactor * (louder.find((clip) => time >= clip.start && time < clip.end)?.factor ?? 1);
 
     const mid = innerHeight / 2;
     for (let x = 0; x < width; x += 1) {
@@ -85,7 +89,7 @@ function AudioLane({ peaks, height, segments, activeIndex, noneTicked, invertCut
       ctx.fillRect(x, mid - h / 2, 1, h);
     }
     ctx.globalAlpha = 1;
-  }, [activeIndex, canvasLeft, canvasWidth, height, invertCutSegments, lanePx, noneTicked, peaks, pxToTime, segments, viewportPx]);
+  }, [activeIndex, canvasLeft, canvasWidth, height, invertCutSegments, lanePx, noneTicked, peaks, pxToTime, segments, trackGainDb, viewportPx]);
 
   return (
     <div className={styles['lane']} style={{ height }}>
@@ -110,7 +114,7 @@ function AudioLane({ peaks, height, segments, activeIndex, noneTicked, invertCut
               e.stopPropagation();
               onClipContextMenu(index, { x: e.clientX, y: e.clientY });
             }}
-            title={onClipContextMenu != null ? t('Right-click to change the volume of this clip') : undefined}
+            title={onClipContextMenu != null ? t("Right-click to change this clip's volume") : undefined}
           >
             {volumeChanged && (
               <button
@@ -123,6 +127,7 @@ function AudioLane({ peaks, height, segments, activeIndex, noneTicked, invertCut
                   const rect = e.currentTarget.getBoundingClientRect();
                   onClipContextMenu?.(index, { x: rect.left + rect.width / 2, y: rect.top });
                 }}
+                title={t('Clip volume')}
                 aria-label={t('Clip volume')}
               >
                 {seg.audioMuted ? <FiVolumeX aria-hidden /> : `${dbToPercent(seg.audioGainDb ?? 0)}%`}

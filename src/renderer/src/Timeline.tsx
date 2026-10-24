@@ -198,6 +198,7 @@ function Timeline({
   thumbnails,
   filmstrip,
   audioPeaks,
+  audioTrackGainDb,
   showAudioLane,
   audioHeader,
   onEditClipVolume,
@@ -260,6 +261,8 @@ function Timeline({
   filmstrip: FilmstripFrame[],
   /** Simple mode's audio track under the clips. */
   audioPeaks: AudioPeaks | undefined,
+  /** The drawn track's volume, which scales its waveform. */
+  audioTrackGainDb: number | undefined,
   showAudioLane: boolean,
   audioHeader: ReactNode,
   /** Opens a clip's volume popover at a point (right-click on the audio track, or the clip's menu). */
@@ -1056,6 +1059,7 @@ function Timeline({
             {showAudioLane && (
               <AudioLane
                 peaks={audioPeaks}
+                trackGainDb={audioTrackGainDb}
                 height={audioLaneHeight}
                 segments={cutSegments}
                 activeIndex={currentSegIndexSafe}

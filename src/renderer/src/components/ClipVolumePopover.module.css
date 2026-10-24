@@ -85,3 +85,10 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+
+/* What the clip really plays at, with the track turned down or up. */
+.playsAt {
+  font-size: .75rem;
+  color: var(--cp-text-muted);
+  font-variant-numeric: tabular-nums;
+}

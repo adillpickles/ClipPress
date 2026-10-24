@@ -948,6 +948,9 @@ function App() {
     })),
     [activeAudioStreams, filePath, paramsByStreamId, t],
   );
+  // The audio track's waveform is the first track's; a clip's popover says what it plays at when all tracks agree.
+  const audioTrackGainDb = previewAudioGainControls[0]?.audioGainDb;
+  const sharedTrackGainDb = previewAudioGainControls.every((control) => control.audioGainDb === audioTrackGainDb) ? audioTrackGainDb : undefined;
   const hasOverlayClips = overlayClips.length > 0;
 
   const updateOverlayClip = useCallback(
@@ -7003,6 +7006,7 @@ function App() {
                           thumbnails={thumbnailsSorted}
                           filmstrip={filmstrip}
                           audioPeaks={audioPeaks}
+                          audioTrackGainDb={audioTrackGainDb}
                           showAudioLane={showAudioLane}
                           onEditClipVolume={hasAudio && !invertCutSegments ? editClipVolume : undefined}
                           audioHeader={audioHeader}
@@ -7126,6 +7130,7 @@ function App() {
                   clipLabel={clipVolumeEditorSegment.name || t('Clip {{number}}', { number: clipVolumeEditorIndex + 1 })}
                   audioGainDb={clipVolumeEditorSegment.audioGainDb}
                   audioMuted={clipVolumeEditorSegment.audioMuted === true}
+                  trackGainDb={sharedTrackGainDb}
                   onChange={onClipVolumeChange}
                   onClose={closeClipVolumeEditor}
                 />
