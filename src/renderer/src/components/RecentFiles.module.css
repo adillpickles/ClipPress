@@ -80,8 +80,9 @@
   box-shadow: inset var(--cp-focus-ring);
 }
 
-.missing {
-  cursor: default;
+/* Moved or deleted: dimmed, but it can still be found again. */
+.missing .icon,
+.missing .text {
   opacity: .55;
 }
 

@@ -82,6 +82,14 @@ export function encodeLlcProjectFile(project: LlcProject, fileDuration: number |
   };
 }
 
+/**
+ * The file also notes the recording's length (`mediaDuration`), so that edits opened with a recording found somewhere
+ * else can be checked against it. Not part of the project's contents: a change of it alone is not saved.
+ */
+export function withMediaDuration(file: LlcProject, fileDuration: number | undefined): LlcProject {
+  return isDurationValid(fileDuration) ? { ...file, mediaDuration: fileDuration } : file;
+}
+
 /** The segments to load from a project file. None for the whole file: opening the media creates its segment. */
 export function getProjectSegmentsToLoad(project: LlcProject) {
   const [first, ...rest] = project.cutSegments;

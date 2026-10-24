@@ -86,12 +86,12 @@ function RecentFiles({ files, customOutDir, onOpen, onRemove, onClear }: {
           const missing = state?.missing === true;
           return (
             <li key={path} className={styles['item']}>
+              {/* A missing one opens "Can't find the recording", to find it again with its edits. */}
               <button
                 type="button"
                 className={[styles['open'], ...(missing ? [styles['missing']] : [])].join(' ')}
                 onClick={() => onOpen(path)}
-                disabled={missing}
-                title={missing ? t('This file has been moved or deleted: {{path}}', { path }) : path}
+                title={missing ? `${t('This file has been moved or deleted: {{path}}', { path })}\n${t('Click to find it.')}` : path}
               >
                 <FiFilm aria-hidden className={styles['icon']} />
                 <span className={styles['text']}>

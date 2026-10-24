@@ -293,7 +293,10 @@ import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, 
 import type { QuickExport } from './quickExport';
 import { normalizeQuickExportPresets } from '../../common/quickExport';
 import { getProjectCopiesToRetire, getProjectLookupPaths, getProjectSavePaths, getProjectStoreEnv, isSameProjectPath } from './projectStore';
-import { keepCopiesAboutToBeReplaced, logProjectFiles } from './projectFilesIo';
+import { findNewestProjectFile, keepCopiesAboutToBeReplaced, logProjectFiles } from './projectFilesIo';
+import { getProjectMediaCandidates, getProjectMediaOldPath } from './missingRecording';
+import useRelocateRecording from './hooks/useRelocateRecording';
+import type { RelocatedRecording } from './hooks/useRelocateRecording';
 import type { ProjectFileLocation } from '../../common/types';
 import type { ClipVolumeChange } from './components/ClipVolumePopover';
 import { combineAudioGain, isClipVolumeChanged, sanitizeClipGainDb } from './util/audioGain';
@@ -1305,9 +1308,12 @@ function App() {
     overlayClips,
   });
 
+  // "Can't find the recording": opening edits whose recording was moved or renamed (#16).
+  const relocateRecording = useRelocateRecording({ showGenericDialog, confirmDialog, customOutDir });
+
   // Edits found next to the recording or in the export folder (where older versions saved them) move to ClipPress's
-  // folder: once autosave has the project everywhere it saves it, the old files go to the Recycle Bin. If that save
-  // can't happen, they stay, and the next open tries again.
+  // folder, as do the edits of a recording found in a new place (#16): once autosave has the project everywhere it saves
+  // it, the old files go to the Recycle Bin. If that save can't happen, they stay, and the next open tries again.
   const sidecarRetirementRef = useRef<{ sessionId: number, paths: string[] }>();
   useEffect(() => {
     const pending = sidecarRetirementRef.current;
@@ -4698,9 +4704,12 @@ function App() {
     async ({
       filePath: fp,
       projectPath,
+      relocatedFrom,
     }: {
       filePath: string;
       projectPath?: string | undefined;
+      /** The recording was found in a new place: its edits move here (#16). */
+      relocatedFrom?: RelocatedRecording | undefined;
     }) => {
       // Every loadMedia call claims a generation. A load whose generation is no longer
       // current has been superseded by a newer file, so it must not touch state.
@@ -4719,8 +4728,8 @@ function App() {
       }
 
       // Projects found in older places (next to the recording, the export folder), to move to the Recycle Bin once the
-      // project is saved in ClipPress's folder.
-      let sidecarsToRetire: string[] = [];
+      // project is saved in ClipPress's folder; and those left at a relocated recording's old place.
+      let sidecarsToRetire: string[] = relocatedFrom?.projectCopies ?? [];
 
       async function tryFindAndLoadProjectFile({
         chapters,
@@ -4985,7 +4994,8 @@ function App() {
         // Autosave compares later changes with the state opened here.
         setProjectSession({ id: generation, loadedProjectPath, ...(loadedProjectPath != null && sameCopyPaths.length > 0 ? { sameCopyPaths } : {}) });
         if (sidecarsToRetire.length > 0) sidecarRetirementRef.current = { sessionId: generation, paths: sidecarsToRetire };
-        setRecentFiles((list) => addRecentFile(list, fp, Date.now(), isWindows || isMac));
+        // A relocated recording takes the place of its old entry.
+        setRecentFiles((list) => addRecentFile(relocatedFrom != null ? removeRecentFile(list, relocatedFrom.mediaPath, isWindows || isMac) : list, fp, Date.now(), isWindows || isMac));
         setShelfFolder(dirname(fp));
         setShelfAnchorPath(fp);
         // This needs to be last, because it triggers <video> to load the video
@@ -5079,6 +5089,7 @@ function App() {
     }) => {
       let path = pathIn;
       let projectPath: string | undefined;
+      let relocatedFrom: RelocatedRecording | undefined;
 
       // Open .llc AND media referenced within
       if (isLlcProject) {
@@ -5089,21 +5100,22 @@ function App() {
         console.log({ mediaFileName });
         if (!mediaFileName) return;
 
-        let mediaFilePath = pathJoin(dirname(path), mediaFileName);
-        // A project from ClipPress's own folder isn't next to its recording: it says where the recording is.
-        if (!(await mainApi.pathExists(mediaFilePath)) && project.mediaFilePath != null && await mainApi.pathExists(project.mediaFilePath)) {
-          mediaFilePath = project.mediaFilePath;
+        // Next to the project, or where it says the recording is (a project from ClipPress's own folder isn't next to it).
+        // Note: MAS only allows fs.stat (pathExists) if we don't have access to input dir yet
+        let mediaFilePath: string | undefined;
+        for (const candidate of getProjectMediaCandidates(project, path, getProjectStoreEnv())) {
+          if (await mainApi.pathExists(candidate)) {
+            mediaFilePath = candidate;
+            break;
+          }
         }
 
-        // Note: MAS only allows fs.stat (pathExists) if we don't have access to input dir yet
-        if (!(await mainApi.pathExists(mediaFilePath))) {
-          errorToast(
-            i18n.t(
-              'The media file referenced by the project file you tried to open does not exist in the same directory as the project file: {{mediaFileName}}',
-              { mediaFileName },
-            ),
-          );
-          return;
+        if (mediaFilePath == null) {
+          // Moved or renamed: the user can point to it, and the edits move with it (#16).
+          const oldMediaPath = getProjectMediaOldPath(project, path, getProjectStoreEnv()) ?? pathJoin(dirname(path), mediaFileName);
+          const relocation = await relocateRecording({ oldMediaPath, project, projectPath: path });
+          if (relocation == null) return;
+          ({ mediaPath: mediaFilePath, relocatedFrom } = relocation);
         }
 
         projectPath = path;
@@ -5119,9 +5131,9 @@ function App() {
 
       if (/\.vob$/i.test(path) && mustDisallowVob()) return;
 
-      await loadMedia({ filePath: path, projectPath });
+      await loadMedia({ filePath: path, projectPath, relocatedFrom });
     },
-    [ensureAccessToSourceDir, loadMedia],
+    [ensureAccessToSourceDir, loadMedia, relocateRecording],
   );
 
   // todo merge with userOpenFiles?
@@ -5700,6 +5712,35 @@ function App() {
     if (canceled) return;
     userOpenFiles(filePaths);
   }, [t, userOpenFiles]);
+
+  /** Opens a recording from the welcome screen's list. One that was moved or deleted can be found, with its edits (#16). */
+  const openRecentFile = useCallback(async (path: string) => {
+    if (await mainApi.pathExists(path)) {
+      await userOpenFiles([path]);
+      return;
+    }
+    if (workingRef.current) return;
+    closeExportResultDialog();
+    await withErrorHandling(async () => {
+      // Its newest edits, wherever they are kept.
+      const newestProject = await findNewestProjectFile(getProjectLookupPaths(path, projectFileLocation, customOutDir, getProjectStoreEnv()));
+      let project: Awaited<ReturnType<typeof loadLlcProject>> | undefined;
+      try {
+        if (newestProject != null) project = await loadLlcProject(newestProject);
+      } catch (err) {
+        console.warn('Could not read the edits of a missing recording', newestProject, err);
+      }
+      const projectPath = project != null ? newestProject : undefined;
+      const relocation = await relocateRecording({ oldMediaPath: path, project, projectPath });
+      if (relocation == null || workingRef.current) return;
+      setWorking({ text: i18n.t('Loading file') });
+      try {
+        await loadMedia({ filePath: relocation.mediaPath, projectPath, relocatedFrom: relocation.relocatedFrom });
+      } finally {
+        setWorking(undefined);
+      }
+    }, i18n.t('Failed to open file'));
+  }, [closeExportResultDialog, customOutDir, loadMedia, projectFileLocation, relocateRecording, setWorking, userOpenFiles, withErrorHandling, workingRef]);
 
   const concatBatch = useCallback(() => {
     if (batchFiles.length < 2) {
@@ -6774,7 +6815,7 @@ function App() {
                         <RecentFiles
                           files={recentFiles}
                           customOutDir={customOutDir}
-                          onOpen={(path) => userOpenFiles([path])}
+                          onOpen={openRecentFile}
                           onRemove={(path) => setRecentFiles((list) => removeRecentFile(list, path, isWindows || isMac))}
                           onClear={() => setRecentFiles([])}
                         />

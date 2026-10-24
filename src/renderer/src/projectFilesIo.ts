@@ -22,6 +22,29 @@ export function logProjectFiles(level: 'info' | 'warn', message: string) {
   mainApi.log(level, message).catch(() => undefined);
 }
 
+/** The most recently saved of these project files; undefined when none is there. */
+export async function findNewestProjectFile(paths: readonly string[]) {
+  let newest: { path: string, mtimeMs: number } | undefined;
+  for (const path of paths) {
+    // eslint-disable-next-line no-await-in-loop
+    const mtimeMs = await getModifiedAt(path);
+    if (mtimeMs != null && (newest == null || mtimeMs > newest.mtimeMs)) newest = { path, mtimeMs };
+  }
+  return newest?.path;
+}
+
+/** The ones of `paths` that are there and not newer than `reference`: superseded by the edits loaded from it. */
+export async function filterNotNewerThan(paths: readonly string[], reference: string) {
+  const referenceTime = await getModifiedAt(reference);
+  const kept: string[] = [];
+  for (const path of paths) {
+    // eslint-disable-next-line no-await-in-loop
+    const mtimeMs = path === reference ? referenceTime : await getModifiedAt(path);
+    if (mtimeMs != null && referenceTime != null && mtimeMs <= referenceTime) kept.push(path);
+  }
+  return kept;
+}
+
 async function readJson5(path: string): Promise<unknown> {
   return JSON5.parse(await readFile(path, 'utf8'));
 }

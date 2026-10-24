@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
 
-import { getProjectCopiesToRetire, getProjectLookupPaths, getProjectSavePath, getProjectSavePaths, getSidecarProjectPath, getStoredProjectFileName, getStoredProjectPath } from './projectStore';
+import { getProjectCopiesToRetire, getProjectLookupPaths, getProjectSavePath, getProjectSavePaths, getRelocatedProjectCopies, getSidecarProjectPath, getStoredProjectFileName, getStoredProjectPath } from './projectStore';
 import type { ProjectStoreEnv } from './projectStore';
 
 const win = path.win32;
@@ -91,6 +91,26 @@ describe('project store', () => {
       expect(getProjectCopiesToRetire(found, 'exportFolder', [exportFolder], true)).toEqual([]);
       // However the same file is written
       expect(getProjectCopiesToRetire([beside.toUpperCase()], 'both', [stored, beside], true)).toEqual([]);
+    });
+  });
+
+  describe('a recording found in a new place (#16)', () => {
+    const moved = String.raw`E:\Archive\Valorant 2026.10.19 - 21.51.16.mp4`;
+
+    it('gives the edits the new place\'s project, and leaves the old place\'s copies to retire', () => {
+      const oldStored = getStoredProjectPath(media, env);
+      const newStored = getStoredProjectPath(moved, env);
+      expect(newStored).not.toBe(oldStored);
+      expect(getProjectSavePath(moved, 'app', undefined, env)).toBe(newStored);
+      expect(getRelocatedProjectCopies(media, moved, undefined, env)).toEqual([oldStored, String.raw`D:\Clips\Valorant 2026.10.19 - 21.51.16-proj.llc`]);
+    });
+
+    it('does not retire a copy the recording at its new place reads too', () => {
+      // Only the case of the name changed: the same file on Windows, the same project.
+      expect(getRelocatedProjectCopies(media, media.toLowerCase(), undefined, env)).toEqual([]);
+      // Renamed in the same folder: the old name's copies go, the folder stays.
+      const renamed = String.raw`D:\Clips\Ace.mp4`;
+      expect(getRelocatedProjectCopies(media, renamed, undefined, env)).toEqual([getStoredProjectPath(media, env), String.raw`D:\Clips\Valorant 2026.10.19 - 21.51.16-proj.llc`]);
     });
   });
 });

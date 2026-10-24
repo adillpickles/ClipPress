@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'reac
 
 import isDev from '../isDev';
 import { buildLlcProjectData, writeLlcProject } from '../edlStore';
-import { encodeLlcProjectFile, getProjectSegmentsToSave } from '../llcProject';
+import { encodeLlcProjectFile, getProjectSegmentsToSave, withMediaDuration } from '../llcProject';
 import ProjectAutoSave from '../projectAutoSave';
 import createProjectFilePathKey from '../projectFilePathKey';
 import type { ProjectSession, ProjectSnapshot } from '../projectAutoSave';
@@ -65,7 +65,7 @@ export default ({ autoSaveProjectFile, projectFileLocation, filePath, projectSes
   const snapshot = useMemo<ProjectSnapshot | undefined>(() => {
     if (projectSession == null || filePath == null || projectFileSavePaths == null || !projectFileSavePath) return undefined;
     const project = buildLlcProjectData({ mediaFilePath: filePath, cutSegments: getProjectSegmentsToSave(cutSegments), customTagsByFile, paramsByStreamId, overlayClips });
-    return { session: projectSession, path: projectFileSavePath, copyPaths: projectFileSavePaths.slice(1), project, fileData: encodeLlcProjectFile(project, fileDuration) };
+    return { session: projectSession, path: projectFileSavePath, copyPaths: projectFileSavePaths.slice(1), project, fileData: withMediaDuration(encodeLlcProjectFile(project, fileDuration), fileDuration) };
   }, [cutSegments, customTagsByFile, fileDuration, filePath, overlayClips, paramsByStreamId, projectFileSavePath, projectFileSavePaths, projectSession]);
 
   // A layout effect, so autosave has every committed state before any later event can close the file.

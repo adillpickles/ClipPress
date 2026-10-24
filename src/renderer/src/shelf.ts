@@ -20,7 +20,7 @@ export interface ShelfItem {
 export const maxShelfExports = 300;
 const maxOutputsPerExport = 20;
 
-const videoExtensions = new Set(['3gp', 'avi', 'flv', 'm2ts', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'mts', 'mxf', 'ogv', 'ts', 'webm', 'wmv']);
+export const videoExtensions = new Set(['3gp', 'avi', 'flv', 'm2ts', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'mts', 'mxf', 'ogv', 'ts', 'webm', 'wmv']);
 
 export function isShelfVideo(fileName: string) {
   if (fileName.startsWith('.')) return false;

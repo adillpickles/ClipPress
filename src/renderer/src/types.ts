@@ -118,6 +118,8 @@ export const llcProjectV3Schema = z.object({
   mediaFileName: z.string().optional(),
   /** Where the recording is: a project kept in ClipPress's own folder isn't next to it. Older readers ignore it. */
   mediaFilePath: z.string().optional(),
+  /** The recording's length in seconds when saved, to check a recording found elsewhere against. Older readers ignore it. */
+  mediaDuration: z.number().optional(),
   cutSegments: llcProjectSaveableSegmentSchema.array(),
   streamEdits: z.object({
     customTags: z.record(z.string(), z.string()).optional(),

@@ -130,6 +130,16 @@ export function getProjectLookupPaths(mediaPath: string, location: ProjectFileLo
   return paths.filter((path, index) => paths.indexOf(path) === index);
 }
 
+/**
+ * The copies of a recording's edits left at its old place once it is found somewhere else (#16): in ClipPress's folder
+ * and next to where it was. Not one the recording at its new place reads as well (same name, same folder).
+ */
+export function getRelocatedProjectCopies(oldMediaPath: string, newMediaPath: string, customOutDir: string | undefined, env: ProjectStoreEnv) {
+  const used = getProjectLookupPaths(newMediaPath, 'app', customOutDir, env);
+  return [getStoredProjectPath(oldMediaPath, env), getSidecarProjectPath(oldMediaPath, undefined, env)]
+    .filter((path) => !used.some((usedPath) => isSameProjectPath(usedPath, path, env.caseInsensitive)));
+}
+
 /** The real environment: Node's path module and ClipPress's settings folder (the portable one, if any). */
 let renderEnv: ProjectStoreEnv | undefined;
 export function getProjectStoreEnv(): ProjectStoreEnv {

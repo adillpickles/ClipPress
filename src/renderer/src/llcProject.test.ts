@@ -1,7 +1,7 @@
 import JSON5 from 'json5';
 import { describe, expect, it } from 'vitest';
 
-import { buildLlcProjectData, encodeLlcProjectFile, getProjectSegmentsToLoad, getProjectSegmentsToSave, hasProjectEdits } from './llcProject';
+import { buildLlcProjectData, encodeLlcProjectFile, getProjectSegmentsToLoad, getProjectSegmentsToSave, hasProjectEdits, withMediaDuration } from './llcProject';
 import { llcProjectSaveableSegmentSchema, llcProjectV3Schema } from './types';
 import type { OverlayClip, ParamsByStreamId, StateSegment } from './types';
 
@@ -118,5 +118,21 @@ describe('project file', () => {
     expect(read([{ start: 0, end: 8, name: '', initial: false }])).toHaveLength(1);
     expect(read([{ start: 0, end: 8, name: '', initial: true }, { start: 2, end: 4, name: '' }])).toHaveLength(2);
     expect(read([{ start: 2, end: 4, name: 'kept' }])).toEqual([{ start: 2, end: 4, name: 'kept' }]);
+  });
+});
+
+describe('the recording\'s length in the project file', () => {
+  const trimmed = project({ cutSegments: [{ start: 2, end: 8, name: '', segId: 'b', selected: true, segColorIndex: 0 }] });
+
+  it('is noted once known, and read back', () => {
+    expect(withMediaDuration(trimmed, 9.5)).toEqual({ ...trimmed, mediaDuration: 9.5 });
+    expect(withMediaDuration(trimmed, undefined)).toBe(trimmed);
+    expect(withMediaDuration(trimmed, Number.NaN)).toBe(trimmed);
+    expect(roundTrip(withMediaDuration(trimmed, 9.5)).mediaDuration).toBe(9.5);
+  });
+
+  it('is ignored by older readers', () => {
+    const olderSchema = llcProjectV3Schema.omit({ mediaDuration: true });
+    expect(olderSchema.parse(JSON5.parse(JSON5.stringify(withMediaDuration(trimmed, 9.5))))).toEqual(trimmed);
   });
 });
