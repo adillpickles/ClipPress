@@ -238,6 +238,7 @@ function Segment({
 
   if (simpleLook) {
     const hasFrames = clipFrames.length > 0;
+    const showSpeed = speed !== 1 && !speedBand;
     return (
       <motion.div
         className={[styles['clip'], ...(isActive ? [styles['active']] : []), ...(excluded ? [styles['excluded']] : [])].join(' ')}
@@ -276,10 +277,11 @@ function Segment({
           </div>
         )}
         <div className={styles['tint']} aria-hidden />
-        <span className={styles['pill']}>
+        {/* Just the number, or the number on a dark label with the name and speed. */}
+        <span className={[styles['pill'], ...(!name && !showSpeed ? [styles['pillBare']] : [])].join(' ')}>
           <span className={styles['num']} style={badgeStyle}>{segNum + 1}</span>
           {name && <span className={styles['name']}>{name}</span>}
-          {speed !== 1 && !speedBand && <span className={styles['speed']}>{`${Math.round(speed * 100)}%`}</span>}
+          {showSpeed && <span className={styles['speed']}>{`${Math.round(speed * 100)}%`}</span>}
         </span>
         {isActive && !excluded && onTrimHandleMouseDown != null && (
           <>
@@ -308,7 +310,7 @@ function Segment({
     >
       {/* The block keeps its exact time width (very short clips can be narrower than the padding). */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 6px', minWidth: 0, width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
-        <div style={{ flexShrink: 0, minWidth: 16, height: 18, padding: '0 4px', boxSizing: 'border-box', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums', background: darkMode ? 'rgba(0, 0, 0, 0.28)' : 'rgba(255, 255, 255, 0.55)' }}>{segNum + 1}</div>
+        <div style={{ flexShrink: 0, minWidth: 20, height: 20, padding: '0 4px', boxSizing: 'border-box', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, fontVariantNumeric: 'tabular-nums', background: darkMode ? 'rgba(0, 0, 0, 0.28)' : 'rgba(255, 255, 255, 0.55)' }}>{segNum + 1}</div>
 
         <AnimatePresence>
           {invertCutSegments && (
