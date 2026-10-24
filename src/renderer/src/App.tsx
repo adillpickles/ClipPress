@@ -1790,12 +1790,16 @@ function App() {
 
   // Simple mode's audio track under the clips: its waveform, made once per open recording.
   const showAudioLane = simpleMode && hasAudio;
-  const { peaks: audioPeaks } = useAudioPeaks({
+  const { peaks: audioPeaks, done: audioPeaksDone } = useAudioPeaks({
     filePath,
     streamIndex: activeAudioStreams[0]?.index ?? mainAudioStream?.index,
     duration: openDuration,
     enabled: showAudioLane,
   });
+  // While the filmstrip and the waveform of a recording that's opening are made, background work waits (keyframes,
+  // FFmpeg's self-check, the encoder check).
+  const openWorkPending = filePath != null && isDurationValid(openDuration)
+    && ((simpleMode && hasVideo && !filmstrip.done) || (showAudioLane && !audioPeaksDone));
 
   // The shelf makes the rest of its thumbnails once the open clip's own filmstrip and waveform are in, or a while
   // after it opened if they never are (they failed). Advanced mode's lanes load as they show, so there it's a while.
@@ -1824,7 +1828,8 @@ function App() {
     keyframeByNumber,
     readAllKeyframes,
   } = useKeyframes({
-    keyframesEnabled,
+    // Simple mode doesn't show keyframes, so they're read once the recording has opened.
+    keyframesEnabled: keyframesEnabled && !openWorkPending,
     filePath,
     commandedTime,
     videoStream: activeVideoStream,
@@ -6661,15 +6666,21 @@ function App() {
     [setWaveformMode],
   );
 
-  // Which encoders work is checked in the background a while after a clip opens, so an export doesn't wait for it.
+  // Which encoders work is checked in the background once a clip has opened, so an export doesn't wait for it:
+  // after its filmstrip and waveform (or at most 30 s on); advanced mode's lanes aren't tracked, so a while after.
   useEffect(() => {
     if (filePath == null) return undefined;
-    const timer = setTimeout(prefetchEncoderCapabilities, 8000);
+    const timer = setTimeout(prefetchEncoderCapabilities, openWorkPending ? 30_000 : (simpleMode ? 1500 : 8000));
     return () => clearTimeout(timer);
-  }, [filePath]);
+  }, [filePath, openWorkPending, simpleMode]);
+  const openWorkPendingRef = useRef(openWorkPending);
+  useEffect(() => {
+    openWorkPendingRef.current = openWorkPending;
+  }, [openWorkPending]);
 
-  // FFmpeg's self-check starts two processes; at launch it waits a moment so it doesn't compete with opening the
-  // first file (a broken FFmpeg shows up then anyway). A changed FFmpeg path is checked at once.
+  // FFmpeg's self-check starts two processes; at launch it waits a moment, and for the first file to open (its
+  // filmstrip and waveform), so it doesn't compete with that (a broken FFmpeg shows up then anyway). A changed
+  // FFmpeg path is checked at once.
   const startupCheckedRef = useRef(false);
   useEffect(() => {
     let cancelled = false;
@@ -6681,7 +6692,14 @@ function App() {
       if (!cancelled) setFfmpegInfo(info);
     };
     const delay = startupCheckedRef.current ? 0 : 3000;
-    const timer = setTimeout(() => { check(); }, delay);
+    let timer = setTimeout(function run() {
+      // At launch, a recording that's opening goes first.
+      if (!startupCheckedRef.current && openWorkPendingRef.current) {
+        timer = setTimeout(run, 500);
+        return;
+      }
+      check();
+    }, delay);
     return () => {
       cancelled = true;
       clearTimeout(timer);
