@@ -287,7 +287,7 @@ import AudioTrackHeader from './components/AudioTrackHeader';
 import ClipVolumePopover from './components/ClipVolumePopover';
 import { ShelfUpNext } from './components/Shelf';
 import useShelf, { listShelfFolder } from './hooks/useShelf';
-import { buildShelfQueue, pickNextClip, rememberShelfExport } from './shelf';
+import { buildShelfQueue, pickNextClip, rememberShelfExport, shelfThumbnailKey } from './shelf';
 import formatSizeLimitedProgressText from './sizeLimitedProgressText';
 import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, resolveExportQuality } from './quickExport';
 import type { QuickExport } from './quickExport';
@@ -582,9 +582,6 @@ function App() {
     shelfOrder,
     setShelfOrder,
   } = allUserSettings;
-
-  const shelf = useShelf({ folder: shelfFolder, order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac, currentPath: filePath ?? shelfAnchorPath });
-  const { refresh: refreshShelf, nextClip } = shelf;
 
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(!simpleMode);
 
@@ -1792,6 +1789,11 @@ function App() {
     duration: fileDuration,
     enabled: showAudioLane,
   });
+
+  // The shelf makes the rest of its thumbnails once the open clip's own filmstrip and waveform are in.
+  const shelfPrefetch = !working && (filePath == null || ((filmstrip.length > 0 || !(simpleMode && hasVideo)) && (audioPeaks != null || !showAudioLane)));
+  const shelf = useShelf({ folder: shelfFolder, order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac, currentPath: filePath ?? shelfAnchorPath, prefetch: shelfPrefetch });
+  const { refresh: refreshShelf, nextClip } = shelf;
 
   const { thumbnailsSorted, setThumbnails } = useThumbnails({
     filePath,
@@ -6816,7 +6818,7 @@ function App() {
                         {nextClip != null && (
                           <ShelfUpNext
                             file={nextClip}
-                            thumbnail={shelf.thumbnails.get(nextClip.path)}
+                            thumbnail={shelf.thumbnails.get(shelfThumbnailKey(nextClip))}
                             requestThumbnail={shelf.requestThumbnail}
                             onOpen={openShelfClip}
                           />

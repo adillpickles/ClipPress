@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 import prettyBytes from 'pretty-bytes';
 
 import type { ShelfFile, ShelfItem } from '../shelf';
-import { parseShelfOrder, shelfPathKey, toggleShelfOrder } from '../shelf';
+import { parseShelfOrder, shelfPathKey, shelfThumbnailKey, toggleShelfOrder } from '../shelf';
+import type { ShelfThumbnail } from '../shelfThumbnails';
 import type { ShelfOrder } from '../../../common/types';
 import styles from './Shelf.module.css';
 
@@ -12,11 +13,21 @@ const { basename, extname } = window.require('path');
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+/** The thumbnail's box is always the same size, so nothing moves when it arrives; a soft shimmer until then. */
+function ShelfThumb({ thumbnail }: { thumbnail: ShelfThumbnail | undefined }) {
+  return (
+    <span className={[styles['thumb'], ...(thumbnail === undefined ? [styles['thumbLoading']] : [])].join(' ')}>
+      {thumbnail != null && <img src={thumbnail} alt="" draggable={false} />}
+      {thumbnail === null && <FiFilm aria-hidden />}
+    </span>
+  );
+}
+
 function ShelfRowInner({ item, state, thumbnail, requestThumbnail, onOpen }: {
   item: ShelfItem,
   state: 'open' | 'next' | undefined,
-  thumbnail: string | undefined,
-  requestThumbnail: (path: string) => void,
+  thumbnail: ShelfThumbnail | undefined,
+  requestThumbnail: (forFile: ShelfFile) => void,
   onOpen: (path: string) => void,
 }) {
   const { t } = useTranslation();
@@ -26,16 +37,16 @@ function ShelfRowInner({ item, state, thumbnail, requestThumbnail, onOpen }: {
   // Make the thumbnail once the row scrolls into view.
   useEffect(() => {
     const el = ref.current;
-    if (el == null || thumbnail != null) return undefined;
+    if (el == null || thumbnail !== undefined) return undefined;
     const observer = new IntersectionObserver((entries) => {
       if (entries.some((entry) => entry.isIntersecting)) {
-        requestThumbnail(file.path);
+        requestThumbnail(file);
         observer.disconnect();
       }
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [file.path, requestThumbnail, thumbnail]);
+  }, [file, requestThumbnail, thumbnail]);
 
   return (
     <button
@@ -47,9 +58,7 @@ function ShelfRowInner({ item, state, thumbnail, requestThumbnail, onOpen }: {
       aria-current={state === 'open' ? 'true' : undefined}
       title={file.name}
     >
-      <span className={styles['thumb']}>
-        {thumbnail != null ? <img src={thumbnail} alt="" draggable={false} /> : <FiFilm aria-hidden />}
-      </span>
+      <ShelfThumb thumbnail={thumbnail} />
       <span className={styles['text']}>
         <span className={styles['name']}>{basename(file.name, extname(file.name))}</span>
         <span className={styles['meta']}>
@@ -80,8 +89,8 @@ function Shelf({ folder, queue, currentPath, nextPath, caseInsensitive, order, o
   onOrderChange: (newOrder: ShelfOrder) => void,
   onOpen: (path: string) => void,
   onChooseFolder: () => void,
-  thumbnails: ReadonlyMap<string, string>,
-  requestThumbnail: (path: string) => void,
+  thumbnails: ReadonlyMap<string, ShelfThumbnail>,
+  requestThumbnail: (forFile: ShelfFile) => void,
   /** Move focus to the first clip that can be opened (opened from the keyboard or a click). */
   autoFocus?: boolean,
 }) {
@@ -153,7 +162,7 @@ function Shelf({ folder, queue, currentPath, nextPath, caseInsensitive, order, o
                 key={item.file.path}
                 item={item}
                 state={state}
-                thumbnail={thumbnails.get(item.file.path)}
+                thumbnail={thumbnails.get(shelfThumbnailKey(item.file))}
                 requestThumbnail={requestThumbnail}
                 onOpen={onOpen}
               />
@@ -172,17 +181,17 @@ function Shelf({ folder, queue, currentPath, nextPath, caseInsensitive, order, o
 /** The welcome screen's way back in: the next clip from the shelf, one click away. */
 function ShelfUpNextInner({ file, thumbnail, requestThumbnail, onOpen }: {
   file: ShelfFile,
-  thumbnail: string | undefined,
-  requestThumbnail: (path: string) => void,
+  thumbnail: ShelfThumbnail | undefined,
+  requestThumbnail: (forFile: ShelfFile) => void,
   onOpen: (path: string) => void,
 }) {
   const { t } = useTranslation();
-  useEffect(() => requestThumbnail(file.path), [file.path, requestThumbnail]);
+  useEffect(() => {
+    if (thumbnail === undefined) requestThumbnail(file);
+  }, [file, requestThumbnail, thumbnail]);
   return (
     <button type="button" className={styles['upNext']} onClick={() => onOpen(file.path)} title={file.name}>
-      <span className={styles['thumb']}>
-        {thumbnail != null ? <img src={thumbnail} alt="" draggable={false} /> : <FiFilm aria-hidden />}
-      </span>
+      <ShelfThumb thumbnail={thumbnail} />
       <span className={styles['text']}>
         <span className={styles['upNextLabel']}>{t('Up next')}</span>
         <span className={styles['name']}>{basename(file.name, extname(file.name))}</span>

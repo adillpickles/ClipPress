@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import pMap from 'p-map';
 
-import { buildShelfQueue, isShelfVideo, pickNextClip } from '../shelf';
+import { buildShelfQueue, isShelfVideo, pickNextClip, shelfThumbnailKey } from '../shelf';
 import type { ShelfFile } from '../shelf';
 import type { ShelfExport, ShelfOrder } from '../../../common/types';
 import { renderShelfThumbnail } from '../ffmpeg';
+import ShelfThumbnails from '../shelfThumbnails';
+import type { ShelfThumbnail } from '../shelfThumbnails';
 import { getProjectsDir, getProjectStoreEnv, getStoredProjectFileName, projectSuffix } from '../projectStore';
 
 const { join, parse } = window.require('path');
@@ -32,55 +34,28 @@ export async function listShelfFolder(folder: string): Promise<ShelfFile[]> {
   return files.flat();
 }
 
-const thumbnailConcurrency = 2;
-
-interface ThumbnailJobs {
-  controller: AbortController,
-  pending: string[],
-  requested: Set<string>,
-  urls: string[],
-  running: number,
-}
-
-function pumpThumbnails(jobs: ThumbnailJobs, onThumbnail: (path: string, url: string) => void) {
-  while (jobs.running < thumbnailConcurrency && jobs.pending.length > 0) {
-    const path = jobs.pending.shift()!;
-    // eslint-disable-next-line no-param-reassign
-    jobs.running += 1;
-    const { signal } = jobs.controller;
-    renderShelfThumbnail(path, signal)
-      .then((url) => {
-        if (url == null) return;
-        if (signal.aborted) {
-          URL.revokeObjectURL(url);
-          return;
-        }
-        jobs.urls.push(url);
-        onThumbnail(path, url);
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        // eslint-disable-next-line no-param-reassign
-        jobs.running -= 1;
-        if (!signal.aborted) pumpThumbnails(jobs, onThumbnail);
-      });
-  }
-}
-
 /**
  * The shelf: the videos in a folder, in the order to work through them, and the clip after the open one.
- * Thumbnails are made when a row first shows and live only in memory, dropped when the folder changes.
+ * Thumbnails live only in memory, dropped when the folder changes: made when a row first shows, and for the rest
+ * of the folder in the background while `prefetch` says the editor is done with FFmpeg for now.
  */
-export default function useShelf({ folder, order, exports, caseInsensitive, currentPath }: {
+export default function useShelf({ folder, order, exports, caseInsensitive, currentPath, prefetch }: {
   folder: string | undefined,
   order: ShelfOrder,
   exports: ShelfExport[],
   caseInsensitive: boolean,
   currentPath: string | undefined,
+  prefetch: boolean,
 }) {
   const [listing, setListing] = useState<{ folder: string, files: ShelfFile[] }>();
   const [refreshCount, setRefreshCount] = useState(0);
-  const refresh = useCallback(() => setRefreshCount((count) => count + 1), []);
+  const [thumbnails, setThumbnails] = useState<ReadonlyMap<string, ShelfThumbnail>>(new Map());
+  const thumbnailsRef = useRef<ShelfThumbnails>();
+  // The shelf is about to show: list the folder again, and show the thumbnails made in the background meanwhile.
+  const refresh = useCallback(() => {
+    setRefreshCount((count) => count + 1);
+    if (thumbnailsRef.current != null) setThumbnails(thumbnailsRef.current.snapshot());
+  }, []);
 
   // Listed again on request (the shelf opening) and after each export: the clip moves down, and may have gone
   // to the Recycle Bin.
@@ -104,26 +79,28 @@ export default function useShelf({ folder, order, exports, caseInsensitive, curr
   const queue = useMemo(() => buildShelfQueue(files, { order, exports, caseInsensitive }), [caseInsensitive, exports, files, order]);
   const nextClip = useMemo(() => pickNextClip(queue, currentPath, caseInsensitive), [caseInsensitive, currentPath, queue]);
 
-  const [thumbnails, setThumbnails] = useState<ReadonlyMap<string, string>>(new Map());
-  const thumbnailJobs = useRef<ThumbnailJobs>();
-
   useEffect(() => {
-    const jobs: ThumbnailJobs = { controller: new AbortController(), pending: [], requested: new Set(), urls: [], running: 0 };
-    thumbnailJobs.current = jobs;
+    const store = new ShelfThumbnails({
+      render: renderShelfThumbnail,
+      revoke: (url) => URL.revokeObjectURL(url),
+      onChange: () => setThumbnails(store.snapshot()),
+    });
+    thumbnailsRef.current = store;
     return () => {
-      jobs.controller.abort();
-      jobs.urls.forEach((url) => URL.revokeObjectURL(url));
+      store.dispose();
       setThumbnails(new Map());
     };
   }, [folder]);
 
-  const requestThumbnail = useCallback((path: string) => {
-    const jobs = thumbnailJobs.current;
-    if (jobs == null || jobs.requested.has(path)) return;
-    jobs.requested.add(path);
-    jobs.pending.push(path);
-    pumpThumbnails(jobs, (donePath, url) => setThumbnails((existing) => new Map(existing).set(donePath, url)));
-  }, []);
+  // Top of the shelf first; started again (without what's made) when the folder is listed again.
+  useEffect(() => {
+    const store = thumbnailsRef.current;
+    if (store == null) return;
+    if (prefetch) store.prefetch(queue.map(({ file }) => ({ key: shelfThumbnailKey(file), path: file.path })));
+    else store.stopPrefetch();
+  }, [prefetch, queue]);
+
+  const requestThumbnail = useCallback((file: ShelfFile) => thumbnailsRef.current?.request({ key: shelfThumbnailKey(file), path: file.path }), []);
 
   return { queue, nextClip, refresh, thumbnails, requestThumbnail };
 }

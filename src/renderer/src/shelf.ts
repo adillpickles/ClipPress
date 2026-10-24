@@ -64,6 +64,9 @@ export function toggleShelfOrder(current: ShelfOrder, by: 'date' | 'name'): Shel
   return by === currentBy && !reversed ? `${by}-desc` : by;
 }
 
+/** A thumbnail is for one version of a file: a new recording saved under the same name gets a new one. */
+export const shelfThumbnailKey = ({ path, modifiedAt, size }: ShelfFile) => `${path}|${modifiedAt}|${size}`;
+
 /**
  * The shelf's order: clips still to do first (by date or name, either way round), then the ones already
  * exported. ClipPress's own exports are left out.

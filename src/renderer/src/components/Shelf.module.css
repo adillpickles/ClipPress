@@ -108,8 +108,9 @@
   gap: 2px;
   max-height: min(26rem, 62vh);
   overflow-y: auto;
-  margin: 0 -.35rem;
-  padding: 0 .35rem;
+  /* Room for the focus ring of the first and last rows, which the scrolling would otherwise cut off. */
+  margin: -4px -.35rem;
+  padding: 4px .35rem;
 }
 
 .row {
@@ -159,10 +160,38 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  animation: shelf-thumb-in .16s ease;
+}
+
+@keyframes shelf-thumb-in {
+  from { opacity: 0; }
+}
+
+/* Still being made: a soft light passing over the empty frame. */
+.thumbLoading {
+  --shelf-shimmer: rgb(255 255 255 / 75%);
+  --shelf-placeholder: var(--cp-active);
+  background:
+    linear-gradient(100deg, transparent 30%, var(--shelf-shimmer) 50%, transparent 70%) 0 0 / 250% 100%,
+    var(--shelf-placeholder);
+  animation: shelf-shimmer 1.3s ease-in-out infinite;
+}
+
+:global(.dark-theme) .thumbLoading {
+  --shelf-shimmer: rgb(255 255 255 / 8%);
+  --shelf-placeholder: var(--cp-hover);
+}
+
+@keyframes shelf-shimmer {
+  from { background-position: 100% 0, 0 0; }
+  to { background-position: 0 0, 0 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .thumb img,
+  .thumbLoading,
   .orderArrow {
+    animation: none;
     transition: none;
   }
 }

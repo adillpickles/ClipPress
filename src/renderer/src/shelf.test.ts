@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildShelfQueue, isShelfVideo, maxShelfExports, parseShelfOrder, pickNextClip, rememberShelfExport, toggleShelfOrder } from './shelf';
+import { buildShelfQueue, isShelfVideo, maxShelfExports, parseShelfOrder, pickNextClip, rememberShelfExport, shelfThumbnailKey, toggleShelfOrder } from './shelf';
 import type { ShelfFile } from './shelf';
 
 const file = (name: string, modifiedAt: number): ShelfFile => ({ path: `C:\\Clips\\${name}`, name, modifiedAt, size: 1000 });
@@ -53,6 +53,12 @@ describe('shelf', () => {
     const zToA = buildShelfQueue(files, { order: 'name-desc', exports, caseInsensitive: true });
     expect(zToA.map((item) => item.file)).toEqual([b, a, c, d]);
     expect(pickNextClip(zToA, b.path, true)).toBe(a);
+  });
+
+  it('gives a recording saved again under the same name a new thumbnail', () => {
+    expect(shelfThumbnailKey(a)).toBe(shelfThumbnailKey({ ...a }));
+    expect(shelfThumbnailKey(a)).not.toBe(shelfThumbnailKey({ ...a, modifiedAt: a.modifiedAt + 1 }));
+    expect(shelfThumbnailKey(a)).not.toBe(shelfThumbnailKey({ ...a, size: a.size + 1 }));
   });
 
   it('moves exported clips to the bottom and leaves out the exports themselves', () => {
