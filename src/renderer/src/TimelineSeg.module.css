@@ -4,6 +4,8 @@
    The base rules are the light theme's; the dark theme's deeper shadows and darker film are under .dark-theme. */
 .clip {
   isolation: isolate;
+  /* So the number can shrink or hide on narrow blocks (below). */
+  container-type: inline-size;
   box-shadow: 0 6px 14px -8px rgb(0 0 0 / 40%), 0 1px 3px rgb(0 0 0 / 18%);
 }
 
@@ -152,6 +154,82 @@
   line-height: 1;
   /* Background and digit colour come from the clip's colour (getSegBadgeStyle). */
   font-variant-numeric: tabular-nums;
+}
+
+/* A short clip at a wide zoom has no room for the name or speed beside the number: just the number, as for .pillBare,
+   rather than a label too narrow to read. Below that it can be narrower than the number: a smaller number with less
+   inset, and none at all rather than a clipped digit. The selected clip's trim handles take 10px each side, so it
+   needs more room. (The widths allow for two-digit numbers.) */
+@container (width < 84px) {
+  .pill {
+    padding: 0 0 0 2px;
+    background: none;
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  .name,
+  .speed {
+    display: none;
+  }
+}
+
+@container (width < 98px) {
+  .active .pill {
+    padding: 0 0 0 2px;
+    background: none;
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  .active .name,
+  .active .speed {
+    display: none;
+  }
+}
+
+@container (width < 38px) {
+  .pill {
+    left: 4px;
+    max-width: calc(100% - 8px);
+    padding-left: 0;
+  }
+
+  .num {
+    min-width: 16px;
+    height: 16px;
+    padding: 0 3px;
+    border-radius: 5px;
+    font-size: 10.5px;
+  }
+}
+
+@container (width < 28px) {
+  .pill {
+    display: none;
+  }
+}
+
+@container (width < 52px) {
+  .active .pill {
+    left: 12px;
+    max-width: calc(100% - 24px);
+    padding-left: 0;
+  }
+
+  .active .num {
+    min-width: 16px;
+    height: 16px;
+    padding: 0 3px;
+    border-radius: 5px;
+    font-size: 10.5px;
+  }
+}
+
+@container (width < 44px) {
+  .active .pill {
+    display: none;
+  }
 }
 
 .name {
