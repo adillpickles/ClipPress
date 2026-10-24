@@ -36,6 +36,9 @@ const buttonBaseStyle: CSSProperties = {
   margin: '0 3px', borderRadius: 3, color: 'white', cursor: 'pointer', userSelect: 'none',
 };
 
+/** Room (px) kept around the rows for the selected card's glow and the focus rings; see also .rows. */
+const listEdgeRoom = 6;
+
 const disabledButtonStyle = { color: 'var(--gray-10)', backgroundColor: 'var(--gray-6)' };
 const neutralButtonColor = 'var(--gray-9)';
 
@@ -816,6 +819,12 @@ function SegmentList({
     overscan: 5,
     getItemKey: (index) => sortableList[index]!.id,
     rangeExtractor,
+    // Room above the first row and below the last for the selected card's glow and focus rings, also when
+    // scrolling to a clip.
+    paddingStart: listEdgeRoom,
+    paddingEnd: listEdgeRoom,
+    scrollPaddingStart: listEdgeRoom,
+    scrollPaddingEnd: listEdgeRoom,
   });
 
   useEffect(() => {
@@ -935,8 +944,8 @@ function SegmentList({
 
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} onDragStart={handleDragStart} modifiers={[restrictToVerticalAxis]}>
           <SortableContext items={sortableList} strategy={verticalListSortingStrategy}>
-            <div ref={scrollerRef} style={{ padding: '0 .4rem .4rem .5rem', overflowX: 'hidden', overflowY: 'auto', flexGrow: 1 }} className="consistent-scrollbar">
-              <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative', overflow: 'hidden' }}>
+            <div ref={scrollerRef} className={`consistent-scrollbar ${styles['scroller']}`}>
+              <div className={styles['rows']} style={{ height: rowVirtualizer.getTotalSize() }}>
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                   const { id, seg } = sortableList[virtualRow.index]!;
                   const selected = 'selected' in seg ? seg.selected : true;

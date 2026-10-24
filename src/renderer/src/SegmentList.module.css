@@ -13,7 +13,8 @@
   justify-content: space-between;
   align-items: center;
   gap: .75rem;
-  padding: .7rem .6rem .6rem .9rem;
+  /* The list below starts with a little room of its own (listEdgeRoom). */
+  padding: .7rem .6rem .25rem .9rem;
 }
 
 .headerTitle {
@@ -50,6 +51,21 @@
 
 .headerClose:focus-visible {
   box-shadow: var(--cp-focus-ring);
+}
+
+.scroller {
+  flex-grow: 1;
+  padding: 0 .4rem 0 .5rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* The rows are placed absolutely at measured (rounded) heights, so a card can overhang the list by a fraction of a
+   pixel. Clip only beyond the room left for the selected card's glow and the focus rings (listEdgeRoom). */
+.rows {
+  position: relative;
+  overflow: clip;
+  overflow-clip-margin: 6px;
 }
 
 .clip {
