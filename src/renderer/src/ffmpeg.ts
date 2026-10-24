@@ -6,7 +6,7 @@ import Timecode from 'smpte-timecode';
 import minBy from 'lodash/minBy';
 import invariant from 'tiny-invariant';
 import z from 'zod';
-import { computePeaks, getPeaksArgs, getPeaksBucketSeconds, getPeaksSampleRate } from './audioPeaks';
+import { computeBucketPeaks, getPeaksArgs, getPeaksBucketSeconds, getPeaksPerBucket, getPeaksSampleRate, getPeaksStretches, joinPeaks, peaksStretchCount } from './audioPeaks';
 import type { AudioPeaks } from './audioPeaks';
 import { FilmstripStreamReader } from './filmstrip';
 import type { FilmstripFrame } from './filmstrip';
@@ -509,19 +509,29 @@ export async function extractSubtitleTrackVtt(filePath: string, streamId: number
   return URL.createObjectURL(blob);
 }
 
-/** The audio track's waveform (see audioPeaks.ts): one pass to low-rate mono samples, reduced to peaks. */
-export async function renderAudioPeaks({ filePath, streamIndex, duration, signal }: {
+/**
+ * The audio track's waveform (see audioPeaks.ts): low-rate mono samples, reduced to peaks. `onPeaks` gets the
+ * waveform so far each time a stretch is done (once for most recordings).
+ */
+export async function renderAudioPeaks({ filePath, streamIndex, duration, signal, onPeaks }: {
   filePath: string,
   streamIndex: number | undefined,
   duration: number,
   signal: AbortSignal,
-}): Promise<AudioPeaks> {
+  onPeaks: (peaks: AudioPeaks) => void,
+}) {
   const sampleRate = getPeaksSampleRate(duration);
-  const { stdout } = await runFfmpeg(getPeaksArgs({ filePath, streamIndex, sampleRate }), { cancelSignal: signal }, { logCli: false });
-  const bytes = stdout instanceof Uint8Array ? stdout : new Uint8Array(stdout);
-  // A copy, so the samples start on an even byte.
-  const samples = new Int16Array(bytes.slice(0, bytes.byteLength - (bytes.byteLength % 2)).buffer);
-  return computePeaks(samples, sampleRate, getPeaksBucketSeconds(duration));
+  const perBucket = getPeaksPerBucket(sampleRate, getPeaksBucketSeconds(duration));
+  const bucketSeconds = perBucket / sampleRate;
+  const parts: { offset: number, peaks: Float32Array }[] = [];
+  await pMap(getPeaksStretches(duration, bucketSeconds), async ({ from, length }) => {
+    const { stdout } = await runFfmpeg(getPeaksArgs({ filePath, streamIndex, sampleRate, from, length }), { cancelSignal: signal }, { logCli: false });
+    const bytes = stdout instanceof Uint8Array ? stdout : new Uint8Array(stdout);
+    // A copy, so the samples start on an even byte.
+    const samples = new Int16Array(bytes.slice(0, bytes.byteLength - (bytes.byteLength % 2)).buffer);
+    parts.push({ offset: Math.round(from / bucketSeconds), peaks: computeBucketPeaks(samples, perBucket) });
+    if (!signal.aborted) onPeaks(joinPeaks(parts, bucketSeconds));
+  }, { concurrency: peaksStretchCount });
 }
 
 /**

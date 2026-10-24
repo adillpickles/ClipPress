@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { computePeaks, getPeaksArgs, getPeaksBucketSeconds, getPeaksSampleRate, peakBetween } from './audioPeaks';
+import { computeBucketPeaks, computePeaks, getPeaksArgs, getPeaksBucketSeconds, getPeaksSampleRate, getPeaksStretches, joinPeaks, peakBetween } from './audioPeaks';
 
 describe('audioPeaks', () => {
   it('keeps the decoded audio small for long recordings', () => {
@@ -30,6 +30,29 @@ describe('audioPeaks', () => {
   it('handles silence', () => {
     const { peaks } = computePeaks(new Int16Array(10), 10, 0.1);
     expect([...peaks].every((v) => v === 0)).toBe(true);
+  });
+
+  it('does long recordings in stretches that start on a bucket', () => {
+    expect(getPeaksStretches(90, 0.01)).toEqual([{ from: 0, length: undefined }]);
+    const stretches = getPeaksStretches(3601, 0.18);
+    expect(stretches).toHaveLength(4);
+    stretches.forEach(({ from }) => expect(Math.abs(Math.round(from / 0.18) - from / 0.18)).toBeLessThan(1e-9));
+    // Back to back, and the last one runs to the end.
+    stretches.slice(1).forEach(({ from }, i) => expect(stretches[i]!.from + stretches[i]!.length!).toBeCloseTo(from));
+    expect(stretches.at(-1)!.length).toBeUndefined();
+    const args = getPeaksArgs({ filePath: 'a.mp4', streamIndex: 1, sampleRate: 417, from: 900, length: 900 });
+    expect(args.slice(args.indexOf('-ss'), args.indexOf('-ss') + 4)).toEqual(['-ss', '900.000', '-t', '900.000']);
+    expect(args.indexOf('-ss')).toBeLessThan(args.indexOf('-i'));
+  });
+
+  it('joins stretches into one waveform, relative to the loudest so far', () => {
+    const first = computeBucketPeaks(new Int16Array([0, 100, -200, 50]), 2);
+    expect([...first]).toEqual([100, 200]);
+    const partial = joinPeaks([{ offset: 2, peaks: new Float32Array([400]) }], 0.5);
+    expect([...partial.peaks]).toEqual([0, 0, 1]);
+    const whole = joinPeaks([{ offset: 2, peaks: new Float32Array([400]) }, { offset: 0, peaks: first }], 0.5);
+    expect([...whole.peaks]).toEqual([0.25, 0.5, 1]);
+    expect(whole.bucketSeconds).toBe(0.5);
   });
 
   it('finds the loudest peak in a time range', () => {

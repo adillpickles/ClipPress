@@ -1790,7 +1790,7 @@ function App() {
 
   // Simple mode's audio track under the clips: its waveform, made once per open recording.
   const showAudioLane = simpleMode && hasAudio;
-  const audioPeaks = useAudioPeaks({
+  const { peaks: audioPeaks } = useAudioPeaks({
     filePath,
     streamIndex: activeAudioStreams[0]?.index ?? mainAudioStream?.index,
     duration: openDuration,

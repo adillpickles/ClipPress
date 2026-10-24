@@ -1,6 +1,7 @@
 /**
- * The audio track's waveform: one FFmpeg pass decodes the audio to low-rate mono samples, reduced here to a
- * peak per small time bucket. In memory for the open recording only.
+ * The audio track's waveform: FFmpeg decodes the audio to low-rate mono samples, reduced here to a peak per small
+ * time bucket. One pass, or for long recordings a few stretches at once (decoding audio uses one core), shown as
+ * each is done. In memory for the open recording only.
  */
 
 export interface AudioPeaks {
@@ -18,6 +19,20 @@ export function getPeaksBucketSeconds(duration: number) {
   return Math.max(0.01, duration / 20_000);
 }
 
+/** Recordings longer than this are done in stretches, this many at once. */
+const stretchAbove = 600;
+export const peaksStretchCount = 4;
+
+/**
+ * The stretches to decode, each starting on a bucket (`bucketSeconds`, see computeBucketPeaks); the last one runs
+ * to the end, wherever that turns out to be.
+ */
+export function getPeaksStretches(duration: number, bucketSeconds: number) {
+  const count = duration > stretchAbove ? peaksStretchCount : 1;
+  const starts = Array.from({ length: count }, (_, i) => Math.round((duration * i) / count / bucketSeconds) * bucketSeconds);
+  return starts.map((from, i) => ({ from, length: i < count - 1 ? starts[i + 1]! - from : undefined }));
+}
+
 /** The rate the sound is rectified at: keeps everything up to 8 kHz, so high-pitched sounds still show. */
 const envelopeSampleRate = 16_000;
 
@@ -28,10 +43,18 @@ const envelopeSampleRate = 16_000;
  * - taking the absolute value before going down to the low output rate keeps the loudness of sounds above
  *   that rate's range, which resampling on its own would filter away.
  */
-export function getPeaksArgs({ filePath, streamIndex, sampleRate }: { filePath: string, streamIndex: number | undefined, sampleRate: number }) {
+export function getPeaksArgs({ filePath, streamIndex, sampleRate, from = 0, length }: {
+  filePath: string,
+  streamIndex: number | undefined,
+  sampleRate: number,
+  from?: number,
+  length?: number | undefined,
+}) {
   return [
     '-hide_banner',
     '-nostats',
+    ...(from > 0 ? ['-ss', from.toFixed(3)] : []),
+    ...(length != null ? ['-t', length.toFixed(3)] : []),
     '-i', filePath,
     '-map', streamIndex != null ? `0:${streamIndex}` : '0:a:0',
     '-vn', '-sn', '-dn',
@@ -44,11 +67,14 @@ export function getPeaksArgs({ filePath, streamIndex, sampleRate }: { filePath: 
   ];
 }
 
-export function computePeaks(samples: Int16Array, sampleRate: number, bucketSeconds: number): AudioPeaks {
-  const perBucket = Math.max(1, Math.round(sampleRate * bucketSeconds));
+export function getPeaksPerBucket(sampleRate: number, bucketSeconds: number) {
+  return Math.max(1, Math.round(sampleRate * bucketSeconds));
+}
+
+/** The loudest sample in each bucket of `perBucket` samples. */
+export function computeBucketPeaks(samples: Int16Array, perBucket: number) {
   const count = Math.ceil(samples.length / perBucket);
   const peaks = new Float32Array(count);
-  let loudest = 0;
   for (let b = 0; b < count; b += 1) {
     let max = 0;
     const end = Math.min(samples.length, (b + 1) * perBucket);
@@ -57,12 +83,24 @@ export function computePeaks(samples: Int16Array, sampleRate: number, bucketSeco
       if (v > max) max = v;
     }
     peaks[b] = max;
-    if (max > loudest) loudest = max;
   }
+  return peaks;
+}
+
+/** Stretches' bucket peaks (each starting at bucket `offset`) as one waveform, relative to the loudest so far. */
+export function joinPeaks(parts: readonly { offset: number, peaks: Float32Array }[], bucketSeconds: number): AudioPeaks {
+  const peaks = new Float32Array(parts.reduce((length, part) => Math.max(length, part.offset + part.peaks.length), 0));
+  parts.forEach((part) => peaks.set(part.peaks, part.offset));
+  const loudest = peaks.reduce((max, v) => Math.max(max, v), 0);
   if (loudest > 0) {
-    for (let b = 0; b < count; b += 1) peaks[b] = peaks[b]! / loudest;
+    for (let b = 0; b < peaks.length; b += 1) peaks[b] = peaks[b]! / loudest;
   }
-  return { peaks, bucketSeconds: perBucket / sampleRate };
+  return { peaks, bucketSeconds };
+}
+
+export function computePeaks(samples: Int16Array, sampleRate: number, bucketSeconds: number): AudioPeaks {
+  const perBucket = getPeaksPerBucket(sampleRate, bucketSeconds);
+  return joinPeaks([{ offset: 0, peaks: computeBucketPeaks(samples, perBucket) }], perBucket / sampleRate);
 }
 
 /** The loudest peak between two times (inclusive of the bucket at `from`). */
