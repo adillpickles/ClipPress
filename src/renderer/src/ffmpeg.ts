@@ -440,15 +440,25 @@ async function renderThumbnail(filePath: string, timestamp: number, signal: Abor
   return URL.createObjectURL(blob);
 }
 
-/** A small frame for the shelf, a second in (or the first frame of a shorter video). */
+/**
+ * A small frame for the shelf: the first keyframe a second in (or the first frame of a shorter video). Keyframes
+ * only and one decoding thread: most of the time goes on starting FFmpeg and opening the file, and a single
+ * thread skips setting up a pool per process when several run at once. Hardware decoding was slower here (its
+ * set-up costs more than decoding one frame).
+ */
 export async function renderShelfThumbnail(filePath: string, signal: AbortSignal) {
   for (const timestamp of [1, 0]) {
     const { stdout } = await runFfmpeg([
       '-hide_banner',
+      '-threads', '1',
+      '-skip_frame', 'nokey',
       '-ss', String(timestamp),
       '-i', filePath,
+      '-map', '0:v:0',
+      '-an', '-sn', '-dn',
       '-frames:v', '1',
-      '-vf', 'scale=-2:90',
+      // Twice the shelf's 36 px, for sharp thumbnails on a 2x display.
+      '-vf', 'scale=-2:72',
       '-q:v', '6',
       '-f', 'image2',
       '-c:v', 'mjpeg',
