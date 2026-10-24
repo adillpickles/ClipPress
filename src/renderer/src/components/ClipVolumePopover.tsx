@@ -41,11 +41,13 @@ function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, trackGa
   const changed = audioMuted || percent !== 100;
   const MuteIcon = audioMuted ? FiVolumeX : FiVolume2;
 
+  // Shown whenever the track isn't at 100%, muted clip or not: the popover is placed once, so it mustn't change height.
   let playsAt: string | undefined;
-  if (trackGainDb != null && !isNeutralAudioGain(trackGainDb) && !audioMuted) {
-    playsAt = isMutedAudioGain(trackGainDb)
-      ? t('Silent: the track is muted')
-      : t('Plays at {{volume}} (track at {{track}})', { volume: `${getClipPlaysAtPercent(trackGainDb, { audioGainDb })}%`, track: formatVolumePercent(trackGainDb, t('Muted')) });
+  if (trackGainDb != null && !isNeutralAudioGain(trackGainDb)) {
+    const track = formatVolumePercent(trackGainDb, t('Muted'));
+    if (isMutedAudioGain(trackGainDb)) playsAt = t('Silent: the track is muted');
+    else if (audioMuted) playsAt = t('Track at {{volume}}', { volume: track });
+    else playsAt = t('Plays at {{volume}} (track at {{track}})', { volume: `${getClipPlaysAtPercent(trackGainDb, { audioGainDb })}%`, track });
   }
 
   const onSlide = (value: number) => {
