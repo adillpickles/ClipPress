@@ -1708,11 +1708,11 @@ function ExportConfirm({
               </div>
 
               {/* Smart cut can only be switched on in advanced mode, but it still changes an Original quality
-                  export here, so say so and offer a way to turn it off. */}
+                  export here, so say so (without naming a mode that may be hidden) and offer a way to turn it off. */}
               {!isSizeLimited && notices.specific['smartCut'] != null && (
                 <div className={[styles['notice'], styles['noticeWarning'], styles['noticeWithAction']].join(' ')}>
                   {renderNoticeIcon({ warning: true }, { fontSize: '1em' })}
-                  <span style={{ flexGrow: 1 }}>{t('Smart cut is on (set in advanced mode). It\'s experimental and doesn\'t work with every file.')}</span>
+                  <span style={{ flexGrow: 1 }}>{t('Smart cut is on. It\'s experimental and doesn\'t work with every file.')}</span>
                   <Button size="sm" onClick={turnOffSmartCut}>{t('Turn off')}</Button>
                 </div>
               )}

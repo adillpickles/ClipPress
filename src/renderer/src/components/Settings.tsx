@@ -225,7 +225,7 @@ function Settings({
 
             {/* Simple mode writes times its own way, so this only matters with the advanced options. */}
             {showAdvancedSettings && (
-              <SettingRow label={t('Time format')} description={t('How times are shown in advanced mode and in exported file names.')} controlId={timecodeId}>
+              <SettingRow label={t('Time format')} description={enableAdvancedMode ? t('How times are shown in advanced mode and in exported file names.') : t('How times are shown in exported file names.')} controlId={timecodeId}>
                 <Select id={timecodeId} value={timecodeFormat} onChange={(e) => setTimecodeFormat(e.target.value as TimecodeFormat)}>
                   {Object.entries(timecodeFormatOptions).map(([key, value]) => (
                     <option key={key} value={key}>{value}</option>
