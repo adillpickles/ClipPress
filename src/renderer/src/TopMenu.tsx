@@ -28,6 +28,7 @@ function TopMenu({
   clipsPanelShown,
   onShowClipsPanel,
   onExportPress,
+  onQuickExportPress,
   segmentsToExport,
 }: {
   filePath: string | undefined,
@@ -46,6 +47,8 @@ function TopMenu({
   clipsPanelShown: boolean,
   onShowClipsPanel: () => void,
   onExportPress: () => void,
+  /** Ctrl+click on Export: export right away with the last settings. */
+  onQuickExportPress: () => void,
   segmentsToExport: SegmentToExport[],
 }) {
   const { t } = useTranslation();
@@ -142,7 +145,7 @@ function TopMenu({
           {t('Settings')}
         </Button>
 
-        <ExportButton segmentsToExport={segmentsToExport} onClick={onExportPress} />
+        <ExportButton segmentsToExport={segmentsToExport} onClick={onExportPress} onQuickExport={onQuickExportPress} />
       </div>
     </div>
   );

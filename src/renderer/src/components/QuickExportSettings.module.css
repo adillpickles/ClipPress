@@ -1,0 +1,70 @@
+/* One setting row's worth of space (see Settings.module.css .row), holding the four quick exports. */
+.block {
+  padding: .85rem 0;
+  border-bottom: 1px solid var(--cp-line);
+}
+
+.block:last-child {
+  border-bottom: none;
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  color: var(--cp-text);
+  font-size: .875rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+/* Shortcut, name, quality: the names and the quality controls line up from row to row. */
+.list {
+  display: grid;
+  grid-template-columns: max-content minmax(6rem, 9rem) minmax(0, 1fr);
+  align-items: center;
+  gap: .5rem .75rem;
+  margin-top: .7rem;
+}
+
+.keys {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.noKeys {
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+}
+
+.lastSettings {
+  grid-column: span 2;
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+}
+
+.name {
+  width: 100%;
+  min-width: 0;
+}
+
+.quality {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .4rem;
+  min-width: 0;
+}
+
+.size {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+}
+
+.unit {
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+  font-weight: 600;
+}

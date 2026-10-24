@@ -21,6 +21,7 @@ import Button from './Button';
 import { getModifierKeyNames } from '../hooks/useTimelineScroll';
 import type { TunerType } from '../types';
 import SettingRow from './SettingRow';
+import QuickExportSettings from './QuickExportSettings';
 import getAfterExportAction from '../afterExportAction';
 import type { AfterExportAction } from '../afterExportAction';
 import { DirectoryAccessDeclinedError } from '../../errors';
@@ -326,6 +327,8 @@ function Settings({
             >
               <Button onClick={askForCleanupChoices}>{t('Choose…')}</Button>
             </SettingRow>
+
+            <QuickExportSettings />
 
             {showAdvancedSettings && (
               <SettingRow

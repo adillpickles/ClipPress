@@ -22,6 +22,8 @@ import TextInput from './TextInput';
 import Kbd from './Kbd';
 import SegmentedControl from './SegmentedControl';
 import { useAppContext } from '../contexts';
+import { normalizeQuickExportPresets, quickExportPresetActions } from '../../../common/quickExport';
+import { getQuickExportPresetLabel } from '../quickExport';
 import styles from './KeyboardShortcuts.module.css';
 
 
@@ -30,7 +32,7 @@ type Category = string;
 type ActionsMap = Record<KeyboardAction, { name: string, category?: Category, before?: ReactNode }>;
 
 
-const renderKeys = (keys: string[]) => keys.map((key, i) => (
+export const renderKeys = (keys: string[]) => keys.map((key, i) => (
   <Fragment key={key}>
     {i > 0 && <FaPlus style={{ verticalAlign: 'middle', fontSize: '.4em', opacity: 0.8, marginLeft: '.4em', marginRight: '.4em' }} />}
     <Kbd code={key} />
@@ -144,6 +146,13 @@ const CreateBinding = memo(({
 
 const rowStyle = { display: 'flex', alignItems: 'center', gap: '.5em', padding: '.4em 0', borderBottom: '1px solid var(--cp-line)', fontSize: '.875rem' };
 
+/** What each quick export preset (Ctrl+1/2/3) makes, as set in Settings: "Discord · 10 MB". */
+function useQuickExportLabels() {
+  const { t } = useTranslation();
+  const { quickExportPresets } = useUserSettings();
+  return useMemo(() => normalizeQuickExportPresets(quickExportPresets).map((preset) => getQuickExportPresetLabel(preset, (key, options) => t(key, options))), [quickExportPresets, t]);
+}
+
 function WheelModifier({ text, wheelText, modifier }: { text: string, wheelText: string, modifier: ModifierKey }) {
   return (
     <div style={{ ...rowStyle, alignItems: 'center' }}>
@@ -170,6 +179,7 @@ const KeyboardShortcuts = memo(({
   const { updateKeyboardLayout, confirmDialog } = useAppContext();
 
   const { mouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey, simpleMode } = useUserSettings();
+  const quickExportLabels = useQuickExportLabels();
 
   const { actionsMap, extraLinesPerCategory } = useMemo(() => {
     const playbackCategory = t('Playback');
@@ -587,6 +597,22 @@ const KeyboardShortcuts = memo(({
         name: t('Export segment(s)'),
         category: outputCategory,
       },
+      quickExport: {
+        name: t('Export right away with the last settings'),
+        category: outputCategory,
+      },
+      quickExportPreset1: {
+        name: t('Quick export {{number}}: {{preset}}', { number: 1, preset: quickExportLabels[0] }),
+        category: outputCategory,
+      },
+      quickExportPreset2: {
+        name: t('Quick export {{number}}: {{preset}}', { number: 2, preset: quickExportLabels[1] }),
+        category: outputCategory,
+      },
+      quickExportPreset3: {
+        name: t('Quick export {{number}}: {{preset}}', { number: 3, preset: quickExportLabels[2] }),
+        category: outputCategory,
+      },
       captureSnapshot: {
         name: t('Capture snapshot'),
         category: outputCategory,
@@ -796,7 +822,7 @@ const KeyboardShortcuts = memo(({
       extraLinesPerCategory,
       actionsMap,
     };
-  }, [currentCutSeg, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, mouseWheelZoomModifierKey, segmentMouseModifierKey, simpleMode, t]);
+  }, [currentCutSeg, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, mouseWheelZoomModifierKey, quickExportLabels, segmentMouseModifierKey, simpleMode, t]);
 
   useEffect(() => {
     updateKeyboardLayout();
@@ -938,6 +964,7 @@ const KeyboardShortcuts = memo(({
 function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
   const { t } = useTranslation();
   const { segmentMouseModifierKey } = useUserSettings();
+  const quickExportLabels = useQuickExportLabels();
 
   const groups = useMemo(() => [
     {
@@ -985,14 +1012,23 @@ function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
         { label: t('Keyboard shortcuts'), actions: ['toggleKeyboardShortcuts'] },
       ],
     },
-  ] satisfies { id: string, title: string, items: { label: string, actions: KeyboardAction[] }[] }[], [t]);
+    {
+      // Without the export options; the presets are set in Settings > Export.
+      id: 'quickExport',
+      title: t('Quick export'),
+      items: [
+        { label: t('With the last settings'), actions: ['quickExport'] },
+        ...quickExportPresetActions.map((action, index) => ({ label: quickExportLabels[index] ?? action, actions: [action] })),
+      ],
+    },
+  ] satisfies { id: string, title: string, items: { label: string, actions: KeyboardAction[] }[] }[], [quickExportLabels, t]);
 
   // The first binding of each action (most have one); unbound actions show a dash.
   const keysFor = (action: KeyboardAction) => keyBindings.find((binding) => binding.action === action)?.keys;
 
-  // Two columns that each stack their own groups (Playback over Editing, Clips over Export and more), so a
-  // short group doesn't leave a gap beside a long one.
-  const columns = [['playback', 'editing'], ['clips', 'export']].map((ids) => groups.filter((group) => ids.includes(group.id)));
+  // Two columns that each stack their own groups (Playback over Editing and Quick export, Clips over Export and
+  // more), so a short group doesn't leave a gap beside a long one.
+  const columns = [['playback', 'editing', 'quickExport'], ['clips', 'export']].map((ids) => groups.filter((group) => ids.includes(group.id)));
 
   return (
     <div className={styles['essentials']}>
@@ -1002,7 +1038,7 @@ function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
             <section key={group.id} className={styles['essentialsGroup']}>
               <div className={styles['categoryTitle']}>{group.title}</div>
               {group.items.map((item) => (
-                <div key={item.label} className={styles['essentialsRow']}>
+                <div key={item.actions.join(',')} className={styles['essentialsRow']}>
                   <span>{item.label}</span>
                   <span className={styles['essentialsKeys']}>
                     {item.actions.map((action, i) => {

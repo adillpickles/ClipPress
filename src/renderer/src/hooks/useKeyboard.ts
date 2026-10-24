@@ -52,11 +52,12 @@ export default ({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfi
         }
         return;
       }
-      if (action !== 'export') {
+      // Export, or Ctrl+E (export right away, which with the sheet open means with what it shows).
+      if (action !== 'export' && action !== 'quickExport') {
         return; // stop here, don't allow other key actions than export while dialog is open
       }
-      // The export sheet holds focus while it's open, so its own shortcut (export) also works from inside it,
-      // but not while typing in one of its fields.
+      // The export sheet holds focus while it's open, so its own shortcuts also work from inside it, but not while
+      // typing in one of its fields.
       const target = e.target instanceof Element ? e.target : undefined;
       if (target?.closest('[data-export-sheet]') != null && target.closest('input, textarea, select, [contenteditable="true"]') == null) {
         getKeyboardAction(action)();

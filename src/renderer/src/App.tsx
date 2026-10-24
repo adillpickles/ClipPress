@@ -257,6 +257,8 @@ import type {
   CaptureFormat,
   KeyboardAction,
   ApiActionRequest,
+  SizeLimitControlMode,
+  SizeLimitPreset,
 } from '../../common/types.js';
 import type { FFprobeChapter, FFprobeStream } from '../../common/ffprobe.js';
 import { parseFfprobeDuration } from '../../common/util.js';
@@ -287,6 +289,9 @@ import { ShelfUpNext } from './components/Shelf';
 import useShelf, { listShelfFolder } from './hooks/useShelf';
 import { buildShelfQueue, pickNextClip, rememberShelfExport } from './shelf';
 import formatSizeLimitedProgressText from './sizeLimitedProgressText';
+import { getLastSettingsLabel, getQuickExportPresetLabel, resolveExportQuality } from './quickExport';
+import type { QuickExport } from './quickExport';
+import { normalizeQuickExportPresets } from '../../common/quickExport';
 import { getProjectLookupPaths, getProjectSavePath, getProjectStoreEnv, getStoredProjectPath } from './projectStore';
 import type { ProjectFileLocation } from '../../common/types';
 import type { ClipVolumeChange } from './components/ClipVolumePopover';
@@ -542,6 +547,7 @@ function App() {
     sizeLimitMergedNamingMode,
     sizeLimitCutFileTemplate,
     sizeLimitCutMergedFileTemplate,
+    quickExportPresets,
   } = allUserSettings.settings;
   const {
     setCaptureFormat,
@@ -3083,10 +3089,15 @@ function App() {
       results,
       shouldDecorateSeparateOutputs,
       shouldDecorateMergedOutput,
+      controlMode,
+      preset,
     }: {
       results: SizeLimitedExecutionResult[];
       shouldDecorateSeparateOutputs: boolean;
       shouldDecorateMergedOutput: boolean;
+      // The export's own, which a quick export preset sets instead of the sheet's.
+      controlMode: SizeLimitControlMode;
+      preset: SizeLimitPreset;
     }) => {
       if (filePath == null || sizeLimitedSourceBaseName == null) return { results, warnings: [] as string[] };
 
@@ -3139,8 +3150,8 @@ function App() {
         try {
           let targetFileName = findAvailableSizeLimitedAutoFileName({
             sourceBaseName: sizeLimitedSourceBaseName,
-            controlMode: sizeLimitControlMode,
-            preset: sizeLimitPreset,
+            controlMode,
+            preset,
             safeOutputFileName,
             item: {
               sizeLabel: candidate.sizeLabel,
@@ -3163,8 +3174,8 @@ function App() {
             reservedFileNames.add(targetFileName);
             targetFileName = findAvailableSizeLimitedAutoFileName({
               sourceBaseName: sizeLimitedSourceBaseName,
-              controlMode: sizeLimitControlMode,
-              preset: sizeLimitPreset,
+              controlMode,
+              preset,
               safeOutputFileName,
               item: {
                 sizeLabel: candidate.sizeLabel,
@@ -3221,8 +3232,6 @@ function App() {
       filePath,
       getSizeLimitedSeparateSuffixLabelForSegment,
       safeOutputFileName,
-      sizeLimitControlMode,
-      sizeLimitPreset,
       sizeLimitedSegmentsForExport,
       sizeLimitedSourceBaseName,
       willMerge,
@@ -3404,11 +3413,24 @@ function App() {
     [customOutDir, exportProtectedPaths, filePath, outputDir],
   );
 
-  const onExportConfirm = useCallback(async () => {
+  /** Exports with the sheet's settings, or a quick export preset's quality (see quickExport). */
+  const onExportConfirm = useCallback(async (quickExport?: QuickExport) => {
     invariant(filePath != null && outputDir != null);
     emitEvent({ eventName: 'export-start', path: filePath });
 
-    if (!isSizeLimitedExport && numStreamsToCopy === 0) {
+    const quality = resolveExportQuality({
+      isSizeLimited: isSizeLimitedExport,
+      sizeLimitMb,
+      controlMode: sizeLimitControlMode,
+      preset: sizeLimitPreset,
+      transform: effectiveSizeLimitedTransformSettings,
+    }, quickExport?.quality);
+    // A quick export says which one it is above the progress, e.g. "Discord · 10 MB · Clip 1 of 2".
+    const withQuickExportLabel = (detailText: string | undefined) => (
+      quickExport == null ? detailText : [quickExport.label, ...(detailText != null ? [detailText] : [])].join(' · ')
+    );
+
+    if (!quality.isSizeLimited && numStreamsToCopy === 0) {
       errorToast(i18n.t('No tracks selected for export'));
       return;
     }
@@ -3423,7 +3445,7 @@ function App() {
 
     if (workingRef.current) return;
     try {
-      setWorking({ text: i18n.t('Exporting') });
+      setWorking({ text: i18n.t('Exporting'), detailText: withQuickExportLabel(undefined) });
       // Checked again before the original is recycled, so a file that changed meanwhile is never touched.
       const sourceIdentity = await identifyFile(filePath);
 
@@ -3431,7 +3453,7 @@ function App() {
         throw new UserFacingError(i18n.t('Choose a clip export mode to apply speed, crop and volume changes. Chapters-only export keeps the original video.'));
       }
 
-      if (isSizeLimitedExport) {
+      if (quality.isSizeLimited) {
         const notices = new Set<string>();
         const warnings = new Set<string>();
         const useAutoSeparateNaming = sizeLimitSeparateNamingMode === 'auto';
@@ -3475,7 +3497,7 @@ function App() {
           ) return;
           currentWorkingText = text;
           currentWorkingDetailText = detailText;
-          setWorking({ text, detailText });
+          setWorking({ text, detailText: withQuickExportLabel(detailText) });
         };
         const updateJobProgress = ({
           jobIndex,
@@ -3546,11 +3568,11 @@ function App() {
               outPath,
               segment,
               sourceDuration: fileDuration,
-              targetSizeMb: sizeLimitMb,
-              controlMode: sizeLimitControlMode,
-              preset: sizeLimitPreset,
-              resolution: effectiveSizeLimitedTransformSettings.resolution,
-              fps: effectiveSizeLimitedTransformSettings.fps,
+              targetSizeMb: quality.sizeLimitMb,
+              controlMode: quality.controlMode,
+              preset: quality.preset,
+              resolution: quality.transform.resolution,
+              fps: quality.transform.fps,
               advancedEncoder: sizeLimitAdvancedEncoder,
               advancedTwoPass: sizeLimitAdvancedTwoPass,
               advancedAv1CpuPreset: sizeLimitAdvancedAv1CpuPreset,
@@ -3626,11 +3648,11 @@ function App() {
             gpuAcceleration: exportGpuAcceleration,
             outPath: mergedOutFilePath,
             segments: sizeLimitedSegmentsForExport,
-            targetSizeMb: sizeLimitMb,
-            controlMode: sizeLimitControlMode,
-            preset: sizeLimitPreset,
-            resolution: effectiveSizeLimitedTransformSettings.resolution,
-            fps: effectiveSizeLimitedTransformSettings.fps,
+            targetSizeMb: quality.sizeLimitMb,
+            controlMode: quality.controlMode,
+            preset: quality.preset,
+            resolution: quality.transform.resolution,
+            fps: quality.transform.fps,
             advancedEncoder: sizeLimitAdvancedEncoder,
             advancedTwoPass: sizeLimitAdvancedTwoPass,
             advancedAv1CpuPreset: sizeLimitAdvancedAv1CpuPreset,
@@ -3668,6 +3690,8 @@ function App() {
           results,
           shouldDecorateSeparateOutputs,
           shouldDecorateMergedOutput,
+          controlMode: quality.controlMode,
+          preset: quality.preset,
         });
         renamedOutputs.warnings.forEach((warning) => warnings.add(warning));
 
@@ -3677,7 +3701,7 @@ function App() {
         );
         const resultSummary = buildSizeLimitedResultSummary(
           finalizedResults,
-          sizeLimitMb,
+          quality.sizeLimitMb,
         );
         appendSizeLimitedResultNotices(finalizedResults, notices, warnings);
 
@@ -3829,7 +3853,7 @@ function App() {
 
         if (willMerge) {
           setProgress(0);
-          setWorking({ text: i18n.t('Merging') });
+          setWorking({ text: i18n.t('Merging'), detailText: withQuickExportLabel(undefined) });
 
           const chapterNames = segmentsToChapters && !invertCutSegments
             ? segmentsToExport.map((segment) => segment.name)
@@ -4026,7 +4050,7 @@ function App() {
         );
 
         setProgress(0);
-        setWorking({ text: i18n.t('Merging') });
+        setWorking({ text: i18n.t('Merging'), detailText: withQuickExportLabel(undefined) });
 
         const chapterNames = segmentsToChapters && !invertCutSegments
           ? segmentsToExport.map((s) => s.name)
@@ -4335,6 +4359,17 @@ function App() {
     filePath,
     onExportConfirm,
   ]);
+
+  // Export straight away, without the sheet: Ctrl+click on Export or Ctrl+E with the sheet's last settings, and
+  // Ctrl+1/2/3 once with a quick export preset's quality (the sheet keeps its own). Otherwise a normal export.
+  const quickExport = useCallback(async (presetIndex?: number) => {
+    if (!filePath || workingRef.current) return;
+    const translate = (key: string, options: Record<string, string | number>) => i18n.t(key, options);
+    const preset = presetIndex != null ? normalizeQuickExportPresets(quickExportPresets)[presetIndex] : undefined;
+    await onExportConfirm(preset != null
+      ? { label: getQuickExportPresetLabel(preset, translate), quality: preset }
+      : { label: getLastSettingsLabel({ isSizeLimited: isSizeLimitedExport, sizeLimitMb }, translate) });
+  }, [filePath, isSizeLimitedExport, onExportConfirm, quickExportPresets, sizeLimitMb, workingRef]);
 
   const captureSnapshot = useCallback(async () => {
     if (!filePath || workingRef.current) return;
@@ -5864,6 +5899,10 @@ function App() {
       editCurrentSegmentCrop: () => editSegmentCrop(currentSegIndexSafe),
       toggleLastCommands,
       export: () => onExportPress(),
+      quickExport: () => quickExport(),
+      quickExportPreset1: () => quickExport(0),
+      quickExportPreset2: () => quickExport(1),
+      quickExportPreset3: () => quickExport(2),
       extractCurrentSegmentFramesAsImages,
       extractSelectedSegmentsFramesAsImages,
       reorderSegsByStartTime,
@@ -6053,6 +6092,7 @@ function App() {
     currentSegIndexSafe,
     labelCurrentSegment,
     onExportPress,
+    quickExport,
     userHtml5ifyCurrentFile,
     toggleKeyframeCut,
     applyEnabledStreamsFilter,
@@ -6689,6 +6729,7 @@ function App() {
                   clipsPanelShown={showRightBar}
                   onShowClipsPanel={toggleSegmentsList}
                   onExportPress={onExportPress}
+                  onQuickExportPress={quickExport}
                   segmentsToExport={segmentsToExport}
                 />
               )}

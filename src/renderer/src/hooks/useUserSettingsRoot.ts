@@ -248,6 +248,8 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ sizeLimitCutFileTemplate }), [sizeLimitCutFileTemplate]);
   const [sizeLimitCutMergedFileTemplate, setSizeLimitCutMergedFileTemplate] = useState(safeGetConfigInitial('sizeLimitCutMergedFileTemplate'));
   useEffect(() => safeSetConfig({ sizeLimitCutMergedFileTemplate }), [sizeLimitCutMergedFileTemplate]);
+  const [quickExportPresets, setQuickExportPresets] = useState(safeGetConfigInitial('quickExportPresets'));
+  useEffect(() => safeSetConfig({ quickExportPresets }), [quickExportPresets]);
 
 
   const resetKeyBindings = useCallback(() => {
@@ -392,6 +394,7 @@ export default function useUserSettingsRoot() {
     sizeLimitMergedNamingMode,
     sizeLimitCutFileTemplate,
     sizeLimitCutMergedFileTemplate,
+    quickExportPresets,
   }), [
     lastAppVersion,
     captureFormat,
@@ -490,6 +493,7 @@ export default function useUserSettingsRoot() {
     sizeLimitMergedNamingMode,
     sizeLimitCutFileTemplate,
     sizeLimitCutMergedFileTemplate,
+    quickExportPresets,
   ]);
 
   return useMemo(() => ({
@@ -606,6 +610,7 @@ export default function useUserSettingsRoot() {
     setSizeLimitMergedNamingMode,
     setSizeLimitCutFileTemplate,
     setSizeLimitCutMergedFileTemplate,
+    setQuickExportPresets,
   }), [settings, springAnimation, customOutDir, setCustomOutDir, resetKeyBindings, toggleDarkMode, prefersReducedMotion, recentFiles, shelfExports, shelfOrder]);
 }
 

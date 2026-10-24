@@ -12,6 +12,7 @@ import { moveSettingsOutOfInstallFolder, noteSettingsFoldersForInstaller } from 
 import { getInstallationDir, isWindowsFolderInside } from './installation.js';
 import { isWindows, pathExists } from './util.js';
 import { fallbackLng } from './i18nCommon.js';
+import { addQuickExportKeyBindings, defaultQuickExportPresets, quickExportKeyBindings } from '../common/quickExport.js';
 
 const { app } = electron;
 
@@ -95,6 +96,7 @@ const defaultKeyBindings: KeyBinding[] = [
   { keys: 'Enter', action: 'labelCurrentSegment' },
 
   { keys: 'KeyE', action: 'export' },
+  ...quickExportKeyBindings,
   { keys: 'ShiftLeft+Slash', action: 'toggleKeyboardShortcuts' },
 
   { keys: 'AltLeft+ArrowUp', action: 'increaseVolume' },
@@ -209,6 +211,7 @@ const defaults: Config = {
   sizeLimitMergedNamingMode: 'auto',
   sizeLimitCutFileTemplate: undefined,
   sizeLimitCutMergedFileTemplate: undefined,
+  quickExportPresets: defaultQuickExportPresets,
 };
 
 const configFileName = 'config.json'; // note: this is also hard-coded inside electron-store
@@ -699,5 +702,13 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     const isCtrlY = (keys: string) => { const parts = keys.split('+'); return parts.length === 2 && parts.includes('KeyY') && (parts.includes('ControlLeft') || parts.includes('ControlRight')); };
     if (!existingBindings.some((existing) => isCtrlY(existing.keys))) set('keyBindings', [...existingBindings, { keys: 'ControlLeft+KeyY', action: 'redo' }]);
     store.set('redoCtrlYShortcutMigrated', true);
+  }
+
+  // Ctrl+E and Ctrl+1/2/3 (quick exports) for existing settings too, where those keys are still free.
+  if (store.get('quickExportShortcutsMigrated') !== true) {
+    const existingBindings = store.get('keyBindings') as KeyBinding[];
+    const withQuickExports = addQuickExportKeyBindings(existingBindings);
+    if (withQuickExports !== existingBindings) set('keyBindings', withQuickExports);
+    store.set('quickExportShortcutsMigrated', true);
   }
 }
