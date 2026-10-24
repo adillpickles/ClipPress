@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { defaultQuickExportPresets } from '../../common/quickExport';
 import type { ExportQuality, TranslateQuickExport } from './quickExport';
-import { getLastSettingsLabel, getQuickExportPresetLabel, resolveExportQuality } from './quickExport';
+import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, resolveExportQuality } from './quickExport';
 
 const t: TranslateQuickExport = (key, options = {}) => key.replaceAll(/{{(\w+)}}/g, (_match, name: string) => String(options[name]));
 
@@ -36,6 +36,23 @@ describe('resolveExportQuality', () => {
 
   it('makes an Original quality export from a size-limited sheet', () => {
     expect(resolveExportQuality(sheet, { encodeMode: 'lossless', sizeLimitMb: 10, sizeLimitPreset: 'quality' }).isSizeLimited).toBe(false);
+  });
+});
+
+describe('isChaptersOnlyExport', () => {
+  it('keeps the recording whole for an Original quality export with chapters-only on', () => {
+    expect(isChaptersOnlyExport({ segmentsToChaptersOnly: true, isSizeLimited: false })).toBe(true);
+  });
+
+  it('cuts clips when a preset fits a size, even with chapters-only on', () => {
+    const sheetQuality: ExportQuality = { ...sheet, isSizeLimited: false };
+    const quality = resolveExportQuality(sheetQuality, { encodeMode: 'size_limited', sizeLimitMb: 10, sizeLimitPreset: 'quality' });
+    expect(isChaptersOnlyExport({ segmentsToChaptersOnly: true, isSizeLimited: quality.isSizeLimited })).toBe(false);
+  });
+
+  it('cuts clips with chapters-only off', () => {
+    expect(isChaptersOnlyExport({ segmentsToChaptersOnly: false, isSizeLimited: false })).toBe(false);
+    expect(isChaptersOnlyExport({ segmentsToChaptersOnly: false, isSizeLimited: true })).toBe(false);
   });
 });
 

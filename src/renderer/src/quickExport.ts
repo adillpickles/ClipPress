@@ -48,6 +48,15 @@ export function resolveExportQuality(sheet: ExportQuality, override: QuickExport
   };
 }
 
+/**
+ * Whether an export keeps the recording whole with the clips as chapters (advanced mode's "Segments to chapters").
+ * Only an Original quality export does: the sheet turns that mode off when it fits a size, and a quick export preset
+ * that fits a size cuts the selected clips instead, leaving the setting as it is.
+ */
+export function isChaptersOnlyExport({ segmentsToChaptersOnly, isSizeLimited }: { segmentsToChaptersOnly: boolean, isSizeLimited: boolean }) {
+  return segmentsToChaptersOnly && !isSizeLimited;
+}
+
 const mbFormatter = new Intl.NumberFormat(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 /** "Original quality", or the size limit: "10 MB". */

@@ -289,7 +289,7 @@ import { ShelfUpNext } from './components/Shelf';
 import useShelf, { listShelfFolder } from './hooks/useShelf';
 import { buildShelfQueue, pickNextClip, rememberShelfExport } from './shelf';
 import formatSizeLimitedProgressText from './sizeLimitedProgressText';
-import { getLastSettingsLabel, getQuickExportPresetLabel, resolveExportQuality } from './quickExport';
+import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, resolveExportQuality } from './quickExport';
 import type { QuickExport } from './quickExport';
 import { normalizeQuickExportPresets } from '../../common/quickExport';
 import { getProjectLookupPaths, getProjectSavePath, getProjectStoreEnv, getStoredProjectPath } from './projectStore';
@@ -2374,8 +2374,10 @@ function App() {
     }, isWindows || isMac));
   }, [setShelfExports]);
 
+  // The selected clips (segmentsToExport without chapters-only), as a size-limited export never keeps the
+  // recording whole: see isChaptersOnlyExport.
   const sizeLimitedSegmentsForExport = useMemo<SegmentToExport[]>(() => {
-    if (segmentsToExport.length > 0) return segmentsToExport;
+    if (segmentsOrInverse.selected.length > 0) return segmentsOrInverse.selected;
     if (!isDurationValid(fileDuration)) return [];
 
     const { start, end } = currentCutSegOrWholeTimeline;
@@ -2399,7 +2401,7 @@ function App() {
     currentCutSegOrWholeTimeline,
     currentSegIndexSafe,
     fileDuration,
-    segmentsToExport,
+    segmentsOrInverse.selected,
   ]);
 
   const generateCutFileNamesForFormat = useCallback(
@@ -3449,7 +3451,10 @@ function App() {
       // Checked again before the original is recycled, so a file that changed meanwhile is never touched.
       const sourceIdentity = await identifyFile(filePath);
 
-      if (segmentsToChaptersOnly && (hasSegmentSpeedChanges || hasSegmentCropChanges || hasSegmentVolumeChanges)) {
+      if (
+        isChaptersOnlyExport({ segmentsToChaptersOnly, isSizeLimited: quality.isSizeLimited })
+        && (hasSegmentSpeedChanges || hasSegmentCropChanges || hasSegmentVolumeChanges)
+      ) {
         throw new UserFacingError(i18n.t('Choose a clip export mode to apply speed, crop and volume changes. Chapters-only export keeps the original video.'));
       }
 
