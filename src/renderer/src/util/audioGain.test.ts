@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { combineAudioGain, dbToPercent, formatVolumePercent, getVolumeFilter, isClipVolumeChanged, minAudioGainDb, percentToDb, sanitizeClipGainDb, sliderPercentToTrackGainDb, snapToFullVolume, trackGainToSliderPercent } from './audioGain';
+import { combineAudioGain, dbToPercent, formatVolumePercent, getClipPlaysAtPercent, getTrackVolumeLevel, getVolumeFilter, isClipVolumeChanged, minAudioGainDb, percentToDb, sanitizeClipGainDb, sliderPercentToTrackGainDb, snapToFullVolume, trackGainToSliderPercent } from './audioGain';
 import { createSegment, mapSaveableSegments } from '../segments';
 import { buildSegmentConcatFilters } from '../exportSegmentMath';
 import { getClipVolumeFactorAt } from '../hooks/usePreviewAudioGain';
@@ -56,6 +56,28 @@ describe('clip volume', () => {
     expect(combineAudioGain(-45, { audioGainDb: -12 })).toBe(minAudioGainDb);
     expect(getVolumeFilter(combineAudioGain(3, { audioMuted: true }))).toBe('volume=0');
     expect(getVolumeFilter(combineAudioGain(3, { audioGainDb: -6.02 }))).toBe('volume=-3.02dB');
+  });
+
+  it('says what a clip plays at with the track volume under it', () => {
+    const track23 = sliderPercentToTrackGainDb(23);
+    expect(getClipPlaysAtPercent(track23, { audioGainDb: percentToDb(50) })).toBe(12);
+    expect(getClipPlaysAtPercent(track23, {})).toBe(23);
+    expect(getClipPlaysAtPercent(undefined, { audioGainDb: percentToDb(50) })).toBe(50);
+    expect(getClipPlaysAtPercent(sliderPercentToTrackGainDb(150), { audioGainDb: percentToDb(50) })).toBe(75);
+    expect(getClipPlaysAtPercent(minAudioGainDb, { audioGainDb: percentToDb(200) })).toBe(0);
+    expect(getClipPlaysAtPercent(track23, { audioGainDb: percentToDb(50), audioMuted: true })).toBe(0);
+  });
+
+  it('shows the track volume on its speaker icon', () => {
+    expect(getTrackVolumeLevel([])).toBe('full');
+    expect(getTrackVolumeLevel([0])).toBe('full');
+    expect(getTrackVolumeLevel([0.001])).toBe('full');
+    expect(getTrackVolumeLevel([6.02])).toBe('full');
+    expect(getTrackVolumeLevel([-12.77])).toBe('lower');
+    expect(getTrackVolumeLevel([minAudioGainDb])).toBe('muted');
+    // Game and mic: silent only when both are.
+    expect(getTrackVolumeLevel([minAudioGainDb, -6])).toBe('lower');
+    expect(getTrackVolumeLevel([minAudioGainDb, minAudioGainDb])).toBe('muted');
   });
 
   it('only counts a real change', () => {

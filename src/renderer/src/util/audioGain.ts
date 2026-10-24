@@ -65,4 +65,21 @@ export function combineAudioGain(trackGainDb: number | undefined, clip: ClipVolu
   return Math.max(minAudioGainDb, track + (clip?.audioGainDb ?? 0));
 }
 
+/**
+ * What a clip plays at with the track volume under it, as people read it: the two percentages multiplied, so a
+ * clip at 50% on a track at 23% plays at 12%. 0 when either is muted.
+ */
+export function getClipPlaysAtPercent(trackGainDb: number | undefined, clip: ClipVolume) {
+  if (isMutedAudioGain(combineAudioGain(trackGainDb, clip))) return 0;
+  return Math.round((dbToPercent(trackGainDb ?? defaultAudioGainDb) * dbToPercent(clip.audioGainDb ?? 0)) / 100);
+}
+
+/** How the track volume shows on its speaker icon: silent, turned down, or full (or louder). With several tracks, the loudest decides. */
+export function getTrackVolumeLevel(trackGainsDb: number[]): 'muted' | 'lower' | 'full' {
+  if (trackGainsDb.length === 0) return 'full';
+  const loudest = Math.max(...trackGainsDb);
+  if (isMutedAudioGain(loudest)) return 'muted';
+  return loudest < 0 && !isNeutralAudioGain(loudest) ? 'lower' : 'full';
+}
+
 export const getVolumeFilter = (audioGainDb: number) => (isMutedAudioGain(audioGainDb) ? 'volume=0' : `volume=${audioGainDb.toFixed(2)}dB`);

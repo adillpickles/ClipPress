@@ -1,4 +1,5 @@
 .header {
+  flex: 1;
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -26,41 +27,22 @@
   color: var(--cp-text);
 }
 
+/* The preview is muted: easy to forget, so it stands out. */
 .iconButtonActive {
   color: var(--cp-warning);
 }
 
+/* The track isn't at 100%: the export sounds different from the recording. */
+.iconButtonChanged,
+.iconButtonChanged:hover {
+  color: var(--cp-accent-text);
+  background: var(--cp-accent-soft);
+}
+
 .iconButton:focus-visible,
-.pill:focus-visible,
+.muteButton:focus-visible,
 .resetButton:focus-visible {
   box-shadow: var(--cp-focus-ring);
-}
-
-.pill {
-  all: unset;
-  cursor: pointer;
-  flex-shrink: 1;
-  min-width: 0;
-  height: 18px;
-  padding: 0 7px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  overflow: hidden;
-  white-space: nowrap;
-  font-size: 10.5px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--cp-text-muted);
-  background: var(--cp-raised);
-  border: 1px solid var(--cp-line-strong);
-  transition: border-color .12s ease, color .12s ease;
-}
-
-.pill:hover,
-.pillChanged {
-  border-color: var(--accent-8);
-  color: var(--cp-text);
 }
 
 /* The title with its "i" beside it (the help that used to be a line of text under it). */
@@ -70,6 +52,12 @@
   gap: .3rem;
   font-size: .875rem;
   font-weight: 650;
+}
+
+/* One track: its volume and reset sit on the title's line. */
+.popoverTitle .gainValue {
+  margin-left: auto;
+  font-size: .8125rem;
 }
 
 .gainItem {
@@ -130,4 +118,50 @@
   height: 1px;
   margin: .1rem -.85rem;
   background: var(--cp-line);
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+}
+
+.previewTitle {
+  flex: 1;
+  font-weight: 600;
+  color: var(--cp-text-muted);
+}
+
+.previewValue {
+  font-variant-numeric: tabular-nums;
+  color: var(--cp-text-muted);
+}
+
+.previewNote {
+  font-size: .75rem;
+  color: var(--cp-text-subtle);
+}
+
+.previewRow {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  margin-top: .1rem;
+}
+
+.muteButton {
+  all: unset;
+  cursor: pointer;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--cp-text-muted);
+  font-size: 14px;
+}
+
+.muteButton:hover {
+  background: var(--cp-hover);
 }
