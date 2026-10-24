@@ -281,7 +281,7 @@ function Segment({
         )}
         <div className={styles['tint']} aria-hidden />
         {/* Just the number, or the number on a dark label with the name and speed. */}
-        <span className={[styles['pill'], ...(!name && !showSpeed ? [styles['pillBare']] : [])].join(' ')}>
+        <span className={[styles['pill'], ...(!name && !showSpeed ? [styles['pillBare']] : []), ...(segNum < 9 ? [styles['oneDigit']] : [])].join(' ')}>
           <span className={styles['num']} style={badgeStyle}>{segNum + 1}</span>
           {name && <span className={styles['name']}>{name}</span>}
           {showSpeed && <span className={styles['speed']}>{`${Math.round(speed * 100)}%`}</span>}

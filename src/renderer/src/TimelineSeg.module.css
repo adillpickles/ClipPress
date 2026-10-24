@@ -159,7 +159,7 @@
 /* A short clip at a wide zoom has no room for the name or speed beside the number: just the number, as for .pillBare,
    rather than a label too narrow to read. Below that it can be narrower than the number: a smaller number with less
    inset, and none at all rather than a clipped digit. The selected clip's trim handles take 10px each side, so it
-   needs more room. (The widths allow for two-digit numbers.) */
+   needs more room. (The widths allow for two-digit numbers, except where .oneDigit says otherwise.) */
 @container (width < 84px) {
   .pill {
     padding: 0 0 0 2px;
@@ -204,16 +204,23 @@
   }
 }
 
+/* A one-digit number (16px) fits 4px in from each side, so it shows a little narrower than two digits. */
 @container (width < 28px) {
-  .pill {
+  .pill:not(.oneDigit) {
+    display: none;
+  }
+}
+
+@container (width < 24px) {
+  .oneDigit {
     display: none;
   }
 }
 
 @container (width < 52px) {
   .active .pill {
-    left: 12px;
-    max-width: calc(100% - 24px);
+    left: 11px;
+    max-width: calc(100% - 21px);
     padding-left: 0;
   }
 
@@ -226,8 +233,15 @@
   }
 }
 
-@container (width < 44px) {
-  .active .pill {
+/* Between the 10px trim handles: one digit (16px) needs 37px, two digits about 41px. */
+@container (width < 41px) {
+  .active .pill:not(.oneDigit) {
+    display: none;
+  }
+}
+
+@container (width < 37px) {
+  .active .oneDigit {
     display: none;
   }
 }
