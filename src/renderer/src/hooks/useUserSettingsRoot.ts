@@ -112,6 +112,8 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ exportConfirmEnabled }), [exportConfirmEnabled]);
   const [trashSourceAfterExport, setTrashSourceAfterExport] = useState(safeGetConfigInitial('trashSourceAfterExport'));
   useEffect(() => safeSetConfig({ trashSourceAfterExport }), [trashSourceAfterExport]);
+  const [trashProjectWithSource, setTrashProjectWithSource] = useState(safeGetConfigInitial('trashProjectWithSource'));
+  useEffect(() => safeSetConfig({ trashProjectWithSource }), [trashProjectWithSource]);
   const [segmentsToChapters, setSegmentsToChapters] = useState(safeGetConfigInitial('segmentsToChapters'));
   useEffect(() => safeSetConfig({ segmentsToChapters }), [segmentsToChapters]);
   const [savedSimpleMode, setSimpleMode] = useState(safeGetConfigInitial('simpleMode'));
@@ -328,6 +330,7 @@ export default function useUserSettingsRoot() {
     autoDeleteMergedSegments,
     exportConfirmEnabled,
     trashSourceAfterExport,
+    trashProjectWithSource,
     segmentsToChapters,
     simpleMode,
     enableAdvancedMode,
@@ -427,6 +430,7 @@ export default function useUserSettingsRoot() {
     autoDeleteMergedSegments,
     exportConfirmEnabled,
     trashSourceAfterExport,
+    trashProjectWithSource,
     segmentsToChapters,
     simpleMode,
     enableAdvancedMode,
@@ -542,6 +546,7 @@ export default function useUserSettingsRoot() {
     setAutoDeleteMergedSegments,
     setExportConfirmEnabled,
     setTrashSourceAfterExport,
+    setTrashProjectWithSource,
     setSegmentsToChapters,
     setSimpleMode,
     setEnableAdvancedMode,

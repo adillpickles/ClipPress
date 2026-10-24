@@ -104,6 +104,8 @@ export interface Config {
   exportConfirmEnabled: boolean,
   /** After a checked, complete export, move the source recording to the Recycle Bin (never a permanent delete). */
   trashSourceAfterExport: boolean,
+  /** When ClipPress moves the source recording to the Recycle Bin after an export, move every copy of its edits there too. */
+  trashProjectWithSource: boolean,
   askBeforeClose: boolean,
   enableImportChapters: EnableImportChapters,
   enableAskForFileOpenAction: boolean,

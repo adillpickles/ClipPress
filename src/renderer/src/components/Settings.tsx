@@ -63,7 +63,7 @@ function Settings({
     window.require('electron').shell.openPath(getProjectsDir(getProjectStoreEnv())).catch?.(() => undefined);
   }, []);
 
-  const { customOutDir, setCustomOutDir, changeOutDir, ensureWritableOutDirWithFilePath, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, wheelSensitivity, waveformHeight, keyboardNormalSeekSpeed, keyboardSeekSpeed2, keyboardSeekSpeed3, keyboardSeekAccFactor, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, invertTimelineScroll, setInvertTimelineScroll, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey, setSegmentMouseModifierKey, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport, enableAdvancedMode, setEnableAdvancedMode } = useUserSettings();
+  const { customOutDir, setCustomOutDir, changeOutDir, ensureWritableOutDirWithFilePath, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, wheelSensitivity, waveformHeight, keyboardNormalSeekSpeed, keyboardSeekSpeed2, keyboardSeekSpeed3, keyboardSeekAccFactor, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, invertTimelineScroll, setInvertTimelineScroll, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey, setSegmentMouseModifierKey, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport, enableAdvancedMode, setEnableAdvancedMode, trashProjectWithSource, setTrashProjectWithSource } = useUserSettings();
 
   const onLangChange = useCallback<ChangeEventHandler<HTMLSelectElement>>((e) => {
     const { value } = e.target;
@@ -494,6 +494,7 @@ function Settings({
             <SettingRow
               label={t('Save edits automatically')}
               description={t('Opening the same recording again brings back your clips, text and settings.')}
+              details={t('Edits of recordings that have been gone for 30 days, and backups older than that, move to the Recycle Bin.')}
             >
               <Switch checked={autoSaveProjectFile} onCheckedChange={setAutoSaveProjectFile} aria-label={t('Save edits automatically')} />
             </SettingRow>
@@ -536,6 +537,14 @@ function Settings({
                   </Button>
                 )}
               </div>
+            </SettingRow>
+
+            <SettingRow
+              label={t('Recycle edits with the original')}
+              description={t('When the original goes to the Recycle Bin after an export, its edits go too.')}
+              details={t('Every copy: in ClipPress, next to the recording, and older backups. You can restore them from the Recycle Bin.')}
+            >
+              <Switch checked={trashProjectWithSource} onCheckedChange={setTrashProjectWithSource} aria-label={t('Recycle edits with the original')} />
             </SettingRow>
           </>
         );

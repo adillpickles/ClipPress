@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
 
-import { getProjectCopiesToRetire, getProjectLookupPaths, getProjectSavePath, getProjectSavePaths, getRelocatedProjectCopies, getSidecarProjectPath, getStoredProjectFileName, getStoredProjectPath } from './projectStore';
+import { getProjectCopiesToRetire, getProjectLookupPaths, getProjectSavePath, getProjectSavePaths, getRelocatedProjectCopies, getReplacedBackupPath, getReplacedBackupTime, getSidecarProjectPath, getStoredProjectFileName, getStoredProjectPath, isReplacedBackupName, isReplacedBackupOf } from './projectStore';
 import type { ProjectStoreEnv } from './projectStore';
 
 const win = path.win32;
@@ -111,6 +111,29 @@ describe('project store', () => {
       // Renamed in the same folder: the old name's copies go, the folder stays.
       const renamed = String.raw`D:\Clips\Ace.mp4`;
       expect(getRelocatedProjectCopies(media, renamed, undefined, env)).toEqual([getStoredProjectPath(media, env), String.raw`D:\Clips\Valorant 2026.10.19 - 21.51.16-proj.llc`]);
+    });
+  });
+
+  describe('backups kept when a project is replaced', () => {
+    const time = Date.parse('2026-10-24T09:08:07.006Z');
+
+    it('are named after the project with the time, which can be read back', () => {
+      const backup = getReplacedBackupPath(String.raw`C:\Data\Projects\clip-0123456789abcdef.llc`, time);
+      expect(backup).toBe(String.raw`C:\Data\Projects\clip-0123456789abcdef.replaced-2026-10-24T09-08-07-006Z.llc`);
+      expect(getReplacedBackupTime(win.basename(backup))).toBe(time);
+      expect(getReplacedBackupTime('clip-0123456789abcdef.llc')).toBeUndefined();
+      expect(getReplacedBackupTime('clip.replaced-yesterday.llc')).toBeUndefined();
+    });
+
+    it('are told apart from projects, and matched to their own project only', () => {
+      const backupName = win.basename(getReplacedBackupPath('clip-proj.llc', time));
+      expect(isReplacedBackupName(backupName)).toBe(true);
+      expect(isReplacedBackupName('clip-proj.llc')).toBe(false);
+      expect(isReplacedBackupOf('clip-proj.llc', backupName, true)).toBe(true);
+      expect(isReplacedBackupOf('CLIP-proj.llc', backupName, true)).toBe(true);
+      expect(isReplacedBackupOf('CLIP-proj.llc', backupName, false)).toBe(false);
+      expect(isReplacedBackupOf('clip 2-proj.llc', backupName, true)).toBe(false);
+      expect(isReplacedBackupOf('clip-proj.llc', 'clip-proj.llc', true)).toBe(false);
     });
   });
 });

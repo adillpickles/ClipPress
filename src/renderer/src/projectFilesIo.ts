@@ -1,11 +1,34 @@
-// File-system glue for the project files: copies and backups.
+// File-system glue for the project files: copies, backups and the clean-up (kept apart so projectCleanup.ts and
+// projectCopies.ts stay pure and testable).
 import JSON5 from 'json5';
 import isEqual from 'lodash/isEqual';
 
-import { getReplacedBackupPath } from './projectStore';
+import { cleanUpProjects, isCleanupDue, parseCleanupState } from './projectCleanup';
+import type { ProjectCleanupState, RecordingPresence } from './projectCleanup';
+import { findProjectCopies } from './projectCopies';
+import type { ProjectMediaRef } from './projectCopies';
+import { getProjectsDir, getProjectStoreEnv, getReplacedBackupPath } from './projectStore';
+import { createWriteFileAtomically } from './util/atomicWrite';
+import { trashFile } from './util';
 import mainApi from './mainApi';
 
-const { copyFile, lstat, readFile, rename } = window.require('fs/promises');
+const { copyFile, lstat, readdir, readFile, rename, stat, unlink, writeFile } = window.require('fs/promises');
+const { basename, dirname, isAbsolute, join } = window.require('path');
+
+const writeFileAtomically = createWriteFileAtomically({ writeFile, rename, unlink, dirname, basename, join });
+
+const errorCode = (err: unknown) => (err instanceof Error && 'code' in err ? err.code : undefined);
+
+/** In ClipPress's settings folder, next to the projects folder. */
+const cleanupStateFileName = 'project-cleanup.json';
+
+async function listFolder(folder: string): Promise<string[]> {
+  try {
+    return await readdir(folder);
+  } catch {
+    return [];
+  }
+}
 
 async function getModifiedAt(path: string): Promise<number | undefined> {
   try {
@@ -16,10 +39,62 @@ async function getModifiedAt(path: string): Promise<number | undefined> {
   }
 }
 
+/** What a project file says about its recording; undefined when it isn't there or can't be read. */
+async function readProjectMediaRef(projectPath: string): Promise<ProjectMediaRef | undefined> {
+  try {
+    const json: unknown = JSON5.parse(await readFile(projectPath, 'utf8'));
+    if (json == null || typeof json !== 'object') return undefined;
+    const { mediaFilePath, mediaFileName } = json as Record<string, unknown>;
+    return {
+      ...(typeof mediaFilePath === 'string' ? { mediaFilePath } : {}),
+      ...(typeof mediaFileName === 'string' ? { mediaFileName } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** 'gone' only when the recording's folder is there (so its drive is connected) and the file certainly isn't. */
+async function getRecordingPresence(mediaPath: string): Promise<RecordingPresence> {
+  if (!isAbsolute(mediaPath)) return 'unknown';
+  try {
+    await lstat(mediaPath);
+    return 'present';
+  } catch (err) {
+    if (errorCode(err) !== 'ENOENT') return 'unknown';
+  }
+  try {
+    return (await stat(dirname(mediaPath))).isDirectory() ? 'gone' : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 /** Into the file log, where what ClipPress moved to the Recycle Bin by itself can be looked up later. */
 export function logProjectFiles(level: 'info' | 'warn', message: string) {
   if (level === 'warn') console.warn(message); else console.log(message);
   mainApi.log(level, message).catch(() => undefined);
+}
+
+/**
+ * "Recycle edits with the original": moves every copy of a recording's edits (see `findProjectCopies`) to the Recycle
+ * Bin, after the recording itself went there. `deleteProjectFile` deletes between autosave's saves. Resolves with how
+ * many went; one that can't is logged and left.
+ */
+export async function recycleRecordingProjectCopies(mediaPath: string, customOutDir: string | undefined, deleteProjectFile: (path: string, remove: () => Promise<void>) => Promise<void>) {
+  const copies = await findProjectCopies(mediaPath, { customOutDir, env: getProjectStoreEnv(), list: listFolder, read: readProjectMediaRef });
+  let recycled = 0;
+  for (const copy of copies) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await deleteProjectFile(copy, () => trashFile(copy));
+      recycled += 1;
+      logProjectFiles('info', `Moved edits to the Recycle Bin with their recording ${mediaPath}: ${copy}`);
+    } catch (err) {
+      logProjectFiles('warn', `Could not move edits to the Recycle Bin with their recording: ${copy}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return recycled;
 }
 
 /** The most recently saved of these project files; undefined when none is there. */
@@ -83,4 +158,51 @@ export async function keepCopiesAboutToBeReplaced(savePaths: readonly string[], 
     }
   }
   return same;
+}
+
+async function readCleanupState(path: string): Promise<ProjectCleanupState> {
+  try {
+    return parseCleanupState(JSON.parse(await readFile(path, 'utf8')));
+  } catch {
+    return parseCleanupState(undefined);
+  }
+}
+
+/**
+ * The background clean-up of ClipPress's projects folder (see projectCleanup.ts), if it is due: at most once a day.
+ * `trash` moves a file to the Recycle Bin; `whenIdle` resolves when the app is idle.
+ */
+export async function runProjectCleanup({ trash, whenIdle, isCancelled }: {
+  trash: (path: string) => Promise<void>,
+  whenIdle: () => Promise<void>,
+  isCancelled: () => boolean,
+}) {
+  const env = getProjectStoreEnv();
+  const statePath = join(env.dataDir, cleanupStateFileName);
+  const now = Date.now();
+  const state = await readCleanupState(statePath);
+  if (!isCleanupDue(state, now)) return;
+  // Noted first, so a run that is cut short doesn't run again at every start that day.
+  await writeFileAtomically(statePath, JSON.stringify({ ...state, lastRunAt: now }, null, 2));
+
+  const folder = getProjectsDir(env);
+  const result = await cleanUpProjects({
+    list: () => listFolder(folder),
+    modifiedAt: (fileName) => getModifiedAt(join(folder, fileName)),
+    readMediaPath: async (fileName) => (await readProjectMediaRef(join(folder, fileName)))?.mediaFilePath,
+    presence: getRecordingPresence,
+    trash: (fileName) => trash(join(folder, fileName)),
+    whenIdle,
+    isCancelled,
+  }, { state, now });
+  await writeFileAtomically(statePath, JSON.stringify(result.state, null, 2));
+
+  for (const { fileName, reason } of result.trashed) {
+    logProjectFiles('info', `Project clean-up: moved to the Recycle Bin (${reason === 'oldBackup' ? 'a backup over 30 days old' : 'its recording has been gone for 30 days'}): ${join(folder, fileName)}`);
+  }
+  for (const { fileName, error } of result.failed) {
+    logProjectFiles('warn', `Project clean-up: left ${join(folder, fileName)}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const waiting = Object.keys(result.state.missingSince).length;
+  logProjectFiles('info', `Project clean-up: done; ${result.trashed.length} moved to the Recycle Bin, ${waiting} kept for now with their recording not found`);
 }

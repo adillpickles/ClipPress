@@ -293,8 +293,9 @@ import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, 
 import type { QuickExport } from './quickExport';
 import { normalizeQuickExportPresets } from '../../common/quickExport';
 import { getProjectCopiesToRetire, getProjectLookupPaths, getProjectSavePaths, getProjectStoreEnv, isSameProjectPath } from './projectStore';
-import { findNewestProjectFile, keepCopiesAboutToBeReplaced, logProjectFiles } from './projectFilesIo';
+import { findNewestProjectFile, keepCopiesAboutToBeReplaced, logProjectFiles, recycleRecordingProjectCopies } from './projectFilesIo';
 import { getProjectMediaCandidates, getProjectMediaOldPath } from './missingRecording';
+import useProjectCleanup from './hooks/useProjectCleanup';
 import useRelocateRecording from './hooks/useRelocateRecording';
 import type { RelocatedRecording } from './hooks/useRelocateRecording';
 import type { ProjectFileLocation } from '../../common/types';
@@ -492,6 +493,7 @@ function App() {
     autoDeleteMergedSegments,
     exportConfirmEnabled,
     trashSourceAfterExport,
+    trashProjectWithSource,
     segmentsToChapters,
     simpleMode,
     cutFileTemplate,
@@ -1308,6 +1310,8 @@ function App() {
     overlayClips,
   });
 
+  // Old backups, and the edits of recordings gone for 30 days, go to the Recycle Bin while ClipPress is idle (#91).
+  useProjectCleanup({ isBusy: () => workingRef.current, deleteProjectFile });
   // "Can't find the recording": opening edits whose recording was moved or renamed (#16).
   const relocateRecording = useRelocateRecording({ showGenericDialog, confirmDialog, customOutDir });
 
@@ -2866,14 +2870,18 @@ function App() {
     if (!result.recycled && result.reason === 'cancelled') {
       keptBecauseCancelled();
     } else if (result.recycled) {
-      highlights.add(i18n.t('The original recording was moved to the Recycle Bin. You can restore it from there.'));
+      // Settings > Projects > "Recycle edits with the original": every copy of them, so none brings them back (#91).
+      const editsRecycled = trashProjectWithSource && (await recycleRecordingProjectCopies(sourcePath, customOutDir, deleteProjectFile)) > 0;
+      highlights.add(editsRecycled
+        ? i18n.t('The original recording and its edits were moved to the Recycle Bin. You can restore them from there.')
+        : i18n.t('The original recording was moved to the Recycle Bin. You can restore it from there.'));
     } else if (result.reason === 'changed') {
       warnings.add(i18n.t('The original recording was kept, because it changed during the export.'));
     } else if (result.reason === 'refused') {
       warnings.add(i18n.t('ClipPress kept the original recording: it could not be moved to the Recycle Bin. It may be too large for the Recycle Bin, on a drive without one, or still in use.'));
     }
     return true;
-  }, [batchListRemoveFile, clearSegments, resetState, setWorking, whenProjectSaved]);
+  }, [batchListRemoveFile, clearSegments, customOutDir, deleteProjectFile, resetState, setWorking, trashProjectWithSource, whenProjectSaved]);
 
   const askForCleanupChoices = useCallback(async ({ saveOnly = false }: { saveOnly?: boolean } = {}) => {
     const trashResponse = await openCleanupFilesDialog({

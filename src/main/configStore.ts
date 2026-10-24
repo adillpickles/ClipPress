@@ -123,6 +123,7 @@ const defaults: Config = {
   autoExportExtraStreams: true,
   exportConfirmEnabled: true,
   trashSourceAfterExport: false,
+  trashProjectWithSource: true,
   askBeforeClose: false,
   enableImportChapters: 'ask',
   enableAskForFileOpenAction: true,

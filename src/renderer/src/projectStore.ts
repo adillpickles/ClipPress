@@ -110,10 +110,30 @@ export function getProjectCopiesToRetire(found: readonly string[], location: Pro
   return found.filter((path) => !savePaths.some((savePath) => isSameProjectPath(savePath, path, caseInsensitive)));
 }
 
+const replacedBackupTime = /\.replaced-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z\.llc$/i;
+
 /** Where a different copy that is about to be replaced is kept, next to it: "<name>.replaced-<time>.llc". */
 export function getReplacedBackupPath(projectPath: string, time: number) {
   const stamp = new Date(time).toISOString().replaceAll(/[:.]/g, '-');
   return projectPath.replace(/\.llc$/i, `.replaced-${stamp}.llc`);
+}
+
+/** When a backup kept by `getReplacedBackupPath` was made, from its name. Undefined for any other name. */
+export function getReplacedBackupTime(fileName: string) {
+  const match = replacedBackupTime.exec(fileName);
+  if (match == null) return undefined;
+  const [, date, hours, minutes, seconds, ms] = match;
+  const time = Date.parse(`${date}T${hours}:${minutes}:${seconds}.${ms}Z`);
+  return Number.isFinite(time) ? time : undefined;
+}
+
+export const isReplacedBackupName = (fileName: string) => /\.replaced-[^/\\]*\.llc$/i.test(fileName);
+
+/** Whether `fileName` is a backup kept when the project file named `projectFileName` was replaced. */
+export function isReplacedBackupOf(projectFileName: string, fileName: string, caseInsensitive: boolean) {
+  const fold = (name: string) => (caseInsensitive ? name.toLowerCase() : name);
+  const prefix = fold(`${projectFileName.replace(/\.llc$/i, '')}.replaced-`);
+  return fold(fileName).startsWith(prefix) && isReplacedBackupName(fileName);
 }
 
 /**
