@@ -17,7 +17,7 @@ import prettyBytes from 'pretty-bytes';
 
 import useContextMenu from './hooks/useContextMenu';
 import useUserSettings from './hooks/useUserSettings';
-import { saveColor, primaryTextColor, darkModeTransition, getSegBadgeStyle } from './colors';
+import { saveColor, primaryTextColor, darkModeTransition, getSegBadgeStyle, getSegColorVars } from './colors';
 import { useSegColors } from './contexts';
 import { getSegmentsTotalDuration, getSegmentTags } from './segments';
 import formatClockTime, { formatClipLength } from './util/clockTime';
@@ -279,6 +279,8 @@ const Segment = memo(({
   }, [getSegColor, invertCutSegments, seg, simpleMode]);
   // Same tone and readable digits as the clip's number on the timeline (getSegBadgeStyle).
   const badgeStyle = useMemo(() => (simpleSegColor != null ? getSegBadgeStyle(simpleSegColor) : undefined), [simpleSegColor]);
+  // The selected card is outlined and tinted in the clip's own colour (SegmentList.module.css).
+  const colorVars = useMemo(() => (simpleSegColor != null ? getSegColorVars(simpleSegColor) : undefined), [simpleSegColor]);
 
   function renderNumber() {
     if (simpleMode) {
@@ -399,7 +401,7 @@ const Segment = memo(({
         role="button"
         onClick={handleSegmentClick}
         onDoubleClick={onDoubleClick}
-        style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition ?? undefined, visibility: sortable.isDragging ? 'hidden' : undefined }}
+        style={{ ...colorVars, transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition ?? undefined, visibility: sortable.isDragging ? 'hidden' : undefined }}
         className={[styles['clip'], ...(isActive ? [styles['clipActive']] : []), ...(!included ? [styles['clipExcluded']] : []), ...(dragging ? [styles['clipDragging']] : [])].join(' ')}
       >
         <div

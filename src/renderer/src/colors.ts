@@ -19,3 +19,12 @@ export function getSegBadgeStyle(segColor: ColorInstance) {
   const background = segColor.saturationl(Math.min(segColor.saturationl(), 70)).lightness(46);
   return { background: background.string(), color: background.isLight() ? 'rgb(0 0 0 / 80%)' : '#fff' };
 }
+
+/**
+ * The clip's colour for CSS (`--clip-color`, and `--clip-on-color` for marks drawn on it): the selected clip is
+ * outlined and tinted with its own colour rather than the accent. The badge's tone, so it reads in both themes.
+ */
+export function getSegColorVars(segColor: ColorInstance) {
+  const { background, color } = getSegBadgeStyle(segColor);
+  return { '--clip-color': background, '--clip-on-color': color };
+}

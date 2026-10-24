@@ -84,10 +84,15 @@
   background: var(--cp-hover);
 }
 
+/* The selected clip in its own colour (--clip-color, set inline): a tinted outline, a soft glow and a faint fill.
+   The text stays the normal text colour on it. */
 .clipActive,
 .clipActive:hover {
-  background: var(--cp-raised);
-  border-color: var(--gray-8);
+  background: color-mix(in srgb, var(--clip-color, var(--gray-8)) 11%, var(--cp-raised));
+  border-color: color-mix(in srgb, var(--clip-color, var(--gray-8)) 72%, transparent);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--clip-color, var(--gray-8)) 18%, transparent),
+    0 6px 16px -8px color-mix(in srgb, var(--clip-color, var(--gray-8)) 55%, transparent);
 }
 
 .clipDragging {

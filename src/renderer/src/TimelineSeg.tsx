@@ -14,7 +14,7 @@ import type { FilmstripFrame } from './filmstrip';
 import styles from './TimelineSeg.module.css';
 import { dbToPercent, isClipVolumeChanged } from './util/audioGain';
 import formatClockTime from './util/clockTime';
-import { getSegBadgeStyle } from './colors';
+import { getSegBadgeStyle, getSegColorVars } from './colors';
 
 
 const markerButtonStyle: React.CSSProperties = { fontSize: 10, minWidth: 0, letterSpacing: '-.1em', color: 'white' };
@@ -168,6 +168,8 @@ function Segment({
   }, [formatTimecode, name, seg.end, seg.start, simpleMode]);
 
   const badgeStyle = useMemo(() => getSegBadgeStyle(color), [color]);
+  // Simple mode outlines the clip, and the selected one's glow and handles, in its own colour (TimelineSeg.module.css).
+  const colorVars = useMemo(() => getSegColorVars(color), [color]);
 
   const wrapperStyle = useMemo<MotionStyle>(() => {
     const cutSectionWidth = `calc(${getTimePercent(seg.end)} - ${getTimePercent(seg.start)})`;
@@ -243,6 +245,7 @@ function Segment({
       <motion.div
         className={[styles['clip'], ...(isActive ? [styles['active']] : []), ...(excluded ? [styles['excluded']] : [])].join(' ')}
         style={{
+          ...colorVars,
           position: 'absolute',
           top: 5,
           bottom: 5,

@@ -1,5 +1,6 @@
 /* Simple mode's clip blocks ("C1"): a raised, rounded block showing its own stretch of the filmstrip in full
-   colour, with a soft accent tint and outline, a name pill and trim handles on the selected clip.
+   colour, outlined in the clip's own colour (--clip-color, set inline), with its number (and a name label when it
+   has a name) and trim handles on the selected clip.
    The base rules are the light theme's; the dark theme's deeper shadows and darker film are under .dark-theme. */
 .clip {
   isolation: isolate;
@@ -31,7 +32,8 @@
   display: block;
 }
 
-/* The tint and the outline sit over the frames; the selected clip gets a light sheen and a solid ring. */
+/* The tint and the outline sit over the frames; the selected clip gets a light sheen, a solid ring and a soft glow,
+   all in its own colour (the accent stays for focus and the playhead). */
 .tint {
   position: absolute;
   inset: 0;
@@ -40,35 +42,35 @@
   pointer-events: none;
   background:
     linear-gradient(180deg, rgb(255 255 255 / 10%) 0%, rgb(255 255 255 / 0%) 46%),
-    color-mix(in srgb, var(--accent-9) 12%, transparent);
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent-9) 62%, transparent), inset 0 1px 0 rgb(255 255 255 / 16%);
+    color-mix(in srgb, var(--clip-color) 8%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--clip-color) 70%, transparent), inset 0 1px 0 rgb(255 255 255 / 16%);
   transition: box-shadow .12s ease;
 }
 
 .clip:hover .tint {
-  box-shadow: inset 0 0 0 1.5px var(--accent-10), inset 0 1px 0 rgb(255 255 255 / 20%);
+  box-shadow: inset 0 0 0 1.5px var(--clip-color), inset 0 1px 0 rgb(255 255 255 / 20%);
 }
 
 .active {
   box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--accent-9) 20%, transparent),
-    0 0 20px color-mix(in srgb, var(--accent-9) 16%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--clip-color) 26%, transparent),
+    0 0 18px color-mix(in srgb, var(--clip-color) 30%, transparent),
     0 10px 22px -10px rgb(0 0 0 / 40%);
 }
 
 :global(.dark-theme) .active {
   box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--accent-9) 20%, transparent),
-    0 0 20px color-mix(in srgb, var(--accent-9) 16%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--clip-color) 30%, transparent),
+    0 0 18px color-mix(in srgb, var(--clip-color) 28%, transparent),
     0 10px 22px -8px rgb(0 0 0 / 90%);
 }
 
 .active .tint,
 .active:hover .tint {
   background:
-    linear-gradient(180deg, rgb(255 255 255 / 24%) 0%, rgb(255 255 255 / 7%) 32%, rgb(255 255 255 / 0%) 58%),
-    color-mix(in srgb, var(--accent-9) 18%, transparent);
-  box-shadow: inset 0 0 0 2px var(--accent-9), inset 0 1px 0 rgb(255 255 255 / 30%);
+    linear-gradient(180deg, rgb(255 255 255 / 22%) 0%, rgb(255 255 255 / 6%) 32%, rgb(255 255 255 / 0%) 58%),
+    color-mix(in srgb, var(--clip-color) 16%, transparent);
+  box-shadow: inset 0 0 0 2.5px var(--clip-color), inset 0 1px 0 rgb(255 255 255 / 30%);
 }
 
 /* Not in the export (unticked): the frames go grey and faint under a light hatch. In the light theme they fade
@@ -176,7 +178,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, var(--accent-10), var(--accent-9));
+  background: var(--clip-color);
   cursor: ew-resize;
 }
 
@@ -186,7 +188,8 @@
   height: 38%;
   max-height: 16px;
   border-radius: 1px;
-  background: rgb(4 20 22 / 60%);
+  background: var(--clip-on-color);
+  opacity: .7;
 }
 
 .handleStart {
