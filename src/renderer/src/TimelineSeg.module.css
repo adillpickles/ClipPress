@@ -32,6 +32,11 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  animation: film-tile-in .18s ease-out;
+}
+
+@keyframes film-tile-in {
+  from { opacity: 0; }
 }
 
 /* The tint and the outline sit over the frames; the selected clip gets a light sheen, a solid ring and a soft glow,

@@ -199,6 +199,51 @@ export async function runFfmpegWithProgress({ ffmpegArgs, duration, onProgress }
   return process;
 }
 
+/**
+ * Runs FFmpeg and hands over its output as it comes rather than all at the end (e.g. each image of the timeline
+ * filmstrip as soon as it's made): new stdout bytes and stderr lines (only those containing `stderrIncludes`), at
+ * most every 20 ms so a busy FFmpeg doesn't flood the renderer with messages. Settles when FFmpeg exits.
+ */
+export async function runFfmpegStreaming(args: readonly string[], { signal, onOutput, stderrIncludes }: {
+  signal: AbortSignal,
+  onOutput: (stdout: Uint8Array, stderrLines: string[]) => void,
+  stderrIncludes?: string | undefined,
+}) {
+  await loadExeca();
+  const process = runFfmpegProcess(args, { cancelSignal: signal, buffer: false }, { logCli: false });
+  let stdout: Buffer[] = [];
+  let stderrLines: string[] = [];
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const flush = () => {
+    timer = undefined;
+    if (stdout.length === 0 && stderrLines.length === 0) return;
+    // Positional: a Buffer and an array of strings cross to the renderer as values.
+    onOutput(Buffer.concat(stdout), stderrLines);
+    stdout = [];
+    stderrLines = [];
+  };
+  const schedule = () => {
+    timer ??= setTimeout(flush, 20);
+  };
+  process.stdout?.on('data', (chunk: Buffer) => {
+    stdout.push(chunk);
+    schedule();
+  });
+  if (process.stderr != null) {
+    readline.createInterface({ input: process.stderr }).on('line', (line) => {
+      if (stderrIncludes != null && !line.includes(stderrIncludes)) return;
+      stderrLines.push(line);
+      schedule();
+    });
+  }
+  try {
+    await process;
+  } finally {
+    clearTimeout(timer);
+    flush();
+  }
+}
+
 export async function runFfprobe(args: readonly string[], { timeout = isDev ? 10000 : 30000, logCli = true } = {}) {
   const ffprobePath = getFfprobePath();
   if (logCli) logger.info(getFfCommandLine('ffprobe', args));

@@ -10,7 +10,7 @@ import useUserSettings from './hooks/useUserSettings';
 import { useSegColors } from './contexts';
 import type { FormatTimecode, StateSegment } from './types';
 import { getSegmentSpeed } from './segmentSpeed';
-import type { FilmstripFrame } from './filmstrip';
+import type { FilmTile } from './filmstrip';
 import styles from './TimelineSeg.module.css';
 import { dbToPercent, isClipVolumeChanged } from './util/audioGain';
 import formatClockTime from './util/clockTime';
@@ -88,29 +88,17 @@ function Marker({
   );
 }
 
-/** The frames of `filmstrip` that cover [start, end], placed as percentages of the clip block. */
-function getClipFrames(filmstrip: readonly FilmstripFrame[], start: number, end: number, toLanePercent: (t: number) => number, fileEnd: number) {
-  const left = toLanePercent(start);
-  const width = toLanePercent(end) - left;
-  if (!(width > 0)) return [];
-  const frames: { url: string, left: number, width: number }[] = [];
-  for (let i = 0; i < filmstrip.length; i += 1) {
-    const frame = filmstrip[i]!;
-    const next = filmstrip[i + 1]?.time ?? fileEnd;
-    // eslint-disable-next-line no-continue
-    if (next <= start || frame.time >= end) continue;
-    const frameLeft = toLanePercent(frame.time);
-    frames.push({
-      url: frame.url,
-      left: ((frameLeft - left) / width) * 100,
-      width: ((toLanePercent(next) - frameLeft) / width) * 100,
-    });
-  }
-  return frames;
+/** The filmstrip's tiles under [start, end] (the clip block is a window onto the strip), placed in the block. */
+function getClipTiles(tiles: readonly FilmTile[], start: number, end: number, toLanePercent: (t: number) => number, lanePx: number) {
+  const left = (toLanePercent(start) / 100) * lanePx;
+  const right = (toLanePercent(end) / 100) * lanePx;
+  return tiles.flatMap((tile) => (tile.url != null && tile.left < right && tile.left + tile.width > left
+    ? [{ key: tile.left, url: tile.url, left: tile.left - left, width: tile.width }]
+    : []));
 }
 
 function Segment({
-  seg, segNum, color, isActive, selected, onClick, getTimePercent, instant, formatTimecode, invertCutSegments, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmstrip, toLanePercent, fileEnd, onTrimHandleMouseDown, getCurrentTime, onSplit, onDuplicate, onRemove,
+  seg, segNum, color, isActive, selected, onClick, getTimePercent, instant, formatTimecode, invertCutSegments, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmTiles, toLanePercent, lanePx, onTrimHandleMouseDown, getCurrentTime, onSplit, onDuplicate, onRemove,
 }: {
   seg: Omit<StateSegment, 'end'> & { end: number },
   segNum: number,
@@ -128,9 +116,9 @@ function Segment({
   onToggleSpeedControls: (segmentId: string) => void,
   onEditCrop: (index: number) => void,
   onEditVolume?: ((index: number, point: { x: number, y: number }) => void) | undefined,
-  filmstrip: readonly FilmstripFrame[],
+  filmTiles: readonly FilmTile[],
   toLanePercent: (time: number) => number,
-  fileEnd: number,
+  lanePx: number,
   onTrimHandleMouseDown: ((edge: 'start' | 'end') => (event: ReactMouseEvent<HTMLElement>) => void) | undefined,
   getCurrentTime: (() => number) | undefined,
   onSplit: ((index: number) => void) | undefined,
@@ -197,7 +185,7 @@ function Segment({
 
   // Simple mode (keeping clips): the clip shows its own frames in full colour (see TimelineSeg.module.css).
   const simpleLook = simpleMode && !invertCutSegments;
-  const clipFrames = useMemo(() => (simpleLook ? getClipFrames(filmstrip, seg.start, seg.end, toLanePercent, fileEnd) : []), [fileEnd, filmstrip, seg.end, seg.start, simpleLook, toLanePercent]);
+  const clipTiles = useMemo(() => (simpleLook ? getClipTiles(filmTiles, seg.start, seg.end, toLanePercent, lanePx) : []), [filmTiles, lanePx, seg.end, seg.start, simpleLook, toLanePercent]);
 
   // Shows a changed volume, which advanced mode has no audio track to show.
   const getClipVolumeMenuLabel = () => {
@@ -239,7 +227,7 @@ function Segment({
   };
 
   if (simpleLook) {
-    const hasFrames = clipFrames.length > 0;
+    const hasFrames = clipTiles.length > 0;
     const showSpeed = speed !== 1 && !speedBand;
     return (
       <motion.div
@@ -274,8 +262,8 @@ function Segment({
       >
         {hasFrames && (
           <div className={styles['film']} aria-hidden>
-            {clipFrames.map((frame) => (
-              <img key={frame.url} src={frame.url} alt="" draggable={false} style={{ left: `${frame.left}%`, width: `${frame.width}%` }} />
+            {clipTiles.map((tile) => (
+              <img key={tile.key} src={tile.url} alt="" draggable={false} style={{ left: tile.left, width: tile.width }} />
             ))}
           </div>
         )}
@@ -337,7 +325,7 @@ function Segment({
 }
 
 function SegmentOrMarker({
-  seg, toLanePercent, instant, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmstrip, fileEnd, onTrimHandleMouseDown, getCurrentTime, onSplit, onDuplicate, onRemove,
+  seg, toLanePercent, instant, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmTiles, lanePx, onTrimHandleMouseDown, getCurrentTime, onSplit, onDuplicate, onRemove,
 } : {
   seg: StateSegment,
   toLanePercent: (time: number) => number,
@@ -354,8 +342,8 @@ function SegmentOrMarker({
   onToggleSpeedControls: (segmentId: string) => void,
   onEditCrop: (index: number) => void,
   onEditVolume?: ((index: number, point: { x: number, y: number }) => void) | undefined,
-  filmstrip: readonly FilmstripFrame[],
-  fileEnd: number,
+  filmTiles: readonly FilmTile[],
+  lanePx: number,
   /** Simple mode: start dragging an edge of the active clip. */
   onTrimHandleMouseDown?: ((edge: 'start' | 'end') => (event: ReactMouseEvent<HTMLElement>) => void) | undefined,
   /** Read when the clip menu opens, to know whether the playhead is inside this clip. */
@@ -374,7 +362,7 @@ function SegmentOrMarker({
   const onThisSegClick = useCallback(() => onSegClick(segNum), [onSegClick, segNum]);
 
   if (seg.end != null) {
-    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} instant={instant} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} speedControlsVisible={speedControlsVisible} onEditSpeed={onEditSpeed} onRemoveSpeed={onRemoveSpeed} onToggleSpeedControls={onToggleSpeedControls} onEditCrop={onEditCrop} onEditVolume={onEditVolume} filmstrip={filmstrip} toLanePercent={toLanePercent} fileEnd={fileEnd} onTrimHandleMouseDown={onTrimHandleMouseDown} getCurrentTime={getCurrentTime} onSplit={onSplit} onDuplicate={onDuplicate} onRemove={onRemove} />;
+    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} instant={instant} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} speedControlsVisible={speedControlsVisible} onEditSpeed={onEditSpeed} onRemoveSpeed={onRemoveSpeed} onToggleSpeedControls={onToggleSpeedControls} onEditCrop={onEditCrop} onEditVolume={onEditVolume} filmTiles={filmTiles} toLanePercent={toLanePercent} lanePx={lanePx} onTrimHandleMouseDown={onTrimHandleMouseDown} getCurrentTime={getCurrentTime} onSplit={onSplit} onDuplicate={onDuplicate} onRemove={onRemove} />;
   }
 
   return (

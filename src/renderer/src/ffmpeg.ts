@@ -6,13 +6,13 @@ import Timecode from 'smpte-timecode';
 import minBy from 'lodash/minBy';
 import invariant from 'tiny-invariant';
 import z from 'zod';
-import type { FilmstripFrame } from './filmstrip';
 import { computePeaks, getPeaksArgs, getPeaksBucketSeconds, getPeaksSampleRate } from './audioPeaks';
 import type { AudioPeaks } from './audioPeaks';
-import { getFilmstripArgs, pairFrames, parseShowinfoTimes, splitJpegStream } from './filmstrip';
+import { FilmstripStreamReader } from './filmstrip';
+import type { FilmstripFrame } from './filmstrip';
 
 import { pcmAudioCodecs, isMov } from './util/streams';
-import { getStdioString, isExecaError, readFileSize } from './util';
+import { getStdioString, isAbortedError, isExecaError, readFileSize } from './util';
 import { isDurationValid } from './segments';
 import type { FFprobeChapter, FFprobeFormat, FFprobeProbeResult, FFprobeStream } from '../../common/ffprobe';
 import { parseSrt, parseSrtToSegments } from './edlFormats';
@@ -23,7 +23,7 @@ import { firstShelfThumbnail } from './shelfThumbnails';
 
 const { ffmpeg } = window.require('@electron/remote').require('./index.js');
 
-const { renderWaveformPng, mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, runFfmpeg, runFfprobe, getFfmpegPath, setCustomFfPath } = ffmpeg;
+const { renderWaveformPng, mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, runFfmpeg, runFfmpegStreaming, runFfprobe, getFfmpegPath, setCustomFfPath } = ffmpeg;
 
 
 export { renderWaveformPng, mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, runFfmpeg, getFfmpegPath, setCustomFfPath };
@@ -524,22 +524,35 @@ export async function renderAudioPeaks({ filePath, streamIndex, duration, signal
   return computePeaks(samples, sampleRate, getPeaksBucketSeconds(duration));
 }
 
-/** One stretch of the timeline filmstrip (see filmstrip.ts): keyframes only, with each frame's time. */
-export async function renderFilmstripChunk({ filePath, from, length, interval, hwaccelArgs, timeOffset, signal }: {
-  filePath: string,
-  from: number,
-  length: number,
-  interval: number,
-  hwaccelArgs: string[],
+/**
+ * One pass of the timeline filmstrip (arguments from filmstrip.ts): each frame is handed to `onFrame` as soon as
+ * FFmpeg has made it. Resolves with the number of frames once FFmpeg is done.
+ */
+export async function streamFilmstripFrames({ args, timeOffset, signal, onFrame }: {
+  args: string[],
   timeOffset: number,
   signal: AbortSignal,
-}): Promise<FilmstripFrame[]> {
-  const args = getFilmstripArgs({ filePath, from, length, interval, hwaccelArgs });
-  const { stdout, stderr } = await runFfmpeg(args, { cancelSignal: signal }, { logCli: false });
-  const bytes = stdout instanceof Uint8Array ? stdout : new Uint8Array(stdout);
-  const images = splitJpegStream(bytes);
-  const times = parseShowinfoTimes(typeof stderr === 'string' ? stderr : new TextDecoder().decode(stderr));
-  return pairFrames(images, times, timeOffset, (image) => URL.createObjectURL(safeCreateBlob(image, { type: 'image/jpeg' })));
+  onFrame: (frame: FilmstripFrame & { aspect: number | undefined }) => void,
+}) {
+  const reader = new FilmstripStreamReader(timeOffset);
+  let count = 0;
+  try {
+    await runFfmpegStreaming(args, {
+      signal,
+      // Only the lines about frames (showinfo's): not the rest of FFmpeg's log.
+      stderrIncludes: 'pts_time:',
+      onOutput: (stdout: Uint8Array, stderrLines: string[]) => reader.push(stdout, stderrLines).forEach(({ time, image, aspect }) => {
+        if (signal.aborted) return;
+        count += 1;
+        onFrame({ time, aspect, url: URL.createObjectURL(safeCreateBlob(image, { type: 'image/jpeg' })) });
+      }),
+    });
+  } catch (err) {
+    // Stopped (the recording closed, or the Abort button) rather than failed.
+    if (isAbortedError(err)) throw Object.assign(new Error('Filmstrip pass stopped'), { name: 'AbortError' });
+    throw err;
+  }
+  return count;
 }
 
 export async function renderThumbnails({ filePath, from, duration, onThumbnail, signal }: {

@@ -1775,11 +1775,16 @@ function App() {
     const start = Number.parseFloat(mainFileFormat?.start_time ?? '0');
     return Number.isFinite(start) ? start : 0;
   }, [mainFileFormat?.start_time]);
+  // The filmstrip and the waveform start as soon as the file has been read, not once the player has loaded it.
+  const probedDuration = useMemo(() => {
+    const duration = Number.parseFloat(mainFileFormat?.duration ?? '');
+    return isDurationValid(duration) ? duration : undefined;
+  }, [mainFileFormat?.duration]);
+  const openDuration = probedDuration ?? fileDuration;
   const filmstrip = useFilmstrip({
     filePath,
-    duration: fileDuration,
+    duration: openDuration,
     enabled: simpleMode && hasVideo,
-    ffmpegHwaccel,
     timeOffset: filmstripTimeOffset,
   });
 
@@ -1788,7 +1793,7 @@ function App() {
   const audioPeaks = useAudioPeaks({
     filePath,
     streamIndex: activeAudioStreams[0]?.index ?? mainAudioStream?.index,
-    duration: fileDuration,
+    duration: openDuration,
     enabled: showAudioLane,
   });
 

@@ -28,7 +28,9 @@ import formatClockTime from './util/clockTime';
 import { getSegmentOutputDuration, getSegmentSpeed, getSpeedForOutputDuration } from './segmentSpeed';
 import { createTimelineMap, getRetimeAutoScrollStep, getWarpedImageSpans } from './timelineMap';
 import type { TimelineMap } from './timelineMap';
-import type { FilmstripFrame } from './filmstrip';
+import { filmTileHeight, getFilmTiles } from './filmstrip';
+import type { FilmTile } from './filmstrip';
+import type { Filmstrip } from './hooks/useFilmstrip';
 import type { AudioPeaks } from './audioPeaks';
 import AudioLane from './components/AudioLane';
 
@@ -82,18 +84,10 @@ const Waveforms = memo(({ timelineMap, laneDuration, fileDurationNonZero, wavefo
 
 /** The whole recording as a dimmed, hatched strip of frames behind the clip blocks (simple mode). */
 // eslint-disable-next-line react/display-name
-const FilmTape = memo(({ frames, toLanePercent, fileEnd }: {
-  frames: readonly FilmstripFrame[],
-  toLanePercent: (time: number) => number,
-  fileEnd: number,
-}) => (
+const FilmTape = memo(({ tiles }: { tiles: readonly FilmTile[] }) => (
   <div className={styles['filmTape']} aria-hidden>
     <div className={styles['filmFrames']}>
-      {frames.map((frame, i) => {
-        const left = toLanePercent(frame.time);
-        const width = toLanePercent(frames[i + 1]?.time ?? fileEnd) - left;
-        return <img key={frame.url} src={frame.url} alt="" draggable={false} style={{ left: `${left}%`, width: `${width}%` }} />;
-      })}
+      {tiles.map((tile) => tile.url != null && <img key={tile.left} src={tile.url} alt="" draggable={false} style={{ left: tile.left, width: tile.width }} />)}
     </div>
   </div>
 ));
@@ -258,7 +252,7 @@ function Timeline({
   shouldShowKeyframes: boolean,
   thumbnails: Thumbnail[],
   /** Simple mode: frames of the whole recording for the clips lane. */
-  filmstrip: FilmstripFrame[],
+  filmstrip: Filmstrip,
   /** Simple mode's audio track under the clips. */
   audioPeaks: AudioPeaks | undefined,
   /** The drawn track's volume, which scales its waveform. */
@@ -813,6 +807,24 @@ function Timeline({
     ? timelineMap.toSource(Math.min(laneDuration, timelineMap.toDisplay(visibleStart) + (scrollerWidth / lanePx) * laneDuration))
     : (zoomWindowEndTime ?? fileDurationNonZero);
 
+  // Simple mode's filmstrip: tiles of the video's shape at the clip blocks' height, side by side, made only for
+  // the visible stretch and a few tiles either side (in steps of 8 tiles, so scrolling re-renders them rarely).
+  const showFilm = simpleMode && !invertCutSegments;
+  const filmTileWidth = filmTileHeight * (filmstrip.aspect ?? 16 / 9);
+  const filmStepPx = filmTileWidth * 8;
+  const visibleStartPx = (toLanePercent(visibleStart) / 100) * lanePx;
+  const filmFromPx = (Math.floor(visibleStartPx / filmStepPx) - 1) * filmStepPx;
+  const filmToPx = (Math.ceil((visibleStartPx + scrollerWidth) / filmStepPx) + 1) * filmStepPx;
+  const filmTiles = useMemo(() => (showFilm && filmstrip.frames.length > 0
+    ? getFilmTiles({ frames: filmstrip.frames, covered: filmstrip.covered, tileWidth: filmTileWidth, fromPx: filmFromPx, toPx: filmToPx, lanePx, pxToTime })
+    : []), [filmFromPx, filmTileWidth, filmToPx, filmstrip.covered, filmstrip.frames, lanePx, pxToTime, showFilm]);
+  // The filmstrip does what's in view first, and makes denser frames when zoomed in past its own.
+  const { setView: setFilmstripView } = filmstrip;
+  useEffect(() => {
+    if (!showFilm || !(scrollerWidth > 0) || !(visibleEnd > visibleStart)) return;
+    setFilmstripView({ from: visibleStart, to: visibleEnd, tileSeconds: ((visibleEnd - visibleStart) * filmTileWidth) / scrollerWidth });
+  }, [filmTileWidth, scrollerWidth, setFilmstripView, showFilm, visibleEnd, visibleStart]);
+
   const formatHoverLabel = useCallback((hoverTime: number) => {
     const time = hoverTime + startTimeOffset;
     return simpleMode ? formatClockTime(time, { decimals: 2, showHours: fileDurationNonZero >= 3600 }) : formatTimeAndFrames(time);
@@ -977,9 +989,7 @@ function Timeline({
               style={{ height: simpleMode ? simpleClipLaneHeight : clipLaneHeight, transition: darkModeTransition }}
               ref={timelineWrapperRef}
             >
-              {simpleMode && !invertCutSegments && filmstrip.length > 0 && (
-                <FilmTape frames={filmstrip} toLanePercent={toLanePercent} fileEnd={fileDurationNonZero} />
-              )}
+              {showFilm && filmstrip.frames.length > 0 && <FilmTape tiles={filmTiles} />}
 
               {inverseCutSegments.map((seg) => (
                 <BetweenSegments
@@ -1013,8 +1023,8 @@ function Timeline({
                     onToggleSpeedControls={onToggleSegmentSpeedControls}
                     onEditCrop={onEditSegmentCrop}
                     onEditVolume={onEditClipVolume}
-                    filmstrip={filmstrip}
-                    fileEnd={fileDurationNonZero}
+                    filmTiles={filmTiles}
+                    lanePx={lanePx}
                     onTrimHandleMouseDown={simpleMode ? onTrimHandleMouseDown : undefined}
                     getCurrentTime={getCurrentTime}
                     onSplit={simpleMode ? onSplitSegment : undefined}
@@ -1068,7 +1078,7 @@ function Timeline({
                 toLanePercent={toLanePercent}
                 pxToTime={pxToTime}
                 lanePx={lanePx}
-                visibleStartPx={(toLanePercent(visibleStart) / 100) * lanePx}
+                visibleStartPx={visibleStartPx}
                 viewportPx={scrollerWidth}
                 onClipClick={setCurrentSegIndex}
                 onClipContextMenu={onEditClipVolume}

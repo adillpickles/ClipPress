@@ -1,58 +1,91 @@
-import { useEffect, useState } from 'react';
-import pMap from 'p-map';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { renderFilmstripChunk } from '../ffmpeg';
-import { getFilmstripChunks, getFilmstripInterval } from '../filmstrip';
-import type { FilmstripFrame } from '../filmstrip';
-import type { FfmpegHwAccel } from '../../../common/types';
-import { getHwaccelArgs } from '../../../common/util';
-import { isAbortedError } from '../util';
+import { streamFilmstripFrames } from '../ffmpeg';
+import { getFilmstripFrameHeight } from '../filmstrip';
+import type { FilmstripView } from '../filmstrip';
+import FilmstripSession from '../filmstripSession';
+import type { FilmstripSnapshot } from '../filmstripSession';
+
+export interface Filmstrip extends FilmstripSnapshot {
+  /** The timeline tells what it shows: stretches in view are made first, and zoomed in, denser frames. */
+  setView: (view: FilmstripView) => void,
+}
+
+const empty: FilmstripSnapshot = { frames: [], covered: [], aspect: undefined, done: false };
 
 /**
- * Frames for the timeline filmstrip of the open recording. Made once when it opens (stretches in parallel,
- * shown as they arrive) and freed when it closes; nothing outlives the recording.
+ * Frames for the timeline filmstrip of the open recording (FilmstripSession): they show up as they're made,
+ * at most once per display frame. Everything is freed when the recording closes; nothing outlives it.
  */
-export default function useFilmstrip({ filePath, duration, enabled, ffmpegHwaccel, timeOffset }: {
+export default function useFilmstrip({ filePath, duration, enabled, timeOffset }: {
   filePath: string | undefined,
   duration: number | undefined,
   enabled: boolean,
-  ffmpegHwaccel: FfmpegHwAccel,
   /** The recording's start time, subtracted from FFmpeg's timestamps (the player starts at 0). */
   timeOffset: number,
-}) {
-  const [frames, setFrames] = useState<FilmstripFrame[]>([]);
+}): Filmstrip {
+  const [snapshot, setSnapshot] = useState(empty);
+  const sessionRef = useRef<FilmstripSession>();
+  const viewRef = useRef<FilmstripView>();
+  // Frames dropped from the strip, revoked once the timeline has re-rendered without them.
+  const retiredRef = useRef<string[]>([]);
 
   useEffect(() => {
     if (!enabled || filePath == null || duration == null || !(duration > 0)) return undefined;
 
-    const abortController = new AbortController();
-    const urls: string[] = [];
-    const interval = getFilmstripInterval(duration);
-    // Hardware decoding makes this several times faster; FFmpeg falls back to software if it can't.
-    const hwaccelArgs = getHwaccelArgs(ffmpegHwaccel !== 'none' ? ffmpegHwaccel : 'auto');
-
-    (async () => {
-      try {
-        await pMap(getFilmstripChunks(duration), async ({ from, length }) => {
-          const chunk = await renderFilmstripChunk({ filePath, from, length, interval, hwaccelArgs, timeOffset, signal: abortController.signal });
-          if (abortController.signal.aborted) {
-            chunk.forEach((frame) => URL.revokeObjectURL(frame.url));
-            return;
+    let frame = 0;
+    let markedFirst = false;
+    let markedDone = false;
+    const session: FilmstripSession = new FilmstripSession({
+      filePath,
+      duration,
+      timeOffset,
+      frameHeight: getFilmstripFrameHeight(window.devicePixelRatio || 1),
+      run: streamFilmstripFrames,
+      revoke: (url) => URL.revokeObjectURL(url),
+      onChange: () => {
+        if (frame !== 0) return;
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          retiredRef.current.push(...session.takeRetired());
+          const next = session.snapshot();
+          // For measuring how fast the strip shows up (read by tests; costs nothing).
+          if (!markedFirst && next.frames.length > 0) {
+            markedFirst = true;
+            performance.mark('clippress:filmstrip-first');
           }
-          urls.push(...chunk.map((frame) => frame.url));
-          setFrames((existing) => [...existing, ...chunk].sort((a, b) => a.time - b.time));
-        }, { concurrency: 2 });
-      } catch (err) {
-        if (!isAbortedError(err) && !abortController.signal.aborted) console.warn('Filmstrip failed', err);
-      }
-    })();
+          if (!markedDone && next.done) {
+            markedDone = true;
+            performance.mark('clippress:filmstrip-done');
+          }
+          setSnapshot(next);
+        });
+      },
+    });
+    sessionRef.current = session;
+    if (viewRef.current != null) session.setView(viewRef.current);
+    session.start();
 
     return () => {
-      abortController.abort();
-      urls.forEach((url) => URL.revokeObjectURL(url));
-      setFrames([]);
+      cancelAnimationFrame(frame);
+      sessionRef.current = undefined;
+      session.dispose();
+      retiredRef.current.forEach((url) => URL.revokeObjectURL(url));
+      retiredRef.current = [];
+      setSnapshot(empty);
     };
-  }, [duration, enabled, ffmpegHwaccel, filePath, timeOffset]);
+  }, [duration, enabled, filePath, timeOffset]);
 
-  return frames;
+  useEffect(() => {
+    const retired = retiredRef.current;
+    retiredRef.current = [];
+    retired.forEach((url) => URL.revokeObjectURL(url));
+  }, [snapshot]);
+
+  const setView = useCallback((view: FilmstripView) => {
+    viewRef.current = view;
+    sessionRef.current?.setView(view);
+  }, []);
+
+  return useMemo(() => ({ ...snapshot, setView }), [setView, snapshot]);
 }
