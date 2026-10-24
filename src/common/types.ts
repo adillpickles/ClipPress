@@ -111,6 +111,8 @@ export interface Config {
   autoLoadTimecode: boolean,
   segmentsToChapters: boolean,
   simpleMode: boolean,
+  /** Shows the Simple/Advanced switch. While off, the app runs the new editor whatever simpleMode says. */
+  enableAdvancedMode: boolean,
   /** todo: rename to cutFileTemplate */
   outSegTemplate: string | undefined
   /** todo: rename to cutMergedFileTemplate */

@@ -49,7 +49,7 @@ function TopMenu({
   segmentsToExport: SegmentToExport[],
 }) {
   const { t } = useTranslation();
-  const { simpleMode } = useUserSettings();
+  const { simpleMode, enableAdvancedMode } = useUserSettings();
   // Without the extension, so it reads as the name exports get, not the recording's file name on disk.
   const fallbackFileName = filePath ? window.require('path').parse(filePath).name : undefined;
   const fileName = currentClipName ?? fallbackFileName;
@@ -134,7 +134,8 @@ function TopMenu({
           </Button>
         )}
 
-        <SimpleModeButton />
+        {/* Advanced mode is unfinished, so its switch only shows once it's turned on in Settings. */}
+        {enableAdvancedMode && <SimpleModeButton />}
 
         <Button variant="ghost" onClick={toggleSettings} title={t('Settings')}>
           <FiSettings aria-hidden />

@@ -36,6 +36,7 @@ import * as compatPlayer from './compatPlayer.js';
 import { downloadMediaUrl } from './ffmpeg.js';
 import type UpdateController from './updateController.js';
 import type { UpdateStatus } from '../common/updates.js';
+import getEffectiveSimpleMode from '../common/interfaceMode.js';
 import CloseGuard from './closeGuard.js';
 import type { CloseDecision } from './closeGuard.js';
 
@@ -386,12 +387,12 @@ function createWindow() {
   mainWindow.on('move', debouncedSaveWindowState);
 }
 
-// The renderer reports the interface mode (setSimpleMode); until then, the saved setting.
+// The renderer reports the interface mode (setSimpleMode); until then, the one the saved settings give.
 let menuSimpleMode: boolean | undefined;
 
 function updateMenu() {
   assert(mainWindow);
-  menu({ app, mainWindow, newVersion, isStoreBuild, simpleMode: menuSimpleMode ?? configStore.get('simpleMode'), onCheckForUpdates: () => { checkForUpdates().catch((error: unknown) => logger.warn('Update check failed', error)); } });
+  menu({ app, mainWindow, newVersion, isStoreBuild, simpleMode: menuSimpleMode ?? getEffectiveSimpleMode({ enableAdvancedMode: configStore.get('enableAdvancedMode'), simpleMode: configStore.get('simpleMode') }), onCheckForUpdates: () => { checkForUpdates().catch((error: unknown) => logger.warn('Update check failed', error)); } });
 }
 
 async function changeLanguage(language: string | null) {

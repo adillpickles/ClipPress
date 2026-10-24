@@ -3,6 +3,7 @@ import i18n from 'i18next';
 import type { Transition } from 'motion/react';
 
 import type { Config } from '../../../common/types.js';
+import getEffectiveSimpleMode from '../../../common/interfaceMode.js';
 
 import { errorToast } from '../swal';
 import isDev from '../isDev';
@@ -113,8 +114,12 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ trashSourceAfterExport }), [trashSourceAfterExport]);
   const [segmentsToChapters, setSegmentsToChapters] = useState(safeGetConfigInitial('segmentsToChapters'));
   useEffect(() => safeSetConfig({ segmentsToChapters }), [segmentsToChapters]);
-  const [simpleMode, setSimpleMode] = useState(safeGetConfigInitial('simpleMode'));
-  useEffect(() => safeSetConfig({ simpleMode }), [simpleMode]);
+  const [savedSimpleMode, setSimpleMode] = useState(safeGetConfigInitial('simpleMode'));
+  useEffect(() => safeSetConfig({ simpleMode: savedSimpleMode }), [savedSimpleMode]);
+  const [enableAdvancedMode, setEnableAdvancedMode] = useState(safeGetConfigInitial('enableAdvancedMode'));
+  useEffect(() => safeSetConfig({ enableAdvancedMode }), [enableAdvancedMode]);
+  // The mode the app runs in. Kept apart from the saved one, so turning advanced mode off and on again restores it.
+  const simpleMode = getEffectiveSimpleMode({ enableAdvancedMode, simpleMode: savedSimpleMode });
   const [cutFileTemplate, setCutFileTemplate] = useState(safeGetConfigInitial('outSegTemplate'));
   useEffect(() => safeSetConfig({ outSegTemplate: cutFileTemplate }), [cutFileTemplate]);
   const [cutMergedFileTemplate, setCutMergedFileTemplate] = useState(safeGetConfigInitial('mergedFileTemplate'));
@@ -323,6 +328,7 @@ export default function useUserSettingsRoot() {
     trashSourceAfterExport,
     segmentsToChapters,
     simpleMode,
+    enableAdvancedMode,
     cutFileTemplate,
     cutMergedFileTemplate,
     mergedFileTemplate,
@@ -420,6 +426,7 @@ export default function useUserSettingsRoot() {
     trashSourceAfterExport,
     segmentsToChapters,
     simpleMode,
+    enableAdvancedMode,
     cutFileTemplate,
     cutMergedFileTemplate,
     mergedFileTemplate,
@@ -533,6 +540,7 @@ export default function useUserSettingsRoot() {
     setTrashSourceAfterExport,
     setSegmentsToChapters,
     setSimpleMode,
+    setEnableAdvancedMode,
     setCutFileTemplate,
     setCutMergedFileTemplate,
     setMergedFileTemplate,

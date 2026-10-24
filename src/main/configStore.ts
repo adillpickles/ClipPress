@@ -141,6 +141,7 @@ const defaults: Config = {
   autoLoadTimecode: false,
   segmentsToChapters: false,
   simpleMode: true,
+  enableAdvancedMode: false,
   outSegTemplate: undefined,
   mergedFileTemplate: undefined,
   mergedFilesTemplate: undefined,
