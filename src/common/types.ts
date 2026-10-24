@@ -57,7 +57,8 @@ export interface QuickExportPreset {
   sizeLimitPreset: SizeLimitPreset,
 }
 
-export type ShelfOrder = 'date' | 'name';
+/** The shelf's order: by date (oldest first) or name (A to Z), and `-desc` the other way round. */
+export type ShelfOrder = 'date' | 'date-desc' | 'name' | 'name-desc';
 
 /**
  * Where autosave keeps a recording's edits: ClipPress's own folder, next to the recording, both of those (a copy in

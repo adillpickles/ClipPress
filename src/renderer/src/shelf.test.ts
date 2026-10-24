@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildShelfQueue, isShelfVideo, maxShelfExports, pickNextClip, rememberShelfExport } from './shelf';
+import { buildShelfQueue, isShelfVideo, maxShelfExports, parseShelfOrder, pickNextClip, rememberShelfExport, toggleShelfOrder } from './shelf';
 import type { ShelfFile } from './shelf';
 
 const file = (name: string, modifiedAt: number): ShelfFile => ({ path: `C:\\Clips\\${name}`, name, modifiedAt, size: 1000 });
@@ -24,6 +24,35 @@ describe('shelf', () => {
   it('puts the oldest recording first, or sorts by name with numbers in order', () => {
     expect(buildShelfQueue(files, { order: 'date', exports: [], caseInsensitive: true }).map((item) => item.file)).toEqual([b, c, a, d]);
     expect(buildShelfQueue(files, { order: 'name', exports: [], caseInsensitive: true }).map((item) => item.file)).toEqual([d, c, a, b]);
+  });
+
+  it('turns either order round: newest first, or Z to A', () => {
+    expect(buildShelfQueue(files, { order: 'date-desc', exports: [], caseInsensitive: true }).map((item) => item.file)).toEqual([d, a, c, b]);
+    expect(buildShelfQueue(files, { order: 'name-desc', exports: [], caseInsensitive: true }).map((item) => item.file)).toEqual([b, a, c, d]);
+  });
+
+  it('turns the order round when it is clicked again, and starts the other one the usual way round', () => {
+    expect(toggleShelfOrder('date', 'date')).toBe('date-desc');
+    expect(toggleShelfOrder('date-desc', 'date')).toBe('date');
+    expect(toggleShelfOrder('name', 'name')).toBe('name-desc');
+    expect(toggleShelfOrder('name-desc', 'name')).toBe('name');
+    expect(toggleShelfOrder('date-desc', 'name')).toBe('name');
+    expect(toggleShelfOrder('name-desc', 'date')).toBe('date');
+    expect(parseShelfOrder('name-desc')).toEqual({ by: 'name', reversed: true });
+    expect(parseShelfOrder('date')).toEqual({ by: 'date', reversed: false });
+  });
+
+  it('keeps exported clips at the bottom and picks the next clip in the order shown, either way round', () => {
+    const exports = [{ source: d.path, outputs: [], exportedAt: 1 }];
+    const newestFirst = buildShelfQueue(files, { order: 'date-desc', exports, caseInsensitive: true });
+    // a, c, b, then d (exported)
+    expect(newestFirst.map((item) => [item.file, item.exported])).toEqual([[a, false], [c, false], [b, false], [d, true]]);
+    expect(pickNextClip(newestFirst, a.path, true)).toBe(c);
+    expect(pickNextClip(newestFirst, b.path, true)).toBe(a);
+    expect(pickNextClip(newestFirst, undefined, true)).toBe(a);
+    const zToA = buildShelfQueue(files, { order: 'name-desc', exports, caseInsensitive: true });
+    expect(zToA.map((item) => item.file)).toEqual([b, a, c, d]);
+    expect(pickNextClip(zToA, b.path, true)).toBe(a);
   });
 
   it('moves exported clips to the bottom and leaves out the exports themselves', () => {

@@ -422,6 +422,8 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
   await tryCreateStore({ customStoragePath });
 
   if (!['automatic', 'ask'].includes(store.get('updateMode'))) set('updateMode', defaults.updateMode);
+  // 'date' and 'name' from before the shelf could be turned round still mean oldest first and A to Z.
+  if (!['date', 'date-desc', 'name', 'name-desc'].includes(store.get('shelfOrder'))) set('shelfOrder', defaults.shelfOrder);
 
   // migrate old configs:
   const enableTransferTimestamps = store.get('enableTransferTimestamps'); // todo remove after a while

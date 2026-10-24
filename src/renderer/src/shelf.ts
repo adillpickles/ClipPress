@@ -53,8 +53,19 @@ export function rememberShelfExport(list: readonly ShelfExport[], { source, sour
 
 const compareNames = (a: ShelfFile, b: ShelfFile) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
 
+/** What the shelf sorts by, and whether it's turned round (newest first, or Z to A). */
+export function parseShelfOrder(order: ShelfOrder) {
+  return { by: order === 'name' || order === 'name-desc' ? 'name' as const : 'date' as const, reversed: order.endsWith('-desc') };
+}
+
+/** Clicking the order that's on turns it round; clicking the other one picks it the usual way round. */
+export function toggleShelfOrder(current: ShelfOrder, by: 'date' | 'name'): ShelfOrder {
+  const { by: currentBy, reversed } = parseShelfOrder(current);
+  return by === currentBy && !reversed ? `${by}-desc` : by;
+}
+
 /**
- * The shelf's order: clips still to do first (oldest recording first, or by name), then the ones already
+ * The shelf's order: clips still to do first (by date or name, either way round), then the ones already
  * exported. ClipPress's own exports are left out.
  */
 export function buildShelfQueue(files: readonly ShelfFile[], { order, exports, caseInsensitive }: {
@@ -71,7 +82,9 @@ export function buildShelfQueue(files: readonly ShelfFile[], { order, exports, c
     if (entry.sourceSize == null || entry.sourceModifiedAt == null) return true;
     return entry.sourceSize === file.size && Math.abs(entry.sourceModifiedAt - file.modifiedAt) < 2;
   };
-  const compare = order === 'name' ? compareNames : (a: ShelfFile, b: ShelfFile) => (a.modifiedAt - b.modifiedAt) || compareNames(a, b);
+  const { by, reversed } = parseShelfOrder(order);
+  const compareOneWay = by === 'name' ? compareNames : (a: ShelfFile, b: ShelfFile) => (a.modifiedAt - b.modifiedAt) || compareNames(a, b);
+  const compare = reversed ? (a: ShelfFile, b: ShelfFile) => compareOneWay(b, a) : compareOneWay;
   const items = files
     .filter((file) => !outputs.has(shelfPathKey(file.path, caseInsensitive)))
     .sort(compare)

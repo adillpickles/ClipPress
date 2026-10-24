@@ -1,10 +1,10 @@
 import { memo, useEffect, useRef } from 'react';
-import { FiCheck, FiFilm, FiFolder } from 'react-icons/fi';
+import { FiArrowUp, FiCheck, FiFilm, FiFolder } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import prettyBytes from 'pretty-bytes';
 
 import type { ShelfFile, ShelfItem } from '../shelf';
-import { shelfPathKey } from '../shelf';
+import { parseShelfOrder, shelfPathKey, toggleShelfOrder } from '../shelf';
 import type { ShelfOrder } from '../../../common/types';
 import styles from './Shelf.module.css';
 
@@ -67,8 +67,8 @@ function ShelfRowInner({ item, state, thumbnail, requestThumbnail, onOpen }: {
 const ShelfRow = memo(ShelfRowInner);
 
 /**
- * The shelf: the videos in the open clip's folder, oldest recording first (or by name). Clips already
- * exported sink to the bottom; ClipPress's own exports aren't listed.
+ * The shelf: the videos in the open clip's folder, oldest recording first (or newest first, or by name either
+ * way). Clips already exported sink to the bottom; ClipPress's own exports aren't listed.
  */
 function Shelf({ folder, queue, currentPath, nextPath, caseInsensitive, order, onOrderChange, onOpen, onChooseFolder, thumbnails, requestThumbnail, autoFocus = false }: {
   folder: string | undefined,
@@ -96,6 +96,7 @@ function Shelf({ folder, queue, currentPath, nextPath, caseInsensitive, order, o
   const currentKey = currentPath != null ? shelfPathKey(currentPath, caseInsensitive) : undefined;
   const nextKey = nextPath != null ? shelfPathKey(nextPath, caseInsensitive) : undefined;
   const remaining = queue.filter((item) => !item.exported).length;
+  const { by, reversed } = parseShelfOrder(order);
 
   return (
     <div ref={rootRef} className={styles['shelf']}>
@@ -106,19 +107,34 @@ function Shelf({ folder, queue, currentPath, nextPath, caseInsensitive, order, o
         </button>
         {queue.length > 0 && (
           <div className={styles['order']} role="radiogroup" aria-label={t('Order')}>
-            {(['date', 'name'] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={order === value}
-                className={[styles['orderOption'], ...(order === value ? [styles['orderOptionOn']] : [])].join(' ')}
-                onClick={() => onOrderChange(value)}
-                title={value === 'date' ? t('Oldest recording first') : t('By name')}
-              >
-                {value === 'date' ? t('Date') : t('Name')}
-              </button>
-            ))}
+            {(['date', 'name'] as const).map((value) => {
+              const on = by === value;
+              // The one that's on says which way round it is, and that clicking it again turns it round.
+              let ariaLabel: string | undefined;
+              let title = value === 'date' ? t('Oldest recording first') : t('By name');
+              if (on && value === 'date') {
+                ariaLabel = reversed ? t('Date, newest first') : t('Date, oldest first');
+                title = reversed ? t('Newest first. Click again for oldest first.') : t('Oldest first. Click again for newest first.');
+              } else if (on) {
+                ariaLabel = reversed ? t('Name, Z to A') : t('Name, A to Z');
+                title = reversed ? t('Z to A. Click again for A to Z.') : t('A to Z. Click again for Z to A.');
+              }
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  aria-label={ariaLabel}
+                  className={[styles['orderOption'], ...(on ? [styles['orderOptionOn']] : [])].join(' ')}
+                  onClick={() => onOrderChange(toggleShelfOrder(order, value))}
+                  title={title}
+                >
+                  {value === 'date' ? t('Date') : t('Name')}
+                  {on && <FiArrowUp aria-hidden className={[styles['orderArrow'], ...(reversed ? [styles['orderArrowDown']] : [])].join(' ')} />}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
