@@ -9,7 +9,7 @@ ClipPress is open-source and ad-free. If it helps you make better clips or saves
 ## Highlights
 
 - Fast `I` / `O` clip workflow for quick exports
-- Simple mode for the default path, Advanced mode for deeper control
+- A focused editor by default; the classic editor with frame-by-frame tools is in Settings → General → Advanced mode
 - Text overlays for lightweight callouts and captions
 - Per-track audio gain for practical volume fixes
 - Per-segment speed controls with pitch-preserving audio
