@@ -186,7 +186,8 @@
   width: 0;
   margin-left: -.25rem;
   overflow: hidden;
-  height: 1.25rem;
+  /* The title's line height, so the row is no taller with the pencil than without it (or while renaming). */
+  height: 1.1375rem;
   border-radius: 6px;
   color: var(--cp-text-subtle);
   font-size: .75rem;
@@ -216,7 +217,9 @@
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  margin: -.15rem 0 -.15rem -.3rem;
+  /* The vertical margins cancel the padding and border, so the box takes the title's height and the card keeps its
+     size when renaming starts. */
+  margin: calc(-.1rem - 1px) 0 calc(-.1rem - 1px) -.3rem;
   padding: .1rem .3rem;
   border-radius: var(--cp-radius-sm);
   border: 1px solid var(--accent-8);
