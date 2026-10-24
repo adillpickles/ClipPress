@@ -27,7 +27,9 @@ export const CloseButton = () => (
 
 export function ButtonRow({ children }: { children: ReactNode }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '.5em', justifyContent: dialogButtonOrder === 'rtl' ? 'flex-start' : 'flex-end', marginTop: '1em', direction: dialogButtonOrder }}>
+    // Reversed on Windows (the main button first) by the row, not by text direction, which would turn a label such as
+    // "Find it…" into "…Find it".
+    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '.5em', justifyContent: dialogButtonOrder === 'rtl' ? 'flex-start' : 'flex-end', marginTop: '1em', flexDirection: dialogButtonOrder === 'rtl' ? 'row-reverse' : 'row' }}>
       {children}
     </div>
   );
