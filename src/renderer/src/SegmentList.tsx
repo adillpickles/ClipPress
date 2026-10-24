@@ -424,24 +424,26 @@ const Segment = memo(({
                 onDone={(newName) => onFinishRename(seg.segId, newName)}
               />
             ) : (
-              // eslint-disable-next-line jsx-a11y/no-static-element-interactions
-              <span className={styles['clipTitle']} onDoubleClick={(e) => { e.stopPropagation(); startRenaming(); }}>{name || timeStr}</span>
+              <span className={styles['clipTitleRow']}>
+                {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+                <span className={styles['clipTitle']} onDoubleClick={(e) => { e.stopPropagation(); startRenaming(); }}>{name || timeStr}</span>
+                {/* Renames the title, so it sits right after it. Always in the tab order; shown on hover, focus and for the selected clip. */}
+                <button
+                  type="button"
+                  className={styles['renameButton']}
+                  title={t('Rename clip')}
+                  aria-label={t('Rename clip')}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); startRenaming(); }}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                >
+                  <FiEdit2 aria-hidden />
+                </button>
+              </span>
             )}
             {details.length > 0 && <span className={styles['clipDetails']}>{details.join(' · ')}</span>}
           </span>
         </div>
-
-        {!renaming && (
-          <button
-            type="button"
-            className={styles['renameButton']}
-            title={t('Rename clip')}
-            aria-label={t('Rename clip')}
-            onClick={(e) => { e.stopPropagation(); startRenaming(); }}
-          >
-            <FiEdit2 aria-hidden />
-          </button>
-        )}
 
         {selected != null && (
           <button

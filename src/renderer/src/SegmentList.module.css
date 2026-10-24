@@ -128,7 +128,15 @@
   gap: .1rem;
 }
 
+.clipTitleRow {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+}
+
 .clipTitle {
+  min-width: 0;
   color: var(--cp-text);
   font-size: .875rem;
   font-weight: 600;
@@ -166,14 +174,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* Takes no room until shown, so it doesn't cut off the clip details (the negative margin cancels the row gap). */
+  /* Takes no room until shown, so a long name isn't cut short for it (the negative margin cancels the row gap).
+     Tab still reaches it, and focusing it shows it. */
   width: 0;
-  margin-left: -.5rem;
+  margin-left: -.25rem;
   overflow: hidden;
-  height: 1.5rem;
-  border-radius: var(--cp-radius-sm);
+  height: 1.25rem;
+  border-radius: 6px;
   color: var(--cp-text-subtle);
-  font-size: .8rem;
+  font-size: .75rem;
   cursor: pointer;
   opacity: 0;
   transition: opacity .12s ease, background-color .12s ease;
@@ -182,7 +191,7 @@
 .clip:hover .renameButton,
 .clipActive .renameButton,
 .renameButton:focus-visible {
-  width: 1.5rem;
+  width: 1.25rem;
   margin-left: 0;
   opacity: 1;
 }
