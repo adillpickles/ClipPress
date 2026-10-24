@@ -1006,21 +1006,27 @@ function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
       ],
     },
     {
-      // Without the export options; the presets are set in Settings > Export.
+      // Without the export options. The presets share a row, with what each makes in its tooltip (they're set in
+      // Settings > Export), so this column stays shorter than the other.
       id: 'quickExport',
       title: t('Quick export'),
       items: [
-        { label: t('With the last settings'), actions: ['quickExport'] },
-        ...quickExportPresetActions.map((action, index) => ({ label: quickExportLabels[index] ?? action, actions: [action] })),
+        { label: t('Last settings'), actions: ['quickExport'] },
+        {
+          label: t('Presets'),
+          actions: [...quickExportPresetActions],
+          title: quickExportLabels.map((preset, index) => t('Quick export {{number}}: {{preset}}', { number: index + 1, preset })).join('\n'),
+        },
       ],
     },
-  ] satisfies { id: string, title: string, items: { label: string, actions: KeyboardAction[] }[] }[], [quickExportLabels, t]);
+  ] satisfies { id: string, title: string, items: { label: string, actions: KeyboardAction[], title?: string }[] }[], [quickExportLabels, t]);
 
   // The first binding of each action (most have one); unbound actions show a dash.
   const keysFor = (action: KeyboardAction) => keyBindings.find((binding) => binding.action === action)?.keys;
 
   // Two columns that each stack their own groups (Playback over Editing and Quick export, Clips over Export and
-  // more), so a short group doesn't leave a gap beside a long one.
+  // more), so a short group doesn't leave a gap beside a long one. The second one is the taller, so it sets the
+  // dialog's height as before the quick exports.
   const columns = [['playback', 'editing', 'quickExport'], ['clips', 'export']].map((ids) => groups.filter((group) => ids.includes(group.id)));
 
   return (
@@ -1031,7 +1037,7 @@ function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
             <section key={group.id} className={styles['essentialsGroup']}>
               <div className={styles['categoryTitle']}>{group.title}</div>
               {group.items.map((item) => (
-                <div key={item.actions.join(',')} className={styles['essentialsRow']}>
+                <div key={item.actions.join(',')} className={styles['essentialsRow']} title={'title' in item ? item.title : undefined}>
                   <span>{item.label}</span>
                   <span className={styles['essentialsKeys']}>
                     {item.actions.map((action, i) => {
