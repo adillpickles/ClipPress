@@ -292,7 +292,8 @@ import formatSizeLimitedProgressText from './sizeLimitedProgressText';
 import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, resolveExportQuality } from './quickExport';
 import type { QuickExport } from './quickExport';
 import { normalizeQuickExportPresets } from '../../common/quickExport';
-import { getProjectLookupPaths, getProjectSavePath, getProjectStoreEnv, getStoredProjectPath } from './projectStore';
+import { getProjectCopiesToRetire, getProjectLookupPaths, getProjectSavePaths, getProjectStoreEnv, isSameProjectPath } from './projectStore';
+import { keepCopiesAboutToBeReplaced, logProjectFiles } from './projectFilesIo';
 import type { ProjectFileLocation } from '../../common/types';
 import type { ClipVolumeChange } from './components/ClipVolumePopover';
 import { combineAudioGain, isClipVolumeChanged, sanitizeClipGainDb } from './util/audioGain';
@@ -318,7 +319,7 @@ import {
 } from './textOverlays';
 
 const electron = window.require('electron');
-const { copyFile, lstat, rename } = window.require('fs/promises');
+const { lstat } = window.require('fs/promises');
 const {
   parse: parsePath,
   join: pathJoin,
@@ -1291,7 +1292,7 @@ function App() {
     setEditingCropSegmentId(undefined);
   }, [filePath, speedControlsHistory]);
 
-  const { projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved, saveProjectNow, flushProject, hasUnsavedProjectChanges, hasSavedProject, deleteProjectFile } = useSegmentsAutoSave({
+  const { projectFileSavePaths, getProjectFileSavePaths, endProjectSession, whenProjectSaved, saveProjectNow, flushProject, hasUnsavedProjectChanges, hasSavedProject, deleteProjectFile } = useSegmentsAutoSave({
     autoSaveProjectFile,
     projectFileLocation,
     filePath,
@@ -1305,27 +1306,28 @@ function App() {
   });
 
   // Edits found next to the recording or in the export folder (where older versions saved them) move to ClipPress's
-  // folder: once autosave has the project there, the old files go to the Recycle Bin. If that save can't happen, they
-  // stay, and the next open tries again.
+  // folder: once autosave has the project everywhere it saves it, the old files go to the Recycle Bin. If that save
+  // can't happen, they stay, and the next open tries again.
   const sidecarRetirementRef = useRef<{ sessionId: number, paths: string[] }>();
   useEffect(() => {
     const pending = sidecarRetirementRef.current;
-    if (pending == null || projectSession?.id !== pending.sessionId || projectFileSavePath == null) return;
+    if (pending == null || projectSession?.id !== pending.sessionId || projectFileSavePaths == null) return;
     sidecarRetirementRef.current = undefined;
-    const oldPaths = pending.paths.filter((oldPath) => oldPath !== projectFileSavePath);
+    const oldPaths = pending.paths.filter((oldPath) => !projectFileSavePaths.some((savePath) => isSameProjectPath(savePath, oldPath, isWindows || isMac)));
     // Autosave off: nothing is saved in ClipPress's folder, so the old files stay where they are.
     if (oldPaths.length === 0 || !autoSaveProjectFile) return;
     (async () => {
       saveProjectNow();
       await whenProjectSaved();
       // Only once this session has the project there: it wrote it (a failed save doesn't count), or loaded it from there.
-      if (!hasSavedProject(pending.sessionId, projectFileSavePath)) return;
+      if (!projectFileSavePaths.every((savePath) => hasSavedProject(pending.sessionId, savePath))) return;
       for (const oldPath of oldPaths) {
         // eslint-disable-next-line no-await-in-loop
         await trashFile(oldPath);
+        logProjectFiles('info', `Moved an old copy of the edits to the Recycle Bin, now kept in ${projectFileSavePaths.join(' and ')}: ${oldPath}`);
       }
     })().catch((err) => console.warn('Could not move an old project file to the Recycle Bin', err));
-  }, [autoSaveProjectFile, hasSavedProject, projectFileSavePath, projectSession, saveProjectNow, whenProjectSaved]);
+  }, [autoSaveProjectFile, hasSavedProject, projectFileSavePaths, projectSession, saveProjectNow, whenProjectSaved]);
 
   // The window (and with it the app, and a downloaded update's installation) only closes once
   // the project is saved, or the user has chosen to close without saving.
@@ -1573,7 +1575,8 @@ function App() {
   );
 
   const changeProjectFileLocation = useCallback(async (location: ProjectFileLocation) => {
-    const path = getProjectFileSavePath(location);
+    // The place outside ClipPress's folder is the last one saved to ("Both" saves there second).
+    const path = getProjectFileSavePaths(location)?.at(-1);
     // Next to a recording (path is undefined with no file open), the folder may need permission first.
     if (path != null && location !== 'app') {
       try {
@@ -1586,7 +1589,7 @@ function App() {
     setProjectFileLocation(location);
   }, [
     ensureAccessToSourceDir,
-    getProjectFileSavePath,
+    getProjectFileSavePaths,
     setProjectFileLocation,
   ]);
 
@@ -2746,7 +2749,8 @@ function App() {
       const savedPaths = {
         previewFilePath,
         sourceFilePath: filePath,
-        projectFilePath: projectFileSavePath,
+        // Every copy ("Both" keeps two): one left behind would bring the edits back.
+        projectFilePaths: projectFileSavePaths ?? [],
       };
 
       if (cleanupChoices2.closeFile) {
@@ -2767,8 +2771,8 @@ function App() {
 
         const pathsToDelete: string[] = [];
         if (cleanupChoices2.trashTmpFiles && savedPaths.previewFilePath) pathsToDelete.push(savedPaths.previewFilePath);
-        const { projectFilePath } = savedPaths;
-        if (cleanupChoices2.trashProjectFile && projectFilePath != null) pathsToDelete.push(projectFilePath);
+        const { projectFilePaths } = savedPaths;
+        if (cleanupChoices2.trashProjectFile) pathsToDelete.push(...projectFilePaths);
         if (cleanupChoices2.trashSourceFile && savedPaths.sourceFilePath) pathsToDelete.push(savedPaths.sourceFilePath);
 
         await deleteFiles({
@@ -2781,7 +2785,7 @@ function App() {
           // failed and is tried again when the app closes, say) brings it back once it is gone.
           // While it is still there (deleting it failed or was cancelled), it holds an older
           // state, and a failed save of it is kept and tried again.
-          runDeletion: (deletePath, deletion) => (deletePath === projectFilePath ? deleteProjectFile(deletePath, deletion) : deletion()),
+          runDeletion: (deletePath, deletion) => (projectFilePaths.includes(deletePath) ? deleteProjectFile(deletePath, deletion) : deletion()),
         });
       }, i18n.t('Unable to delete file'));
       // The clip may have gone to the Recycle Bin: don't offer it as the next one.
@@ -2794,7 +2798,7 @@ function App() {
       deleteProjectFile,
       filePath,
       previewFilePath,
-      projectFileSavePath,
+      projectFileSavePaths,
       resetState,
       setWorking,
       whenProjectSaved,
@@ -4706,6 +4710,8 @@ function App() {
 
       // The project file the opened state comes from, if any.
       let loadedProjectPath: string | undefined;
+      // Other copies found holding the same edits ("Both" keeps two), which autosave then needn't write again.
+      let sameCopyPaths: string[] = [];
 
       async function loadProject(path: string) {
         await loadProjectIntoState({ path, mediaFilePath: fp });
@@ -4726,7 +4732,6 @@ function App() {
         try {
           // Where the setting saves first, then ClipPress's folder, the export folder and next to the recording.
           const storeEnv = getProjectStoreEnv();
-          const storedPath = getStoredProjectPath(fp, storeEnv);
           const found: { path: string, mtimeMs: number }[] = [];
           for (const candidate of getProjectLookupPaths(fp, projectFileLocation, cod, storeEnv)) {
             // MAS only allows fs.access (pathExists) if we don't have access to input dir yet, so check first if the file exists,
@@ -4747,23 +4752,12 @@ function App() {
           if (newest != null) {
             // Ok, the file exists. Next to the recording we may have to ask the user, because we need to read it
             if (dirname(newest.path) === dirname(fp)) await ensureAccessToSourceDir(fp);
-            // Autosave is about to save the loaded copy where the setting points. A different copy already there
-            // would be replaced without a word (file times can mislead, e.g. a restored old copy): keep it under
-            // another name next to it instead.
-            const savePath = getProjectSavePath(fp, projectFileLocation, customOutDir, storeEnv);
-            if (autoSaveProjectFile && newest.path !== savePath && found.some(({ path }) => path === savePath)) {
-              const stamp = new Date().toISOString().replaceAll(/[:.]/g, '-');
-              const backupPath = savePath.replace(/\.llc$/, `.replaced-${stamp}.llc`);
-              try {
-                await rename(savePath, backupPath);
-              } catch (renameErr) {
-                // Locked, or the folder doesn't allow renaming: a copy keeps it just as well. And if even that fails,
-                // the newer edits still load (a file that can't be read can't be written over either).
-                await copyFile(savePath, backupPath).catch((copyErr: unknown) => console.warn('Could not keep a copy of the project before replacing it', savePath, renameErr, copyErr));
-              }
-            }
+            // Autosave is about to save the loaded copy everywhere the setting points: a different copy already
+            // there is kept under another name next to it.
+            const savePaths = getProjectSavePaths(fp, projectFileLocation, customOutDir, storeEnv);
+            if (autoSaveProjectFile) sameCopyPaths = await keepCopiesAboutToBeReplaced(savePaths.filter((savePath) => found.some(({ path }) => path === savePath)), newest.path);
             await loadProject(newest.path);
-            if (projectFileLocation === 'app') sidecarsToRetire = found.map(({ path }) => path).filter((path) => path !== storedPath);
+            sidecarsToRetire = [...sidecarsToRetire, ...getProjectCopiesToRetire(found.map(({ path }) => path), projectFileLocation, savePaths, isWindows || isMac)];
             return;
           }
 
@@ -4854,7 +4848,7 @@ function App() {
         });
 
         // Projects saved next to the recording are written to its folder, so ensure access to that one too
-        if (projectFileLocation === 'recording') await ensureAccessToSourceDir(fp);
+        if (projectFileLocation === 'recording' || projectFileLocation === 'both') await ensureAccessToSourceDir(fp);
 
         const existingHtml5FriendlyFile = await findExistingHtml5FriendlyFile(
           fp,
@@ -4909,8 +4903,9 @@ function App() {
         if (isStale()) return;
 
         performance.mark('clippress:load-before-project');
-        // eslint-disable-next-line unicorn/prefer-ternary
         if (projectPath) {
+          // Edits opened on purpose (or a relocated recording's) replace what this recording had: kept as a backup.
+          if (autoSaveProjectFile) sameCopyPaths = await keepCopiesAboutToBeReplaced(getProjectSavePaths(fp, projectFileLocation, customOutDir, getProjectStoreEnv()), projectPath);
           await loadProject(projectPath);
         } else {
           await tryFindAndLoadProjectFile({
@@ -4988,7 +4983,7 @@ function App() {
 
         if (isStale()) return;
         // Autosave compares later changes with the state opened here.
-        setProjectSession({ id: generation, loadedProjectPath });
+        setProjectSession({ id: generation, loadedProjectPath, ...(loadedProjectPath != null && sameCopyPaths.length > 0 ? { sameCopyPaths } : {}) });
         if (sidecarsToRetire.length > 0) sidecarRetirementRef.current = { sessionId: generation, paths: sidecarsToRetire };
         setRecentFiles((list) => addRecentFile(list, fp, Date.now(), isWindows || isMac));
         setShelfFolder(dirname(fp));

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
 
-import { getProjectLookupPaths, getProjectSavePath, getSidecarProjectPath, getStoredProjectFileName, getStoredProjectPath } from './projectStore';
+import { getProjectCopiesToRetire, getProjectLookupPaths, getProjectSavePath, getProjectSavePaths, getSidecarProjectPath, getStoredProjectFileName, getStoredProjectPath } from './projectStore';
 import type { ProjectStoreEnv } from './projectStore';
 
 const win = path.win32;
@@ -62,5 +62,35 @@ describe('project store', () => {
     expect(getProjectLookupPaths(media, 'recording', undefined, env)).toEqual([beside, stored]);
     // Without an export folder, "export folder" falls back to next to the recording
     expect(getProjectLookupPaths(media, 'exportFolder', undefined, env)).toEqual([beside, stored]);
+  });
+
+  describe('"Both" (#90)', () => {
+    const stored = getStoredProjectPath(media, env);
+    const beside = String.raw`D:\Clips\Valorant 2026.10.19 - 21.51.16-proj.llc`;
+    const exportFolder = String.raw`E:\Exports\Valorant 2026.10.19 - 21.51.16-proj.llc`;
+
+    it('saves in ClipPress\'s folder first, and a copy next to the recording', () => {
+      expect(getProjectSavePath(media, 'both', String.raw`E:\Exports`, env)).toBe(stored);
+      expect(getProjectSavePaths(media, 'both', String.raw`E:\Exports`, env)).toEqual([stored, beside]);
+      // The other settings save in one place
+      expect(getProjectSavePaths(media, 'app', String.raw`E:\Exports`, env)).toEqual([stored]);
+      expect(getProjectSavePaths(media, 'recording', undefined, env)).toEqual([beside]);
+      expect(getProjectSavePaths(media, 'exportFolder', String.raw`E:\Exports`, env)).toEqual([exportFolder]);
+    });
+
+    it('looks in both places and the export folder, ClipPress\'s folder first', () => {
+      expect(getProjectLookupPaths(media, 'both', String.raw`E:\Exports`, env)).toEqual([stored, exportFolder, beside]);
+    });
+
+    it('never retires the copy next to the recording, only one where no setting saves now', () => {
+      const found = [stored, exportFolder, beside];
+      expect(getProjectCopiesToRetire(found, 'both', getProjectSavePaths(media, 'both', undefined, env), true)).toEqual([exportFolder]);
+      expect(getProjectCopiesToRetire(found, 'app', getProjectSavePaths(media, 'app', undefined, env), true)).toEqual([exportFolder, beside]);
+      // Saving next to the recording or in the export folder retires nothing, as before.
+      expect(getProjectCopiesToRetire(found, 'recording', [beside], true)).toEqual([]);
+      expect(getProjectCopiesToRetire(found, 'exportFolder', [exportFolder], true)).toEqual([]);
+      // However the same file is written
+      expect(getProjectCopiesToRetire([beside.toUpperCase()], 'both', [stored, beside], true)).toEqual([]);
+    });
   });
 });

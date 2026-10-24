@@ -4,7 +4,8 @@
  * By default they live in ClipPress's own folder (`<settings folder>/Projects`), not next to the recording, so
  * recording folders don't fill up with project files. Each recording gets one file there, named after the
  * recording plus a short hash of its full path, so two recordings with the same name in different folders
- * don't share edits. Projects saved next to recordings (older versions, or the setting) still load.
+ * don't share edits. Projects saved next to recordings (older versions, or the setting) still load. "Both" keeps a
+ * copy in each place, and loading takes the newest.
  */
 
 import type { ProjectFileLocation } from '../../common/types';
@@ -82,10 +83,37 @@ export function getSidecarProjectPath(mediaPath: string, folder: string | undefi
   return env.join(folder ?? env.dirname(mediaPath), `${env.parseName(mediaPath)}-${projectSuffix}`);
 }
 
-/** Where autosave writes for this setting. */
+/** Where autosave writes for this setting: the main place, ClipPress's folder for "Both". */
 export function getProjectSavePath(mediaPath: string, location: ProjectFileLocation, customOutDir: string | undefined, env: ProjectStoreEnv) {
-  if (location === 'app') return getStoredProjectPath(mediaPath, env);
+  if (location === 'app' || location === 'both') return getStoredProjectPath(mediaPath, env);
   return getSidecarProjectPath(mediaPath, location === 'exportFolder' ? customOutDir : undefined, env);
+}
+
+/** Every place autosave writes for this setting, the main one first: "Both" also keeps a copy next to the recording. */
+export function getProjectSavePaths(mediaPath: string, location: ProjectFileLocation, customOutDir: string | undefined, env: ProjectStoreEnv) {
+  const main = getProjectSavePath(mediaPath, location, customOutDir, env);
+  return location === 'both' ? [main, getSidecarProjectPath(mediaPath, undefined, env)] : [main];
+}
+
+/** The same project file, however its path is written. */
+export function isSameProjectPath(a: string, b: string, caseInsensitive: boolean) {
+  return normaliseMediaPath(a, caseInsensitive) === normaliseMediaPath(b, caseInsensitive);
+}
+
+/**
+ * Copies of a recording's edits found where the setting doesn't save, to move to the Recycle Bin once the project is
+ * saved where it does. Only while ClipPress's folder keeps the edits ("In ClipPress" or "Both"), and never a place the
+ * setting writes to: "Both" keeps the copy next to the recording.
+ */
+export function getProjectCopiesToRetire(found: readonly string[], location: ProjectFileLocation, savePaths: readonly string[], caseInsensitive: boolean) {
+  if (location !== 'app' && location !== 'both') return [];
+  return found.filter((path) => !savePaths.some((savePath) => isSameProjectPath(savePath, path, caseInsensitive)));
+}
+
+/** Where a different copy that is about to be replaced is kept, next to it: "<name>.replaced-<time>.llc". */
+export function getReplacedBackupPath(projectPath: string, time: number) {
+  const stamp = new Date(time).toISOString().replaceAll(/[:.]/g, '-');
+  return projectPath.replace(/\.llc$/i, `.replaced-${stamp}.llc`);
 }
 
 /**

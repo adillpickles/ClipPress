@@ -9,7 +9,7 @@ import type { ProjectSession, ProjectSnapshot } from '../projectAutoSave';
 import { getSuffixedOutPath, isWindows } from '../util';
 import type { CustomTagsByFile, OverlayClip, ParamsByStreamId, StateSegment } from '../types';
 import type { ProjectFileLocation } from '../../../common/types';
-import { getProjectSavePath, getProjectStoreEnv } from '../projectStore';
+import { getProjectSavePaths, getProjectStoreEnv } from '../projectStore';
 import { errorToast } from '../swal';
 import i18n from '../i18n';
 
@@ -45,9 +45,11 @@ export default ({ autoSaveProjectFile, projectFileLocation, filePath, projectSes
   const projectSuffix = 'proj.llc';
   // A project next to a file (or in the export folder): older versions, and the opt-in settings.
   const getEdlFilePath = useCallback((fp?: string, cod?: string) => getSuffixedOutPath({ customOutDir: cod, filePath: fp, nameSuffix: projectSuffix }), []);
-  // By default in ClipPress's own folder, so recording folders stay clean (see projectStore.ts).
-  const getProjectFileSavePath = useCallback((location: ProjectFileLocation) => (filePath != null ? getProjectSavePath(filePath, location, customOutDir, getProjectStoreEnv()) : undefined), [filePath, customOutDir]);
-  const projectFileSavePath = useMemo(() => getProjectFileSavePath(projectFileLocation), [getProjectFileSavePath, projectFileLocation]);
+  // By default in ClipPress's own folder, so recording folders stay clean (see projectStore.ts). "Both" also keeps a
+  // copy next to the recording: the main place first.
+  const getProjectFileSavePaths = useCallback((location: ProjectFileLocation) => (filePath != null ? getProjectSavePaths(filePath, location, customOutDir, getProjectStoreEnv()) : undefined), [filePath, customOutDir]);
+  const projectFileSavePaths = useMemo(() => getProjectFileSavePaths(projectFileLocation), [getProjectFileSavePaths, projectFileLocation]);
+  const projectFileSavePath = projectFileSavePaths?.[0];
 
   const [autoSave] = useState(() => new ProjectAutoSave({
     // Closing the file or the app saves at once (see `flushProject`), as does leaving the window.
@@ -61,10 +63,10 @@ export default ({ autoSaveProjectFile, projectFileLocation, filePath, projectSes
   }));
 
   const snapshot = useMemo<ProjectSnapshot | undefined>(() => {
-    if (projectSession == null || filePath == null || !projectFileSavePath) return undefined;
+    if (projectSession == null || filePath == null || projectFileSavePaths == null || !projectFileSavePath) return undefined;
     const project = buildLlcProjectData({ mediaFilePath: filePath, cutSegments: getProjectSegmentsToSave(cutSegments), customTagsByFile, paramsByStreamId, overlayClips });
-    return { session: projectSession, path: projectFileSavePath, project, fileData: encodeLlcProjectFile(project, fileDuration) };
-  }, [cutSegments, customTagsByFile, fileDuration, filePath, overlayClips, paramsByStreamId, projectFileSavePath, projectSession]);
+    return { session: projectSession, path: projectFileSavePath, copyPaths: projectFileSavePaths.slice(1), project, fileData: encodeLlcProjectFile(project, fileDuration) };
+  }, [cutSegments, customTagsByFile, fileDuration, filePath, overlayClips, paramsByStreamId, projectFileSavePath, projectFileSavePaths, projectSession]);
 
   // A layout effect, so autosave has every committed state before any later event can close the file.
   useLayoutEffect(() => {
@@ -95,7 +97,8 @@ export default ({ autoSaveProjectFile, projectFileLocation, filePath, projectSes
   return {
     getEdlFilePath,
     projectFileSavePath,
-    getProjectFileSavePath,
+    projectFileSavePaths,
+    getProjectFileSavePaths,
     endProjectSession,
     whenProjectSaved,
     saveProjectNow,

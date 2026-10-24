@@ -695,6 +695,8 @@ const remoteApi = {
   downloadUpdate,
   approveUpdateInstall,
   acknowledgeAppVersion,
+  /** For what the window does in the background and should be in the file log (its own console isn't kept). */
+  log: (level: 'info' | 'warn', message: string) => (level === 'warn' ? logger.warn(message) : logger.info(message)),
 };
 
 export type RemoteApi = typeof remoteApi;

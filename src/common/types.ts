@@ -59,8 +59,11 @@ export interface QuickExportPreset {
 
 export type ShelfOrder = 'date' | 'name';
 
-/** Where autosave keeps a recording's edits: ClipPress's own folder, next to the recording, or the export folder. */
-export type ProjectFileLocation = 'app' | 'recording' | 'exportFolder';
+/**
+ * Where autosave keeps a recording's edits: ClipPress's own folder, next to the recording, both of those (a copy in
+ * each), or the export folder.
+ */
+export type ProjectFileLocation = 'app' | 'recording' | 'both' | 'exportFolder';
 
 /** An export the shelf remembers: the clip it came from, and the files it wrote. */
 export interface ShelfExport {

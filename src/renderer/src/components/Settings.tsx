@@ -507,6 +507,8 @@ function Settings({
                   <br />
                   {t('Next to the recording: a small project file beside each edited recording.')}
                   <br />
+                  {t('Both: a copy in each place, in case one is lost.')}
+                  <br />
                   {t('In the export folder: a project file beside your exports, or next to the recording while none is chosen.')}
                 </>
               )}
@@ -524,9 +526,10 @@ function Settings({
                 >
                   <option value="app">{t('In ClipPress')}</option>
                   <option value="recording">{t('Next to the recording')}</option>
+                  <option value="both">{t('Both')}</option>
                   <option value="exportFolder" disabled={customOutDir == null}>{customOutDir == null ? t('In the export folder (choose one under Export)') : t('In the export folder')}</option>
                 </Select>
-                {projectFileLocation === 'app' && (
+                {(projectFileLocation === 'app' || projectFileLocation === 'both') && (
                   <Button onClick={showProjectsFolder}>
                     <FiFolder aria-hidden />
                     {t('Show folder')}
