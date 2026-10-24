@@ -27,16 +27,21 @@
   color: var(--cp-text);
 }
 
-/* The preview is muted: easy to forget, so it stands out. */
-.iconButtonActive {
-  color: var(--cp-warning);
-}
-
 /* The track isn't at 100%: the export sounds different from the recording. */
-.iconButtonChanged,
-.iconButtonChanged:hover {
+.iconButtonChanged {
   color: var(--cp-accent-text);
   background: var(--cp-accent-soft);
+}
+
+.iconButtonChanged:hover {
+  color: var(--cp-accent-text);
+  background: color-mix(in srgb, var(--accent-9) 26%, transparent);
+}
+
+/* The preview is muted: easy to forget, so it stands out, over the track's tint too. */
+.iconButtonActive,
+.iconButtonActive:hover {
+  color: var(--cp-warning);
 }
 
 .iconButton:focus-visible,
@@ -164,4 +169,8 @@
 
 .muteButton:hover {
   background: var(--cp-hover);
+}
+
+.muteButtonOn {
+  color: var(--cp-warning);
 }

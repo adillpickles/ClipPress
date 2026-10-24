@@ -52,7 +52,8 @@ function AudioTrackHeader({ previewVolume, onPreviewVolumeChange, onTogglePrevie
   const speakerTitle = titleParts.length > 0 ? titleParts.join(' · ') : t('Volume');
   let speakerClass = styles['iconButton'];
   if (trackChanged) speakerClass += ` ${styles['iconButtonChanged']}`;
-  else if (previewMuted) speakerClass += ` ${styles['iconButtonActive']}`;
+  // Its warning colour wins over the track's tint.
+  if (previewMuted) speakerClass += ` ${styles['iconButtonActive']}`;
 
   const renderReset = ({ streamIndex, audioGainDb }: TrackGainControl) => (
     <button
@@ -141,7 +142,7 @@ function AudioTrackHeader({ previewVolume, onPreviewVolumeChange, onTogglePrevie
             <div className={styles['previewRow']}>
               <button
                 type="button"
-                className={[styles['muteButton'], ...(previewMuted ? [styles['iconButtonActive']] : [])].join(' ')}
+                className={[styles['muteButton'], ...(previewMuted ? [styles['muteButtonOn']] : [])].join(' ')}
                 onClick={onTogglePreviewMuted}
                 title={previewMuted ? t('Unmute preview') : t('Mute preview (the export is not affected)')}
                 aria-label={previewMuted ? t('Unmute preview') : t('Mute preview')}
