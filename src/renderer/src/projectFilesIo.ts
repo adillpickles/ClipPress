@@ -2,7 +2,7 @@
 // projectCopies.ts stay pure and testable, and projectFilesFs.ts can be tested on a real folder).
 import JSON5 from 'json5';
 
-import { cleanUpProjects, isCleanupDue, parseCleanupState } from './projectCleanup';
+import { cleanUpBackupsBeside, cleanUpProjects, getFoldersBesideRecordings, isCleanupDue, parseCleanupState } from './projectCleanup';
 import type { ProjectCleanupState } from './projectCleanup';
 import { findProjectCopies } from './projectCopies';
 import type { ProjectMediaRef } from './projectCopies';
@@ -92,13 +92,17 @@ async function readCleanupState(path: string): Promise<ProjectCleanupState> {
 }
 
 /**
- * The background clean-up of ClipPress's projects folder (see projectCleanup.ts), if it is due: at most once a day.
- * `trash` moves a file to the Recycle Bin; `whenIdle` resolves when the app is idle.
+ * The background clean-up of ClipPress's projects folder (see projectCleanup.ts), and of old backups beside the
+ * recordings it knows of, if it is due: at most once a day. `trash` moves a file to the Recycle Bin; `whenIdle` resolves
+ * when the app is idle.
  */
-export async function runProjectCleanup({ trash, whenIdle, isCancelled }: {
+export async function runProjectCleanup({ trash, whenIdle, isCancelled, recentMediaPaths, customOutDir }: {
   trash: (path: string) => Promise<void>,
   whenIdle: () => Promise<void>,
   isCancelled: () => boolean,
+  /** The recordings opened lately: "Next to the recording" may have kept backups beside them. */
+  recentMediaPaths: readonly string[],
+  customOutDir: string | undefined,
 }) {
   const env = getProjectStoreEnv();
   const statePath = join(env.dataDir, cleanupStateFileName);
@@ -109,10 +113,16 @@ export async function runProjectCleanup({ trash, whenIdle, isCancelled }: {
   await writeFileAtomically(statePath, JSON.stringify({ ...state, lastRunAt: now }, null, 2));
 
   const folder = getProjectsDir(env);
+  // The recordings with edits in ClipPress's folder: "Both" also keeps a copy beside each, with its backups.
+  const mediaPaths: string[] = [];
   const result = await cleanUpProjects({
     list: () => listFolder(folder),
     modifiedAt: (fileName) => getModifiedAt(join(folder, fileName)),
-    readMediaPath: async (fileName) => (await readProjectMediaRef(join(folder, fileName)))?.mediaFilePath,
+    readMediaPath: async (fileName) => {
+      const mediaPath = (await readProjectMediaRef(join(folder, fileName)))?.mediaFilePath;
+      if (mediaPath != null) mediaPaths.push(mediaPath);
+      return mediaPath;
+    },
     presence: getRecordingPresence,
     trash: (fileName) => trash(join(folder, fileName)),
     whenIdle,
@@ -120,12 +130,32 @@ export async function runProjectCleanup({ trash, whenIdle, isCancelled }: {
   }, { state, now });
   await writeFileAtomically(statePath, JSON.stringify(result.state, null, 2));
 
-  for (const { fileName, reason } of result.trashed) {
-    logProjectFiles('info', `Project clean-up: moved to the Recycle Bin (${reason === 'oldBackup' ? 'a backup over 30 days old' : 'its recording has been gone for 30 days'}): ${join(folder, fileName)}`);
+  const besideFolders = getFoldersBesideRecordings({
+    mediaPaths: [...mediaPaths, ...recentMediaPaths],
+    otherFolders: customOutDir != null ? [customOutDir] : [],
+    projectsDir: folder,
+  }, { dirname, isAbsolute, caseInsensitive: env.caseInsensitive });
+  const beside = await cleanUpBackupsBeside(besideFolders, {
+    list: listFolder,
+    trash: (besideFolder, fileName) => trash(join(besideFolder, fileName)),
+    whenIdle,
+    isCancelled,
+  }, now);
+
+  const trashed = [
+    ...result.trashed.map(({ fileName, reason }) => ({ path: join(folder, fileName), reason })),
+    ...beside.trashed.map(({ folder: besideFolder, fileName }) => ({ path: join(besideFolder, fileName), reason: 'oldBackup' as const })),
+  ];
+  const failed = [
+    ...result.failed.map(({ fileName, error }) => ({ path: join(folder, fileName), error })),
+    ...beside.failed.map(({ folder: besideFolder, fileName, error }) => ({ path: join(besideFolder, fileName), error })),
+  ];
+  for (const { path, reason } of trashed) {
+    logProjectFiles('info', `Project clean-up: moved to the Recycle Bin (${reason === 'oldBackup' ? 'a backup over 30 days old' : 'its recording has been gone for 30 days'}): ${path}`);
   }
-  for (const { fileName, error } of result.failed) {
-    logProjectFiles('warn', `Project clean-up: left ${join(folder, fileName)}: ${error instanceof Error ? error.message : String(error)}`);
+  for (const { path, error } of failed) {
+    logProjectFiles('warn', `Project clean-up: left ${path}: ${error instanceof Error ? error.message : String(error)}`);
   }
   const waiting = Object.keys(result.state.missingSince).length;
-  logProjectFiles('info', `Project clean-up: done; ${result.trashed.length} moved to the Recycle Bin, ${waiting} kept for now with their recording not found`);
+  logProjectFiles('info', `Project clean-up: done; ${trashed.length} moved to the Recycle Bin, ${waiting} kept for now with their recording not found`);
 }

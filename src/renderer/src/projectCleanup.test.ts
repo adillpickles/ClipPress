@@ -1,7 +1,8 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { cleanupAfterMs, cleanUpProjects, decideGoneRecording, isCleanupDue, isOldBackup, parseCleanupState } from './projectCleanup';
-import type { ProjectCleanupIo, RecordingPresence } from './projectCleanup';
+import { cleanupAfterMs, cleanUpBackupsBeside, cleanUpProjects, decideGoneRecording, getFoldersBesideRecordings, isCleanupDue, isOldBackup, isOldBackupBeside, parseCleanupState } from './projectCleanup';
+import type { BackupsBesideIo, ProjectCleanupIo, RecordingPresence } from './projectCleanup';
 import { getReplacedBackupPath } from './projectStore';
 
 const day = 24 * 60 * 60 * 1000;
@@ -161,5 +162,84 @@ describe('a clean-up run', () => {
     const result = await cleanUpProjects(io.io, { state, now });
     expect(io.trashed).toEqual([]);
     expect(result.state.missingSince).toEqual(state.missingSince);
+  });
+});
+
+// "Next to the recording" and "Both" keep backups there too, as does "In the export folder" there.
+describe('backups kept beside recordings', () => {
+  const backup = (name: string, ageMs: number) => getReplacedBackupPath(name, now - ageMs);
+
+  it('go once they are 30 days old, by the time ClipPress wrote in their name', () => {
+    expect(isOldBackupBeside(backup('Valorant 2026.10.19-proj.llc', 31 * day), now)).toBe(true);
+    expect(isOldBackupBeside(backup('Valorant 2026.10.19-PROJ.llc', cleanupAfterMs), now)).toBe(true);
+    expect(isOldBackupBeside(backup('Valorant 2026.10.19-proj.llc', 29 * day), now)).toBe(false);
+  });
+
+  it('are only ClipPress\'s own: of a project next to a recording, with the time in the name', () => {
+    // Without the time ClipPress writes, its age can't be told from the name: it stays.
+    expect(isOldBackupBeside('clip-proj.replaced-old.llc', now)).toBe(false);
+    // The project itself, and backups that aren't of a project next to a recording.
+    expect(isOldBackupBeside('clip-proj.llc', now)).toBe(false);
+    expect(isOldBackupBeside(backup('clip-0123456789abcdef.llc', 40 * day), now)).toBe(false);
+    expect(isOldBackupBeside(backup('clip.llc', 40 * day), now)).toBe(false);
+    expect(isOldBackupBeside(`${backup('clip-proj.llc', 40 * day)}.txt`, now)).toBe(false);
+  });
+
+  it('are looked for in the folders of the recordings known, and the export folder, each once', () => {
+    const win = path.win32;
+    const env = { dirname: win.dirname, isAbsolute: win.isAbsolute, caseInsensitive: true };
+    const projectsDir = String.raw`C:\Users\Me\AppData\Roaming\ClipPress\Projects`;
+    expect(getFoldersBesideRecordings({
+      mediaPaths: [String.raw`D:\Clips\a.mp4`, String.raw`d:\clips\b.mp4`, 'relative.mp4', String.raw`\\nas\share\c.mp4`, win.join(projectsDir, 'odd.mp4')],
+      otherFolders: [String.raw`E:\Exports`, 'D:\\Clips\\', 'exports'],
+      projectsDir,
+    }, env)).toEqual([String.raw`D:\Clips`, '\\\\nas\\share\\', String.raw`E:\Exports`]);
+  });
+
+  function fakeIo(folders: Record<string, string[]>, { failTrash = [] as string[] } = {}) {
+    const trashed: string[] = [];
+    const idleWaits: string[] = [];
+    let cancelled = false;
+    const io: BackupsBesideIo = {
+      list: async (folder) => folders[folder] ?? [],
+      trash: async (folder, fileName) => {
+        if (failTrash.includes(fileName)) throw new Error('in use');
+        trashed.push(`${folder}/${fileName}`);
+      },
+      whenIdle: async () => { idleWaits.push('idle'); },
+      isCancelled: () => cancelled,
+    };
+    return { io, trashed, idleWaits, cancel: () => { cancelled = true; } };
+  }
+
+  const oldOne = backup('clip-proj.llc', 40 * day);
+  const newOne = backup('clip-proj.llc', 3 * day);
+  const inExports = backup('other-proj.llc', 35 * day);
+  const folders = {
+    'D:/Clips': ['clip.mp4', 'clip-proj.llc', oldOne, newOne, 'notes.txt'],
+    'E:/Exports': ['other.mp4', inExports],
+  };
+
+  it('moves only the old ones to the Recycle Bin, waiting for the app to be idle first', async () => {
+    const io = fakeIo(folders);
+    const result = await cleanUpBackupsBeside(['D:/Clips', 'E:/Exports', 'F:/Not connected'], io.io, now);
+    expect(io.trashed).toEqual([`D:/Clips/${oldOne}`, `E:/Exports/${inExports}`]);
+    expect(result).toEqual({ trashed: [{ folder: 'D:/Clips', fileName: oldOne }, { folder: 'E:/Exports', fileName: inExports }], failed: [] });
+    // Before each folder, and before each file it moves.
+    expect(io.idleWaits).toHaveLength(5);
+  });
+
+  it('reports one it could not move, and carries on', async () => {
+    const io = fakeIo(folders, { failTrash: [oldOne] });
+    const result = await cleanUpBackupsBeside(['D:/Clips', 'E:/Exports'], io.io, now);
+    expect(result.failed.map((f) => f.fileName)).toEqual([oldOne]);
+    expect(io.trashed).toEqual([`E:/Exports/${inExports}`]);
+  });
+
+  it('stops when cancelled', async () => {
+    const io = fakeIo(folders);
+    io.cancel();
+    expect(await cleanUpBackupsBeside(['D:/Clips', 'E:/Exports'], io.io, now)).toEqual({ trashed: [], failed: [] });
+    expect(io.trashed).toEqual([]);
   });
 });

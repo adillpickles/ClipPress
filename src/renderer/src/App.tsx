@@ -1309,7 +1309,7 @@ function App() {
 
   // Old backups, and the edits of recordings gone for 30 days, go to the Recycle Bin while ClipPress is idle (#91): not
   // while it opens a clip or exports, nor while a dialog waits for an answer (such as where a recording went).
-  useProjectCleanup({ isBusy: () => workingRef.current || genericDialog != null, deleteProjectFile });
+  useProjectCleanup({ isBusy: () => workingRef.current || genericDialog != null, deleteProjectFile, recentFiles, customOutDir });
   // "Can't find the recording": opening edits whose recording was moved or renamed (#16).
   const relocateRecording = useRelocateRecording({ showGenericDialog, confirmDialog, customOutDir });
 
