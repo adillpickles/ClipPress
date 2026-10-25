@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
 
-import { filterProjectsOf, findProjectCopies, isProjectOf } from './projectCopies';
+import { filterProjectsOf, findProjectCopies, findRelocatedProjectCopies, isProjectOf } from './projectCopies';
 import type { ProjectMediaRef } from './projectCopies';
 import { getReplacedBackupPath, getStoredProjectPath } from './projectStore';
 import type { ProjectStoreEnv } from './projectStore';
@@ -68,5 +68,59 @@ describe('a recording\'s edits', () => {
   it('are found without an export folder, or when a folder can\'t be listed', async () => {
     const copies = await findProjectCopies(media, { customOutDir: undefined, env, list: async () => [], read: async (p) => (p === stored ? { mediaFilePath: media } : undefined) });
     expect(copies).toEqual([stored]);
+  });
+});
+
+// A recording found in a new place (#16): what it left at its old places goes once the edits are saved for the new one.
+describe('the edits a recording found somewhere else left behind', () => {
+  const oldFolder = String.raw`D:\Old folder\clip.mp4`;
+  const newFolder = String.raw`D:\New folder\clip.mp4`;
+  const renamed = String.raw`D:\New folder\Renamed.mp4`;
+  const opened = String.raw`D:\New folder\clip-proj.llc`;
+  const options = (files: Record<string, ProjectMediaRef & { mtimeMs: number }>, customOutDir?: string) => ({
+    customOutDir,
+    env,
+    read: async (p: string) => files[p],
+    notNewerThan: async (paths: readonly string[], reference: string) => paths.filter((p) => files[p] != null && files[p].mtimeMs <= files[reference]!.mtimeMs),
+  });
+
+  it('are the file opened and the copies of each place it was, when moved with its project file and renamed', async () => {
+    const files = {
+      // Moved with the recording, and opened there without a change: it still notes the old folder.
+      [opened]: { mediaFilePath: oldFolder, mtimeMs: 2 },
+      [getStoredProjectPath(oldFolder, env)]: { mediaFilePath: oldFolder, mtimeMs: 1 },
+      [getStoredProjectPath(newFolder, env)]: { mediaFilePath: newFolder, mtimeMs: 2 },
+    };
+    const copies = await findRelocatedProjectCopies({ oldMediaPaths: [newFolder, oldFolder], newMediaPath: renamed, openedPath: opened }, options(files));
+    expect(copies).toEqual([opened, getStoredProjectPath(newFolder, env), getStoredProjectPath(oldFolder, env)]);
+  });
+
+  it('are not a copy saved later than the edits opened, nor another recording\'s', async () => {
+    const files = {
+      [opened]: { mediaFilePath: oldFolder, mtimeMs: 2 },
+      [getStoredProjectPath(newFolder, env)]: { mediaFilePath: newFolder, mtimeMs: 3 },
+      // Another recording called clip.mp4 that exports to the same folder
+      [String.raw`E:\Exports\clip-proj.llc`]: { mediaFilePath: String.raw`F:\Other\clip.mp4`, mtimeMs: 1 },
+    };
+    const copies = await findRelocatedProjectCopies({ oldMediaPaths: [newFolder, oldFolder], newMediaPath: renamed, openedPath: opened }, options(files, String.raw`E:\Exports`));
+    expect(copies).toEqual([opened]);
+  });
+
+  it('are not the file opened when it isn\'t at one of its places', async () => {
+    const shared = String.raw`E:\Downloads\clip-proj.llc`;
+    const files = {
+      [shared]: { mediaFilePath: oldFolder, mtimeMs: 2 },
+      [getStoredProjectPath(oldFolder, env)]: { mediaFilePath: oldFolder, mtimeMs: 1 },
+    };
+    const copies = await findRelocatedProjectCopies({ oldMediaPaths: [oldFolder], newMediaPath: renamed, openedPath: shared }, options(files));
+    expect(copies).toEqual([getStoredProjectPath(oldFolder, env)]);
+  });
+
+  it('are listed once, though found from two places', async () => {
+    // The export folder's copy goes by the name only: both old places have it.
+    const exported = String.raw`E:\Exports\clip-proj.llc`;
+    const files = { [exported]: { mediaFilePath: oldFolder, mtimeMs: 2 } };
+    const copies = await findRelocatedProjectCopies({ oldMediaPaths: [newFolder, oldFolder], newMediaPath: renamed, openedPath: exported }, options(files, String.raw`E:\Exports`));
+    expect(copies).toEqual([exported]);
   });
 });

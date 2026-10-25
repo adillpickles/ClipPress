@@ -4,6 +4,7 @@
  */
 
 import { isDurationValid } from './segments';
+import { getSidecarProjectPath, isSameProjectPath } from './projectStore';
 import type { ProjectStoreEnv } from './projectStore';
 import type { LlcProject } from './types';
 
@@ -20,9 +21,19 @@ export function getProjectMediaCandidates(project: Pick<LlcProject, 'mediaFileNa
   ];
 }
 
-/** Where the recording was, to tell the user and to start looking there: the full path noted, or else next to the project. */
-export function getProjectMediaOldPath(project: Pick<LlcProject, 'mediaFileName' | 'mediaFilePath'>, projectPath: string, env: PathEnv) {
-  return project.mediaFilePath ?? (project.mediaFileName ? env.join(env.dirname(projectPath), project.mediaFileName) : undefined);
+/**
+ * Where the recording was, to tell the user, to start looking there and to find the edits it left: the full path noted,
+ * or else next to the project. But the recording's own project file next to it ("<name>-proj.llc", not the export
+ * folder's) was last next to it: the full path it notes is out of date when the two were moved together and opened
+ * from there without a change.
+ */
+export function getProjectMediaOldPath(project: Pick<LlcProject, 'mediaFileName' | 'mediaFilePath'>, projectPath: string, customOutDir: string | undefined, env: Pick<ProjectStoreEnv, 'join' | 'dirname' | 'parseName' | 'caseInsensitive'>) {
+  const besideProject = project.mediaFileName ? env.join(env.dirname(projectPath), project.mediaFileName) : undefined;
+  if (project.mediaFilePath == null) return besideProject;
+  const isOwnProjectFile = besideProject != null
+    && isSameProjectPath(getSidecarProjectPath(besideProject, undefined, env), projectPath, env.caseInsensitive)
+    && (customOutDir == null || !isSameProjectPath(env.dirname(projectPath), customOutDir, env.caseInsensitive));
+  return isOwnProjectFile ? besideProject : project.mediaFilePath;
 }
 
 /**

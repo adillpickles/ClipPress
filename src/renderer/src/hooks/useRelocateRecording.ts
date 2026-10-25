@@ -7,8 +7,8 @@ import { showOpenDialog } from '../dialogs';
 import { readFileFfprobeMeta } from '../ffmpeg';
 import mainApi from '../mainApi';
 import { getDurationMismatch } from '../missingRecording';
-import { filterNotNewerThan, filterProjectFilesOf } from '../projectFilesIo';
-import { getProjectStoreEnv, getRelocatedProjectCopies } from '../projectStore';
+import { findRelocatedProjectFiles } from '../projectFilesIo';
+import { getProjectStoreEnv, isSameProjectPath } from '../projectStore';
 import { videoExtensions } from '../shelf';
 import type { LlcProject } from '../types';
 import { formatDuration } from '../util/duration';
@@ -18,9 +18,9 @@ const { basename, dirname } = window.require('path');
 
 /** A recording opened from a new place, with the edits it had at the old one. */
 export interface RelocatedRecording {
-  /** Where it was. */
-  mediaPath: string,
-  /** Its edits left at the old place, to move to the Recycle Bin once they are saved for the new one. */
+  /** Where it was, the place the user was told first: they leave the recent list. */
+  mediaPaths: string[],
+  /** Its edits left at the old places, to move to the Recycle Bin once they are saved for the new one. */
   projectCopies: string[],
 }
 
@@ -45,9 +45,11 @@ export default function useRelocateRecording({ showGenericDialog, confirmDialog,
 }) {
   const { t } = useTranslation();
 
-  return useCallback(async ({ oldMediaPath, project, projectPath }: {
-    /** Where the recording was. */
+  return useCallback(async ({ oldMediaPath, otherOldMediaPaths = [], project, projectPath }: {
+    /** Where the recording was, to tell the user. */
     oldMediaPath: string,
+    /** Other places its edits say it was, where it isn't either: the edits left there move too. */
+    otherOldMediaPaths?: readonly string[] | undefined,
     /** Its edits, if it has any, and the file they are loaded from. */
     project?: LlcProject | undefined,
     projectPath?: string | undefined,
@@ -78,10 +80,11 @@ export default function useRelocateRecording({ showGenericDialog, confirmDialog,
       }
     }
 
-    const env = getProjectStoreEnv();
-    // The old place's copies the opened edits supersede: not one saved later than them, nor another recording's (the
+    const { caseInsensitive } = getProjectStoreEnv();
+    const oldMediaPaths = [oldMediaPath, ...otherOldMediaPaths].filter((path, index, all) => all.findIndex((other) => isSameProjectPath(other, path, caseInsensitive)) === index);
+    // The old places' copies the opened edits supersede: not one saved later than them, nor another recording's (the
     // export folder's copy goes by the name only).
-    const projectCopies = projectPath != null ? await filterProjectFilesOf(oldMediaPath, await filterNotNewerThan(getRelocatedProjectCopies(oldMediaPath, mediaPath, customOutDir, env), projectPath)) : [];
-    return { mediaPath, relocatedFrom: { mediaPath: oldMediaPath, projectCopies } };
+    const projectCopies = projectPath != null ? await findRelocatedProjectFiles({ oldMediaPaths, newMediaPath: mediaPath, openedPath: projectPath }, customOutDir) : [];
+    return { mediaPath, relocatedFrom: { mediaPaths: oldMediaPaths, projectCopies } };
   }, [confirmDialog, customOutDir, showGenericDialog, t]);
 }

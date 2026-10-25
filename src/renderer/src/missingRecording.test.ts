@@ -5,7 +5,7 @@ import { getDurationMismatch, getProjectEditsEnd, getProjectMediaCandidates, get
 import type { LlcProject } from './types';
 
 const win = path.win32;
-const env = { join: win.join, dirname: win.dirname };
+const env = { join: win.join, dirname: win.dirname, parseName: (p: string) => win.parse(p).name, caseInsensitive: true };
 
 const project = (props: Partial<LlcProject>): LlcProject => ({ version: 3, mediaFileName: 'clip.mp4', cutSegments: [], ...props });
 const text = { overlayId: 't', type: 'text' as const, text: 'GG', start: 50, end: 70, box: { x: 0, y: 0, width: 1, height: 1 } };
@@ -20,9 +20,25 @@ describe('a project\'s recording', () => {
   });
 
   it('was where the project says, or else next to it', () => {
-    expect(getProjectMediaOldPath(project({ mediaFilePath: String.raw`D:\Clips\clip.mp4` }), inApp, env)).toBe(String.raw`D:\Clips\clip.mp4`);
-    expect(getProjectMediaOldPath(project({}), String.raw`D:\Old\clip-proj.llc`, env)).toBe(String.raw`D:\Old\clip.mp4`);
-    expect(getProjectMediaOldPath(project({ mediaFileName: undefined }), inApp, env)).toBeUndefined();
+    expect(getProjectMediaOldPath(project({ mediaFilePath: String.raw`D:\Clips\clip.mp4` }), inApp, undefined, env)).toBe(String.raw`D:\Clips\clip.mp4`);
+    expect(getProjectMediaOldPath(project({}), String.raw`D:\Old\clip-proj.llc`, undefined, env)).toBe(String.raw`D:\Old\clip.mp4`);
+    expect(getProjectMediaOldPath(project({ mediaFileName: undefined }), inApp, undefined, env)).toBeUndefined();
+  });
+
+  it('was next to its own project file, when the two were moved together', () => {
+    // The folder was renamed, and the recording opened there without a change: its project file notes the old folder.
+    const moved = project({ mediaFilePath: String.raw`D:\Old folder\clip.mp4` });
+    expect(getProjectMediaOldPath(moved, String.raw`D:\New folder\clip-proj.llc`, undefined, env)).toBe(String.raw`D:\New folder\clip.mp4`);
+    expect(getProjectMediaOldPath(moved, String.raw`d:\new folder\CLIP-proj.llc`, String.raw`E:\Exports`, env)).toBe(String.raw`d:\new folder\clip.mp4`);
+  });
+
+  it('was where the project says, for a project file kept elsewhere', () => {
+    const elsewhere = project({ mediaFilePath: String.raw`D:\Clips\clip.mp4` });
+    // The export folder's copy has the recording's name too.
+    expect(getProjectMediaOldPath(elsewhere, String.raw`E:\Exports\clip-proj.llc`, 'e:\\exports\\', env)).toBe(String.raw`D:\Clips\clip.mp4`);
+    // Another recording's, or one saved under another name.
+    expect(getProjectMediaOldPath(elsewhere, String.raw`E:\Downloads\clip 2-proj.llc`, undefined, env)).toBe(String.raw`D:\Clips\clip.mp4`);
+    expect(getProjectMediaOldPath(elsewhere, String.raw`E:\Downloads\clip.llc`, undefined, env)).toBe(String.raw`D:\Clips\clip.mp4`);
   });
 });
 

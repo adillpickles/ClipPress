@@ -4,7 +4,7 @@ import JSON5 from 'json5';
 
 import { cleanUpBackupsBeside, cleanUpProjects, getFoldersBesideRecordings, isCleanupDue, parseCleanupState } from './projectCleanup';
 import type { ProjectCleanupState } from './projectCleanup';
-import { filterProjectsOf, findProjectCopies } from './projectCopies';
+import { findProjectCopies, findRelocatedProjectCopies } from './projectCopies';
 import type { ProjectMediaRef } from './projectCopies';
 import createProjectFilesFs from './projectFilesFs';
 import { getProjectsDir, getProjectStoreEnv } from './projectStore';
@@ -27,8 +27,8 @@ const projectFiles = createProjectFilesFs({
   isAbsolute,
   readProject: (path) => loadLlcProject(path).catch(() => undefined),
 });
-export const { findProjectFiles, readNewestProjectCopy, filterNotNewerThan, keepCopiesAboutToBeReplaced, keepCopiesNotOpened } = projectFiles;
-const { getModifiedAt, getRecordingPresence } = projectFiles;
+export const { findProjectFiles, readNewestProjectCopy, keepCopiesAboutToBeReplaced, keepCopiesNotOpened } = projectFiles;
+const { getModifiedAt, getRecordingPresence, filterNotNewerThan } = projectFiles;
 
 /** In ClipPress's settings folder, next to the projects folder. */
 const cleanupStateFileName = 'project-cleanup.json';
@@ -56,8 +56,8 @@ async function readProjectMediaRef(projectPath: string): Promise<ProjectMediaRef
   }
 }
 
-/** The ones of these project files that hold the edits of the recording at `mediaPath` (see `filterProjectsOf`). */
-export const filterProjectFilesOf = (mediaPath: string, paths: readonly string[]) => filterProjectsOf(mediaPath, paths, { env: getProjectStoreEnv(), read: readProjectMediaRef });
+/** The copies of its edits a recording found in a new place left at its old places (see `findRelocatedProjectCopies`). */
+export const findRelocatedProjectFiles = (relocation: Parameters<typeof findRelocatedProjectCopies>[0], customOutDir: string | undefined) => findRelocatedProjectCopies(relocation, { customOutDir, env: getProjectStoreEnv(), read: readProjectMediaRef, notNewerThan: filterNotNewerThan });
 
 /** Into the file log, where what ClipPress moved to the Recycle Bin by itself can be looked up later. */
 export function logProjectFiles(level: 'info' | 'warn', message: string) {

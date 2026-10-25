@@ -1,9 +1,10 @@
 /**
  * Every copy of one recording's edits, to move them to the Recycle Bin with it (#91): the setting "Recycle edits with
- * the original". Only files that certainly are this recording's.
+ * the original"; and those it left behind when it was found somewhere else (#16). Only files that certainly are this
+ * recording's.
  */
 
-import { getProjectLookupPaths, isReplacedBackupOf, isSameProjectPath } from './projectStore';
+import { getProjectLookupPaths, getRelocatedProjectCopies, isReplacedBackupOf, isSameProjectPath } from './projectStore';
 import type { ProjectStoreEnv } from './projectStore';
 
 /** What a project file says about its recording. */
@@ -68,4 +69,36 @@ export async function findProjectCopies(mediaPath: string, { customOutDir, env, 
   }
 
   return filterProjectsOf(mediaPath, candidates, { env, read });
+}
+
+/**
+ * The copies of a recording's edits left at its old places once it is found somewhere else (#16), to move to the
+ * Recycle Bin once the edits are saved for the new place: at each place it was (see `getRelocatedProjectCopies`), the
+ * ones not saved later than the edits opened (from `openedPath`) that are its own (see `isProjectOf`). The file opened is
+ * one, whatever recording it notes: one moved along with its recording still notes where they were before.
+ */
+export async function findRelocatedProjectCopies({ oldMediaPaths, newMediaPath, openedPath }: {
+  /** Where the recording was, and isn't now. */
+  oldMediaPaths: readonly string[],
+  newMediaPath: string,
+  openedPath: string,
+}, { customOutDir, env, read, notNewerThan }: {
+  customOutDir: string | undefined,
+  env: ProjectStoreEnv,
+  /** What a project file says about its recording: undefined when it isn't there or can't be read. */
+  read: (projectPath: string) => Promise<ProjectMediaRef | undefined>,
+  /** The ones of `paths` there and not saved later than `reference`. */
+  notNewerThan: (paths: readonly string[], reference: string) => Promise<string[]>,
+}) {
+  const isSame = (a: string, b: string) => isSameProjectPath(a, b, env.caseInsensitive);
+  const copies: string[] = [];
+  for (const oldMediaPath of oldMediaPaths) {
+    // eslint-disable-next-line no-await-in-loop
+    const candidates = await notNewerThan(getRelocatedProjectCopies(oldMediaPath, newMediaPath, customOutDir, env), openedPath);
+    const opened = candidates.filter((path) => isSame(path, openedPath));
+    // eslint-disable-next-line no-await-in-loop
+    const own = await filterProjectsOf(oldMediaPath, candidates.filter((path) => !isSame(path, openedPath)), { env, read });
+    copies.push(...[...opened, ...own].filter((path) => !copies.some((copy) => isSame(copy, path))));
+  }
+  return copies;
 }

@@ -5030,8 +5030,8 @@ function App() {
         // Autosave compares later changes with the state opened here.
         setProjectSession({ id: generation, loadedProjectPath, ...(loadedProjectPath != null && sameCopyPaths.length > 0 ? { sameCopyPaths } : {}) });
         if (sidecarsToRetire.length > 0) sidecarRetirementRef.current = { sessionId: generation, paths: sidecarsToRetire };
-        // A relocated recording takes the place of its old entry.
-        setRecentFiles((list) => addRecentFile(relocatedFrom != null ? removeRecentFile(list, relocatedFrom.mediaPath, isWindows || isMac) : list, fp, Date.now(), isWindows || isMac));
+        // A relocated recording takes the place of its old entries.
+        setRecentFiles((list) => addRecentFile((relocatedFrom?.mediaPaths ?? []).reduce((rest, oldPath) => removeRecentFile(rest, oldPath, isWindows || isMac), list), fp, Date.now(), isWindows || isMac));
         setShelfFolder(dirname(fp));
         setShelfAnchorPath(fp);
         // This needs to be last, because it triggers <video> to load the video
@@ -5149,8 +5149,8 @@ function App() {
 
         if (mediaFilePath == null) {
           // Moved or renamed: the user can point to it, and the edits move with it (#16).
-          const oldMediaPath = getProjectMediaOldPath(project, path, getProjectStoreEnv()) ?? pathJoin(dirname(path), mediaFileName);
-          const relocation = await relocateRecording({ oldMediaPath, project, projectPath: path });
+          const oldMediaPath = getProjectMediaOldPath(project, path, customOutDir, getProjectStoreEnv()) ?? pathJoin(dirname(path), mediaFileName);
+          const relocation = await relocateRecording({ oldMediaPath, otherOldMediaPaths: project.mediaFilePath != null ? [project.mediaFilePath] : [], project, projectPath: path });
           if (relocation == null) return;
           ({ mediaPath: mediaFilePath, relocatedFrom } = relocation);
         }
@@ -5170,7 +5170,7 @@ function App() {
 
       await loadMedia({ filePath: path, projectPath, relocatedFrom });
     },
-    [ensureAccessToSourceDir, loadMedia, relocateRecording],
+    [customOutDir, ensureAccessToSourceDir, loadMedia, relocateRecording],
   );
 
   // todo merge with userOpenFiles?

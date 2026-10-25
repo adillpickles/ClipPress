@@ -79,7 +79,7 @@ export function getStoredProjectPath(mediaPath: string, env: ProjectStoreEnv) {
 }
 
 /** Older and opt-in places: next to the recording ("<name>-proj.llc"), or in the export folder. */
-export function getSidecarProjectPath(mediaPath: string, folder: string | undefined, env: ProjectStoreEnv) {
+export function getSidecarProjectPath(mediaPath: string, folder: string | undefined, env: Pick<ProjectStoreEnv, 'join' | 'dirname' | 'parseName'>) {
   return env.join(folder ?? env.dirname(mediaPath), `${env.parseName(mediaPath)}-${projectSuffix}`);
 }
 
