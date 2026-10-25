@@ -847,9 +847,10 @@ function App() {
     [setSafeOutputFileName, showNotification],
   );
 
+  // Also when a recording opens: the <video> is only there once one is.
   useEffect(() => {
     if (videoRef.current) videoRef.current.volume = playbackVolume;
-  }, [playbackVolume, videoRef]);
+  }, [playbackVolume, videoRef, filePath]);
 
   const mainStreams = useMemo(
     () => mainFileMeta?.ffprobeMeta.streams ?? [],
@@ -7056,7 +7057,8 @@ function App() {
                             alignItems: 'flex-end',
                           }}
                         >
-                          {!showAudioLane && (
+                          {/* The simple editor's sound controls are on its audio track; a recording without one has none. */}
+                          {!simpleMode && (
                           <VolumeControl
                             playbackVolume={playbackVolume}
                             setPlaybackVolume={setPlaybackVolume}
