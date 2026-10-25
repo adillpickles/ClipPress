@@ -52,10 +52,20 @@ const noError = Symbol('noError');
 /** Identifies a project file (see `ProjectAutoSaveOptions.pathKey`). Paths are only for writing and reporting. */
 type FileKey = string & { readonly fileKey: unique symbol };
 
+/** What a project file holds, as far as a session knows. */
+interface SavedProject {
+  project: LlcProject,
+  /**
+   * What the session wrote there, if it did. Written again when that is no longer what it would write, though the
+   * contents are the same: the recording's length became known after an early save (a copy made on open, say).
+   */
+  fileData?: LlcProject | undefined,
+}
+
 interface OpenSession {
   id: number,
   /** What each project file holds, as far as this session knows: it loaded or wrote it. */
-  saved: Map<FileKey, LlcProject>,
+  saved: Map<FileKey, SavedProject>,
   /** Whether this media file has a project: one was loaded, or this session wrote one. */
   hasProject: boolean,
   latest: ProjectSnapshot,
@@ -98,6 +108,10 @@ interface FailedSave {
  *
  * A snapshot with `copyPaths` is saved to each of its paths in turn. Each copy is a project file of
  * its own here: saved, failed, owned and tried again on its own.
+ *
+ * Only the contents (`project`) decide whether a file needs saving, except for a file this session
+ * wrote: it is written again when its `fileData` changed for the same contents, so a save made
+ * before the recording's length was known gets that length too.
  */
 export default class ProjectAutoSave {
   private session: OpenSession | undefined;
@@ -179,7 +193,7 @@ export default class ProjectAutoSave {
     const loadedPaths = loadedProjectPath != null ? [loadedProjectPath, ...sameCopyPaths] : [];
     this.session = {
       id,
-      saved: new Map(loadedPaths.map((p) => [this.key(p), snapshot.project])),
+      saved: new Map(loadedPaths.map((p) => [this.key(p), { project: snapshot.project }])),
       hasProject: loadedProjectPath != null,
       latest: snapshot,
     };
@@ -279,7 +293,7 @@ export default class ProjectAutoSave {
       const open = this.session;
       if (open != null && this.isSavedTo(open.latest, key)) {
         this.cancelTimer();
-        open.saved.set(key, open.latest.project);
+        open.saved.set(key, { project: open.latest.project });
         // Another copy of the project still waits for that change.
         if (this.enabled && this.needsSave(open, open.latest)) this.schedule();
       }
@@ -395,13 +409,13 @@ export default class ProjectAutoSave {
       this.owners.set(to, Math.max(owner, this.owners.get(to) ?? -Infinity));
     }
     for (const { saved } of sessions) {
-      const project = saved.get(from);
-      if (project !== undefined) {
+      const known = saved.get(from);
+      if (known !== undefined) {
         saved.delete(from);
         // Two records of what one file holds, and which is newer is unknown: trust neither, which
         // only means saving the session's state once more.
         if (saved.has(to)) saved.delete(to);
-        else saved.set(to, project);
+        else saved.set(to, known);
       }
     }
     const failure = this.failed.get(from);
@@ -444,12 +458,13 @@ export default class ProjectAutoSave {
   }
 
   private needsSave(session: OpenSession, snapshot: ProjectSnapshot) {
-    return this.paths(snapshot).some((path) => this.needsSaveTo(session, snapshot.project, path));
+    return this.paths(snapshot).some((path) => this.needsSaveTo(session, snapshot, path));
   }
 
-  private needsSaveTo(session: OpenSession, project: LlcProject, path: string) {
+  private needsSaveTo(session: OpenSession, { project, fileData }: ProjectSnapshot, path: string) {
     const saved = session.saved.get(this.key(path));
-    return saved != null ? !isEqual(saved, project) : session.hasProject || hasProjectEdits(project);
+    if (saved == null) return session.hasProject || hasProjectEdits(project);
+    return !isEqual(saved.project, project) || (saved.fileData != null && !isEqual(saved.fileData, fileData));
   }
 
   /** Runs `job` after every write queued so far, counting it as a pending write until it has run. */
@@ -511,11 +526,11 @@ export default class ProjectAutoSave {
       return noError;
     }
     try {
-      const needsSave = this.needsSaveTo(session, project, path);
+      const needsSave = this.needsSaveTo(session, snapshot, path);
       if (needsSave) {
         console.log('Saving project file', path, fileData);
         await this.options.write(path, fileData);
-        session.saved.set(this.key(path), project);
+        session.saved.set(this.key(path), { project, fileData });
         // eslint-disable-next-line no-param-reassign
         session.hasProject = true;
       }

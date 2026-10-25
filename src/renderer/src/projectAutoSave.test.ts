@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { buildLlcProjectData, encodeLlcProjectFile, getProjectSegmentsToSave } from './llcProject';
+import { buildLlcProjectData, encodeLlcProjectFile, getProjectSegmentsToSave, withMediaDuration } from './llcProject';
 import ProjectAutoSave from './projectAutoSave';
 import type { ProjectSession } from './projectAutoSave';
 import type { ProjectFilePathKey } from './projectFilePathKey';
@@ -1205,5 +1205,57 @@ describe('ProjectAutoSave before the app closes', () => {
     expect(t.disk.get(newCopy)).toEqual(withTrim);
     expect(t.autoSave.hasSaved(1, newCopy)).toBe(true);
     expect(t.writes.map((w) => w.path)).toEqual([newCopy]);
+  });
+
+  // The recording's length (noted in the file) is only known once the video has loaded: the save that moves the edits
+  // comes before that.
+  describe('the length of the recording', () => {
+    const fileData = (project: LlcProject, fileDuration?: number) => withMediaDuration(encodeLlcProjectFile(project, fileDuration), fileDuration);
+
+    it('is written once known to a copy this open saved before, and to no other', async () => {
+      const t = setup();
+      const oldCopy = '/data/Projects/clip-aaaaaaaaaaaaaaaa.llc';
+      const newCopy = '/data/Projects/clip-bbbbbbbbbbbbbbbb.llc';
+      const report = (fileDuration?: number) => t.autoSave.update({ session: { id: 1, loadedProjectPath: oldCopy }, path: newCopy, project: withTrim, fileData: fileData(withTrim, fileDuration) }, { enabled: true });
+      report();
+      t.autoSave.saveNow();
+      await t.wait(50);
+      expect(t.disk.get(newCopy)?.mediaDuration).toBeUndefined();
+      report(90);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+      await t.wait(delayMs + 50);
+      expect(t.disk.get(newCopy)?.mediaDuration).toBe(90);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      report(90);
+      await t.wait(2000);
+      t.autoSave.endSession();
+      await t.wait(50);
+      expect(t.writes.map((w) => w.path)).toEqual([newCopy, newCopy]);
+    });
+
+    it('does not make a project that was only opened be written', async () => {
+      const t = setup();
+      const session = { id: 1, loadedProjectPath: path };
+      t.autoSave.update({ session, path, project: withTrim, fileData: fileData(withTrim) }, { enabled: true });
+      t.autoSave.update({ session, path, project: withTrim, fileData: fileData(withTrim, 90) }, { enabled: true });
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      await t.wait(2000);
+      t.autoSave.endSession();
+      await t.wait(50);
+      expect(t.writes).toEqual([]);
+    });
+
+    it('does not bring back a copy deleted on purpose', async () => {
+      const t = setup();
+      t.autoSave.update({ session: { id: 1 }, path, project: withTrim, fileData: fileData(withTrim) }, { enabled: true });
+      await t.wait(delayMs + 50);
+      expect(t.disk.has(path)).toBe(true);
+      await t.autoSave.deleteFile(path, { remove: async () => { t.disk.delete(path); }, exists: async (p) => t.disk.has(p) });
+      t.autoSave.update({ session: { id: 1 }, path, project: withTrim, fileData: fileData(withTrim, 90) }, { enabled: true });
+      await t.wait(2000);
+      t.autoSave.endSession();
+      await t.wait(50);
+      expect(t.disk.has(path)).toBe(false);
+    });
   });
 });

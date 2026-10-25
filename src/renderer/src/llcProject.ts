@@ -86,7 +86,8 @@ export function encodeLlcProjectFile(project: LlcProject, fileDuration: number |
 
 /**
  * The file also notes the recording's length (`mediaDuration`), so that edits opened with a recording found somewhere
- * else can be checked against it. Not part of the project's contents: a change of it alone is not saved.
+ * else can be checked against it. Not part of the project's contents: a change of it alone is not saved, except to a
+ * file this open of the recording already wrote, so an early save gets it too (see ProjectAutoSave).
  */
 export function withMediaDuration(file: LlcProject, fileDuration: number | undefined): LlcProject {
   return isDurationValid(fileDuration) ? { ...file, mediaDuration: fileDuration } : file;
