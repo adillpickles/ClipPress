@@ -162,11 +162,13 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
   ]), [safeSetCutSegments]);
 
   // todo combine with safeSetCutSegments?
-  const loadCutSegments = useCallback(({ segments, append, clampDuration, getNextCurrentSegIndex }: {
+  const loadCutSegments = useCallback(({ segments, append, clampDuration, getNextCurrentSegIndex, asOpened = false }: {
     segments: SegmentBase[],
     append: boolean,
     clampDuration?: number | undefined,
     getNextCurrentSegIndex?: (newEdl: SegmentBase[]) => number,
+    /** The clips a recording opens with: where undo stops, not an edit (one Ctrl+Z would otherwise empty them). */
+    asOpened?: boolean,
   }) => {
     if (segments.length === 0) throw new UserFacingError(i18n.t('No valid segments found'));
 
@@ -180,7 +182,7 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
       if (needToAppend) newSegments = [...existingSegments, ...newSegments];
       if (getNextCurrentSegIndex) setCurrentSegIndex(getNextCurrentSegIndex(newSegments));
       return newSegments;
-    }, clampDuration);
+    }, clampDuration, asOpened ? { merge: true } : undefined);
   }, [clearSegColorCounter, createIndexedSegment, safeSetCutSegments]);
 
   const detectSegments = useCallback(async ({ name, workingText, errorText, fn }: {
@@ -919,13 +921,13 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
   }, [maxLabelLength, selectedSegments, safeSetCutSegments]);
 
   const maybeCreateFullLengthSegment = useCallback((newFileDuration: number) => {
-    // don't use safeSetCutSegments because we want to set initial: true
+    // don't use safeSetCutSegments because we want to set initial: true; and it's where undo stops, not an edit
     setCutSegments((existing) => {
       if (existing.length > 0 || newFileDuration <= 0) return existing;
       const segment = { start: 0, end: newFileDuration, initial: true } as const;
       console.log('Creating initial segment', segment);
       return [createIndexedSegment({ segment })];
-    });
+    }, { merge: true });
   }, [createIndexedSegment, setCutSegments]);
 
   const segmentsOrInverse = useMemo<{ selected: SegmentToExport[], all: DefiniteSegmentBase[] }>(() => {

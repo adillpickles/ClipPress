@@ -4693,7 +4693,7 @@ function App() {
     }) => {
       // The whole file loads no segments: its full-file segment is created once the media has loaded.
       const segments = getProjectSegmentsToLoad(project);
-      if (segments.length > 0) loadCutSegments({ segments, append: false });
+      if (segments.length > 0) loadCutSegments({ segments, append: false, asOpened: true });
       setCustomTagsByFile(
         project.streamEdits?.customTags != null
           ? { [mediaFilePath]: project.streamEdits.customTags }
