@@ -201,8 +201,8 @@ export async function runFfmpegWithProgress({ ffmpegArgs, duration, onProgress }
 
 /**
  * Runs FFmpeg and hands over its output as it comes rather than all at the end (e.g. each image of the timeline
- * filmstrip as soon as it's made): new stdout bytes and stderr lines (only those containing `stderrIncludes`), at
- * most every 20 ms so a busy FFmpeg doesn't flood the renderer with messages. Settles when FFmpeg exits.
+ * filmstrip as soon as it's made): new stdout bytes and the stderr lines containing `stderrIncludes` (none without
+ * it), at most every 20 ms so a busy FFmpeg doesn't flood the renderer with messages. Settles when FFmpeg exits.
  */
 export async function runFfmpegStreaming(args: readonly string[], { signal, onOutput, stderrIncludes }: {
   signal: AbortSignal,
@@ -231,7 +231,7 @@ export async function runFfmpegStreaming(args: readonly string[], { signal, onOu
   });
   if (process.stderr != null) {
     readline.createInterface({ input: process.stderr }).on('line', (line) => {
-      if (stderrIncludes != null && !line.includes(stderrIncludes)) return;
+      if (stderrIncludes == null || !line.includes(stderrIncludes)) return;
       stderrLines.push(line);
       schedule();
     });

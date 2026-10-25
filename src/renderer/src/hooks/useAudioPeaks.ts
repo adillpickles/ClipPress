@@ -5,8 +5,8 @@ import type { AudioPeaks } from '../audioPeaks';
 import { isAbortedError } from '../util';
 
 /**
- * The waveform for the audio track of the open recording; made when it opens (long ones a stretch at a time,
- * shown as they come), dropped when it closes. `done` once it's complete or couldn't be made.
+ * The waveform for the audio track of the open recording; made when it opens (shown as it fills in), dropped when
+ * it closes. `done` once it's complete or couldn't be made.
  */
 export default function useAudioPeaks({ filePath, streamIndex, duration, enabled }: {
   filePath: string | undefined,
