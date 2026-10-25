@@ -38,3 +38,12 @@ export default function getAfterExportAction(choices: CleanupChoicesType, simple
 export function shouldRecycleEditsWithOriginal(recycleEdits: boolean, cleanupChoices: CleanupChoicesType | undefined) {
   return recycleEdits && (cleanupChoices == null || cleanupChoices.trashProjectFile === true);
 }
+
+/**
+ * Whether the original goes to the Recycle Bin after an export. When the clean-up dialog was shown for this export
+ * (`asked`), its "Move the original recording" box decides, and Cancel keeps it; otherwise Settings > Export > "Move the
+ * original to the Recycle Bin after export" (`recycleOriginal`) does.
+ */
+export function shouldRecycleOriginalAfterExport(recycleOriginal: boolean, asked: boolean, cleanupChoices: CleanupChoicesType | undefined) {
+  return asked ? cleanupChoices?.trashSourceFile === true : recycleOriginal;
+}

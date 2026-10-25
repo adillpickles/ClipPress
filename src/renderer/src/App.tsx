@@ -304,7 +304,7 @@ import type { ClipVolumeChange } from './components/ClipVolumePopover';
 import { combineAudioGain, isClipVolumeChanged, sanitizeClipGainDb } from './util/audioGain';
 import { recycleOriginal, verifyExportedFiles } from './originalRecycling';
 import type { FileIdentity } from './originalRecycling';
-import { shouldRecycleEditsWithOriginal } from './afterExportAction';
+import { shouldRecycleEditsWithOriginal, shouldRecycleOriginalAfterExport } from './afterExportAction';
 import { fileExists, identifyFile, probeOutput, statOutput } from './originalRecyclingIo';
 import styles from './App.module.css';
 import { DirectoryAccessDeclinedError, UserFacingError } from '../errors';
@@ -2913,16 +2913,23 @@ function App() {
     return true;
   }, [batchListRemoveFile, clearSegments, customOutDir, deleteProjectFile, resetState, setWorking, trashProjectWithSource, whenProjectSaved]);
 
-  const askForCleanupChoices = useCallback(async ({ saveOnly = false }: { saveOnly?: boolean } = {}) => {
+  const askForCleanupChoices = useCallback(async ({ saveOnly = false, afterExport = false }: { saveOnly?: boolean, afterExport?: boolean } = {}) => {
+    // Asked after an export, its box decides for the original (see shouldRecycleOriginalAfterExport), so with the Export
+    // switch on it starts ticked.
+    const tickedForSwitch = afterExport && trashSourceAfterExport;
     const trashResponse = await openCleanupFilesDialog({
       ...cleanupChoices,
       // An unattended "move the original after each export" is the Export switch; show it as such.
       ...(cleanupChoices.cleanupAfterExport && !cleanupChoices.askForCleanup ? { trashSourceFile: trashSourceAfterExport } : {}),
+      ...(tickedForSwitch ? { trashSourceFile: true } : {}),
     }, { saveOnly });
     if (trashResponse != null) {
-      setCleanupChoices(trashResponse); // Store for next time, if not canceled
+      const unattended = trashResponse.cleanupAfterExport && !trashResponse.askForCleanup;
+      const stored: CleanupChoicesType = cleanupChoices;
+      // Store for next time, if not canceled (a tick that was only the switch's isn't kept as a choice of its own)...
+      setCleanupChoices(tickedForSwitch && !unattended && trashResponse.trashSourceFile ? { ...trashResponse, trashSourceFile: stored.trashSourceFile === true } : trashResponse);
       // ...and choosing it there (unattended) turns the switch on or off, so both always agree.
-      if (trashResponse.cleanupAfterExport && !trashResponse.askForCleanup) setTrashSourceAfterExport(trashResponse.trashSourceFile === true);
+      if (unattended) setTrashSourceAfterExport(trashResponse.trashSourceFile === true);
     }
     return trashResponse;
   }, [cleanupChoices, openCleanupFilesDialog, setCleanupChoices, setTrashSourceAfterExport, trashSourceAfterExport]);
@@ -3768,15 +3775,16 @@ function App() {
         const revealPath = revealResult.path;
 
         // "Do this automatically after each export" in the clean-up dialog (asked first, when it asks).
+        const askedForCleanup = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport === true && cleanupChoices.askForCleanup;
         const newCleanupChoices: CleanupChoicesType | undefined = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport
-          ? (cleanupChoices.askForCleanup ? await askForCleanupChoices() : cleanupChoices)
+          ? (askedForCleanup ? await askForCleanupChoices({ afterExport: true }) : cleanupChoices)
           : undefined;
 
         // The original is only ever moved to the Recycle Bin through this checked path, whichever setting asks for it.
         const highlights = new Set<string>();
         const closedForRecycling = await recycleOriginalAfterExport({
           highlights,
-          wanted: trashSourceAfterExport || (cleanupChoices.askForCleanup && newCleanupChoices?.trashSourceFile === true),
+          wanted: shouldRecycleOriginalAfterExport(trashSourceAfterExport, askedForCleanup, newCleanupChoices),
           cleanupAfter: newCleanupChoices,
           sourcePath: filePath,
           sourceIdentity,
@@ -3981,15 +3989,16 @@ function App() {
         invariant(revealPath != null);
 
         // "Do this automatically after each export" in the clean-up dialog (asked first, when it asks).
+        const askedForCleanup = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport === true && cleanupChoices.askForCleanup;
         const newCleanupChoices: CleanupChoicesType | undefined = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport
-          ? (cleanupChoices.askForCleanup ? await askForCleanupChoices() : cleanupChoices)
+          ? (askedForCleanup ? await askForCleanupChoices({ afterExport: true }) : cleanupChoices)
           : undefined;
 
         // The original is only ever moved to the Recycle Bin through this checked path, whichever setting asks for it.
         const highlights = new Set<string>();
         const closedForRecycling = await recycleOriginalAfterExport({
           highlights,
-          wanted: trashSourceAfterExport || (cleanupChoices.askForCleanup && newCleanupChoices?.trashSourceFile === true),
+          wanted: shouldRecycleOriginalAfterExport(trashSourceAfterExport, askedForCleanup, newCleanupChoices),
           cleanupAfter: newCleanupChoices,
           sourcePath: filePath,
           sourceIdentity,
@@ -4208,15 +4217,16 @@ function App() {
       invariant(revealPath != null);
 
       // "Do this automatically after each export" in the clean-up dialog (asked first, when it asks).
+      const askedForCleanup = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport === true && cleanupChoices.askForCleanup;
       const newCleanupChoices: CleanupChoicesType | undefined = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport
-        ? (cleanupChoices.askForCleanup ? await askForCleanupChoices() : cleanupChoices)
+        ? (askedForCleanup ? await askForCleanupChoices({ afterExport: true }) : cleanupChoices)
         : undefined;
 
       // The original is only ever moved to the Recycle Bin through this checked path, whichever setting asks for it.
       const highlights = new Set<string>();
       const closedForRecycling = await recycleOriginalAfterExport({
         highlights,
-        wanted: trashSourceAfterExport || (cleanupChoices.askForCleanup && newCleanupChoices?.trashSourceFile === true),
+        wanted: shouldRecycleOriginalAfterExport(trashSourceAfterExport, askedForCleanup, newCleanupChoices),
         cleanupAfter: newCleanupChoices,
         sourcePath: filePath,
         sourceIdentity,
