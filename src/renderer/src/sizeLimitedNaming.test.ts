@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildSizeLimitedAutoFileNames,
+  createReservedFileNames,
   findAvailableSizeLimitedAutoFileName,
   getSizeLimitedMergedSuffixLabel,
   getSizeLimitedSeparateSuffixLabel,
@@ -110,5 +111,24 @@ describe('buildSizeLimitedAutoFileNames', () => {
       item: { sizeLabel: 9.3 * 1024 * 1024 },
       isReserved: (fileName) => fileName === '9.3MB Quality Overwatch 2.mp4' || fileName === '9.3MB Quality Overwatch 2-2.mp4',
     })).toBe('9.3MB Quality Overwatch 2-3.mp4');
+  });
+});
+
+describe('createReservedFileNames', () => {
+  // Windows sees names that differ only in case as one file
+  it('treats names that differ only in case as taken', () => {
+    const reserved = createReservedFileNames();
+    reserved.add('9.8MB Quality Clip Kill.mp4');
+    expect(reserved.has('9.8MB Quality Clip kill.mp4')).toBe(true);
+    expect(reserved.has('9.8MB Quality Clip Kill 2.mp4')).toBe(false);
+  });
+
+  it('keeps clips named alike apart when their sizes match', () => {
+    const items = ['Kill', 'kill'].map((segmentName, index) => ({
+      sizeLabel: 9.8 * 1024 * 1024,
+      suffixLabel: getSizeLimitedSeparateSuffixLabel({ segmentName, index, totalSegments: 2, safeOutputFileName: true }),
+    }));
+    const names = buildSizeLimitedAutoFileNames({ sourceBaseName: 'Valorant', controlMode: 'simple', preset: 'quality', safeOutputFileName: true, items });
+    expect(new Set(names.map((name) => name.toLowerCase())).size).toBe(2);
   });
 });

@@ -81,6 +81,7 @@ import { bytesPerMb } from './sizeLimitedPlanner';
 import { gpuEncoderLabels } from './gpuEncoders';
 import {
   buildSizeLimitedAutoFileNames as buildSizeLimitedAutoFileNamesRaw,
+  createReservedFileNames,
   findAvailableSizeLimitedAutoFileName,
   getSizeLimitedMergedSuffixLabel,
   getSizeLimitedSeparateSuffixLabel,
@@ -3050,7 +3051,7 @@ function App() {
     (items: SizeLimitedInternalNameItem[]) => {
       if (sizeLimitedSourceBaseName == null) return [];
 
-      const reservedFileNames = new Set<string>();
+      const reservedFileNames = createReservedFileNames();
       const sourceBaseName = sanitizeSizeLimitedNamePart(
         sizeLimitedSourceBaseName,
       );
@@ -3138,7 +3139,7 @@ function App() {
 
       const updatedResults = [...results];
       const renameWarnings = new Set<string>();
-      const reservedFileNames = new Set<string>();
+      const reservedFileNames = createReservedFileNames();
 
       interface RenameCandidate {
         resultIndex: number;

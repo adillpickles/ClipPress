@@ -86,6 +86,18 @@ function buildAutoName({
   return `${stem}${disambiguatorSuffix}${ext}`;
 }
 
+/**
+ * The file names one export has taken in its folder. Names that differ only in case are the same file on Windows,
+ * so "Kill" and "kill" must not both be handed out.
+ */
+export function createReservedFileNames() {
+  const keys = new Set<string>();
+  return {
+    has: (fileName: string) => keys.has(fileName.toLowerCase()),
+    add: (fileName: string) => { keys.add(fileName.toLowerCase()); },
+  };
+}
+
 export function findAvailableSizeLimitedAutoFileName({
   sourceBaseName,
   controlMode,
@@ -136,7 +148,7 @@ export function buildSizeLimitedAutoFileNames({
   safeOutputFileName: boolean,
   items: SizeLimitedAutoNameItem[],
 }) {
-  const reserved = new Set<string>();
+  const reserved = createReservedFileNames();
 
   return items.map((item) => {
     const fileName = findAvailableSizeLimitedAutoFileName({
