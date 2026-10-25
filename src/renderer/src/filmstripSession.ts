@@ -215,8 +215,18 @@ export default class FilmstripSession {
     const distance = (pass: FilmPass) => (start < pass.from ? pass.from - start : Math.max(0, start - pass.to));
     const next = waiting.reduce((best, pass) => (distance(pass) < distance(best) ? pass : best));
     next.state = 'running';
-    this.runStretch(next).finally(() => {
-      next.finish();
+    this.runStretch(next).then((result) => {
+      if (typeof result === 'number') {
+        next.finish();
+      } else {
+        // Cut short (FFmpeg failed, or the app's Abort button stopped it): it covers only what it read, so the
+        // last frame isn't shown over the rest.
+        const end = next.to;
+        next.stop();
+        // The session stops its own stretches only when it's disposed: this was the Abort button, so the rest is
+        // made again.
+        if (result === 'stopped' && !this.disposed && next.to < end) this.stretches.push(new FilmPass({ from: next.to, to: end }));
+      }
       this.changed();
       if (this.done) this.updateDetail();
       else this.startNextStretch();
@@ -226,16 +236,14 @@ export default class FilmstripSession {
   private async runStretch(stretch: FilmPass) {
     const { filePath, duration, frameHeight } = this.options;
     const params = { filePath, from: stretch.from, length: stretch.to - stretch.from, interval: getFilmstripInterval(duration), height: frameHeight };
-    if (packetFilterUnsupported) {
-      await this.runPass(stretch, getFilmstripFallbackArgs(params));
-      return;
-    }
+    if (packetFilterUnsupported) return this.runPass(stretch, getFilmstripFallbackArgs(params));
     const result = await this.runPass(stretch, getFilmstripArgs(params));
-    if (result === 'stopped' || (typeof result === 'number' && result > 0)) return;
+    if (result === 'stopped' || (typeof result === 'number' && result > 0)) return result;
     // Nothing came: maybe this FFmpeg can't pick packets before decoding, or the packets have no times to pick by.
     const fallback = await this.runPass(stretch, getFilmstripFallbackArgs(params));
     // FFmpeg refused the first way and the older one works: use that from now on.
     if (result === 'failed' && typeof fallback === 'number' && fallback > 0) packetFilterUnsupported = true;
+    return fallback;
   }
 
   private updateDetail() {

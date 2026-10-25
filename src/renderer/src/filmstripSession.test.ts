@@ -127,21 +127,56 @@ describe('FilmstripSession', () => {
   it('only gives up on picking packets when FFmpeg refuses, not when it was stopped or found nothing', async () => {
     const session = create();
     session.start();
-    // Stopped by the Abort button: no second try.
+    // Stopped by the Abort button: made again the same way.
     runner.runs[0]!.finish(true, 'AbortError');
     await flush();
-    expect(runner.runs).toHaveLength(1);
-    expect(session.done).toBe(true);
+    expect(runner.runs).toHaveLength(2);
+    expect(runner.runs[1]!.args).not.toContain('-skip_frame');
+    session.dispose();
     // Nothing found: the older way is tried for this stretch only.
     const other = create();
     other.start();
-    runner.runs[1]!.finish();
-    await flush();
-    runner.runs[2]!.frame(0);
     runner.runs[2]!.finish();
     await flush();
+    runner.runs[3]!.frame(0);
+    runner.runs[3]!.finish();
+    await flush();
     create().start();
-    expect(runner.runs[3]!.args).not.toContain('-skip_frame');
+    expect(runner.runs[4]!.args).not.toContain('-skip_frame');
+  });
+
+  it('shows a stretch cut short only as far as it was read, and makes the rest again after the Abort button', async () => {
+    const session = create();
+    session.start();
+    [0, 1, 2, 3].forEach((t) => runner.runs[0]!.frame(t));
+    runner.runs[0]!.finish(true, 'AbortError');
+    await flush();
+    // Not the last frame over the rest of the recording.
+    expect(session.snapshot()).toMatchObject({ done: false, covered: [{ from: 0, to: 3 }] });
+    expect(runner.runs).toHaveLength(2);
+    const rest = runner.runs[1]!;
+    expect(rest.args.slice(rest.args.indexOf('-ss'), rest.args.indexOf('-ss') + 2)).toEqual(['-ss', '3.000']);
+    expect(rest.args[rest.args.indexOf('-t') + 1]).toBe('117.000');
+    rest.frame(4);
+    rest.finish();
+    await flush();
+    expect(session.snapshot()).toMatchObject({ done: true, covered: [{ from: 0, to: 120 }] });
+    expect(session.snapshot().frames.map((f) => f.time)).toEqual([0, 1, 2, 3, 4]);
+    session.dispose();
+
+    // Failed: not made again (it would fail again), and covers what it read.
+    const failing = create();
+    failing.start();
+    runner.runs[2]!.frame(0);
+    runner.runs[2]!.frame(1);
+    runner.runs[2]!.finish(true);
+    await flush();
+    // The older way, which fails too.
+    runner.runs[3]!.finish(true);
+    await flush();
+    expect(runner.runs).toHaveLength(4);
+    expect(failing.snapshot()).toMatchObject({ done: true, covered: [{ from: 0, to: 1 }] });
+    failing.dispose();
   });
 
   it('makes denser frames once zoomed in and settled, and drops them when zoomed out', async () => {

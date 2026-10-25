@@ -21,15 +21,24 @@ export default function useAudioPeaks({ filePath, streamIndex, duration, enabled
     if (!enabled || filePath == null || duration == null || !(duration > 0)) return undefined;
     const abortController = new AbortController();
     (async () => {
-      try {
-        await renderAudioPeaks({ filePath, streamIndex, duration, signal: abortController.signal, onPeaks: setPeaks });
-        // For measuring how fast a recording opens (read by tests; costs nothing).
-        if (!abortController.signal.aborted) performance.mark('clippress:waveform-done');
-      } catch (err) {
-        if (!isAbortedError(err) && !abortController.signal.aborted) console.warn('Audio waveform failed', err);
-      } finally {
-        if (!abortController.signal.aborted) setDone(true);
+      // The app's Abort button (of an export, say) stops every FFmpeg, this one too: then it's made again rather
+      // than left half drawn (a few times at most).
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await renderAudioPeaks({ filePath, streamIndex, duration, signal: abortController.signal, onPeaks: setPeaks });
+          // For measuring how fast a recording opens (read by tests; costs nothing).
+          if (!abortController.signal.aborted) performance.mark('clippress:waveform-done');
+          break;
+        } catch (err) {
+          if (abortController.signal.aborted) break;
+          if (!isAbortedError(err)) {
+            console.warn('Audio waveform failed', err);
+            break;
+          }
+        }
       }
+      if (!abortController.signal.aborted) setDone(true);
     })();
     return () => {
       abortController.abort();
