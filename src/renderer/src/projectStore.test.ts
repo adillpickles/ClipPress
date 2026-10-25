@@ -112,6 +112,17 @@ describe('project store', () => {
       const renamed = String.raw`D:\Clips\Ace.mp4`;
       expect(getRelocatedProjectCopies(media, renamed, undefined, env)).toEqual([getStoredProjectPath(media, env), String.raw`D:\Clips\Valorant 2026.10.19 - 21.51.16-proj.llc`]);
     });
+
+    it('retires the copy kept in the export folder under the old name too', () => {
+      const exports = String.raw`E:\Exports`;
+      const oldInExports = String.raw`E:\Exports\Valorant 2026.10.19 - 21.51.16-proj.llc`;
+      const renamed = String.raw`D:\Clips\Ace.mp4`;
+      expect(getRelocatedProjectCopies(media, renamed, exports, env)).toEqual([getStoredProjectPath(media, env), oldInExports, String.raw`D:\Clips\Valorant 2026.10.19 - 21.51.16-proj.llc`]);
+      // Moved, not renamed: the export folder's copy is the one the recording reads at its new place as well.
+      expect(getRelocatedProjectCopies(media, moved, exports, env)).toEqual([getStoredProjectPath(media, env), String.raw`D:\Clips\Valorant 2026.10.19 - 21.51.16-proj.llc`]);
+      // Exporting next to the recordings: one copy, listed once.
+      expect(getRelocatedProjectCopies(media, String.raw`E:\Archive\Ace.mp4`, String.raw`d:\clips`, env)).toEqual([getStoredProjectPath(media, env), String.raw`d:\clips\Valorant 2026.10.19 - 21.51.16-proj.llc`]);
+    });
   });
 
   describe('backups kept when a project is replaced', () => {

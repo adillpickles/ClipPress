@@ -28,6 +28,22 @@ export function isProjectOf(mediaPath: string, projectPath: string, project: Pro
 }
 
 /**
+ * The ones of these project files that hold the edits of the recording at `mediaPath` (see `isProjectOf`). One in the
+ * export folder is named after its recording only, so it may be another recording's with the same name.
+ */
+export async function filterProjectsOf(mediaPath: string, paths: readonly string[], { env, read }: {
+  env: ProjectStoreEnv,
+  read: (projectPath: string) => Promise<ProjectMediaRef | undefined>,
+}) {
+  const kept: string[] = [];
+  for (const path of paths) {
+    // eslint-disable-next-line no-await-in-loop
+    if (isProjectOf(mediaPath, path, await read(path), env)) kept.push(path);
+  }
+  return kept;
+}
+
+/**
  * Every copy of a recording's edits: in ClipPress's folder, in the export folder and next to the recording, with the
  * backups kept when one of them was replaced. Only the ones that are this recording's (see `isProjectOf`).
  */
@@ -51,10 +67,5 @@ export async function findProjectCopies(mediaPath: string, { customOutDir, env, 
     }
   }
 
-  const copies: string[] = [];
-  for (const candidate of candidates) {
-    // eslint-disable-next-line no-await-in-loop
-    if (isProjectOf(mediaPath, candidate, await read(candidate), env)) copies.push(candidate);
-  }
-  return copies;
+  return filterProjectsOf(mediaPath, candidates, { env, read });
 }

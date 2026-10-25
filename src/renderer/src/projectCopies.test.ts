@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
 
-import { findProjectCopies, isProjectOf } from './projectCopies';
+import { filterProjectsOf, findProjectCopies, isProjectOf } from './projectCopies';
 import type { ProjectMediaRef } from './projectCopies';
 import { getReplacedBackupPath, getStoredProjectPath } from './projectStore';
 import type { ProjectStoreEnv } from './projectStore';
@@ -47,6 +47,22 @@ describe('a recording\'s edits', () => {
     const read = async (p: string) => files[p];
     const copies = await findProjectCopies(media, { customOutDir: String.raw`E:\Exports`, env, list, read });
     expect(copies.sort()).toEqual([stored, getReplacedBackupPath(stored, time), beside, getReplacedBackupPath(beside, time)].sort());
+  });
+
+  // A recording found in a new place (#16): its old place's copies go to the Recycle Bin, but only its own.
+  it('are told apart from another recording\'s with the same name in the export folder', async () => {
+    const files: Record<string, ProjectMediaRef> = {
+      [stored]: { mediaFilePath: media },
+      [inExports]: { mediaFilePath: String.raw`F:\Other\clip.mp4` },
+      [beside]: { mediaFileName: 'clip.mp4' },
+    };
+    const read = async (p: string) => files[p];
+    expect(await filterProjectsOf(media, [stored, inExports, beside], { env, read })).toEqual([stored, beside]);
+    files[inExports] = { mediaFilePath: media };
+    expect(await filterProjectsOf(media, [stored, inExports, beside], { env, read })).toEqual([stored, inExports, beside]);
+    // Not one that can't be read, nor an older one away from the recording that gives only its name.
+    files[inExports] = { mediaFileName: 'clip.mp4' };
+    expect(await filterProjectsOf(media, [inExports, String.raw`D:\Clips\gone-proj.llc`], { env, read })).toEqual([]);
   });
 
   it('are found without an export folder, or when a folder can\'t be listed', async () => {

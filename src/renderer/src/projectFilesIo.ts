@@ -4,7 +4,7 @@ import JSON5 from 'json5';
 
 import { cleanUpBackupsBeside, cleanUpProjects, getFoldersBesideRecordings, isCleanupDue, parseCleanupState } from './projectCleanup';
 import type { ProjectCleanupState } from './projectCleanup';
-import { findProjectCopies } from './projectCopies';
+import { filterProjectsOf, findProjectCopies } from './projectCopies';
 import type { ProjectMediaRef } from './projectCopies';
 import createProjectFilesFs from './projectFilesFs';
 import { getProjectsDir, getProjectStoreEnv } from './projectStore';
@@ -55,6 +55,9 @@ async function readProjectMediaRef(projectPath: string): Promise<ProjectMediaRef
     return undefined;
   }
 }
+
+/** The ones of these project files that hold the edits of the recording at `mediaPath` (see `filterProjectsOf`). */
+export const filterProjectFilesOf = (mediaPath: string, paths: readonly string[]) => filterProjectsOf(mediaPath, paths, { env: getProjectStoreEnv(), read: readProjectMediaRef });
 
 /** Into the file log, where what ClipPress moved to the Recycle Bin by itself can be looked up later. */
 export function logProjectFiles(level: 'info' | 'warn', message: string) {

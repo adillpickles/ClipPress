@@ -7,7 +7,7 @@ import { showOpenDialog } from '../dialogs';
 import { readFileFfprobeMeta } from '../ffmpeg';
 import mainApi from '../mainApi';
 import { getDurationMismatch } from '../missingRecording';
-import { filterNotNewerThan } from '../projectFilesIo';
+import { filterNotNewerThan, filterProjectFilesOf } from '../projectFilesIo';
 import { getProjectStoreEnv, getRelocatedProjectCopies } from '../projectStore';
 import { videoExtensions } from '../shelf';
 import type { LlcProject } from '../types';
@@ -79,8 +79,9 @@ export default function useRelocateRecording({ showGenericDialog, confirmDialog,
     }
 
     const env = getProjectStoreEnv();
-    // The old place's copies the opened edits supersede: not one saved later than them.
-    const projectCopies = projectPath != null ? await filterNotNewerThan(getRelocatedProjectCopies(oldMediaPath, mediaPath, customOutDir, env), projectPath) : [];
+    // The old place's copies the opened edits supersede: not one saved later than them, nor another recording's (the
+    // export folder's copy goes by the name only).
+    const projectCopies = projectPath != null ? await filterProjectFilesOf(oldMediaPath, await filterNotNewerThan(getRelocatedProjectCopies(oldMediaPath, mediaPath, customOutDir, env), projectPath)) : [];
     return { mediaPath, relocatedFrom: { mediaPath: oldMediaPath, projectCopies } };
   }, [confirmDialog, customOutDir, showGenericDialog, t]);
 }
