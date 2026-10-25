@@ -149,6 +149,11 @@ const thumbnailsHeight = 63;
 /** Extra lane space (fraction of the visible width) kept past the end while retiming. */
 const retimeTrailingSpace = 0.15;
 /**
+ * The widest the lane gets. Chromium lays out at most 2^25 px, so a wider lane (a wide window at the deepest zoom)
+ * would put what's placed in percent (clips) and what's drawn in pixels (playhead, filmstrip) apart.
+ */
+const maxLanePx = 2 ** 24;
+/**
  * Texts that share their time split the text lane into (at most two, see getTextLaneRows) rows of 11px; the
  * lane keeps its height (so the preview keeps its size).
  */
@@ -344,8 +349,10 @@ function Timeline({
   // While retiming, the pixel scale stays fixed so the edge tracks the cursor: lanes grow or
   // shrink and scroll (with room to keep dragging) instead of the whole timeline refitting.
   const scaleDuration = retimeDrag?.scaleDuration ?? timelineMap.displayDuration;
-  const laneDuration = timelineMap.displayDuration + (retimeDrag != null ? (scaleDuration / zoom) * retimeTrailingSpace : 0);
-  const laneWidthPercent = zoom * 100 * (laneDuration / scaleDuration);
+  const [scrollerWidth, setScrollerWidth] = useState(0);
+  const laneZoom = scrollerWidth > 0 ? Math.min(zoom, maxLanePx / scrollerWidth) : zoom;
+  const laneDuration = timelineMap.displayDuration + (retimeDrag != null ? (scaleDuration / laneZoom) * retimeTrailingSpace : 0);
+  const laneWidthPercent = laneZoom * 100 * (laneDuration / scaleDuration);
 
   const retimeDragging = retimeDrag != null;
   const timelineMapRef = useRef(timelineMap);
@@ -419,14 +426,14 @@ function Timeline({
 
     if (isZoomed) {
       invariant(timelineScrollerRef.current != null);
-      const zoomedTargetWidth = timelineScrollerRef.current.offsetWidth * zoom;
+      const zoomedTargetWidth = timelineScrollerRef.current.offsetWidth * laneZoom;
 
       const map = timelineMapRef.current;
       const scrollLeft = Math.max((map.toDisplay(commandedTimeRef.current) / map.displayDuration) * zoomedTargetWidth - timelineScrollerRef.current.offsetWidth / 2, 0);
       scrollLeftMotion.set(scrollLeft);
       timelineScrollerRef.current.scrollLeft = scrollLeft;
     }
-  }, [zoom, commandedTimeRef, scrollLeftMotion, isZoomed]);
+  }, [laneZoom, commandedTimeRef, scrollLeftMotion, isZoomed]);
 
 
   useEffect(() => {
@@ -441,7 +448,6 @@ function Timeline({
     };
   }, []);
 
-  const [scrollerWidth, setScrollerWidth] = useState(0);
   useEffect(() => {
     const scroller = timelineScrollerRef.current;
     invariant(scroller != null);
@@ -855,13 +861,17 @@ function Timeline({
         onMouseOut={onMouseOut}
       >
         <div
-          style={{ overflowX: 'scroll', overflowY: 'hidden' }}
+          // Sized by the window, never by the (zoomed, many times wider) lane inside it.
+          style={{ overflowX: 'scroll', overflowY: 'hidden', contain: 'inline-size' }}
           className="hide-scrollbar"
           onWheel={onWheel}
           onScroll={onTimelineScroll}
           ref={timelineScrollerRef}
         >
-          <div style={{ width: `${laneWidthPercent}%`, position: 'relative' }}>
+          {/* In pixels once the scroller's width is known (offsetWidth, rounded), so what's placed in percent (clips,
+              ruler, texts) and what's placed in pixels (playhead, filmstrip tiles, audio track) agree: far zoomed in,
+              the scroller's fraction of a pixel put them hundreds of pixels apart. */}
+          <div style={{ width: scrollerWidth > 0 ? lanePx : `${laneWidthPercent}%`, position: 'relative' }}>
             <TimelineRuler
               toLanePercent={toLanePercent}
               lanePx={lanePx}
