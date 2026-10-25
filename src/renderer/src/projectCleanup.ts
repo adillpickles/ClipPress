@@ -7,7 +7,7 @@
  *   A recording that can't be checked (a drive or share that isn't connected, no access) keeps its edits.
  */
 
-import { getReplacedBackupTime, isReplacedBackupName, normaliseMediaPath, projectSuffix } from './projectStore';
+import { getReplacedBackupTime, normaliseMediaPath, projectSuffix } from './projectStore';
 import type { ProjectStoreEnv } from './projectStore';
 
 const dayMs = 24 * 60 * 60 * 1000;
@@ -38,9 +38,12 @@ export function isCleanupDue({ lastRunAt }: ProjectCleanupState, now: number) {
 
 export const isProjectFileName = (fileName: string) => !fileName.startsWith('.') && /\.llc$/i.test(fileName);
 
-/** A backup kept when a project was replaced is old enough to go: by the time in its name, or else its file's. */
-export function isOldBackup(fileName: string, modifiedAt: number | undefined, now: number) {
-  const madeAt = getReplacedBackupTime(fileName) ?? modifiedAt;
+/**
+ * A backup kept when a project was replaced is old enough to go, by the time ClipPress wrote in its name. A name that
+ * doesn't have one isn't a backup: a recording may be named "match.replaced-final.mp4".
+ */
+export function isOldBackup(fileName: string, now: number) {
+  const madeAt = getReplacedBackupTime(fileName);
   return madeAt != null && now - madeAt >= cleanupAfterMs;
 }
 
@@ -176,10 +179,8 @@ export async function cleanUpProjects(io: ProjectCleanupIo, { state, now }: { st
     await io.whenIdle();
     if (io.isCancelled?.()) break;
     try {
-      if (isReplacedBackupName(fileName)) {
-        // eslint-disable-next-line no-await-in-loop
-        const modifiedAt = getReplacedBackupTime(fileName) == null ? await io.modifiedAt(fileName) : undefined;
-        if (isOldBackup(fileName, modifiedAt, now)) {
+      if (getReplacedBackupTime(fileName) != null) {
+        if (isOldBackup(fileName, now)) {
           // eslint-disable-next-line no-await-in-loop
           await io.trash(fileName);
           trashed.push({ fileName, reason: 'oldBackup' });

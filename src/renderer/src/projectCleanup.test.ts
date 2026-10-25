@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { cleanupAfterMs, cleanUpBackupsBeside, cleanUpProjects, decideGoneRecording, getFoldersBesideRecordings, isCleanupDue, isOldBackup, isOldBackupBeside, parseCleanupState } from './projectCleanup';
 import type { BackupsBesideIo, ProjectCleanupIo, RecordingPresence } from './projectCleanup';
-import { getReplacedBackupPath } from './projectStore';
+import { getReplacedBackupPath, getStoredProjectFileName } from './projectStore';
 
 const day = 24 * 60 * 60 * 1000;
 const now = Date.parse('2026-10-24T12:00:00.000Z');
@@ -28,16 +28,13 @@ describe('backups kept when a project was replaced', () => {
   const backup = (ageMs: number) => getReplacedBackupPath('clip-0123456789abcdef.llc', now - ageMs);
 
   it('go once they are 30 days old, by the time in their name', () => {
-    expect(isOldBackup(backup(29 * day), undefined, now)).toBe(false);
-    expect(isOldBackup(backup(cleanupAfterMs), undefined, now)).toBe(true);
-    // The file's own time is when the replaced copy was last saved, not when it was replaced: the name wins.
-    expect(isOldBackup(backup(2 * day), now - 400 * day, now)).toBe(false);
+    expect(isOldBackup(backup(29 * day), now)).toBe(false);
+    expect(isOldBackup(backup(cleanupAfterMs), now)).toBe(true);
   });
 
-  it('go by their file time when the name has no time ClipPress wrote', () => {
-    expect(isOldBackup('clip.replaced-old.llc', now - 31 * day, now)).toBe(true);
-    expect(isOldBackup('clip.replaced-old.llc', now - 3 * day, now)).toBe(false);
-    expect(isOldBackup('clip.replaced-old.llc', undefined, now)).toBe(false);
+  it('are only names with the time ClipPress wrote', () => {
+    expect(isOldBackup('clip.replaced-old.llc', now)).toBe(false);
+    expect(isOldBackup('match.replaced-final-0123456789abcdef.llc', now)).toBe(false);
   });
 });
 
@@ -153,6 +150,18 @@ describe('a clean-up run', () => {
     const result = await cleanUpProjects(io.io, { state: { missingSince: { 'deleted-6666666666666666.llc': now - 40 * day } }, now });
     expect(result.state.missingSince['deleted-6666666666666666.llc']).toBeUndefined();
     expect(io.idleWaits).toHaveLength(Object.keys(files).length);
+  });
+
+  it('treats the edits of a recording named like a backup as any other recording\'s', async () => {
+    const mediaPath = 'D:/Clips/match.replaced-final.mp4';
+    const fileName = getStoredProjectFileName(mediaPath, true);
+    const unedited = { [fileName]: { modifiedAt: now - 400 * day, mediaPath } };
+    const here = fakeIo(unedited, {});
+    expect((await cleanUpProjects(here.io, { state: { missingSince: {} }, now })).trashed).toEqual([]);
+    expect(here.trashed).toEqual([]);
+    // Once the recording has been gone for 30 days, they go like any other's.
+    const gone = fakeIo(unedited, { [mediaPath]: 'gone' });
+    expect((await cleanUpProjects(gone.io, { state: { missingSince: { [fileName]: now - 30 * day } }, now })).trashed).toEqual([{ fileName, reason: 'recordingGone' }]);
   });
 
   it('stops when cancelled, keeping what it knew of the files not reached', async () => {
