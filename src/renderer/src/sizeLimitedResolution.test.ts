@@ -198,7 +198,20 @@ describe('resolveSizeLimitedOutputDimensions', () => {
       sourceHeight: 1080,
       rotation: 90,
       plannedVideoBitrate: 5_000_000,
-    })).toEqual({ width: 1080, height: 606, targetDisplayHeight: 1080 });
+    })).toEqual({ width: 606, height: 1080, targetDisplayHeight: 1080 });
+  });
+
+  // FFmpeg turns the picture upright before scaling it, so a portrait recording stays portrait
+  it('scales a rotated recording upright in auto mode', () => {
+    expect(resolveSizeLimitedVideoProfile({
+      resolution: 'auto',
+      fps: 'source',
+      sourceWidth: 1920,
+      sourceHeight: 1080,
+      rotation: 90,
+      sourceFps: 30,
+      plannedVideoBitrate: 50_000_000,
+    })).toMatchObject({ outputWidth: 810, outputHeight: 1440 });
   });
 });
 

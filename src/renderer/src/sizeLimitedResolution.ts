@@ -252,14 +252,10 @@ function getReferenceFpsForProfile({
 function buildVideoProfileForTargetDisplayHeight({
   targetDisplayHeight: requestedDisplayHeight,
   displayDimensions,
-  sourceWidth,
-  sourceHeight,
   outputFps,
 }: {
   targetDisplayHeight: number | undefined,
   displayDimensions: SizeLimitedDisplayDimensions,
-  sourceWidth: number,
-  sourceHeight: number,
   outputFps: number | undefined,
 }) {
   let outputWidth: number | undefined;
@@ -269,10 +265,11 @@ function buildVideoProfileForTargetDisplayHeight({
   if (requestedDisplayHeight != null && requestedDisplayHeight < displayDimensions.height) {
     const scaleFactor = requestedDisplayHeight / displayDimensions.height;
     if (scaleFactor < 1) {
-      const scaledWidth = roundDownToEven(sourceWidth * scaleFactor);
-      const scaledHeight = roundDownToEven(sourceHeight * scaleFactor);
+      // FFmpeg turns a rotated video upright before the scale filter, so it's the upright size that's scaled.
+      const scaledWidth = roundDownToEven(displayDimensions.width * scaleFactor);
+      const scaledHeight = roundDownToEven(displayDimensions.height * scaleFactor);
 
-      if (scaledWidth < sourceWidth || scaledHeight < sourceHeight) {
+      if (scaledWidth < displayDimensions.width || scaledHeight < displayDimensions.height) {
         outputWidth = scaledWidth;
         outputHeight = scaledHeight;
         targetDisplayHeight = requestedDisplayHeight;
@@ -334,8 +331,6 @@ function findSupportedVideoProfile({
     .map((targetDisplayHeight) => buildVideoProfileForTargetDisplayHeight({
       targetDisplayHeight,
       displayDimensions,
-      sourceWidth,
-      sourceHeight,
       outputFps,
     }))
     .find((videoProfile) => isVideoProfileSupported({
@@ -350,14 +345,10 @@ function findSupportedVideoProfile({
 function getLastVideoProfile({
   candidateHeights,
   displayDimensions,
-  sourceWidth,
-  sourceHeight,
   outputFps,
 }: {
   candidateHeights: (number | undefined)[],
   displayDimensions: SizeLimitedDisplayDimensions,
-  sourceWidth: number,
-  sourceHeight: number,
   outputFps: number | undefined,
 }) {
   const lastCandidateHeight = candidateHeights.at(-1);
@@ -366,8 +357,6 @@ function getLastVideoProfile({
   return buildVideoProfileForTargetDisplayHeight({
     targetDisplayHeight: lastCandidateHeight,
     displayDimensions,
-    sourceWidth,
-    sourceHeight,
     outputFps,
   });
 }
@@ -413,8 +402,6 @@ export function resolveSizeLimitedVideoProfile({
     return sourceProfile ?? getLastVideoProfile({
       candidateHeights: sourceCandidateHeights,
       displayDimensions,
-      sourceWidth,
-      sourceHeight,
       outputFps: undefined,
     }) ?? buildKeepSourceProfile();
   }
@@ -425,8 +412,6 @@ export function resolveSizeLimitedVideoProfile({
     return sourceProfile ?? getLastVideoProfile({
       candidateHeights: sourceCandidateHeights,
       displayDimensions,
-      sourceWidth,
-      sourceHeight,
       outputFps: undefined,
     }) ?? buildKeepSourceProfile();
   }
@@ -450,14 +435,10 @@ export function resolveSizeLimitedVideoProfile({
   return getLastVideoProfile({
     candidateHeights: reducedFpsCandidateHeights,
     displayDimensions,
-    sourceWidth,
-    sourceHeight,
     outputFps: targetLowFps,
   }) ?? sourceProfile ?? getLastVideoProfile({
     candidateHeights: sourceCandidateHeights,
     displayDimensions,
-    sourceWidth,
-    sourceHeight,
     outputFps: undefined,
   }) ?? buildKeepSourceProfile();
 }
