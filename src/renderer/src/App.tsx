@@ -1790,8 +1790,17 @@ function App() {
     enabled: showAudioLane,
   });
 
-  // The shelf makes the rest of its thumbnails once the open clip's own filmstrip and waveform are in.
-  const shelfPrefetch = !working && (filePath == null || ((filmstrip.length > 0 || !(simpleMode && hasVideo)) && (audioPeaks != null || !showAudioLane)));
+  // The shelf makes the rest of its thumbnails once the open clip's own filmstrip and waveform are in, or a while
+  // after it opened if they never are (they failed). Advanced mode's lanes load as they show, so there it's a while.
+  const openVisualsIn = (filmstrip.length > 0 || !hasVideo) && (audioPeaks != null || !showAudioLane);
+  const [openSettled, setOpenSettled] = useState(false);
+  useEffect(() => {
+    setOpenSettled(false);
+    if (filePath == null) return undefined;
+    const timer = setTimeout(() => setOpenSettled(true), simpleMode ? 20_000 : 3000);
+    return () => clearTimeout(timer);
+  }, [filePath, simpleMode]);
+  const shelfPrefetch = !working && (filePath == null || openSettled || (simpleMode && openVisualsIn));
   const shelf = useShelf({ folder: shelfFolder, order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac, currentPath: filePath ?? shelfAnchorPath, prefetch: shelfPrefetch });
   const { refresh: refreshShelf, nextClip } = shelf;
 
