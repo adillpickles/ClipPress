@@ -4,7 +4,7 @@
  * - The default strip comes from one pass per stretch of the recording that decodes only the keyframes it shows
  *   (about one per `interval`).
  * - Zoomed in past what those cover, denser frames are made for the visible window (any frame, or for a long
- *   window its keyframes), and dropped again when zooming back out.
+ *   window its keyframes, if the default strip doesn't have them all), and dropped again when zooming back out.
  * FFmpeg sends each image as soon as it's made (multipart JPEG, every part with its length) and its time on
  * stderr (showinfo), so frames show up while the pass is still running.
  */
@@ -332,16 +332,43 @@ export interface DetailRequest {
  * strip is sparse) gets its keyframes, which are quick to read.
  */
 export const maxDetailSeconds = 30;
+/**
+ * When the default strip already has every keyframe (they're further apart than its interval, e.g. OBS's default
+ * of one every 250 frames), only decoding every frame gives more: for windows up to this long (about 3 s of
+ * decoding for a 1440x1080 60 fps recording on an 8-core PC). Past it, the strip's keyframes have to do.
+ */
+export const maxSparseDetailSeconds = 60;
+
+/**
+ * Whether the default strip has every keyframe of the recording, so a keyframes-only pass can't add any: on
+ * average its frames are clearly further apart than the interval it picked them at, so it got every keyframe there
+ * was (with keyframes closer together, it gets one per interval). `stretches` are the frames of each pass, so the
+ * gap between two passes, or a stretch that couldn't be made, doesn't count.
+ */
+export function hasEveryKeyframe(stretches: readonly (readonly { time: number }[])[], interval: number) {
+  let span = 0;
+  let gaps = 0;
+  stretches.forEach((frames) => {
+    if (frames.length < 2) return;
+    const times = frames.map((frame) => frame.time);
+    span += Math.max(...times) - Math.min(...times);
+    gaps += frames.length - 1;
+  });
+  return gaps > 0 && span / gaps > interval * 1.1;
+}
 
 /**
  * Whether the view needs denser frames than the default strip's, and which: when there are clearly fewer default
  * frames in view than tiles (so frames would repeat), at least one per tile (a power of two of seconds, so small
- * zoom changes don't ask again) for the view and a small margin around it.
+ * zoom changes don't ask again) for the view and a small margin around it. Every frame decoded for a short
+ * window, keyframes for a long one, unless the strip already has them all (`keyframesInStrip`).
  */
-export function getDetailRequest({ view, baseFrames, duration }: {
+export function getDetailRequest({ view, baseFrames, duration, keyframesInStrip = false }: {
   view: FilmstripView,
   baseFrames: readonly { time: number }[],
   duration: number,
+  /** The default strip has every keyframe (hasEveryKeyframe), so only decoding every frame gives more. */
+  keyframesInStrip?: boolean,
 }): DetailRequest | undefined {
   const length = view.to - view.from;
   if (!(length > 0) || !(view.tileSeconds > 0)) return undefined;
@@ -350,7 +377,11 @@ export function getDetailRequest({ view, baseFrames, duration }: {
   const margin = length * 0.15;
   const from = Math.max(0, view.from - margin);
   const to = Math.min(duration, view.to + margin);
-  return { from, to, spacing: Math.max(1 / 128, 2 ** Math.floor(Math.log2(view.tileSeconds))), keyframes: to - from > maxDetailSeconds };
+  const spacing = Math.max(1 / 128, 2 ** Math.floor(Math.log2(view.tileSeconds)));
+  if (to - from <= maxDetailSeconds) return { from, to, spacing, keyframes: false };
+  if (!keyframesInStrip) return { from, to, spacing, keyframes: true };
+  if (to - from <= maxSparseDetailSeconds) return { from, to, spacing, keyframes: false };
+  return undefined;
 }
 
 /**

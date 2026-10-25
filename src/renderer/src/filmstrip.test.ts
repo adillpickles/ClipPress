@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { FilmstripStreamReader, MultipartJpegReader, getDetailRequest, getFilmTiles, getFilmstripArgs, getFilmstripChunks, getFilmstripDetailArgs, getFilmstripFallbackArgs, getFilmstripFrameHeight, getFilmstripInterval, getFrameAt, isCovered, mergeRanges, parseShowinfoLine, servesView } from './filmstrip';
+import { FilmstripStreamReader, MultipartJpegReader, getDetailRequest, getFilmTiles, getFilmstripArgs, getFilmstripChunks, getFilmstripDetailArgs, getFilmstripFallbackArgs, getFilmstripFrameHeight, getFilmstripInterval, getFrameAt, hasEveryKeyframe, isCovered, mergeRanges, parseShowinfoLine, servesView } from './filmstrip';
 
 const encoder = new TextEncoder();
 const part = (image: number[], withLength = true) => [
@@ -163,5 +163,52 @@ describe('filmstrip', () => {
     // Keyframes only don't serve a window that wants every frame; every frame serves one that wants keyframes.
     expect(servesView({ ...wanted, keyframes: true }, view, wanted)).toBe(false);
     expect(servesView(wanted, view, { ...wanted, keyframes: true })).toBe(true);
+  });
+
+  /** The default strip's frames for keyframes `keyframeSeconds` apart, picked as getKeyframePickExpression does. */
+  const pickKeyframes = (duration: number, keyframeSeconds: number) => {
+    const interval = getFilmstripInterval(duration);
+    const tolerance = Math.min(0.2, interval / 5);
+    const frames: { time: number }[] = [];
+    let due = 0;
+    for (let n = 0; n * keyframeSeconds < duration; n += 1) {
+      const time = n * keyframeSeconds;
+      if (time >= due - tolerance) {
+        frames.push({ time });
+        due = (Math.floor((time + tolerance) / interval) + 1) * interval;
+      }
+    }
+    return frames;
+  };
+  /** OBS's default: a keyframe every 250 frames, at 60 fps. */
+  const obsKeyframes = 250 / 60;
+
+  it('tells when the default strip already has every keyframe', () => {
+    // A keyframe a second: one per interval, other keyframes left out.
+    expect(hasEveryKeyframe([pickKeyframes(600, 1)], getFilmstripInterval(600))).toBe(false);
+    expect(hasEveryKeyframe([pickKeyframes(300, 1)], getFilmstripInterval(300))).toBe(false);
+    // Keyframes further apart than the interval: the strip has them all.
+    expect(hasEveryKeyframe([pickKeyframes(120, obsKeyframes)], 1)).toBe(true);
+    expect(hasEveryKeyframe([pickKeyframes(600, obsKeyframes)], getFilmstripInterval(600))).toBe(true);
+    // An hour: one per 15 s, while there are keyframes every 4 s.
+    expect(hasEveryKeyframe([pickKeyframes(3600, obsKeyframes)], getFilmstripInterval(3600))).toBe(false);
+    // The gap between two stretches, and a stretch with nothing in it, don't count.
+    const stretch = pickKeyframes(600, obsKeyframes);
+    expect(hasEveryKeyframe([stretch, [], stretch.map(({ time }) => ({ time: time + 1800 }))], getFilmstripInterval(600))).toBe(true);
+    expect(hasEveryKeyframe([pickKeyframes(1200, 1).slice(0, 240), [{ time: 900 }]], getFilmstripInterval(1200))).toBe(false);
+    expect(hasEveryKeyframe([], 1)).toBe(false);
+  });
+
+  it('decodes every frame of a longer window when the strip already has every keyframe', () => {
+    const baseFrames = pickKeyframes(120, obsKeyframes);
+    // Zoomed in on a 2-min recording (a 39 s window): its keyframes would only be the strip's again.
+    const view = { from: 25, to: 55, tileSeconds: 2.3 };
+    expect(getDetailRequest({ view, baseFrames, duration: 120 })).toMatchObject({ keyframes: true });
+    expect(getDetailRequest({ view, baseFrames, duration: 120, keyframesInStrip: true })).toMatchObject({ spacing: 2, keyframes: false });
+    // Too long to decode all of: the strip's keyframes it is.
+    const long = pickKeyframes(600, obsKeyframes);
+    expect(getDetailRequest({ view: { from: 100, to: 160, tileSeconds: 2.3 }, baseFrames: long, duration: 600, keyframesInStrip: true })).toBeUndefined();
+    // Short windows are decoded in full either way.
+    expect(getDetailRequest({ view: { from: 30, to: 40, tileSeconds: 0.8 }, baseFrames, duration: 120, keyframesInStrip: true })).toMatchObject({ keyframes: false });
   });
 });

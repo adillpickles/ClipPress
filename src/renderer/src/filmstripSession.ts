@@ -1,4 +1,4 @@
-import { getDetailRequest, getFilmstripArgs, getFilmstripChunks, getFilmstripDetailArgs, getFilmstripFallbackArgs, getFilmstripInterval, mergeRanges, servesView } from './filmstrip';
+import { countFramesBetween, getDetailRequest, getFilmstripArgs, getFilmstripChunks, getFilmstripDetailArgs, getFilmstripFallbackArgs, getFilmstripInterval, hasEveryKeyframe, mergeRanges, servesView } from './filmstrip';
 import type { FilmstripFrame, FilmstripView, TimeRange } from './filmstrip';
 
 /**
@@ -118,6 +118,12 @@ export default class FilmstripSession {
   private detailTimer: ReturnType<typeof setTimeout> | undefined;
 
   private disposed = false;
+
+  /**
+   * A long window's keyframes turned out to be no more than the default strip had there: it has every keyframe,
+   * even though its frames' spacing didn't show it (hasEveryKeyframe).
+   */
+  private keyframesFoundInStrip = false;
 
   /** No longer shown: to be revoked once the timeline has stopped using them (takeRetired). */
   private retired: string[] = [];
@@ -246,10 +252,16 @@ export default class FilmstripSession {
     return fallback;
   }
 
+  private get baseFrames() {
+    return this.stretches.flatMap((pass) => pass.frames);
+  }
+
   private updateDetail() {
     const { view } = this;
     if (this.disposed || view == null || !this.done) return;
-    const wanted = getDetailRequest({ view, baseFrames: this.stretches.flatMap((pass) => pass.frames), duration: this.options.duration });
+    const keyframesInStrip = this.keyframesFoundInStrip
+      || hasEveryKeyframe(this.stretches.map((pass) => pass.frames), getFilmstripInterval(this.options.duration));
+    const wanted = getDetailRequest({ view, baseFrames: this.baseFrames, duration: this.options.duration, keyframesInStrip });
     if (wanted == null) {
       // Zoomed back out: the default strip is enough again.
       if (this.detail.length > 0) {
@@ -277,6 +289,14 @@ export default class FilmstripSession {
     const args = pass.keyframes ? getKeyframeArgs({ ...params, interval: pass.spacing, keyframesOnly: true }) : getFilmstripDetailArgs({ ...params, spacing: pass.spacing });
     const result = await this.runPass(pass, args);
     if (pass.abortController.signal.aborted) return;
+    if (pass.keyframes && typeof result === 'number' && result <= countFramesBetween(this.baseFrames, pass.from, pass.to) * 1.25) {
+      // The strip had (nearly) all of them already: from now on, decode every frame instead.
+      this.keyframesFoundInStrip = true;
+      this.retireDetail([pass]);
+      this.changed();
+      this.updateDetail();
+      return;
+    }
     // Cut short: it covers what it made, so a later look at the rest asks again.
     if (typeof result === 'number') pass.finish();
     else pass.stop();

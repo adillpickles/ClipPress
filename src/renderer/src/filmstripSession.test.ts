@@ -260,6 +260,65 @@ describe('FilmstripSession', () => {
     session.dispose();
   });
 
+  /** Makes the default strip of `session`, a frame each `seconds`. */
+  const makeStrip = async (session: FilmstripSessionType, seconds: number) => {
+    session.start();
+    while (!session.done) {
+      runner.runs.filter((run) => !run.finished).forEach((run) => {
+        const from = run.args.includes('-ss') ? Number(run.args[run.args.indexOf('-ss') + 1]) : 0;
+        const length = Number(run.args[run.args.indexOf('-t') + 1]);
+        for (let t = 0; t < length; t += seconds) run.frame(from + t);
+        run.finish();
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await vi.advanceTimersByTimeAsync(0);
+    }
+  };
+
+  it('decodes every frame of a longer window when the strip already has every keyframe', async () => {
+    vi.useFakeTimers();
+    const session = create();
+    // OBS's default: a keyframe every 250 frames at 60 fps, so the strip has them all.
+    await makeStrip(session, 250 / 60);
+    session.setView({ from: 25, to: 55, tileSeconds: 2.3 });
+    await vi.advanceTimersByTimeAsync(250);
+    const detail = runner.runs.at(-1)!;
+    expect(runner.runs).toHaveLength(2);
+    expect(detail.args).not.toContain('-discard:v');
+    expect(detail.args.join(' ')).toContain('select=');
+    expect(detail.args[detail.args.indexOf('-t') + 1]).toBe('39.000');
+    session.dispose();
+  });
+
+  it('decodes every frame once the keyframes of a window turn out to be in the strip already', async () => {
+    vi.useFakeTimers();
+    const session = create({ duration: 3600 });
+    // Keyframes 15 s apart, as is the strip: its spacing can't show that it has them all.
+    await makeStrip(session, 15);
+    const count = runner.runs.length;
+    session.setView({ from: 1800, to: 1840, tileSeconds: 2.2 });
+    await vi.advanceTimersByTimeAsync(250);
+    const keyframes = runner.runs.at(-1)!;
+    expect(runner.runs).toHaveLength(count + 1);
+    expect(keyframes.args).toContain('-discard:v');
+    const urls = [keyframes.frame(1800), keyframes.frame(1815), keyframes.frame(1830)];
+    keyframes.finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runner.runs).toHaveLength(count + 2);
+    const everyFrame = runner.runs.at(-1)!;
+    expect(everyFrame.args).not.toContain('-discard:v');
+    expect(everyFrame.args.join(' ')).toContain('select=');
+    // The keyframes, already in the strip, are let go.
+    expect(session.takeRetired().sort()).toEqual(urls.sort());
+    everyFrame.finish();
+    await vi.advanceTimersByTimeAsync(0);
+    // And from then on.
+    session.setView({ from: 2400, to: 2440, tileSeconds: 2.2 });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(runner.runs.at(-1)!.args).not.toContain('-discard:v');
+    session.dispose();
+  });
+
   it('keeps the denser frames bounded', async () => {
     vi.useFakeTimers();
     const session = create({ duration: 3600 });
