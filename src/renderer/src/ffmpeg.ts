@@ -20,13 +20,28 @@ import { classifyFfprobeFailure, getFfprobeFailureDetail } from './util/ffprobeF
 import { UnsupportedFileError, UserFacingError } from '../errors';
 import mainApi from './mainApi';
 import { firstShelfThumbnail } from './shelfThumbnails';
+import runCancellable from './util/ffmpegCancel';
 
 const { ffmpeg } = window.require('@electron/remote').require('./index.js');
 
-const { renderWaveformPng, mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, runFfmpeg, runFfmpegStreaming, runFfprobe, getFfmpegPath, setCustomFfPath } = ffmpeg;
+const { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, runFfprobe, getFfmpegPath, setCustomFfPath } = ffmpeg;
 
 
-export { renderWaveformPng, mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, runFfmpeg, getFfmpegPath, setCustomFfPath };
+export { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, getFfmpegPath, setCustomFfPath };
+
+// The ones below stop when their signal aborts (runCancellable: a signal can't cross to the main process).
+
+export function runFfmpeg(args: readonly string[], { cancelSignal, ...options }: NonNullable<Parameters<typeof ffmpeg.runFfmpeg>[1]> = {}, additionalOptions: { logCli?: boolean } = {}) {
+  return runCancellable(cancelSignal, ffmpeg.abortFfmpeg, (cancelId) => ffmpeg.runFfmpeg(args, options, { ...additionalOptions, cancelId }));
+}
+
+export function renderWaveformPng({ signal, ...options }: Omit<Parameters<typeof ffmpeg.renderWaveformPng>[0], 'cancelId'> & { signal?: AbortSignal }) {
+  return runCancellable(signal, ffmpeg.abortFfmpeg, (cancelId) => ffmpeg.renderWaveformPng({ ...options, cancelId }));
+}
+
+function runFfmpegStreaming(args: readonly string[], { signal, ...options }: Omit<Parameters<typeof ffmpeg.runFfmpegStreaming>[1], 'cancelId'> & { signal: AbortSignal }) {
+  return runCancellable(signal, ffmpeg.abortFfmpeg, (cancelId) => ffmpeg.runFfmpegStreaming(args, { ...options, cancelId }));
+}
 
 
 export class RefuseOverwriteError extends Error {
@@ -529,8 +544,9 @@ export async function renderAudioPeaks({ filePath, streamIndex, duration, signal
   await runFfmpegStreaming(getPeaksArgs({ filePath, streamIndex, sampleRate }), {
     signal,
     onOutput: (stdout: Uint8Array) => {
+      if (signal.aborted) return;
       reader.push(stdout);
-      if (signal.aborted || performance.now() - shownAt < peaksUpdateMs) return;
+      if (performance.now() - shownAt < peaksUpdateMs) return;
       shownAt = performance.now();
       onPeaks(reader.peaks);
     },
@@ -555,11 +571,14 @@ export async function streamFilmstripFrames({ args, timeOffset, signal, onFrame 
       signal,
       // Only the lines about frames (showinfo's): not the rest of FFmpeg's log.
       stderrIncludes: 'pts_time:',
-      onOutput: (stdout: Uint8Array, stderrLines: string[]) => reader.push(stdout, stderrLines).forEach(({ time, image, aspect }) => {
+      onOutput: (stdout: Uint8Array, stderrLines: string[]) => {
+        // What a stopped FFmpeg sent before it went isn't wanted.
         if (signal.aborted) return;
-        count += 1;
-        onFrame({ time, aspect, url: URL.createObjectURL(safeCreateBlob(image, { type: 'image/jpeg' })) });
-      }),
+        reader.push(stdout, stderrLines).forEach(({ time, image, aspect }) => {
+          count += 1;
+          onFrame({ time, aspect, url: URL.createObjectURL(safeCreateBlob(image, { type: 'image/jpeg' })) });
+        });
+      },
     });
   } catch (err) {
     // Stopped (the recording closed, or the Abort button) rather than failed.

@@ -15,7 +15,10 @@ import logger from './logger.js';
 import { parseFfmpegProgressLine } from './progress.js';
 import { getHwaccelArgs, parseFfprobeDuration } from '../common/util.js';
 import { getFfmpegJpegQuality } from './ffmpegUtil.js';
+import { withCancelId } from './ffmpegCancel.js';
 import findSourceFileCollision from '../common/sourceFileIdentity.js';
+
+export { abortFfmpeg } from './ffmpegCancel.js';
 
 
 // cannot use process.kill: https://github.com/sindresorhus/execa/issues/1177
@@ -148,8 +151,8 @@ function runFfmpegProcess(args: readonly string[], customExecaOptions?: ExecaOpt
   const abortController = new AbortController();
   const callerSignal = customExecaOptions?.cancelSignal;
   const abort = () => abortController.abort();
-  // A renderer signal arrives as a remote proxy. Forward it into a native main-process
-  // signal so both per-task cancellation and the global Abort button work.
+  // The caller's signal (one of this process's: a renderer's can't cross over, see ffmpegCancel.ts) and the
+  // global Abort button both stop it.
   callerSignal?.addEventListener('abort', abort, { once: true });
   if (callerSignal?.aborted) abort();
   const process = getExeca()(ffmpegPath, args, getExecaBufferOptions({ ...customExecaOptions, cancelSignal: abortController.signal }));
@@ -202,15 +205,16 @@ export async function runFfmpegWithProgress({ ffmpegArgs, duration, onProgress }
 /**
  * Runs FFmpeg and hands over its output as it comes rather than all at the end (e.g. each image of the timeline
  * filmstrip as soon as it's made): new stdout bytes and the stderr lines containing `stderrIncludes` (none without
- * it), at most every 20 ms so a busy FFmpeg doesn't flood the renderer with messages. Settles when FFmpeg exits.
+ * it), at most every 20 ms so a busy FFmpeg doesn't flood the renderer with messages. Settles when FFmpeg exits;
+ * abortFfmpeg(cancelId) stops it.
  */
-export async function runFfmpegStreaming(args: readonly string[], { signal, onOutput, stderrIncludes }: {
-  signal: AbortSignal,
+export const runFfmpegStreaming = (args: readonly string[], { cancelId, onOutput, stderrIncludes }: {
+  cancelId: string | undefined,
   onOutput: (stdout: Uint8Array, stderrLines: string[]) => void,
   stderrIncludes?: string | undefined,
-}) {
+}) => withCancelId(cancelId, async (cancelSignal) => {
   await loadExeca();
-  const process = runFfmpegProcess(args, { cancelSignal: signal, buffer: false }, { logCli: false });
+  const process = runFfmpegProcess(args, { ...(cancelSignal != null && { cancelSignal }), buffer: false }, { logCli: false });
   let stdout: Buffer[] = [];
   let stderrLines: string[] = [];
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -242,7 +246,7 @@ export async function runFfmpegStreaming(args: readonly string[], { signal, onOu
     clearTimeout(timer);
     flush();
   }
-}
+});
 
 export async function runFfprobe(args: readonly string[], { timeout = isDev ? 10000 : 30000, logCli = true } = {}) {
   const ffprobePath = getFfprobePath();
@@ -260,15 +264,15 @@ export async function runFfprobe(args: readonly string[], { timeout = isDev ? 10
   }
 }
 
-export async function renderWaveformPng({ filePath, start, duration, resample, color, streamIndex, timeout, signal }: {
+async function renderWaveformPngProcesses({ filePath, start, duration, resample, color, streamIndex, timeout, signal }: {
   filePath: string,
-  start?: number,
-  duration?: number,
-  resample?: number,
+  start?: number | undefined,
+  duration?: number | undefined,
+  resample?: number | undefined,
   color: string,
   streamIndex: number,
-  timeout?: number,
-  signal?: AbortSignal,
+  timeout?: number | undefined,
+  signal?: AbortSignal | undefined,
 }): Promise<Waveform> {
   await loadExeca();
   const args1 = [
@@ -325,6 +329,11 @@ export async function renderWaveformPng({ filePath, start, duration, resample, c
     throw err;
   }
 }
+
+/** abortFfmpeg(cancelId) stops it. */
+export const renderWaveformPng = ({ cancelId, ...rest }: Omit<Parameters<typeof renderWaveformPngProcesses>[0], 'signal'> & { cancelId?: string | undefined }) => (
+  withCancelId(cancelId, (signal) => renderWaveformPngProcesses({ ...rest, signal }))
+);
 
 const getInputSeekArgs = ({ filePath, from, to }: { filePath: string, from?: number | undefined, to?: number | undefined }) => [
   ...(from != null ? ['-ss', from.toFixed(5)] : []),
@@ -839,8 +848,11 @@ export async function downloadMediaUrl(url: string, outPath: string) {
   await runFfmpegProcess(args);
 }
 
-// Don't pass complex objects over the bridge (the process), so just convert it to a promise
-export const runFfmpeg = async (...args: Parameters<typeof runFfmpegProcess>) => {
-  await loadExeca();
-  return runFfmpegProcess(...args);
-};
+// Don't pass complex objects over the bridge (the process), so just convert it to a promise.
+// abortFfmpeg(cancelId) stops it.
+export const runFfmpeg = (args: readonly string[], customExecaOptions?: ExecaOptions, { cancelId, ...additionalOptions }: { logCli?: boolean, cancelId?: string | undefined } = {}) => (
+  withCancelId(cancelId, async (cancelSignal) => {
+    await loadExeca();
+    return runFfmpegProcess(args, { ...customExecaOptions, ...(cancelSignal != null && { cancelSignal }) }, additionalOptions);
+  })
+);
