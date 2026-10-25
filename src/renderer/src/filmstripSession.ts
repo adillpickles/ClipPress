@@ -1,4 +1,4 @@
-import { countFramesBetween, getDetailRequest, getFilmstripArgs, getFilmstripChunks, getFilmstripDetailArgs, getFilmstripFallbackArgs, getFilmstripInterval, hasEveryKeyframe, mergeRanges, servesView } from './filmstrip';
+import { countFramesBetween, getDetailRequest, getFilmstripArgs, getFilmstripChunks, getFilmstripDetailArgs, getFilmstripFallbackArgs, getFilmstripInterval, getKeyframeSpacing, mergeRanges, servesView } from './filmstrip';
 import type { FilmstripFrame, FilmstripView, TimeRange } from './filmstrip';
 
 /**
@@ -121,9 +121,15 @@ export default class FilmstripSession {
 
   /**
    * A long window's keyframes turned out to be no more than the default strip had there: it has every keyframe,
-   * even though its frames' spacing didn't show it (hasEveryKeyframe).
+   * even though its frames' spacing didn't show it (getKeyframeSpacing).
    */
   private keyframesFoundInStrip = false;
+
+  /**
+   * How far apart the recording's keyframes are, once a long window's keyframes pass got fewer than it asked for:
+   * where the tiles need frames closer together than that, every frame is decoded instead.
+   */
+  private keyframeSpacing: number | undefined;
 
   /** No longer shown: to be revoked once the timeline has stopped using them (takeRetired). */
   private retired: string[] = [];
@@ -260,8 +266,9 @@ export default class FilmstripSession {
     const { view } = this;
     if (this.disposed || view == null || !this.done) return;
     const keyframesInStrip = this.keyframesFoundInStrip
-      || hasEveryKeyframe(this.stretches.map((pass) => pass.frames), getFilmstripInterval(this.options.duration));
-    const wanted = getDetailRequest({ view, baseFrames: this.baseFrames, duration: this.options.duration, keyframesInStrip });
+      || getKeyframeSpacing(this.stretches.map((pass) => pass.frames), getFilmstripInterval(this.options.duration)) != null;
+    const { duration } = this.options;
+    const wanted = getDetailRequest({ view, baseFrames: this.baseFrames, duration, keyframesInStrip, keyframeSpacing: this.keyframeSpacing });
     if (wanted == null) {
       // Zoomed back out: the default strip is enough again.
       if (this.detail.length > 0) {
@@ -289,6 +296,9 @@ export default class FilmstripSession {
     const args = pass.keyframes ? getKeyframeArgs({ ...params, interval: pass.spacing, keyframesOnly: true }) : getFilmstripDetailArgs({ ...params, spacing: pass.spacing });
     const result = await this.runPass(pass, args);
     if (pass.abortController.signal.aborted) return;
+    // Keyframes further apart than it asked for: it got every one there was.
+    const keyframeSpacing = pass.keyframes && typeof result === 'number' ? getKeyframeSpacing([pass.frames], pass.spacing) : undefined;
+    if (keyframeSpacing != null) this.keyframeSpacing = keyframeSpacing;
     if (pass.keyframes && typeof result === 'number' && result <= countFramesBetween(this.baseFrames, pass.from, pass.to) * 1.25) {
       // The strip had (nearly) all of them already: from now on, decode every frame instead.
       this.keyframesFoundInStrip = true;
@@ -301,6 +311,8 @@ export default class FilmstripSession {
     if (typeof result === 'number') pass.finish();
     else pass.stop();
     this.changed();
+    // If they're too far apart for the tiles, every frame is decoded instead (its keyframes stay meanwhile).
+    if (keyframeSpacing != null) this.updateDetail();
   }
 
   /** Keeps the denser frames to maxDetailFrames, dropping the oldest windows (never the newest). */

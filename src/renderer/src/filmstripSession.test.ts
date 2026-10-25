@@ -319,6 +319,78 @@ describe('FilmstripSession', () => {
     session.dispose();
   });
 
+  /** OBS's default: a keyframe every 250 frames, at 60 fps. */
+  const obsKeyframes = 250 / 60;
+  /** Finishes a keyframes pass with the keyframes in its window; returns their URLs. */
+  const giveKeyframes = (run: Run) => {
+    const from = Number(run.args[run.args.indexOf('-ss') + 1]);
+    const to = from + Number(run.args[run.args.indexOf('-t') + 1]);
+    const urls: string[] = [];
+    for (let t = Math.ceil(from / obsKeyframes) * obsKeyframes; t <= to; t += obsKeyframes) urls.push(run.frame(t));
+    run.finish();
+    return urls;
+  };
+
+  it('decodes every frame where a long recording\'s keyframes turn out too far apart for the tiles', async () => {
+    vi.useFakeTimers();
+    // An hour with OBS's keyframes: the strip has one per 15 s, which doesn't show how far apart they are.
+    const session = create({ duration: 3600 });
+    await makeStrip(session, 15);
+    const count = runner.runs.length;
+    // A 39 s window, a tile per 1.9 s (121x on an 1100 px timeline): its keyframes first, quick to read.
+    session.setView({ from: 1785, to: 1815, tileSeconds: 1.92 });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(runner.runs).toHaveLength(count + 1);
+    const keyframes = runner.runs.at(-1)!;
+    expect(keyframes.args).toContain('-discard:v');
+    const urls = giveKeyframes(keyframes);
+    await vi.advanceTimersByTimeAsync(0);
+    // One per 4.2 s, where the tiles need one per 1.9 s: every frame of the same window, at once.
+    expect(runner.runs).toHaveLength(count + 2);
+    const everyFrame = runner.runs.at(-1)!;
+    expect(everyFrame.args).not.toContain('-discard:v');
+    expect(everyFrame.args.join(' ')).toContain('select=');
+    expect(everyFrame.args.slice(everyFrame.args.indexOf('-ss'), everyFrame.args.indexOf('-ss') + 2)).toEqual(['-ss', '1780.500']);
+    // Its keyframes (more than the strip has there) show meanwhile.
+    expect(session.takeRetired()).toEqual([]);
+    expect(session.snapshot().frames).toHaveLength(240 + urls.length);
+    everyFrame.finish();
+    await vi.advanceTimersByTimeAsync(0);
+    // From then on, every frame from the start.
+    session.setView({ from: 600, to: 640, tileSeconds: 2.5 });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(runner.runs).toHaveLength(count + 3);
+    expect(runner.runs.at(-1)!.args).not.toContain('-discard:v');
+    session.dispose();
+  });
+
+  it('keeps a long window\'s keyframes while they do, and decodes every frame closer in', async () => {
+    vi.useFakeTimers();
+    const session = create({ duration: 3600 });
+    await makeStrip(session, 15);
+    const count = runner.runs.length;
+    // 64x: a 73 s window, a tile per 3.6 s; a keyframe per 4.2 s is close enough.
+    session.setView({ from: 1772, to: 1828, tileSeconds: 3.6 });
+    await vi.advanceTimersByTimeAsync(250);
+    giveKeyframes(runner.runs.at(-1)!);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runner.runs).toHaveLength(count + 1);
+    // 79x: a tile per 2.9 s, a 60 s window. Every frame, without asking for its keyframes first.
+    session.setView({ from: 1777, to: 1823, tileSeconds: 2.9 });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(runner.runs).toHaveLength(count + 2);
+    const everyFrame = runner.runs.at(-1)!;
+    expect(everyFrame.args).not.toContain('-discard:v');
+    expect(everyFrame.args[everyFrame.args.indexOf('-t') + 1]).toBe('59.800');
+    everyFrame.finish();
+    await vi.advanceTimersByTimeAsync(0);
+    // Zoomed back out: all of them let go.
+    session.setView({ from: 0, to: 3600, tileSeconds: 230 });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(session.snapshot().frames).toHaveLength(240);
+    session.dispose();
+  });
+
   it('keeps the denser frames bounded', async () => {
     vi.useFakeTimers();
     const session = create({ duration: 3600 });
