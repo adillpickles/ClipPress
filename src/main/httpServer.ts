@@ -7,6 +7,7 @@ import assert from 'node:assert';
 import { homepageUrl } from '../common/constants.js';
 import logger from './logger.js';
 import { hasUnsafeKeys } from './objectKeys.js';
+import isLocalApiRequest from './httpApiGuard.js';
 import type { AppEvent } from './index.js';
 
 
@@ -25,6 +26,13 @@ export default ({ port, onKeyboardAction, onAwaitAppEvent }: {
   }));
 
   const apiRouter = express.Router();
+  apiRouter.use((req, res, next) => {
+    if (!isLocalApiRequest({ hostname: req.hostname, origin: req.headers.origin, isJson: Boolean(req.is('application/json')) })) {
+      res.status(403).json({ error: 'Only local programs posting JSON may use the API' });
+      return;
+    }
+    next();
+  });
 
   app.get('/', (_req, res) => res.send(`See ${homepageUrl}`));
 
