@@ -17,7 +17,7 @@ export interface OutputProbe {
 
 export type OutputCheck =
   | { ok: true }
-  | { ok: false, path: string, reason: 'missing' | 'empty' | 'unreadable' | 'no-media' };
+  | { ok: false, path: string, reason: 'missing' | 'empty' | 'unreadable' | 'no-media' | 'cancelled' };
 
 /** Smallest output that can still be a real clip; anything below is treated as broken. */
 export const minExportBytes = 1024;
@@ -25,13 +25,17 @@ export const minExportBytes = 1024;
 export async function verifyExportedFiles(paths: readonly string[], {
   statFile,
   probe,
+  isCancelled = () => false,
 }: {
   statFile: (path: string) => Promise<{ size: number, isFile: boolean } | undefined>,
   probe: (path: string) => Promise<OutputProbe>,
+  /** Checked before every file, so Cancel doesn't wait for the rest to be probed. */
+  isCancelled?: () => boolean,
 }): Promise<OutputCheck> {
   if (paths.length === 0) return { ok: false, path: '', reason: 'missing' };
   // eslint-disable-next-line no-restricted-syntax
   for (const path of paths) {
+    if (isCancelled()) return { ok: false, path, reason: 'cancelled' };
     // eslint-disable-next-line no-await-in-loop
     const stat = await statFile(path);
     if (stat == null || !stat.isFile) return { ok: false, path, reason: 'missing' };

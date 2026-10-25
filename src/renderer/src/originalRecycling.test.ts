@@ -30,6 +30,22 @@ describe('verifyExportedFiles', () => {
     expect(await verifyExportedFiles(['a.mp4'], { statFile: goodStat, probe: async () => ({ duration: 3, streamCount: 0 }) })).toEqual({ ok: false, path: 'a.mp4', reason: 'no-media' });
     expect(await verifyExportedFiles(['a.mp4'], { statFile: goodStat, probe: async () => ({ duration: undefined, streamCount: 1 }) })).toEqual({ ok: false, path: 'a.mp4', reason: 'no-media' });
   });
+
+  it('stops before the next file once cancelled', async () => {
+    let cancelled = false;
+    const checked: string[] = [];
+    const result = await verifyExportedFiles(['a.mp4', 'b.mp4', 'c.mp4'], {
+      statFile: async (p) => { checked.push(`stat ${p}`); return goodStat(); },
+      probe: async (p) => {
+        checked.push(`probe ${p}`);
+        cancelled = true;
+        return goodProbe();
+      },
+      isCancelled: () => cancelled,
+    });
+    expect(result).toEqual({ ok: false, path: 'b.mp4', reason: 'cancelled' });
+    expect(checked).toEqual(['stat a.mp4', 'probe a.mp4']);
+  });
 });
 
 describe('recycleOriginal', () => {

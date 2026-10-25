@@ -2879,7 +2879,7 @@ function App() {
     const cancelled = () => abortController.signal.aborted;
     const keptBecauseCancelled = () => notices.add(i18n.t('The original recording was kept, because this was cancelled.'));
     setWorking({ text: i18n.t('Checking the exported files'), abortController });
-    const check = await verifyExportedFiles(exportedPaths, { statFile: statOutput, probe: probeOutput });
+    const check = await verifyExportedFiles(exportedPaths, { statFile: statOutput, probe: probeOutput, isCancelled: cancelled });
     if (cancelled()) {
       keptBecauseCancelled();
       return false;
