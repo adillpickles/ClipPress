@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildLlcProjectData, encodeLlcProjectFile, getProjectSegmentsToSave, withMediaDuration } from './llcProject';
 import ProjectAutoSave from './projectAutoSave';
-import type { ProjectSession } from './projectAutoSave';
+import type { ProjectSaveFailure, ProjectSession } from './projectAutoSave';
 import type { ProjectFilePathKey } from './projectFilePathKey';
 import type { LlcProject, OverlayClip, StateSegment } from './types';
 
@@ -35,6 +35,7 @@ function setup({ latencyMs = 10, pathKey, fileKey }: {
   const disk = new Map<string, LlcProject>();
   const writes: { path: string, data: LlcProject }[] = [];
   const errors: unknown[] = [];
+  const copyErrors: ProjectSaveFailure[] = [];
   let failNext = false;
   let failAll = false;
   let failingPath: string | undefined;
@@ -52,6 +53,7 @@ function setup({ latencyMs = 10, pathKey, fileKey }: {
       disk.set(pathKey?.(writePath) ?? writePath, data);
     },
     onError: (err) => errors.push(err),
+    onCopyError: (failure) => copyErrors.push(failure),
     ...(keyOf != null ? { pathKey: keyOf } : {}),
   });
   let enabled = true;
@@ -63,6 +65,7 @@ function setup({ latencyMs = 10, pathKey, fileKey }: {
     disk,
     writes,
     errors,
+    copyErrors,
     show,
     setEnabled: (value: boolean) => { enabled = value; },
     failNextWrite: () => { failNext = true; },
@@ -1141,18 +1144,92 @@ describe('ProjectAutoSave before the app closes', () => {
       t.show({ id: 1 }, untouched, { at: inApp, copies: [beside] });
       t.show({ id: 1 }, withTrim, { at: inApp, copies: [beside] });
       await t.wait(delayMs + 50);
-      expect(t.errors).toHaveLength(1);
+      expect(t.copyErrors).toEqual([{ path: beside, error: expect.any(Error) }]);
       expect(t.disk.get(inApp)).toEqual(withTrim);
       expect(t.autoSave.hasSaved(1, inApp)).toBe(true);
       expect(t.autoSave.hasSaved(1, beside)).toBe(false);
-      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
-      expect(await flushWhile(t)).toEqual([{ path: beside, error: expect.any(Error) }]);
       // Once the folder can be written to again, trying again writes only the copy that failed.
       t.setFailingPath(undefined);
       const writesBefore = t.writes.length;
       expect(await flushWhile(t)).toEqual([]);
       expect(t.writes.slice(writesBefore).map((w) => w.path)).toEqual([beside]);
       expect(t.disk.get(beside)).toEqual(withTrim);
+    });
+
+    // Review finding R2-3: the copy next to the recording failing read as the edits not being saved.
+    describe('when only the copy cannot be written', () => {
+      it('warns about the copy once, not as a failed save, while it keeps failing', async () => {
+        const t = setup();
+        t.setFailingPath(beside);
+        t.show({ id: 1 }, untouched, { at: inApp, copies: [beside] });
+        t.show({ id: 1 }, withTrim, { at: inApp, copies: [beside] });
+        await t.wait(delayMs + 50);
+        t.show({ id: 1 }, withText, { at: inApp, copies: [beside] });
+        await t.wait(delayMs + 50);
+        const saving = t.autoSave.whenSaved();
+        await t.wait(50);
+        await saving;
+        expect(t.disk.get(inApp)?.overlayClips).toEqual([textClip]);
+        expect(t.writes.filter((w) => w.path === beside).length).toBeGreaterThanOrEqual(2);
+        expect(t.errors).toEqual([]);
+        expect(t.copyErrors.map((f) => f.path)).toEqual([beside]);
+        // Saved after all, then failing again: worth a word again.
+        t.setFailingPath(undefined);
+        await flushWhile(t);
+        t.setFailingPath(beside);
+        t.show({ id: 1 }, withTrim, { at: inApp, copies: [beside] });
+        await t.wait(delayMs + 50);
+        expect(t.copyErrors.map((f) => f.path)).toEqual([beside, beside]);
+        expect(t.errors).toEqual([]);
+      });
+
+      it('lets the app close once the main place has the edits, trying the copy once more', async () => {
+        const t = setup();
+        t.setFailingPath(beside);
+        t.show({ id: 1 }, untouched, { at: inApp, copies: [beside] });
+        t.show({ id: 1 }, withTrim, { at: inApp, copies: [beside] });
+        await t.wait(delayMs + 50);
+        expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+        // A change is still waited for, until it is in the main place.
+        t.show({ id: 1 }, withText, { at: inApp, copies: [beside] });
+        expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+        const writesBefore = t.writes.length;
+        expect(await flushWhile(t)).toEqual([]);
+        expect(new Set(t.writes.slice(writesBefore).map((w) => w.path))).toEqual(new Set([inApp, beside]));
+        expect(t.disk.get(inApp)?.overlayClips).toEqual([textClip]);
+        expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+        expect(t.copyErrors).toHaveLength(1);
+      });
+
+      it('lets the app close after a file kept in both places was closed', async () => {
+        const t = setup();
+        t.setFailingPath(beside);
+        t.show({ id: 1 }, untouched, { at: inApp, copies: [beside] });
+        t.show({ id: 1 }, withTrim, { at: inApp, copies: [beside] });
+        t.autoSave.endSession();
+        await t.wait(50);
+        expect(t.disk.get(inApp)).toEqual(withTrim);
+        expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+        expect(await flushWhile(t)).toEqual([]);
+      });
+
+      it('still keeps the app from closing when the main place cannot be written, naming both', async () => {
+        const t = setup();
+        t.show({ id: 1 }, untouched, { at: inApp, copies: [beside] });
+        t.show({ id: 1 }, withTrim, { at: inApp, copies: [beside] });
+        t.setFailingPath(inApp);
+        await t.wait(delayMs + 50);
+        expect(t.disk.get(beside)).toEqual(withTrim);
+        expect(t.errors).toHaveLength(1);
+        expect(t.copyErrors).toEqual([]);
+        expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+        expect((await flushWhile(t)).map((f) => f.path)).toEqual([inApp]);
+        // Both failing: the main place's failure keeps the app open, and the copy's is listed with it.
+        t.setDiskFailing(true);
+        t.show({ id: 1 }, withText, { at: inApp, copies: [beside] });
+        expect((await flushWhile(t)).map((f) => f.path)).toEqual([inApp, beside]);
+        expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+      });
     });
 
     it('reports one error for a save that fails in both places', async () => {

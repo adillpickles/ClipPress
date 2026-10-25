@@ -18,12 +18,21 @@ export interface ProjectSnapshot {
   session: ProjectSession,
   /** Where autosave writes the project. */
   path: string,
-  /** Where it also writes a copy, after `path`: the setting keeps the edits in more than one place. */
+  /**
+   * Where it also writes a copy, after `path`: the setting keeps the edits in more than one place. A spare: one that
+   * can't be written while `path` can is only reported (see `ProjectAutoSaveOptions.onCopyError`).
+   */
   copyPaths?: readonly string[] | undefined,
   /** The project's contents, compared to decide whether a save is needed. */
   project: LlcProject,
   /** What is written to the file for `project`. */
   fileData: LlcProject,
+}
+
+/** A project file that could not be written. */
+export interface ProjectSaveFailure {
+  path: string,
+  error: unknown,
 }
 
 export interface ProjectAutoSaveOptions {
@@ -33,17 +42,16 @@ export interface ProjectAutoSaveOptions {
   /** Reports a failed save. Must not throw: later saves, and opening files, wait on it. */
   onError: (err: unknown) => void,
   /**
+   * Reports a copy (`ProjectSnapshot.copyPaths`) that could not be written while the main place was: once, when it
+   * starts failing, not at every save while it keeps failing. Must not throw. By default, `onError`.
+   */
+  onCopyError?: (failure: ProjectSaveFailure) => void,
+  /**
    * The same key for every path to the same project file (see createProjectFilePathKey), so that a
    * path written differently cannot get around what a save may overwrite. By default, the path.
    * A key that is not resolved yet is asked for again before a save could overwrite a newer open.
    */
   pathKey?: (path: string) => ProjectFilePathKey,
-}
-
-/** A project file that could not be written. */
-export interface ProjectSaveFailure {
-  path: string,
-  error: unknown,
 }
 
 /** What `saveTo` resolves with when nothing failed (a write may throw anything, even undefined). */
@@ -107,7 +115,9 @@ interface FailedSave {
  * do not close if it reports a failure the user has not accepted.
  *
  * A snapshot with `copyPaths` is saved to each of its paths in turn. Each copy is a project file of
- * its own here: saved, failed, owned and tried again on its own.
+ * its own here: saved, failed, owned and tried again on its own. But a copy is a spare: one that
+ * can't be written is reported through `onCopyError`, and doesn't keep the app from closing while
+ * the main place has the edits. A failure of the main place is reported, and kept, as before.
  *
  * Only the contents (`project`) decide whether a file needs saving, except for a file this session
  * wrote: it is written again when its `fileData` changed for the same contents, so a save made
@@ -247,13 +257,14 @@ export default class ProjectAutoSave {
 
   /**
    * Whether anything is not on disk yet: a change waiting for the delay or being written, or a
-   * failed save. While autosave is turned off, nothing is saved, so nothing counts as unsaved.
+   * failed save. While autosave is turned off, nothing is saved, so nothing counts as unsaved; nor
+   * does a copy that can't be written (see `copyPaths`) while the main place has the edits.
    */
   hasUnsavedChanges() {
     if (!this.enabled) return false;
-    if (this.pendingWrites > 0 || this.failed.size > 0) return true;
+    if (this.pendingWrites > 0 || [...this.failed.values()].some((failure) => !this.isCopyFailure(failure))) return true;
     const { session } = this;
-    return session != null && this.needsSave(session, session.latest);
+    return session != null && this.hasUnsavedEdits(session);
   }
 
   /**
@@ -308,7 +319,8 @@ export default class ProjectAutoSave {
    * That is the open file's latest state, including changes made while saving, every save already
    * started (such as the final save of a file closed just before), and every save that failed
    * earlier, which is tried again. The open file stays open. Failures are only reported here, not
-   * through `onError`.
+   * through `onError`; copies (`copyPaths`) that could not be written only along with a failure of
+   * a main place.
    */
   async flush(): Promise<ProjectSaveFailure[]> {
     this.flushing += 1;
@@ -320,10 +332,10 @@ export default class ProjectAutoSave {
         if (session != null && this.enabled) this.enqueueSave(session, session.latest);
         // eslint-disable-next-line no-await-in-loop
         await this.drain();
-        // Until no change is left, or saving the open file failed (which is reported).
+        // Until no change is left (but for a copy that keeps failing), or saving the open file failed (which is reported).
         const open = this.session;
-        if (open == null || !this.enabled || !this.needsSave(open, open.latest)) break;
-        if (this.paths(open.latest).some((p) => this.failed.has(this.key(p)))) {
+        if (open == null || !this.enabled || !this.hasUnsavedEdits(open)) break;
+        if (this.failed.has(this.key(open.latest.path))) {
           // Trying again saves the latest state. Not in the background meanwhile: its error
           // notification would replace the dialog that tells the user about this failure.
           this.cancelTimer();
@@ -334,7 +346,10 @@ export default class ProjectAutoSave {
       this.flushing -= 1;
     }
     if (!this.enabled) return [];
-    return [...this.failed.values()].map(({ path, error }) => ({ path, error }));
+    const failures = [...this.failed.values()];
+    // Copies that can't be written don't keep the app from closing while the main places have the edits.
+    if (failures.every((failure) => this.isCopyFailure(failure))) return [];
+    return failures.map(({ path, error }) => ({ path, error }));
   }
 
   /** Waits until no write is queued, including writes queued while waiting. */
@@ -461,6 +476,22 @@ export default class ProjectAutoSave {
     return this.paths(snapshot).some((path) => this.needsSaveTo(session, snapshot, path));
   }
 
+  /** Whether `path` is one of the snapshot's copies (`copyPaths`) rather than its main place. */
+  private isCopyOf(snapshot: ProjectSnapshot, path: string) {
+    return this.key(path) !== this.key(snapshot.path);
+  }
+
+  /** Whether a failed save is of a copy only: of what the session saves now, if it is the open one. */
+  private isCopyFailure({ session, snapshot, path }: FailedSave) {
+    return this.isCopyOf(session === this.session ? session.latest : snapshot, path);
+  }
+
+  /** Whether the open session's latest state is not on disk yet, but for a copy that is failing (see `copyPaths`). */
+  private hasUnsavedEdits(session: OpenSession) {
+    const { latest } = session;
+    return this.paths(latest).some((path) => this.needsSaveTo(session, latest, path) && !(this.isCopyOf(latest, path) && this.failed.has(this.key(path))));
+  }
+
   private needsSaveTo(session: OpenSession, { project, fileData }: ProjectSnapshot, path: string) {
     const saved = session.saved.get(this.key(path));
     if (saved == null) return session.hasProject || hasProjectEdits(project);
@@ -499,19 +530,32 @@ export default class ProjectAutoSave {
         return;
       }
       const error = await this.saveTo(session, snapshot, path);
-      if (error !== noError && this.flushing === 0) this.options.onError(error);
+      // A copy that still fails was reported when it started to.
+      if (error !== noError && this.flushing === 0 && !this.isCopyOf(snapshot, path)) this.options.onError(error);
     });
   }
 
-  /** Saves every copy of `snapshot`, one after the other, and reports the first that failed. */
+  /**
+   * Saves every copy of `snapshot`, one after the other, the main place first. Reports a failure there, or else each
+   * copy that started failing (see `onCopyError`).
+   */
   private async save(session: OpenSession, snapshot: ProjectSnapshot) {
-    let firstError: unknown = noError;
+    let mainError: unknown = noError;
+    const copyFailures: ProjectSaveFailure[] = [];
     for (const path of this.paths(snapshot)) {
+      const isCopy = this.isCopyOf(snapshot, path);
+      const wasFailing = this.failed.has(this.key(path));
       // eslint-disable-next-line no-await-in-loop
       const error = await this.saveTo(session, snapshot, path);
-      if (firstError === noError) firstError = error;
+      if (error !== noError) {
+        if (!isCopy) mainError = error;
+        else if (!wasFailing) copyFailures.push({ path, error });
+      }
     }
-    if (firstError !== noError && this.flushing === 0) this.options.onError(firstError);
+    if (this.flushing > 0) return;
+    const { onError, onCopyError = ({ error }) => onError(error) } = this.options;
+    if (mainError !== noError) onError(mainError);
+    else for (const failure of copyFailures) onCopyError(failure);
   }
 
   /** Saves `snapshot` to one of its paths. Resolves with the error if that failed, otherwise with `noError`. */

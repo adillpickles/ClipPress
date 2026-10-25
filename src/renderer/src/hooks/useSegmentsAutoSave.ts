@@ -9,8 +9,9 @@ import type { ProjectSession, ProjectSnapshot } from '../projectAutoSave';
 import { getSuffixedOutPath, isWindows } from '../util';
 import type { CustomTagsByFile, OverlayClip, ParamsByStreamId, StateSegment } from '../types';
 import type { ProjectFileLocation } from '../../../common/types';
+import { logProjectFiles } from '../projectFilesIo';
 import { getProjectSavePaths, getProjectStoreEnv } from '../projectStore';
-import { errorToast } from '../swal';
+import getSwal, { errorToast } from '../swal';
 import i18n from '../i18n';
 
 const path = window.require('path');
@@ -58,6 +59,11 @@ export default ({ autoSaveProjectFile, projectFileLocation, filePath, projectSes
     onError: (err) => {
       errorToast(i18n.t('Unable to save project file'));
       console.error('Failed to save project file', err);
+    },
+    // Only "Both" keeps a copy: the one next to the recording. The edits are still in ClipPress's folder.
+    onCopyError: ({ path: copyPath, error }) => {
+      getSwal().toast.fire({ icon: 'warning', timer: 10000, text: i18n.t('Couldn\'t save the copy next to the recording. Your edits are saved in ClipPress\'s folder.') });
+      logProjectFiles('warn', `Could not save the copy of the edits next to the recording: ${copyPath}: ${error instanceof Error ? error.message : String(error)}`);
     },
     pathKey: createProjectFilePathKey({ path, caseInsensitive: isWindows, realpath: (dir) => realpathSync.native(dir), identity: (dir) => statSync(dir, { bigint: true }) }),
   }));
