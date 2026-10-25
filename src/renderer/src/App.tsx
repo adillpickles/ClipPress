@@ -1781,6 +1781,9 @@ function App() {
     return isDurationValid(duration) ? duration : undefined;
   }, [mainFileFormat?.duration]);
   const openDuration = probedDuration ?? fileDuration;
+  // The timeline has the recording's length from then on too, rather than a placeholder of a second until the player
+  // has it: the filmstrip showed that second's frames all along the lane, and made denser frames of it.
+  const timelineDuration = isDurationValid(fileDuration) ? fileDuration : (probedDuration ?? fileDurationNonZero);
   const filmstrip = useFilmstrip({
     filePath,
     duration: openDuration,
@@ -7158,7 +7161,7 @@ function App() {
                           startTimeOffset={startTimeOffset}
                           zoom={zoom}
                           seekAbs={seekAbs}
-                          fileDurationNonZero={fileDurationNonZero}
+                          fileDurationNonZero={timelineDuration}
                           cutSegments={cutSegments}
                           setCurrentSegIndex={setCurrentSegIndex}
                           currentSegIndexSafe={currentSegIndexSafe}
