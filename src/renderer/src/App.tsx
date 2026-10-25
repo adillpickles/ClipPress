@@ -293,7 +293,7 @@ import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, 
 import type { QuickExport } from './quickExport';
 import { normalizeQuickExportPresets } from '../../common/quickExport';
 import { getProjectCopiesToRetire, getProjectLookupPaths, getProjectSavePaths, getProjectStoreEnv, isSameProjectPath } from './projectStore';
-import { findNewestProjectFile, keepCopiesAboutToBeReplaced, logProjectFiles, recycleRecordingProjectCopies } from './projectFilesIo';
+import { findProjectFiles, keepCopiesAboutToBeReplaced, keepCopiesNotOpened, logProjectFiles, readNewestProjectCopy, recycleRecordingProjectCopies } from './projectFilesIo';
 import { getProjectMediaCandidates, getProjectMediaOldPath } from './missingRecording';
 import useProjectCleanup from './hooks/useProjectCleanup';
 import useRelocateRecording from './hooks/useRelocateRecording';
@@ -4781,18 +4781,27 @@ function App() {
               found.push({ path: candidate, mtimeMs });
             }
           }
-          // More than one copy (the setting was changed, or an older version saved next to the recording): the most
-          // recently saved edits win; on a tie, the place the setting points to (the order above).
-          const newest = found.reduce<{ path: string, mtimeMs: number } | undefined>((best, candidate) => (best == null || candidate.mtimeMs > best.mtimeMs ? candidate : best), undefined);
-          if (newest != null) {
-            // Ok, the file exists. Next to the recording we may have to ask the user, because we need to read it
-            if (dirname(newest.path) === dirname(fp)) await ensureAccessToSourceDir(fp);
-            await loadProject(newest.path);
-            // Autosave is about to save the loaded copy everywhere the setting points: a different copy already
-            // there is kept under another name next to it. (Only once loaded: edits that don't load replace nothing.)
+          if (found.length > 0) {
+            // More than one copy (the setting was changed, "Both", or an older version saved next to the recording): the
+            // most recently saved edits win; on a tie, the place the setting points to (the order above). One that
+            // can't be read is passed over for the next.
+            const { opened, unreadable } = await readNewestProjectCopy(found, async (path) => {
+              // Next to the recording we may have to ask the user, because we need to read it
+              if (dirname(path) === dirname(fp)) await ensureAccessToSourceDir(fp);
+              return loadLlcProject(path);
+            }, (err) => err instanceof DirectoryAccessDeclinedError);
+            const unreadablePaths = unreadable.map(({ path }) => path);
+            for (const { path, error } of unreadable) logProjectFiles('warn', `Could not read the edits in ${path}: ${error instanceof Error ? error.message : String(error)}`);
+            // Autosave is about to save what is opened everywhere the setting points (or the first edit, if nothing could
+            // be opened): what it didn't open is kept under another name next to it first.
             const savePaths = getProjectSavePaths(fp, projectFileLocation, customOutDir, storeEnv);
-            if (autoSaveProjectFile) sameCopyPaths = await keepCopiesAboutToBeReplaced(savePaths.filter((savePath) => found.some(({ path }) => path === savePath)), newest.path);
-            sidecarsToRetire = [...sidecarsToRetire, ...getProjectCopiesToRetire(found.map(({ path }) => path), projectFileLocation, savePaths, isWindows || isMac)];
+            if (autoSaveProjectFile) sameCopyPaths = await keepCopiesNotOpened({ savePaths, openedPath: opened?.path, unreadable: unreadablePaths });
+            // Reported below, and the recording opens without edits.
+            if (opened == null) throw unreadable[0]?.error;
+            if (unreadable.length > 0) getSwal().toast.fire({ icon: 'warning', timer: 10000, text: i18n.t('The newest copy of your edits couldn\'t be read, so an earlier copy was opened.') });
+            applyProjectState({ mediaFilePath: fp, project: opened.project });
+            loadedProjectPath = opened.path;
+            sidecarsToRetire = [...sidecarsToRetire, ...getProjectCopiesToRetire(found.map(({ path }) => path).filter((path) => !unreadablePaths.includes(path)), projectFileLocation, savePaths, isWindows || isMac)];
             return;
           }
 
@@ -5065,6 +5074,7 @@ function App() {
       showPreviewFileLoadedMessage,
       showNotNativelySupportedMessage,
       loadProjectIntoState,
+      applyProjectState,
       whenProjectSaved,
       setRecentFiles,
     ],
@@ -5748,15 +5758,11 @@ function App() {
     if (workingRef.current) return;
     closeExportResultDialog();
     await withErrorHandling(async () => {
-      // Its newest edits, wherever they are kept.
-      const newestProject = await findNewestProjectFile(getProjectLookupPaths(path, projectFileLocation, customOutDir, getProjectStoreEnv()));
-      let project: Awaited<ReturnType<typeof loadLlcProject>> | undefined;
-      try {
-        if (newestProject != null) project = await loadLlcProject(newestProject);
-      } catch (err) {
-        console.warn('Could not read the edits of a missing recording', newestProject, err);
-      }
-      const projectPath = project != null ? newestProject : undefined;
+      // Its newest edits that can be read, wherever they are kept.
+      const { opened, unreadable } = await readNewestProjectCopy(await findProjectFiles(getProjectLookupPaths(path, projectFileLocation, customOutDir, getProjectStoreEnv())), loadLlcProject);
+      for (const { path: copy, error } of unreadable) console.warn('Could not read the edits of a missing recording', copy, error);
+      const project = opened?.project;
+      const projectPath = opened?.path;
       const relocation = await relocateRecording({ oldMediaPath: path, project, projectPath });
       if (relocation == null || workingRef.current) return;
       setWorking({ text: i18n.t('Loading file') });
