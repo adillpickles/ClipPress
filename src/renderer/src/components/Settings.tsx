@@ -542,7 +542,13 @@ function Settings({
             <SettingRow
               label={t('Recycle edits with the original')}
               description={t('When the original goes to the Recycle Bin after an export, its edits go too.')}
-              details={t('Every copy: in ClipPress, next to the recording, and older backups. You can restore them from the Recycle Bin.')}
+              details={(
+                <>
+                  {t('Every copy: in ClipPress, next to the recording, and older backups. You can restore them from the Recycle Bin.')}
+                  <br />
+                  {t('A clean-up after exporting follows its own "Move the project file" choice instead.')}
+                </>
+              )}
             >
               <Switch checked={trashProjectWithSource} onCheckedChange={setTrashProjectWithSource} aria-label={t('Recycle edits with the original')} />
             </SettingRow>

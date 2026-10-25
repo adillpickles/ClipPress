@@ -303,6 +303,7 @@ import type { ClipVolumeChange } from './components/ClipVolumePopover';
 import { combineAudioGain, isClipVolumeChanged, sanitizeClipGainDb } from './util/audioGain';
 import { recycleOriginal, verifyExportedFiles } from './originalRecycling';
 import type { FileIdentity } from './originalRecycling';
+import { shouldRecycleEditsWithOriginal } from './afterExportAction';
 import { fileExists, identifyFile, probeOutput, statOutput } from './originalRecyclingIo';
 import styles from './App.module.css';
 import { DirectoryAccessDeclinedError, UserFacingError } from '../errors';
@@ -2840,8 +2841,10 @@ function App() {
    * written and checked, only through the Recycle Bin, and never if the original changed during the export.
    * Returns whether the recording was closed for it.
    */
-  const recycleOriginalAfterExport = useCallback(async ({ wanted, sourcePath, sourceIdentity, allPlannedCreated, exportedPaths, notices, warnings, highlights }: {
+  const recycleOriginalAfterExport = useCallback(async ({ wanted, cleanupAfter, sourcePath, sourceIdentity, allPlannedCreated, exportedPaths, notices, warnings, highlights }: {
     wanted: boolean,
+    /** The clean-up that runs after this export, if any: its project file box decides whether the edits go too. */
+    cleanupAfter: CleanupChoicesType | undefined,
     sourcePath: string,
     sourceIdentity: FileIdentity | undefined,
     allPlannedCreated: boolean,
@@ -2883,7 +2886,7 @@ function App() {
       keptBecauseCancelled();
     } else if (result.recycled) {
       // Settings > Projects > "Recycle edits with the original": every copy of them, so none brings them back (#91).
-      const editsRecycled = trashProjectWithSource && (await recycleRecordingProjectCopies(sourcePath, customOutDir, deleteProjectFile)) > 0;
+      const editsRecycled = shouldRecycleEditsWithOriginal(trashProjectWithSource, cleanupAfter) && (await recycleRecordingProjectCopies(sourcePath, customOutDir, deleteProjectFile)) > 0;
       highlights.add(editsRecycled
         ? i18n.t('The original recording and its edits were moved to the Recycle Bin. You can restore them from there.')
         : i18n.t('The original recording was moved to the Recycle Bin. You can restore it from there.'));
@@ -3759,6 +3762,7 @@ function App() {
         const closedForRecycling = await recycleOriginalAfterExport({
           highlights,
           wanted: trashSourceAfterExport || (cleanupChoices.askForCleanup && newCleanupChoices?.trashSourceFile === true),
+          cleanupAfter: newCleanupChoices,
           sourcePath: filePath,
           sourceIdentity,
           allPlannedCreated: finalizedResults.length > 0 && finalizedResults.every((result) => result.created),
@@ -3971,6 +3975,7 @@ function App() {
         const closedForRecycling = await recycleOriginalAfterExport({
           highlights,
           wanted: trashSourceAfterExport || (cleanupChoices.askForCleanup && newCleanupChoices?.trashSourceFile === true),
+          cleanupAfter: newCleanupChoices,
           sourcePath: filePath,
           sourceIdentity,
           allPlannedCreated: !extraStreamsFailed && outFiles.length > 0 && outFiles.every((file) => file.created) && (mergedResult == null || mergedResult.created),
@@ -4197,6 +4202,7 @@ function App() {
       const closedForRecycling = await recycleOriginalAfterExport({
         highlights,
         wanted: trashSourceAfterExport || (cleanupChoices.askForCleanup && newCleanupChoices?.trashSourceFile === true),
+        cleanupAfter: newCleanupChoices,
         sourcePath: filePath,
         sourceIdentity,
         allPlannedCreated: !extraStreamsFailed && outFiles.length > 0 && outFiles.every((file) => file.created) && (mergedResult == null || mergedResult.created),

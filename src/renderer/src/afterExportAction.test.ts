@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import getAfterExportAction from './afterExportAction';
+import getAfterExportAction, { shouldRecycleEditsWithOriginal } from './afterExportAction';
 
 const defaults = { trashTmpFiles: true, askForCleanup: true, closeFile: true, cleanupAfterExport: false };
 
@@ -33,5 +33,20 @@ describe('after export action', () => {
   test('leaves the original recording to its own switch', () => {
     const auto = { ...defaults, cleanupAfterExport: true, askForCleanup: false, trashTmpFiles: false };
     expect(getAfterExportAction({ ...auto, trashSourceFile: true }, true)).toBe('close');
+  });
+});
+
+describe('the edits of an original moved to the Recycle Bin after an export', () => {
+  test('go with it when the setting is on, unless the clean-up after the export leaves the project file unticked', () => {
+    // Settings > Export > "Move the original to the Recycle Bin" alone: the setting decides.
+    expect(shouldRecycleEditsWithOriginal(true, undefined)).toBe(true);
+    expect(shouldRecycleEditsWithOriginal(false, undefined)).toBe(false);
+    // The clean-up dialog (asked, or its choices done automatically): its "Move the project file" box decides.
+    const cleanup = { ...defaults, cleanupAfterExport: true, trashSourceFile: true };
+    expect(shouldRecycleEditsWithOriginal(true, cleanup)).toBe(false);
+    expect(shouldRecycleEditsWithOriginal(true, { ...cleanup, trashProjectFile: false })).toBe(false);
+    expect(shouldRecycleEditsWithOriginal(true, { ...cleanup, trashProjectFile: true })).toBe(true);
+    // With the setting off, the clean-up moves only the copies it always did.
+    expect(shouldRecycleEditsWithOriginal(false, { ...cleanup, trashProjectFile: true })).toBe(false);
   });
 });

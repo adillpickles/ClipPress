@@ -29,3 +29,12 @@ export default function getAfterExportAction(choices: CleanupChoicesType, simple
   if (project) return close ? 'closeAndBinProject' : 'binProject';
   return close ? 'close' : 'nothing';
 }
+
+/**
+ * Whether the original's edits go to the Recycle Bin with it after an export: Settings > Projects > "Recycle edits with
+ * the original" (`recycleEdits`), unless the clean-up that runs after this export (asked, or done automatically) has
+ * "Move the project file" unticked. That box is a choice made for this export, so it decides.
+ */
+export function shouldRecycleEditsWithOriginal(recycleEdits: boolean, cleanupChoices: CleanupChoicesType | undefined) {
+  return recycleEdits && (cleanupChoices == null || cleanupChoices.trashProjectFile === true);
+}
