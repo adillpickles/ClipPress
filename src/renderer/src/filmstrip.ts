@@ -13,8 +13,11 @@
 export const filmstripTargetCount = 240;
 /** Recordings longer than this are done in stretches of this length, a couple at a time, the visible one first. */
 export const filmstripChunkSeconds = 600;
-/** The strip's tiles are as tall as the clip blocks (Timeline: the clips lane less the blocks' insets). */
-export const filmTileHeight = 54;
+/**
+ * The strip's tiles are as tall as the clip blocks (Timeline: the clips lane, 64 px, less its top border and the
+ * blocks' insets), so a frame fills a tile exactly.
+ */
+export const filmTileHeight = 53;
 
 /** Frames are this tall: sharp in a tile on this display, at least 96 px. */
 export function getFilmstripFrameHeight(devicePixelRatio: number) {
