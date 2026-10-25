@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { FilmstripStreamReader, MultipartJpegReader, getDetailRequest, getFilmTiles, getFilmstripArgs, getFilmstripChunks, getFilmstripDetailArgs, getFilmstripFallbackArgs, getFilmstripFrameHeight, getFilmstripInterval, getFrameAt, hasEveryKeyframe, isCovered, mergeRanges, parseShowinfoLine, servesView } from './filmstrip';
+import { FilmstripStreamReader, MultipartJpegReader, fadeInArrivingFrame, getDetailRequest, getFilmTiles, getFilmstripArgs, getFilmstripChunks, getFilmstripDetailArgs, getFilmstripFallbackArgs, getFilmstripFrameHeight, getFilmstripInterval, getFrameAt, hasEveryKeyframe, isCovered, mergeRanges, parseShowinfoLine, servesView } from './filmstrip';
 
 const encoder = new TextEncoder();
 const part = (image: number[], withLength = true) => [
@@ -134,6 +134,21 @@ describe('filmstrip', () => {
     expect(tiles.at(-1)).toMatchObject({ left: 943 });
     expect(tiles.at(-1)!.left + tiles.at(-1)!.width).toBeGreaterThan(1000);
     expect(getFilmTiles({ frames, covered: [], tileWidth: 0, fromPx: 0, toPx: 100, lanePx: 1000, pxToTime: (px) => px })).toEqual([]);
+  });
+
+  it('fades in only a frame that is arriving, not one already on screen', () => {
+    const fade = fadeInArrivingFrame('arriving');
+    const img = (complete: boolean) => {
+      const classes: string[] = [];
+      return { complete, classList: { add: (name: string) => classes.push(name) }, classes };
+    };
+    const arriving = img(false);
+    const shown = img(true);
+    fade(arriving as unknown as HTMLImageElement);
+    fade(shown as unknown as HTMLImageElement);
+    fade(null);
+    expect(arriving.classes).toEqual(['arriving']);
+    expect(shown.classes).toEqual([]);
   });
 
   it('asks for denser frames only when zoomed in past the default ones', () => {

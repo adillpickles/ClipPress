@@ -316,6 +316,15 @@ export function getFilmTiles({ frames, covered, tileWidth, fromPx, toPx, lanePx,
   return tiles;
 }
 
+/**
+ * A ref for the <img> of a tile that shows up while the strip is being made: its frame fades in (`className` has
+ * the animation), unless the page has it already (it's complete as it mounts). Once the strip is done, tiles show
+ * up only at a zoom step or a scroll, and fading those would make the strip blink.
+ */
+export const fadeInArrivingFrame = (className: string) => (img: HTMLImageElement | null) => {
+  if (img != null && !img.complete) img.classList.add(className);
+};
+
 /** What the timeline shows: a stretch of the recording, and how much of it one tile spans. */
 export interface FilmstripView { from: number, to: number, tileSeconds: number }
 

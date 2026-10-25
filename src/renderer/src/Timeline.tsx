@@ -28,7 +28,7 @@ import formatClockTime from './util/clockTime';
 import { getSegmentOutputDuration, getSegmentSpeed, getSpeedForOutputDuration } from './segmentSpeed';
 import { createTimelineMap, getMaxScale, getRetimeAutoScrollStep, getWarpedImageSpans } from './timelineMap';
 import type { TimelineMap } from './timelineMap';
-import { filmTileHeight, getFilmTiles } from './filmstrip';
+import { fadeInArrivingFrame, filmTileHeight, getFilmTiles } from './filmstrip';
 import type { FilmTile } from './filmstrip';
 import type { Filmstrip } from './hooks/useFilmstrip';
 import type { AudioPeaks } from './audioPeaks';
@@ -82,12 +82,14 @@ const Waveforms = memo(({ timelineMap, laneDuration, fileDurationNonZero, wavefo
   </div>
 ));
 
+const fadeInFilmTile = fadeInArrivingFrame(styles['arriving']!);
+
 /** The whole recording as a dimmed, hatched strip of frames behind the clip blocks (simple mode). */
 // eslint-disable-next-line react/display-name
-const FilmTape = memo(({ tiles }: { tiles: readonly FilmTile[] }) => (
+const FilmTape = memo(({ tiles, loading }: { tiles: readonly FilmTile[], loading: boolean }) => (
   <div className={styles['filmTape']} aria-hidden>
     <div className={styles['filmFrames']}>
-      {tiles.map((tile) => tile.url != null && <img key={tile.left} src={tile.url} alt="" draggable={false} style={{ left: tile.left, width: tile.width }} />)}
+      {tiles.map((tile) => tile.url != null && <img key={tile.left} ref={loading ? fadeInFilmTile : undefined} src={tile.url} alt="" draggable={false} style={{ left: tile.left, width: tile.width }} />)}
     </div>
   </div>
 ));
@@ -1001,7 +1003,7 @@ function Timeline({
               style={{ height: simpleMode ? simpleClipLaneHeight : clipLaneHeight, transition: darkModeTransition }}
               ref={timelineWrapperRef}
             >
-              {showFilm && filmstrip.frames.length > 0 && <FilmTape tiles={filmTiles} />}
+              {showFilm && filmstrip.frames.length > 0 && <FilmTape tiles={filmTiles} loading={!filmstrip.done} />}
 
               {inverseCutSegments.map((seg) => (
                 <BetweenSegments
@@ -1036,6 +1038,7 @@ function Timeline({
                     onEditCrop={onEditSegmentCrop}
                     onEditVolume={onEditClipVolume}
                     filmTiles={filmTiles}
+                    filmLoading={!filmstrip.done}
                     lanePx={lanePx}
                     onTrimHandleMouseDown={simpleMode ? onTrimHandleMouseDown : undefined}
                     getCurrentTime={getCurrentTime}

@@ -219,13 +219,17 @@
 }
 
 /* Tiles of the video's shape side by side (Timeline: filmTiles); the dim tape is lower than the clip blocks whose
-   tiles it shares, so its frames are cropped top and bottom. A frame fades in as it arrives. */
+   tiles it shares, so its frames are cropped top and bottom. While the strip is being made, frames fade in as
+   they arrive (fadeInArrivingFrame). */
 .filmTape img {
   position: absolute;
   top: 0;
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.filmTape img.arriving {
   animation: film-tile-in .18s ease-out;
 }
 

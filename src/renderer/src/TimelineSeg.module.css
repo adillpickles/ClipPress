@@ -32,6 +32,9 @@
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.film img.arriving {
   animation: film-tile-in .18s ease-out;
 }
 
