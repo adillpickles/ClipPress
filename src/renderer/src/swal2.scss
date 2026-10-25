@@ -75,6 +75,8 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
   font-size: .88rem !important;
   line-height: 1.4 !important;
   margin: 0 !important;
+  // Clear of the close button, which sits in the top right corner of the text's column
+  padding-right: 1.6rem !important;
 }
 
 .clippress-toast .swal2-icon {
