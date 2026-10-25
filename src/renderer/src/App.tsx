@@ -6667,20 +6667,21 @@ function App() {
   );
 
   // Which encoders work is checked in the background once a clip has opened, so an export doesn't wait for it:
-  // after its filmstrip and waveform (or at most 30 s on); advanced mode's lanes aren't tracked, so a while after.
+  // after its filmstrip and waveform, while the video is paused (or at most 30 s on); advanced mode's lanes aren't
+  // tracked, so a while after.
   useEffect(() => {
     if (filePath == null) return undefined;
-    const timer = setTimeout(prefetchEncoderCapabilities, openWorkPending ? 30_000 : (simpleMode ? 1500 : 8000));
+    const timer = setTimeout(prefetchEncoderCapabilities, openWorkPending || playing ? 30_000 : (simpleMode ? 1500 : 8000));
     return () => clearTimeout(timer);
-  }, [filePath, openWorkPending, simpleMode]);
+  }, [filePath, openWorkPending, playing, simpleMode]);
   const openWorkPendingRef = useRef(openWorkPending);
   useEffect(() => {
     openWorkPendingRef.current = openWorkPending;
   }, [openWorkPending]);
 
   // FFmpeg's self-check starts two processes; at launch it waits a moment, and for the first file to open (its
-  // filmstrip and waveform), so it doesn't compete with that (a broken FFmpeg shows up then anyway). A changed
-  // FFmpeg path is checked at once.
+  // filmstrip and waveform, at most 30 s), so it doesn't compete with that (a broken FFmpeg shows up then anyway).
+  // A changed FFmpeg path is checked at once.
   const startupCheckedRef = useRef(false);
   useEffect(() => {
     let cancelled = false;
@@ -6692,9 +6693,10 @@ function App() {
       if (!cancelled) setFfmpegInfo(info);
     };
     const delay = startupCheckedRef.current ? 0 : 3000;
+    const waitUntil = Date.now() + 30_000;
     let timer = setTimeout(function run() {
       // At launch, a recording that's opening goes first.
-      if (!startupCheckedRef.current && openWorkPendingRef.current) {
+      if (!startupCheckedRef.current && openWorkPendingRef.current && Date.now() < waitUntil) {
         timer = setTimeout(run, 500);
         return;
       }
