@@ -43,6 +43,8 @@ const retryTempSuffix = 'clippress-size-limit';
 // 1280x720 satisfies every vendor's alignment rules (AMD AV1 pads to 64x16 blocks).
 const gpuProbeSource = 'color=c=black:s=1280x720:r=30:d=0.2';
 const gpuProbeFrames = '3';
+// Opening an encoder takes well under a second; a cold driver can take a few.
+const gpuProbeTimeoutMs = 15_000;
 
 function decodeProcessOutput({ stdout, stderr }: { stdout: Uint8Array, stderr: Uint8Array }) {
   return `${new TextDecoder().decode(stdout)}\n${new TextDecoder().decode(stderr)}`;
@@ -63,9 +65,12 @@ async function probeGpuEncoder(encoder: GpuEncoderName) {
   ];
 
   try {
-    await runFfmpeg(ffmpegArgs, undefined, { logCli: false });
+    // A driver that hangs while opening the encoder must not hold up every export: it counts as unusable.
+    await runFfmpeg(ffmpegArgs, { timeout: gpuProbeTimeoutMs }, { logCli: false });
     return true;
   } catch (error) {
+    // Abort stops the export that's waiting for this, rather than ruling the GPU out for half an hour.
+    if (isAbortedError(error) && !(isExecaError(error) && error.timedOut)) throw error;
     console.info(`${encoder} is not usable on this system`, error);
     return false;
   }
