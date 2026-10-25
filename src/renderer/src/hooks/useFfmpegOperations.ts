@@ -733,7 +733,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
           const { start, end } = segment;
           const segmentRate = getSegmentPlaybackRate(segment, outputPlaybackRate);
           const finalOutPath = join(outputDir, cutFileNames[index]!);
-          await assertOutPathIsNotSource(finalOutPath);
+          await assertOutPathIsNotSource(finalOutPath, copyFileStreams.map((source) => source.path));
           if (await shouldSkipExistingFile(finalOutPath)) {
             onSingleProgress(index, 1);
             return { path: finalOutPath, created: false };
