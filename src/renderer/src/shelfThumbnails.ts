@@ -17,6 +17,23 @@ interface ShelfThumbnailsOptions {
   backgroundConcurrency?: number,
 }
 
+/**
+ * Tries each way of making a thumbnail in turn and returns the first picture. One that fails (FFmpeg exits with
+ * an error when no frame reached the encoder) moves on to the next; a cancelled one stops there.
+ */
+export async function firstShelfThumbnail(attempts: readonly (() => Promise<string | undefined>)[], signal: AbortSignal) {
+  for (const attempt of attempts) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const url = await attempt();
+      if (url != null) return url;
+    } catch (err) {
+      if (signal.aborted) throw err;
+    }
+  }
+  return undefined;
+}
+
 /** Enough for a big recordings folder; each is a few KB. */
 const defaultMaxEntries = 200;
 /** Made in the background: the top of the shelf, which is what shows when it opens. */

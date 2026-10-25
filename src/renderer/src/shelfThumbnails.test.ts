@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import ShelfThumbnails from './shelfThumbnails';
+import ShelfThumbnails, { firstShelfThumbnail } from './shelfThumbnails';
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -110,5 +110,29 @@ describe('shelf thumbnails', () => {
     expect(revoked).toEqual(['blob:a', 'blob:b']);
     expect(started.map((entry) => entry.path)).toEqual(['a', 'b', 'c']);
     expect(store.snapshot().size).toBe(0);
+  });
+});
+
+describe('first shelf thumbnail', () => {
+  const picture = (url: string | undefined) => () => Promise.resolve(url);
+  const failure = () => Promise.reject(new Error('Could not open encoder before EOF'));
+
+  it('tries the next way when one fails or makes nothing', async () => {
+    const { signal } = new AbortController();
+    expect(await firstShelfThumbnail([failure, picture('blob:first-frame')], signal)).toBe('blob:first-frame');
+    expect(await firstShelfThumbnail([picture(undefined), picture('blob:first-frame')], signal)).toBe('blob:first-frame');
+    expect(await firstShelfThumbnail([picture('blob:keyframe'), failure], signal)).toBe('blob:keyframe');
+    expect(await firstShelfThumbnail([failure, failure], signal)).toBeUndefined();
+  });
+
+  it('stops when cancelled', async () => {
+    const controller = new AbortController();
+    let tried = 0;
+    const cancelled = () => {
+      controller.abort();
+      return Promise.reject(new Error('aborted'));
+    };
+    await expect(firstShelfThumbnail([cancelled, () => { tried += 1; return Promise.resolve('blob:x'); }], controller.signal)).rejects.toThrow('aborted');
+    expect(tried).toBe(0);
   });
 });

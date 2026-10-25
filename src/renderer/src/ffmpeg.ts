@@ -19,6 +19,7 @@ import { parseSrt, parseSrtToSegments } from './edlFormats';
 import { classifyFfprobeFailure, getFfprobeFailureDetail } from './util/ffprobeFailure';
 import { UnsupportedFileError, UserFacingError } from '../errors';
 import mainApi from './mainApi';
+import { firstShelfThumbnail } from './shelfThumbnails';
 
 const { ffmpeg } = window.require('@electron/remote').require('./index.js');
 
@@ -447,12 +448,11 @@ async function renderThumbnail(filePath: string, timestamp: number, signal: Abor
  * set-up costs more than decoding one frame).
  */
 export async function renderShelfThumbnail(filePath: string, signal: AbortSignal) {
-  for (const timestamp of [1, 0]) {
+  const attempt = (seekArgs: string[]) => async () => {
     const { stdout } = await runFfmpeg([
       '-hide_banner',
       '-threads', '1',
-      '-skip_frame', 'nokey',
-      '-ss', String(timestamp),
+      ...seekArgs,
       '-i', filePath,
       '-map', '0:v:0',
       '-an', '-sn', '-dn',
@@ -464,9 +464,11 @@ export async function renderShelfThumbnail(filePath: string, signal: AbortSignal
       '-c:v', 'mjpeg',
       '-',
     ], { cancelSignal: signal }, { logCli: false });
-    if (stdout.length > 0) return URL.createObjectURL(safeCreateBlob(stdout, { type: 'image/jpeg' }));
-  }
-  return undefined;
+    return stdout.length > 0 ? URL.createObjectURL(safeCreateBlob(stdout, { type: 'image/jpeg' })) : undefined;
+  };
+  // With no keyframe after 1 s (a clip shorter than its keyframe interval, or one keyframe at the start), FFmpeg
+  // fails having found nothing to encode: then the first frame.
+  return firstShelfThumbnail([attempt(['-skip_frame', 'nokey', '-ss', '1']), attempt([])], signal);
 }
 
 export async function extractSubtitleTrack(filePath: string, streamId: number) {
