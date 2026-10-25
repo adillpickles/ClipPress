@@ -1,8 +1,8 @@
 /**
  * Timeline filmstrip: small frames of the open recording, kept in memory (blob URLs) for as long as it's open and
  * freed when it closes; nothing is written to disk.
- * - The default strip comes from one pass per stretch of the recording that reads and decodes only the keyframes
- *   it shows (about one per `interval`).
+ * - The default strip comes from one pass per stretch of the recording that decodes only the keyframes it shows
+ *   (about one per `interval`).
  * - Zoomed in past what those cover, denser frames are made for the visible window (any frame, or for a long
  *   window its keyframes), and dropped again when zooming back out.
  * FFmpeg sends each image as soon as it's made (multipart JPEG, every part with its length) and its time on
@@ -49,8 +49,8 @@ const outputArgs = ['-fps_mode', 'passthrough', '-c:v', 'mjpeg', '-q:v', '6', '-
 /**
  * Picks the keyframes to decode, packet by packet (FFmpeg's noise bitstream filter drops the rest): the first
  * keyframe at or after each multiple of `interval`, remembering the next one due in variable 0.
- * Keyframe times can be a few frames out when only keyframes are read (see getFilmstripArgs); the tolerance keeps
- * that from skipping one.
+ * Keyframe times can be a few frames out (variable frame rates, or when only keyframes are read: see
+ * getFilmstripArgs); the tolerance keeps that from skipping one.
  */
 export function getKeyframePickExpression(interval: number) {
   const i = interval.toFixed(3);
@@ -59,23 +59,26 @@ export function getKeyframePickExpression(interval: number) {
 }
 
 /**
- * FFmpeg arguments for one stretch of the default strip. `-discard nokey` has the demuxer skip everything but
- * keyframes (so little of the file is read), and only the keyframes picked are decoded; software decoding is
- * quicker for that than starting a hardware decoder (measured, notes/beta6-ux/perf/qa-filmstrip.md).
- * With only keyframes read, MP4 frame times can be off by a few frames, which no zoom level shows (closer in,
- * the frames come from getFilmstripDetailArgs). `-copyts` keeps the file's timestamps.
+ * FFmpeg arguments for one stretch of the default strip, or a long zoomed-in window's keyframes: only the
+ * keyframes picked are decoded (in software, quicker for that than starting a hardware decoder).
+ * The file is read straight through: while a recording opens the waveform reads it too, and on a hard disk two
+ * passes going the same way cost about one read, where skipping from keyframe to keyframe (`keyframesOnly`) made
+ * both much slower; from the disk cache, skipping is only a little quicker (notes/beta6-ux/perf/qa-filmstrip.md).
+ * With only keyframes read, MP4 frame times can be a few frames out. `-copyts` keeps the file's timestamps.
  */
-export function getFilmstripArgs({ filePath, from, length, interval, height }: {
+export function getFilmstripArgs({ filePath, from, length, interval, height, keyframesOnly = false }: {
   filePath: string,
   from: number,
   length: number,
   interval: number,
   height: number,
+  /** Have the demuxer skip everything but keyframes (about a third of the file read): for a pass on its own. */
+  keyframesOnly?: boolean,
 }) {
   return [
     '-hide_banner',
     '-nostats',
-    '-discard:v', 'nokey',
+    ...(keyframesOnly ? ['-discard:v', 'nokey'] : []),
     '-bsf:v', `noise=drop='${getKeyframePickExpression(interval)}'`,
     ...(from > 0 ? ['-ss', from.toFixed(3)] : []),
     '-copyts',

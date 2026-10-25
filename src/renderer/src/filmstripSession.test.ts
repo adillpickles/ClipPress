@@ -204,6 +204,8 @@ describe('FilmstripSession', () => {
     }
     await vi.advanceTimersByTimeAsync(250);
     const keyframes = runner.runs.at(-1)!;
+    // The default strip reads straight through (alongside the waveform); a window on its own skips to each keyframe.
+    expect(runner.runs[0]!.args).not.toContain('-discard:v');
     expect(keyframes.args).toContain('-discard:v');
     expect(keyframes.args.slice(keyframes.args.indexOf('-ss'), keyframes.args.indexOf('-ss') + 2)).toEqual(['-ss', '1791.600']);
     expect(keyframes.args[keyframes.args.indexOf('-bsf:v') + 1]).toContain('2.000');

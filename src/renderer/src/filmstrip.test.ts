@@ -36,10 +36,14 @@ describe('filmstrip', () => {
     expect(getFilmstripFrameHeight(4)).toBe(160);
   });
 
-  it('reads and decodes only the keyframes it shows, and sends each image as it is made', () => {
+  it('decodes only the keyframes it shows, and sends each image as it is made', () => {
     const args = getFilmstripArgs({ filePath: 'a.mp4', from: 600, length: 600, interval: 15, height: 96 });
     const input = args.indexOf('-i');
-    expect(args.slice(args.indexOf('-discard:v'), args.indexOf('-discard:v') + 2)).toEqual(['-discard:v', 'nokey']);
+    // Read straight through, unless asked to skip to the keyframes.
+    expect(args).not.toContain('-discard:v');
+    const keyframesOnly = getFilmstripArgs({ filePath: 'a.mp4', from: 600, length: 600, interval: 15, height: 96, keyframesOnly: true });
+    expect(keyframesOnly.slice(keyframesOnly.indexOf('-discard:v'), keyframesOnly.indexOf('-discard:v') + 2)).toEqual(['-discard:v', 'nokey']);
+    expect(keyframesOnly.indexOf('-discard:v')).toBeLessThan(keyframesOnly.indexOf('-i'));
     expect(args[args.indexOf('-bsf:v') + 1]).toMatch(/^noise=drop='if\(key\*.*15\.000/);
     expect(args.indexOf('-bsf:v')).toBeLessThan(input);
     expect(args.indexOf('-ss')).toBeLessThan(input);

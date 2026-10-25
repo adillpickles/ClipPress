@@ -265,7 +265,8 @@ export default class FilmstripSession {
     const { filePath, frameHeight } = this.options;
     const params = { filePath, from: pass.from, length: pass.to - pass.from, height: frameHeight };
     const getKeyframeArgs = packetFilterUnsupported ? getFilmstripFallbackArgs : getFilmstripArgs;
-    const args = pass.keyframes ? getKeyframeArgs({ ...params, interval: pass.spacing }) : getFilmstripDetailArgs({ ...params, spacing: pass.spacing });
+    // On its own (the recording has opened), so it can skip from keyframe to keyframe.
+    const args = pass.keyframes ? getKeyframeArgs({ ...params, interval: pass.spacing, keyframesOnly: true }) : getFilmstripDetailArgs({ ...params, spacing: pass.spacing });
     const result = await this.runPass(pass, args);
     if (pass.abortController.signal.aborted) return;
     // Cut short: it covers what it made, so a later look at the rest asks again.
