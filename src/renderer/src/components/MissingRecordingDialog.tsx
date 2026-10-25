@@ -15,11 +15,13 @@ import styles from './MissingRecordingDialog.module.css';
  * "Can't find the recording" (#16): the edits being opened are for a recording that isn't where they say. Resolves
  * with whether the user wants to find it.
  */
-export default function askToFindRecording(showGenericDialog: ShowGenericDialog, { name, folder }: {
+export default function askToFindRecording(showGenericDialog: ShowGenericDialog, { name, folder, hasEdits }: {
   /** The recording's file name. */
   name: string,
   /** The folder it was in. */
   folder: string,
+  /** Whether it has edits to open it with (a recent recording may have none). */
+  hasEdits: boolean,
 }) {
   return new Promise<boolean>((resolve) => {
     function MissingRecordingDialog() {
@@ -43,7 +45,7 @@ export default function askToFindRecording(showGenericDialog: ShowGenericDialog,
       return (
         <AlertDialog.Content className={styles['content']} onOpenAutoFocus={handleOpenAutoFocus}>
           <AlertDialog.Title>{t('Can\'t find the recording')}</AlertDialog.Title>
-          <AlertDialog.Description>{t('It may have been moved or renamed. Find it to open it with your edits.')}</AlertDialog.Description>
+          <AlertDialog.Description>{hasEdits ? t('It may have been moved or renamed. Find it to open it with your edits.') : t('It may have been moved or renamed. Find it to open it.')}</AlertDialog.Description>
 
           <div className={styles['file']}>
             <span className={styles['icon']} aria-hidden><FiFilm /></span>

@@ -53,7 +53,7 @@ export default function useRelocateRecording({ showGenericDialog, confirmDialog,
     projectPath?: string | undefined,
   }): Promise<{ mediaPath: string, relocatedFrom: RelocatedRecording } | undefined> => {
     const folder = dirname(oldMediaPath);
-    if (!(await askToFindRecording(showGenericDialog, { name: basename(oldMediaPath), folder }))) return undefined;
+    if (!(await askToFindRecording(showGenericDialog, { name: basename(oldMediaPath), folder, hasEdits: project != null }))) return undefined;
 
     const { canceled, filePaths } = await showOpenDialog({
       title: t('Find the recording'),
