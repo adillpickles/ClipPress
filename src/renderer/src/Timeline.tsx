@@ -26,7 +26,7 @@ import LaneDeleteButton from './components/LaneDeleteButton';
 import TimelineRuler, { createHoverStore, HoverMarker } from './components/TimelineRuler';
 import formatClockTime from './util/clockTime';
 import { getSegmentOutputDuration, getSegmentSpeed, getSpeedForOutputDuration } from './segmentSpeed';
-import { createTimelineMap, getRetimeAutoScrollStep, getWarpedImageSpans } from './timelineMap';
+import { createTimelineMap, getMaxScale, getRetimeAutoScrollStep, getWarpedImageSpans } from './timelineMap';
 import type { TimelineMap } from './timelineMap';
 import { filmTileHeight, getFilmTiles } from './filmstrip';
 import type { FilmTile } from './filmstrip';
@@ -824,12 +824,14 @@ function Timeline({
   const filmTiles = useMemo(() => (showFilm && filmstrip.frames.length > 0
     ? getFilmTiles({ frames: filmstrip.frames, covered: filmstrip.covered, tileWidth: filmTileWidth, fromPx: filmFromPx, toPx: filmToPx, lanePx, pxToTime })
     : []), [filmFromPx, filmTileWidth, filmToPx, filmstrip.covered, filmstrip.frames, lanePx, pxToTime, showFilm]);
-  // The filmstrip does what's in view first, and makes denser frames when zoomed in past its own.
+  // The filmstrip does what's in view first, and makes denser frames when zoomed in past its own: as dense as the
+  // most stretched part of the view needs (a slowed clip's tiles each span less of the recording).
   const { setView: setFilmstripView } = filmstrip;
+  const filmTileSeconds = lanePx > 0 ? ((laneDuration / lanePx) * filmTileWidth) / getMaxScale(timelineMap, visibleStart, visibleEnd) : 0;
   useEffect(() => {
-    if (!showFilm || !(scrollerWidth > 0) || !(visibleEnd > visibleStart)) return;
-    setFilmstripView({ from: visibleStart, to: visibleEnd, tileSeconds: ((visibleEnd - visibleStart) * filmTileWidth) / scrollerWidth });
-  }, [filmTileWidth, scrollerWidth, setFilmstripView, showFilm, visibleEnd, visibleStart]);
+    if (!showFilm || !(filmTileSeconds > 0) || !(visibleEnd > visibleStart)) return;
+    setFilmstripView({ from: visibleStart, to: visibleEnd, tileSeconds: filmTileSeconds });
+  }, [filmTileSeconds, setFilmstripView, showFilm, visibleEnd, visibleStart]);
 
   const formatHoverLabel = useCallback((hoverTime: number) => {
     const time = hoverTime + startTimeOffset;
