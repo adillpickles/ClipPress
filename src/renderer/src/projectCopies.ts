@@ -1,10 +1,10 @@
 /**
  * Every copy of one recording's edits, to move them to the Recycle Bin with it (#91): the setting "Recycle edits with
- * the original"; and those it left behind when it was found somewhere else (#16). Only files that certainly are this
- * recording's.
+ * the original"; those in older places once it opened and they are saved in ClipPress's folder; and those it left
+ * behind when it was found somewhere else (#16). Only files that certainly are this recording's.
  */
 
-import { getProjectLookupPaths, getRelocatedProjectCopies, isReplacedBackupOf, isSameProjectPath } from './projectStore';
+import { getProjectLookupPaths, getRelocatedProjectCopies, getSidecarProjectPath, isReplacedBackupOf, isSameProjectPath } from './projectStore';
 import type { ProjectStoreEnv } from './projectStore';
 
 /** What a project file says about its recording. */
@@ -15,17 +15,21 @@ export interface ProjectMediaRef {
 
 const fileNameOf = (path: string) => path.replaceAll('\\', '/').split('/').pop() ?? path;
 
+/** Whether a project file names a recording other than the one at `mediaPath`: by its path, or (an older one) its name. */
+function namesOtherRecording(mediaPath: string, project: ProjectMediaRef, env: ProjectStoreEnv) {
+  if (project.mediaFilePath != null) return !isSameProjectPath(project.mediaFilePath, mediaPath, env.caseInsensitive);
+  const fold = (name: string) => (env.caseInsensitive ? name.toLowerCase() : name);
+  return project.mediaFileName != null && fold(project.mediaFileName) !== fold(fileNameOf(mediaPath));
+}
+
 /**
  * Whether the project file at `projectPath` holds the edits of the recording at `mediaPath`: it says so. One that names
  * another recording, or can't be read, doesn't; nor does an older one that doesn't say where its recording is, unless
  * it is next to it.
  */
 export function isProjectOf(mediaPath: string, projectPath: string, project: ProjectMediaRef | undefined, env: ProjectStoreEnv) {
-  if (project == null) return false;
-  if (project.mediaFilePath != null) return isSameProjectPath(project.mediaFilePath, mediaPath, env.caseInsensitive);
-  const fold = (name: string) => (env.caseInsensitive ? name.toLowerCase() : name);
-  return isSameProjectPath(env.dirname(projectPath), env.dirname(mediaPath), env.caseInsensitive)
-    && (project.mediaFileName == null || fold(project.mediaFileName) === fold(fileNameOf(mediaPath)));
+  if (project == null || namesOtherRecording(mediaPath, project, env)) return false;
+  return project.mediaFilePath != null || isSameProjectPath(env.dirname(projectPath), env.dirname(mediaPath), env.caseInsensitive);
 }
 
 /**
@@ -42,6 +46,36 @@ export async function filterProjectsOf(mediaPath: string, paths: readonly string
     if (isProjectOf(mediaPath, path, await read(path), env)) kept.push(path);
   }
   return kept;
+}
+
+/**
+ * The ones of the copies of its edits found when a recording opened (`paths`, see `getProjectCopiesToRetire`) that are
+ * its own, to move to the Recycle Bin once the edits are saved in ClipPress's folder: the one next to it, named after
+ * it, whatever it notes (its folder may have moved); the one opened, unless it names another recording, as its edits
+ * are saved for this one now; and any other that says it is this recording's (see `isProjectOf`). One in the export
+ * folder is named after its recording only, so it may be another recording's with the same name: that one stays, as
+ * does one that can't be told.
+ */
+export async function filterOwnProjectCopies(mediaPath: string, paths: readonly string[], { openedPath, env, read }: {
+  /** The copy the edits were opened from. */
+  openedPath: string,
+  env: ProjectStoreEnv,
+  /** What a project file says about its recording: undefined when it isn't there or can't be read. */
+  read: (projectPath: string) => Promise<ProjectMediaRef | undefined>,
+}) {
+  const isSame = (a: string, b: string) => isSameProjectPath(a, b, env.caseInsensitive);
+  const beside = getSidecarProjectPath(mediaPath, undefined, env);
+  const own: string[] = [];
+  for (const path of paths) {
+    if (isSame(path, beside)) {
+      own.push(path);
+    } else {
+      // eslint-disable-next-line no-await-in-loop
+      const project = await read(path);
+      if (isProjectOf(mediaPath, path, project, env) || (isSame(path, openedPath) && project != null && !namesOtherRecording(mediaPath, project, env))) own.push(path);
+    }
+  }
+  return own;
 }
 
 /**

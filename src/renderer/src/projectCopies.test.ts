@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
 
-import { filterProjectsOf, findProjectCopies, findRelocatedProjectCopies, isProjectOf } from './projectCopies';
+import { filterOwnProjectCopies, filterProjectsOf, findProjectCopies, findRelocatedProjectCopies, isProjectOf } from './projectCopies';
 import type { ProjectMediaRef } from './projectCopies';
-import { getReplacedBackupPath, getStoredProjectPath } from './projectStore';
+import { getProjectCopiesToRetire, getProjectLookupPaths, getProjectSavePaths, getReplacedBackupPath, getStoredProjectPath } from './projectStore';
 import type { ProjectStoreEnv } from './projectStore';
 
 const win = path.win32;
@@ -68,6 +68,46 @@ describe('a recording\'s edits', () => {
   it('are found without an export folder, or when a folder can\'t be listed', async () => {
     const copies = await findProjectCopies(media, { customOutDir: undefined, env, list: async () => [], read: async (p) => (p === stored ? { mediaFilePath: media } : undefined) });
     expect(copies).toEqual([stored]);
+  });
+});
+
+// "In ClipPress": the copies found in older places when a recording opens go once its edits are saved in ClipPress's folder.
+describe('the edits a recording found in older places when it opened', () => {
+  const other = String.raw`F:\Other\clip.mp4`;
+  const toRetire = (customOutDir: string | undefined) => getProjectCopiesToRetire(getProjectLookupPaths(media, 'app', customOutDir, env), 'app', getProjectSavePaths(media, 'app', customOutDir, env), true);
+
+  it('are not another recording\'s with the same name in the export folder, even when it was the one opened', async () => {
+    const files: Record<string, ProjectMediaRef> = { [inExports]: { mediaFilePath: other }, [beside]: { mediaFileName: 'clip.mp4' } };
+    const read = async (p: string) => files[p];
+    expect(toRetire(String.raw`E:\Exports`)).toEqual([inExports, beside]);
+    expect(await filterOwnProjectCopies(media, toRetire(String.raw`E:\Exports`), { openedPath: stored, env, read })).toEqual([beside]);
+    // This recording had none of its own, so the other's opened.
+    expect(await filterOwnProjectCopies(media, [inExports], { openedPath: inExports, env, read })).toEqual([]);
+    // Older ones that give another name, or can't be read, stay too.
+    files[inExports] = { mediaFileName: 'other.mp4' };
+    expect(await filterOwnProjectCopies(media, [inExports], { openedPath: inExports, env, read })).toEqual([]);
+    expect(await filterOwnProjectCopies(media, [inExports], { openedPath: inExports, env, read: async () => undefined })).toEqual([]);
+  });
+
+  it('are its own in the export folder: one that says so, or an older one opened that gives only its name', async () => {
+    const files: Record<string, ProjectMediaRef> = { [inExports]: { mediaFilePath: media } };
+    const read = async (p: string) => files[p];
+    expect(await filterOwnProjectCopies(media, [inExports], { openedPath: stored, env, read })).toEqual([inExports]);
+    files[inExports] = { mediaFileName: 'clip.mp4' };
+    expect(await filterOwnProjectCopies(media, [inExports], { openedPath: inExports, env, read })).toEqual([inExports]);
+    files[inExports] = {};
+    expect(await filterOwnProjectCopies(media, [inExports], { openedPath: inExports, env, read })).toEqual([inExports]);
+    // Not opened, it can't be told from another recording's.
+    files[inExports] = { mediaFileName: 'clip.mp4' };
+    expect(await filterOwnProjectCopies(media, [inExports], { openedPath: stored, env, read })).toEqual([]);
+  });
+
+  it('include the one next to it, whatever it notes', async () => {
+    // Its folder moved, or its drive has a new letter: it still notes where the recording was.
+    const read = async () => ({ mediaFilePath: String.raw`G:\Clips\clip.mp4` });
+    expect(toRetire(undefined)).toEqual([beside]);
+    expect(await filterOwnProjectCopies(media, [beside], { openedPath: beside, env, read })).toEqual([beside]);
+    expect(await filterOwnProjectCopies(media, [beside], { openedPath: stored, env, read })).toEqual([beside]);
   });
 });
 

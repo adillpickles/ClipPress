@@ -4,7 +4,7 @@ import JSON5 from 'json5';
 
 import { cleanUpBackupsBeside, cleanUpProjects, getFoldersBesideRecordings, isCleanupDue, parseCleanupState } from './projectCleanup';
 import type { ProjectCleanupState } from './projectCleanup';
-import { findProjectCopies, findRelocatedProjectCopies } from './projectCopies';
+import { filterOwnProjectCopies, findProjectCopies, findRelocatedProjectCopies } from './projectCopies';
 import type { ProjectMediaRef } from './projectCopies';
 import createProjectFilesFs from './projectFilesFs';
 import { getProjectsDir, getProjectStoreEnv } from './projectStore';
@@ -55,6 +55,9 @@ async function readProjectMediaRef(projectPath: string): Promise<ProjectMediaRef
     return undefined;
   }
 }
+
+/** The ones of the copies of its edits found when a recording opened that are its own (see `filterOwnProjectCopies`). */
+export const filterOwnProjectFiles = (mediaPath: string, paths: readonly string[], openedPath: string) => filterOwnProjectCopies(mediaPath, paths, { openedPath, env: getProjectStoreEnv(), read: readProjectMediaRef });
 
 /** The copies of its edits a recording found in a new place left at its old places (see `findRelocatedProjectCopies`). */
 export const findRelocatedProjectFiles = (relocation: Parameters<typeof findRelocatedProjectCopies>[0], customOutDir: string | undefined) => findRelocatedProjectCopies(relocation, { customOutDir, env: getProjectStoreEnv(), read: readProjectMediaRef, notNewerThan: filterNotNewerThan });

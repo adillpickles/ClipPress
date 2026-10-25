@@ -294,7 +294,7 @@ import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, 
 import type { QuickExport } from './quickExport';
 import { normalizeQuickExportPresets } from '../../common/quickExport';
 import { getProjectCopiesToRetire, getProjectLookupPaths, getProjectSavePaths, getProjectStoreEnv, isSameProjectPath } from './projectStore';
-import { findProjectFiles, keepCopiesAboutToBeReplaced, keepCopiesNotOpened, logProjectFiles, readNewestProjectCopy, recycleRecordingProjectCopies } from './projectFilesIo';
+import { filterOwnProjectFiles, findProjectFiles, keepCopiesAboutToBeReplaced, keepCopiesNotOpened, logProjectFiles, readNewestProjectCopy, recycleRecordingProjectCopies } from './projectFilesIo';
 import { getProjectMediaCandidates, getProjectMediaOldPath } from './missingRecording';
 import useProjectCleanup from './hooks/useProjectCleanup';
 import useRelocateRecording from './hooks/useRelocateRecording';
@@ -4826,7 +4826,9 @@ function App() {
             if (unreadable.length > 0) getSwal().toast.fire({ icon: 'warning', timer: 10000, text: i18n.t('The newest copy of your edits couldn\'t be read, so an earlier copy was opened.') });
             applyProjectState({ mediaFilePath: fp, project: opened.project });
             loadedProjectPath = opened.path;
-            sidecarsToRetire = [...sidecarsToRetire, ...getProjectCopiesToRetire(found.map(({ path }) => path).filter((path) => !unreadablePaths.includes(path)), projectFileLocation, savePaths, isWindows || isMac)];
+            // Only its own: one in the export folder is named after its recording only, so it may be another's.
+            const toRetire = getProjectCopiesToRetire(found.map(({ path }) => path).filter((path) => !unreadablePaths.includes(path)), projectFileLocation, savePaths, isWindows || isMac);
+            sidecarsToRetire = [...sidecarsToRetire, ...(await filterOwnProjectFiles(fp, toRetire, opened.path))];
             return;
           }
 
