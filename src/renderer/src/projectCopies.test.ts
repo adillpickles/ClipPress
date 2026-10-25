@@ -109,6 +109,14 @@ describe('the edits a recording found in older places when it opened', () => {
     expect(await filterOwnProjectCopies(media, [beside], { openedPath: beside, env, read })).toEqual([beside]);
     expect(await filterOwnProjectCopies(media, [beside], { openedPath: stored, env, read })).toEqual([beside]);
   });
+
+  // OBS records clip.mkv and remuxes it to clip.mp4 next to it: both are named clip-proj.llc there.
+  it('leave the one next to it that names a recording of another file name', async () => {
+    const read = async () => ({ mediaFilePath: String.raw`D:\Clips\clip.mkv` });
+    expect(await filterOwnProjectCopies(media, [beside], { openedPath: stored, env, read })).toEqual([]);
+    expect(await filterOwnProjectCopies(media, [beside], { openedPath: stored, env, read: async () => ({ mediaFileName: 'clip.mkv' }) })).toEqual([]);
+    expect(await filterOwnProjectCopies(media, [beside], { openedPath: stored, env, read: async () => undefined })).toEqual([beside]);
+  });
 });
 
 // A recording found in a new place (#16): what it left at its old places goes once the edits are saved for the new one.

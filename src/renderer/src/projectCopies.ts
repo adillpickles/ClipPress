@@ -23,6 +23,16 @@ function namesOtherRecording(mediaPath: string, project: ProjectMediaRef, env: P
 }
 
 /**
+ * Whether a project file names a recording with another file name, wherever it is: the one next to `clip.mp4` is also
+ * the one of `clip.mkv` in the same folder (OBS records one, then remuxes it to the other).
+ */
+function namesOtherFileName(mediaPath: string, project: ProjectMediaRef | undefined, env: ProjectStoreEnv) {
+  const name = project?.mediaFilePath != null ? fileNameOf(project.mediaFilePath) : project?.mediaFileName;
+  const fold = (n: string) => (env.caseInsensitive ? n.toLowerCase() : n);
+  return name != null && fold(name) !== fold(fileNameOf(mediaPath));
+}
+
+/**
  * Whether the project file at `projectPath` holds the edits of the recording at `mediaPath`: it says so. One that names
  * another recording, or can't be read, doesn't; nor does an older one that doesn't say where its recording is, unless
  * it is next to it.
@@ -51,7 +61,7 @@ export async function filterProjectsOf(mediaPath: string, paths: readonly string
 /**
  * The ones of the copies of its edits found when a recording opened (`paths`, see `getProjectCopiesToRetire`) that are
  * its own, to move to the Recycle Bin once the edits are saved in ClipPress's folder: the one next to it, named after
- * it, whatever it notes (its folder may have moved); the one opened, unless it names another recording, as its edits
+ * it, unless it names a recording of another file name (its folder may have moved, so not by path); the one opened, unless it names another recording, as its edits
  * are saved for this one now; and any other that says it is this recording's (see `isProjectOf`). One in the export
  * folder is named after its recording only, so it may be another recording's with the same name: that one stays, as
  * does one that can't be told.
@@ -67,12 +77,12 @@ export async function filterOwnProjectCopies(mediaPath: string, paths: readonly 
   const beside = getSidecarProjectPath(mediaPath, undefined, env);
   const own: string[] = [];
   for (const path of paths) {
+    // eslint-disable-next-line no-await-in-loop
+    const project = await read(path);
     if (isSame(path, beside)) {
+      if (!namesOtherFileName(mediaPath, project, env)) own.push(path);
+    } else if (isProjectOf(mediaPath, path, project, env) || (isSame(path, openedPath) && project != null && !namesOtherRecording(mediaPath, project, env))) {
       own.push(path);
-    } else {
-      // eslint-disable-next-line no-await-in-loop
-      const project = await read(path);
-      if (isProjectOf(mediaPath, path, project, env) || (isSame(path, openedPath) && project != null && !namesOtherRecording(mediaPath, project, env))) own.push(path);
     }
   }
   return own;
