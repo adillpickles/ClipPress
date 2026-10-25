@@ -72,6 +72,23 @@ describe('shelf thumbnails', () => {
     expect(started).toHaveLength(1);
   });
 
+  it('makes each one once when the background starts again while rows wait for a slot', async () => {
+    const { store, started, finish, revoked } = setup({ concurrency: 2 });
+    const paths = ['a', 'b', 'c', 'd', 'e'];
+    // The shelf opening: rows ask for theirs, then the folder is listed again and the background starts over.
+    paths.slice(0, 4).forEach((path) => store.request(job(path)));
+    store.prefetch(paths.map((path) => job(path)));
+    store.prefetch(paths.map((path) => job(path)));
+    for (const path of paths) {
+      // eslint-disable-next-line no-await-in-loop
+      await finish(path);
+    }
+    expect(started.map((entry) => entry.path)).toEqual(paths);
+    // Everything made is freed with the folder.
+    store.dispose();
+    expect(revoked.sort()).toEqual(paths.map((path) => `blob:${path}`));
+  });
+
   it('stops starting background work when told, and starts again with what is still missing', async () => {
     const { store, started, finish } = setup();
     store.prefetch(['a', 'b', 'c'].map((path) => job(path)));

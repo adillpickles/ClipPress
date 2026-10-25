@@ -94,7 +94,7 @@ export default class ShelfThumbnails {
   /** Make these in the background, in this order (replacing any not started yet). */
   prefetch(jobs: readonly ShelfThumbnailJob[]) {
     if (this.controller.signal.aborted) return;
-    this.background = jobs.slice(0, maxPrefetch).filter((job) => !this.cache.has(job.key) && !this.inFlight.has(job.key));
+    this.background = jobs.slice(0, maxPrefetch).filter((job) => !this.isMadeOrComing(job.key));
     this.pump();
   }
 
@@ -113,6 +113,10 @@ export default class ShelfThumbnails {
     this.cache.clear();
   }
 
+  private isMadeOrComing(key: string) {
+    return this.cache.has(key) || this.inFlight.has(key) || this.wanted.some((job) => job.key === key);
+  }
+
   private pump() {
     const { concurrency = 4, backgroundConcurrency = 1 } = this.options;
     while (this.running < concurrency) {
@@ -120,7 +124,8 @@ export default class ShelfThumbnails {
       const isBackground = job == null;
       if (job == null && this.runningBackground < backgroundConcurrency) job = this.background.shift();
       if (job == null) return;
-      this.run(job, isBackground);
+      // Each is made once, however it was queued.
+      if (!this.cache.has(job.key) && !this.inFlight.has(job.key)) this.run(job, isBackground);
     }
   }
 
@@ -139,6 +144,9 @@ export default class ShelfThumbnails {
           if (url != null) this.options.revoke(url);
           return;
         }
+        const earlier = this.cache.get(key);
+        if (earlier != null && earlier !== url) this.options.revoke(earlier);
+        this.cache.delete(key);
         this.cache.set(key, url ?? null);
         this.evict();
         if (this.waitingFor.delete(key)) this.options.onChange();
