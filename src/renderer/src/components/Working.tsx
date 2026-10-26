@@ -1,10 +1,12 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotionConfig } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import useInterval from 'react-use/lib/useInterval';
 
 import Button from './Button';
 import formatClockTime from '../util/clockTime';
+import { getExportTitleLines, pickExportTitleLine } from '../exportTitleLines';
+import type { ExportPhase } from '../exportTitleLines';
 import styles from './Working.module.css';
 
 
@@ -53,15 +55,60 @@ function QuietWorking({ text, onAbortClick }: { text: string, onAbortClick: () =
   );
 }
 
-function WorkingCard({ text, detailText, progress, onAbortClick }: {
+/** A new line every few seconds, each up long enough to read; near the end of the bar, the finishing lines. */
+const rotateTitleMs = 3500;
+const minTitleMs = 1200;
+const finishingFrom = 0.92;
+
+interface TitleLine { phase: ExportPhase, text: string, at: number }
+
+/**
+ * The simple editor's export title: a random line for the phase (exportTitleLines.ts), then another every few
+ * seconds, none twice in an export until every one was shown. A new phase waits for the line up to have been read.
+ */
+function useExportTitle(phase: ExportPhase | undefined, progress: number | undefined) {
+  const { t } = useTranslation();
+  // The lines this export has shown (kept for the card's life, changed in place).
+  const [shown] = useState(() => new Set<string>());
+  const shownPhase = phase != null && phase !== 'starting' && progress != null && progress >= finishingFrom ? 'finishing' : phase;
+  const pick = useCallback((linePhase: ExportPhase, current: string | undefined): TitleLine => ({
+    phase: linePhase,
+    text: pickExportTitleLine(getExportTitleLines(linePhase, (key) => t(key)), shown, current),
+    at: Date.now(),
+  }), [shown, t]);
+  // Picked as the card first renders, so the plain step's words never show first.
+  const [line, setLine] = useState(() => (shownPhase != null ? pick(shownPhase, undefined) : undefined));
+  const lineRef = useRef(line);
+  useEffect(() => { lineRef.current = line; }, [line]);
+
+  useEffect(() => {
+    if (shownPhase == null) return undefined;
+    let timer: ReturnType<typeof setTimeout>;
+    const next = () => {
+      setLine((previous) => pick(shownPhase, previous?.text));
+      timer = setTimeout(next, rotateTitleMs);
+    };
+    const previous = lineRef.current;
+    const sinceShown = previous == null ? Infinity : Date.now() - previous.at;
+    timer = setTimeout(next, Math.max(0, (previous?.phase === shownPhase ? rotateTitleMs : minTitleMs) - sinceShown));
+    return () => clearTimeout(timer);
+  }, [pick, shownPhase]);
+
+  // Steps without lines of their own (e.g. moving the original to the Recycle Bin) say what they do.
+  return shownPhase != null ? line?.text : undefined;
+}
+
+function WorkingCard({ text, detailText, phase, progress, onAbortClick }: {
   text: string,
   detailText?: string | undefined,
+  phase?: ExportPhase | undefined,
   progress?: number | undefined,
   onAbortClick: () => void
 }) {
   const { t } = useTranslation();
   // The app's own Reduce motion setting as well as Windows': the bar's shimmer stops.
   const reduceMotion = useReducedMotionConfig() === true;
+  const title = useExportTitle(phase, progress) ?? text;
 
   const [startedAt] = useState(() => new Date());
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -81,22 +128,23 @@ function WorkingCard({ text, detailText, progress, onAbortClick }: {
     <div className={styles['wrapper']} style={{ position: 'absolute', bottom: 0, top: 0, left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
       <motion.div
         className={styles['card']}
+        data-working-card=""
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 8 }}
       >
-        {/* What it's doing now, in plain words; the new stage fades in over the old. No spinner: the bar below
+        {/* What it's doing now, in plain words; the new line fades in over the old. No spinner: the bar below
             always moves. */}
         <div className={styles['title']} role="status">
           <AnimatePresence initial={false} mode="popLayout">
             <motion.span
-              key={text}
+              key={title}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.2 }}
             >
-              {text}
+              {title}
             </motion.span>
           </AnimatePresence>
         </div>
@@ -136,15 +184,41 @@ function WorkingCard({ text, detailText, progress, onAbortClick }: {
   );
 }
 
-function Working({ text, detailText, progress, quiet = false, onAbortClick }: {
+function Working({ text, detailText, phase, progress, quiet = false, onAbortClick }: {
   text: string,
   detailText?: string | undefined,
+  /** An export in the simple editor: its title is a playful line for this phase rather than `text`. */
+  phase?: ExportPhase | undefined,
   progress?: number | undefined,
   quiet?: boolean | undefined,
   onAbortClick: () => void
 }) {
   if (quiet) return <QuietWorking text={text} onAbortClick={onAbortClick} />;
-  return <WorkingCard text={text} detailText={detailText} progress={progress} onAbortClick={onAbortClick} />;
+  return <WorkingCard text={text} detailText={detailText} phase={phase} progress={progress} onAbortClick={onAbortClick} />;
+}
+
+/**
+ * The dialog that follows an export (its result) grows out of the progress card, which hands over to it: called as
+ * the dialog's element mounts, before it paints. Does nothing when no progress card is showing.
+ */
+export function morphFromWorkingCard(dialog: HTMLElement, { reduceMotion }: { reduceMotion: boolean }) {
+  const card = document.querySelector<HTMLElement>('[data-working-card]');
+  if (card == null) return;
+  card.dataset['handedOver'] = '';
+  if (reduceMotion) return;
+  // Its own opening animation would scale it: the morph replaces it.
+  dialog.classList.add(styles['morphIn']!, styles['morphing']!);
+  const from = card.getBoundingClientRect();
+  const to = dialog.getBoundingClientRect();
+  const inset = [from.top - to.top, to.right - from.right, to.bottom - from.bottom, from.left - to.left].map((px) => `${Math.max(0, px)}px`).join(' ');
+  const radius = getComputedStyle(dialog).borderTopLeftRadius;
+  const morph = dialog.animate([
+    { clipPath: `inset(${inset} round ${getComputedStyle(card).borderTopLeftRadius})` },
+    { clipPath: `inset(0 round ${radius})` },
+  ], { duration: 300, easing: 'cubic-bezier(.2, 0, 0, 1)' });
+  const done = () => dialog.classList.remove(styles['morphing']!);
+  morph.addEventListener('finish', done);
+  morph.addEventListener('cancel', done);
 }
 
 export default memo(Working);

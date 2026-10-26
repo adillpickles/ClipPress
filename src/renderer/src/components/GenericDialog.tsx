@@ -2,6 +2,7 @@ import type { MouseEventHandler, ReactNode } from 'react';
 import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import invariant from 'tiny-invariant';
+import { useReducedMotionConfig } from 'motion/react';
 
 import * as Dialog from './Dialog';
 import * as AlertDialog from './AlertDialog';
@@ -10,6 +11,7 @@ import { showItemInFolder } from '../util';
 import type { CleanupChoice, CleanupChoicesType } from '../dialogs';
 import Checkbox from './Checkbox';
 import ExportResult from './ExportResult';
+import { morphFromWorkingCard } from './Working';
 import HelpTip from './HelpTip';
 import styles from './GenericDialog.module.css';
 
@@ -238,6 +240,15 @@ export function useDialog() {
     function ExportResultDialog() {
       const { onOpenChange } = useGenericDialogContext();
       const mainRef = useRef<HTMLButtonElement>(null);
+      const reduceMotion = useReducedMotionConfig() === true;
+
+      // It grows out of the export's progress card, once, as it first mounts.
+      const morphed = useRef(false);
+      const contentRef = useCallback((el: HTMLDivElement | null) => {
+        if (el == null || morphed.current) return;
+        morphed.current = true;
+        morphFromWorkingCard(el, { reduceMotion });
+      }, [reduceMotion]);
 
       // Start on the main button rather than on the first focusable thing (the picture).
       const handleOpenAutoFocus = useCallback((e: Event) => {
@@ -252,7 +263,7 @@ export function useDialog() {
       }, [onOpenChange]);
 
       return (
-        <Dialog.Content aria-describedby={undefined} className={files.length > 1 ? styles['exportResultWide'] : styles['exportResult']} onOpenAutoFocus={handleOpenAutoFocus}>
+        <Dialog.Content ref={contentRef} aria-describedby={undefined} className={files.length > 1 ? styles['exportResultWide'] : styles['exportResult']} onOpenAutoFocus={handleOpenAutoFocus}>
           <Dialog.Title className={styles['centredTitle']}>{title}</Dialog.Title>
           <ExportResult
             files={files}

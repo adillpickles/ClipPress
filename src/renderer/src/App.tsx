@@ -303,6 +303,7 @@ import { buildShelfQueue, pickNextClip, rememberShelfExport, shelfThumbnailKey }
 import formatSizeLimitedProgressText, { getSizeLimitedStageTitle } from './sizeLimitedProgressText';
 import { findClipEdge, getEdgeSnapDistance } from './clipEdgeSnap';
 import { isSelfFileDrag } from './selfFileDrag';
+import type { ExportPhase } from './exportTitleLines';
 import { findFreeFileName } from './util/clipFileNames';
 import getMergePartNames from './mergePartNames';
 import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, resolveExportQuality } from './quickExport';
@@ -3761,7 +3762,10 @@ function App() {
     const onMergePartWritten = (path: string) => { mergePartsWritten.push(path); };
     // Cancel stops the FFmpeg running then; between steps it's caught here, so the next step doesn't start.
     const exportAbort = new AbortController();
-    const setExportWorking = (state: { text: string, detailText?: string | undefined }) => setWorking({ ...state, abortController: exportAbort });
+    // The simple editor's card titles the phase with a playful line (Working.tsx); advanced mode keeps the plain step.
+    const setExportWorking = ({ phase, ...state }: { text: string, detailText?: string | undefined, phase?: ExportPhase | undefined }) => (
+      setWorking({ ...state, phase: simpleMode ? phase : undefined, abortController: exportAbort })
+    );
 
     const quality = resolveExportQuality({
       isSizeLimited: isSizeLimitedExport,
@@ -3790,7 +3794,7 @@ function App() {
 
     if (workingRef.current) return;
     try {
-      setExportWorking({ text: i18n.t('Exporting'), detailText: withQuickExportLabel(undefined) });
+      setExportWorking({ text: i18n.t('Exporting'), detailText: withQuickExportLabel(undefined), phase: 'starting' });
       // Checked again before the original is recycled, so a file that changed meanwhile is never touched.
       const sourceIdentity = await identifyFile(filePath);
 
@@ -3842,19 +3846,20 @@ function App() {
         let currentWorkingText = i18n.t('Exporting');
         let currentWorkingDetailText: string | undefined;
         const updateWorkingState = ({
-          text,
+          metadata,
           detailText,
         }: {
-          text: string;
+          metadata: SizeLimitedProgressMetadata | undefined;
           detailText?: string | undefined;
         }) => {
+          const text = getStageTitle(metadata);
           if (
             currentWorkingText === text
             && currentWorkingDetailText === detailText
           ) return;
           currentWorkingText = text;
           currentWorkingDetailText = detailText;
-          setExportWorking({ text, detailText: withQuickExportLabel(detailText) });
+          setExportWorking({ text, detailText: withQuickExportLabel(detailText), phase: metadata?.retryReason != null ? 'retry' : 'encoding' });
         };
         // A job's last tick (done) comes without its stage: keep the stage it was at.
         let lastStage: { jobIndex: number, metadata: SizeLimitedProgressMetadata } | undefined;
@@ -3872,7 +3877,7 @@ function App() {
           if (reported != null) lastStage = { jobIndex, metadata: reported };
           const metadata = reported ?? (lastStage?.jobIndex === jobIndex ? lastStage.metadata : undefined);
           updateWorkingState({
-            text: getStageTitle(metadata),
+            metadata,
             detailText: formatSizeLimitedJobStageText({ jobIndex, totalJobs, clipCount, joinedClipCount, metadata }),
           });
         };
@@ -3908,7 +3913,7 @@ function App() {
             const outPath = cutOutPaths[index];
             invariant(outPath != null);
             updateWorkingState({
-              text: getStageTitle(undefined),
+              metadata: undefined,
               detailText: formatSizeLimitedJobStageText({ jobIndex: index, totalJobs, clipCount, joinedClipCount, metadata: undefined }),
             });
 
@@ -3957,7 +3962,7 @@ function App() {
             ? sizeLimitedSegmentsForExport.length
             : 0;
           updateWorkingState({
-            text: getStageTitle(undefined),
+            metadata: undefined,
             detailText: formatSizeLimitedJobStageText({ jobIndex: mergedJobIndex, totalJobs, clipCount, joinedClipCount, metadata: undefined }),
           });
 
@@ -4161,7 +4166,7 @@ function App() {
         }
 
         exportAbort.signal.throwIfAborted();
-        setExportWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined) });
+        setExportWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined), phase: 'cutting' });
         const outFiles = await cutMultipleWithTextOverlays({
           outputDir,
           segments: segmentsToExport,
@@ -4195,7 +4200,7 @@ function App() {
         if (willMerge) {
           exportAbort.signal.throwIfAborted();
           setProgress(0);
-          setExportWorking({ text: i18n.t('Joining your clips'), detailText: withQuickExportLabel(undefined) });
+          setExportWorking({ text: i18n.t('Joining your clips'), detailText: withQuickExportLabel(undefined), phase: 'cutting' });
 
           const chapterNames = segmentsToChapters && !invertCutSegments
             ? segmentsToExport.map((segment) => segment.name)
@@ -4362,7 +4367,7 @@ function App() {
 
       // throw (() => { const err = new Error('test'); err.code = 'ENOENT'; return err; })();
       exportAbort.signal.throwIfAborted();
-      setExportWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined) });
+      setExportWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined), phase: 'cutting' });
       const outFiles = await cutMultiple({
         outputDir,
         customOutDir,
@@ -4403,7 +4408,7 @@ function App() {
 
         exportAbort.signal.throwIfAborted();
         setProgress(0);
-        setExportWorking({ text: i18n.t('Joining your clips'), detailText: withQuickExportLabel(undefined) });
+        setExportWorking({ text: i18n.t('Joining your clips'), detailText: withQuickExportLabel(undefined), phase: 'cutting' });
 
         const chapterNames = segmentsToChapters && !invertCutSegments
           ? segmentsToExport.map((s) => s.name)
@@ -7936,6 +7941,7 @@ function App() {
                   <Working
                     text={working.text}
                     detailText={working.detailText}
+                    phase={working.phase}
                     quiet={working.quiet}
                     progress={progress}
                     onAbortClick={abortWorking}
