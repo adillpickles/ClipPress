@@ -1436,7 +1436,7 @@ function App() {
     const audioGainDb = sanitizeClipGainDb(requestedDb);
     const audioMuted = requestedMuted ? true : undefined;
     if (sanitizeClipGainDb(segment.audioGainDb) === audioGainDb && (segment.audioMuted === true) === requestedMuted) return;
-    updateSegAtIndex(index, { audioGainDb, audioMuted }, dragId != null ? { coalesceKey: `clip-volume:${segmentId}:${dragId}`, wholeGesture: true } : undefined);
+    updateSegAtIndex(index, { audioGainDb, audioMuted }, dragId != null ? { coalesceKey: `clip-volume:${segmentId}:${dragId}` } : undefined);
   }, [cutSegments, invertCutSegments, updateSegAtIndex, workingRef]);
 
   const [clipVolumeEditor, setClipVolumeEditor] = useState<{ segId: string, anchor: { x: number, y: number } }>();
