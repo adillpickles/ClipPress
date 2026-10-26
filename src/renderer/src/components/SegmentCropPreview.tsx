@@ -222,7 +222,6 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
     width: `${100 / visibleCrop.width}%`,
     height: `${100 / visibleCrop.height}%`,
   };
-  const zoomFill = `${((zoom - 1) / (maxZoom - 1)) * 100}%`;
   const frameStyle: CSSProperties = { left: `${currentCrop.x * 100}%`, top: `${currentCrop.y * 100}%`, width: `${currentCrop.width * 100}%`, height: `${currentCrop.height * 100}%` };
   // The tab sits above the frame like the text box's, or inside it when there is no room.
   const tabInside = currentCrop.y * surfaceHeight < 22;
@@ -295,7 +294,6 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
               max={maxZoom * 100}
               step={1}
               value={Math.round(zoom * 100)}
-              style={{ '--zoom-fill': zoomFill } as CSSProperties}
               aria-label={t('Zoom')}
               aria-valuetext={`${zoom.toFixed(2)}×`}
               onPointerDown={settleZoom}
