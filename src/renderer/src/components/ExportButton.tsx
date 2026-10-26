@@ -32,16 +32,15 @@ const ExportButton = forwardRef<HTMLButtonElement, Props>(({
 }, ref) => {
   const { t } = useTranslation();
 
-  const { simpleMode, exportConfirmEnabled } = useUserSettings();
+  const { simpleMode } = useUserSettings();
 
+  // Just what it does (its key shows beside it): Ctrl+click is explained in Settings > Export, with the quick exports.
   let title = titleOverride ?? t('Export');
-  if (titleOverride == null && segmentsToExport.length === 1) {
+  if (titleOverride == null && !simpleMode && segmentsToExport.length === 1) {
     title = t('Export selection');
-  } else if (titleOverride == null && segmentsToExport.length > 1) {
+  } else if (titleOverride == null && !simpleMode && segmentsToExport.length > 1) {
     title = t('Export {{ num }} segments', { num: segmentsToExport.length });
   }
-  // Without the export options a click exports right away already.
-  if (onQuickExport != null && exportConfirmEnabled) title += `\n${t('Ctrl+click to export right away with your last settings')}`;
 
   const handleClick: MouseEventHandler<HTMLButtonElement> = (e) => {
     if (onQuickExport != null && (e.ctrlKey || e.metaKey)) {

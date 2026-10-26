@@ -99,7 +99,7 @@ function TopMenu({
               <button
                 type="button"
                 className={styles['fileNameButton']}
-                title={`${fileName}\n${t('Exports are named after this. Click to change it.')}`}
+                title={`${fileName}\n${t('Exports are named after this')}`}
                 onClick={() => {
                   if (fileName == null) return;
                   setRenameDraft(fileName);

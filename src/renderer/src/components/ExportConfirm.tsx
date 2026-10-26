@@ -1658,7 +1658,7 @@ function ExportConfirm({
                   onClick={() => handleExportEncodeModeChange('size_limited')}
                 >
                   <span className={styles['choiceTitle']}>{t('Fit a file size')}</span>
-                  <span className={styles['choiceBody']}>{t('Stays under a size you pick, e.g. for Discord.')}</span>
+                  <span className={styles['choiceBody']}>{t('Stays under a size you pick.')}</span>
                 </button>
               </div>
 

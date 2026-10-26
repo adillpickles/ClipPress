@@ -460,8 +460,8 @@ const Segment = memo(({
             aria-checked={ticked}
             className={[styles['includeToggle'], ...(ticked ? [styles['includeToggleOn']] : [])].join(' ')}
             title={noneTicked
-              ? t('No clip is ticked, so all of them are exported. Tick clips to export only those.')
-              : (ticked ? t('Included in the export. Click to leave this clip out.') : t('Left out of the export. Click to include this clip.'))}
+              ? t('All clips are exported while none is ticked')
+              : (ticked ? t('Included in the export') : t('Left out of the export'))}
             aria-label={t('Include in export')}
             onClick={onToggleSegmentSelectedClick}
           >

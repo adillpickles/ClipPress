@@ -97,7 +97,7 @@ function NoFileLoaded({ onClick, onOpenFolderClick, keyBindingByAction, dragging
             {t('Add text, slow down or speed up a clip, zoom in, or adjust the volume.')}
           </Step>
           <Step icon={<FiShare aria-hidden />} title={t('Export to size')}>
-            {t('Keep the original quality, or pick a file size like 10 MB for Discord.')}
+            {t('Keep the original quality, or pick a file size like 10 MB.')}
           </Step>
         </div>
         )}

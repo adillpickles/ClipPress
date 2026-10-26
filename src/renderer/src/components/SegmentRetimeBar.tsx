@@ -107,7 +107,7 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
           event.stopPropagation();
           if (committedSpeed !== 1) onChange(1);
         }}
-        title={overlay ? t('Drag right to slow down, left to speed up. Double-click for an exact speed.') : t('Drag right to slow down, left to speed up. Double-click to reset.')}
+        title={overlay ? t('Drag to change the speed') : t('Drag right to slow down, left to speed up. Double-click to reset.')}
         aria-label={`${overlay ? t('Clip speed') : t('Segment speed')} ${Math.round(speed * 100)}%`}
       />
     </div>
