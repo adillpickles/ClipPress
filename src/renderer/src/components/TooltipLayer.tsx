@@ -120,6 +120,11 @@ export default function TooltipLayer() {
 
     const onPointerOver = (e: PointerEvent) => {
       if (e.pointerType === 'touch') return;
+      // Dragging something: no hints pop up along the way.
+      if (e.buttons !== 0) {
+        hide();
+        return;
+      }
       const el = findTip(e.target);
       if (el === target) return;
       if (pressed != null && el !== pressed) pressed = undefined;

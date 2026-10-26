@@ -773,9 +773,9 @@ function Timeline({
   }, [onDeleteOverlayClip, onSelectOverlay, simpleMode, t]);
 
   const onMouseMove = useCallback<MouseEventHandler<HTMLDivElement>>((e) => {
-    if (!mouseDownRef.current) { // no button pressed
-      hoverStore.set(getMouseTimelinePos(e.nativeEvent));
-    }
+    // The time under the pointer shows only while nothing is being dragged (the playhead, a clip's edge…).
+    if (mouseDownRef.current || e.buttons !== 0) hoverStore.set(undefined);
+    else hoverStore.set(getMouseTimelinePos(e.nativeEvent));
     e.preventDefault();
   }, [getMouseTimelinePos, hoverStore]);
 
