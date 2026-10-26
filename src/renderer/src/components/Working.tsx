@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import useInterval from 'react-use/lib/useInterval';
@@ -9,7 +9,52 @@ import formatClockTime from '../util/clockTime';
 import styles from './Working.module.css';
 
 
-function Working({ text, detailText, progress, onAbortClick }: {
+/** A quiet task (opening a clip) shows nothing for this long, and offers Cancel only after the next. */
+const quietShowAfterMs = 500;
+const quietCancelAfterMs = 4000;
+
+/**
+ * Opening a clip: usually done before anything would show. If it takes a while (a slow drive, a big file), a small
+ * card says so at the top, with a soft moving bar, and leaves the app as it is underneath; Cancel comes later.
+ * Clicks on the app wait meanwhile (an invisible layer), as they do while it works on anything else.
+ */
+function QuietWorking({ text, onAbortClick }: { text: string, onAbortClick: () => void }) {
+  const { t } = useTranslation();
+  const [stage, setStage] = useState<'hidden' | 'shown' | 'cancellable'>('hidden');
+  useEffect(() => {
+    const show = setTimeout(() => setStage('shown'), quietShowAfterMs);
+    const cancellable = setTimeout(() => setStage('cancellable'), quietCancelAfterMs);
+    return () => {
+      clearTimeout(show);
+      clearTimeout(cancellable);
+    };
+  }, []);
+
+  return (
+    <div className={styles['quietWrapper']}>
+      {stage !== 'hidden' && (
+        <motion.div
+          className={styles['quietCard']}
+          role="status"
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.16 }}
+        >
+          <div className={styles['quietRow']}>
+            <span className={styles['quietText']}>{text}</span>
+            {stage === 'cancellable' && (
+              <button type="button" className={styles['quietCancel']} onClick={onAbortClick}>{t('Cancel')}</button>
+            )}
+          </div>
+          <div className={styles['indeterminate']} aria-hidden />
+        </motion.div>
+      )}
+    </div>
+  );
+}
+
+function WorkingCard({ text, detailText, progress, onAbortClick }: {
   text: string,
   detailText?: string | undefined,
   progress?: number | undefined,
@@ -73,6 +118,17 @@ function Working({ text, detailText, progress, onAbortClick }: {
       </motion.div>
     </div>
   );
+}
+
+function Working({ text, detailText, progress, quiet = false, onAbortClick }: {
+  text: string,
+  detailText?: string | undefined,
+  progress?: number | undefined,
+  quiet?: boolean | undefined,
+  onAbortClick: () => void
+}) {
+  if (quiet) return <QuietWorking text={text} onAbortClick={onAbortClick} />;
+  return <WorkingCard text={text} detailText={detailText} progress={progress} onAbortClick={onAbortClick} />;
 }
 
 export default memo(Working);

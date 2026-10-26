@@ -7,6 +7,11 @@ export interface WorkingState {
   text: string,
   detailText?: string | undefined,
   abortController?: AbortController | undefined,
+  /**
+   * Everyday work that's usually over in a moment (opening a clip): nothing shows unless it takes a while, then a
+   * small card that leaves the app as it is underneath.
+   */
+  quiet?: boolean | undefined,
 }
 
 export default function useLoading() {

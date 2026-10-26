@@ -4887,7 +4887,7 @@ function App() {
       }
 
       performance.mark('clippress:load-start');
-      setWorking({ text: i18n.t('Loading file') });
+      setWorking({ text: i18n.t('Opening {{name}}', { name: basename(fp) }), quiet: true });
       try {
         // Need to check if file is actually readable
         const pathReadAccessErrorCode = await getPathReadAccessError(fp);
@@ -5239,7 +5239,7 @@ function App() {
       if (workingRef.current) return;
       if (filePath === path) return;
       closeExportResultDialog();
-      setWorking({ text: i18n.t('Loading file') });
+      setWorking({ text: i18n.t('Opening clip'), quiet: true });
       try {
         await withErrorHandling(async () => {
           await userOpenSingleFile({ path });
@@ -5670,7 +5670,7 @@ function App() {
           return;
         }
         try {
-          setWorking({ text: i18n.t('Loading file') });
+          setWorking({ text: i18n.t('Opening clip'), quiet: true });
 
           // If it's a project file (not llc) and we have an already opened file, import segments from the project
           const matchingImportProjectType = getImportProjectType(firstNewFilePath);
@@ -5826,7 +5826,7 @@ function App() {
       const projectPath = opened?.path;
       const relocation = await relocateRecording({ oldMediaPath: path, project, projectPath });
       if (relocation == null || workingRef.current) return;
-      setWorking({ text: i18n.t('Loading file') });
+      setWorking({ text: i18n.t('Opening clip'), quiet: true });
       try {
         await loadMedia({ filePath: relocation.mediaPath, projectPath, relocatedFrom: relocation.relocatedFrom });
       } finally {
@@ -7557,6 +7557,7 @@ function App() {
                   <Working
                     text={working.text}
                     detailText={working.detailText}
+                    quiet={working.quiet}
                     progress={progress}
                     onAbortClick={abortWorking}
                   />
