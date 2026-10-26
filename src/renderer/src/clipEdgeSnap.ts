@@ -4,13 +4,18 @@ interface SnapClip {
   end?: number | undefined,
 }
 
-/** A gap this wide on the timeline can be seen, so I and O never snap across it. */
+/** Zoomed in, a gap this wide on the timeline can be seen, so I and O never snap across it. */
 const visibleGapPx = 2;
+/** With the whole recording in view, a click this close to a clip's end (on either side) still means that end… */
+const fitZoomSnapPx = 3;
+/** …but never further than this: half a second felt too eager. */
+const fitZoomMaxSnap = 0.3;
 
 /**
- * How close the playhead must be to a clip edge for I and O to lock onto it: 3 frames with the whole recording in view,
- * 1 frame once zoomed in at all, and never across a gap you can see on the timeline (a short recording, or deep zoom),
- * so a frame-exact place right next to an edge is always reachable.
+ * How close the playhead must be to a clip edge for I and O to lock onto it. With the whole recording in view: about
+ * 3 px of the timeline, at least 3 frames and at most 0.3 s, so a click just past (or just inside) a clip's
+ * end still lands on it. Zoomed in at all: 1 frame, and never across a gap you can see, so a frame-exact place right
+ * next to an edge is always reachable.
  */
 export function getEdgeSnapDistance({ duration, zoom, fps, laneWidthPx }: {
   duration: number,
@@ -23,7 +28,9 @@ export function getEdgeSnapDistance({ duration, zoom, fps, laneWidthPx }: {
   // A hair over, so a playhead exactly that many frames off still counts.
   const byFrames = ((zoom > 1 ? 1 : 3) + 0.05) * frame;
   if (laneWidthPx == null || !(laneWidthPx > 0)) return byFrames;
-  return Math.min(byFrames, (visibleGapPx * duration) / zoom / laneWidthPx);
+  const secondsPerPx = duration / zoom / laneWidthPx;
+  if (zoom <= 1) return Math.min(Math.max(byFrames, fitZoomSnapPx * secondsPerPx), fitZoomMaxSnap);
+  return Math.min(byFrames, visibleGapPx * secondsPerPx);
 }
 
 function nearest(time: number, edges: number[], distance: number) {

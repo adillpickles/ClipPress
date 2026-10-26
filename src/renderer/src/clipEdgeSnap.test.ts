@@ -3,16 +3,18 @@ import { describe, expect, it } from 'vitest';
 import { findClipEdge, getEdgeSnapDistance, getNewClipEnd, snapCutEnd, snapCutStart } from './clipEdgeSnap';
 
 describe('getEdgeSnapDistance', () => {
-  it('is 3 frames with the whole recording in view, 1 frame once zoomed in', () => {
-    expect(getEdgeSnapDistance({ duration: 120, zoom: 1, fps: 60, laneWidthPx: 1100 })).toBeCloseTo(3 / 60);
-    expect(getEdgeSnapDistance({ duration: 120, zoom: 1.5, fps: 60, laneWidthPx: 1100 })).toBeCloseTo(1 / 60);
-    expect(getEdgeSnapDistance({ duration: 120, zoom: 1, fps: undefined })).toBeCloseTo(3 / 30);
+  it('is about 3 px of the timeline with the whole recording in view: at least 3 frames, at most 0.3 s', () => {
+    expect(getEdgeSnapDistance({ duration: 90, zoom: 1, fps: 60, laneWidthPx: 1100 })).toBeCloseTo((3 * 90) / 1100);
+    // A 5 s recording: 3 px is less than 3 frames.
+    expect(getEdgeSnapDistance({ duration: 5, zoom: 1, fps: 60, laneWidthPx: 1100 })).toBeCloseTo(3.05 / 60);
+    // A 2-minute one or longer: capped.
+    expect(getEdgeSnapDistance({ duration: 120, zoom: 1, fps: 60, laneWidthPx: 1100 })).toBe(0.3);
+    expect(getEdgeSnapDistance({ duration: 120, zoom: 1, fps: undefined })).toBeCloseTo(3.05 / 30);
   });
 
-  it('never snaps across a gap you can see', () => {
-    // A 5 s recording: 3 frames would be 11 px of the timeline, so it's 2 px.
-    expect(getEdgeSnapDistance({ duration: 5, zoom: 1, fps: 60, laneWidthPx: 1100 })).toBeCloseTo((2 * 5) / 1100);
-    // Deep zoom: a frame is many pixels wide.
+  it('zoomed in: 1 frame, never across a gap you can see', () => {
+    expect(getEdgeSnapDistance({ duration: 120, zoom: 1.5, fps: 60, laneWidthPx: 1100 })).toBeCloseTo(1.05 / 60);
+    // Deep zoom: a frame is many pixels wide, so it's 2 px.
     expect(getEdgeSnapDistance({ duration: 120, zoom: 40, fps: 60, laneWidthPx: 1100 })).toBeCloseTo((2 * 3) / 1100);
   });
 });
