@@ -1,4 +1,4 @@
-import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent } from 'react';
+import type { CSSProperties, MutableRefObject, PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FaMinus, FaPlus } from 'react-icons/fa';
@@ -20,7 +20,7 @@ const corners: CropCorner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-r
  * text box editor: an accent frame with a label tab, round corner handles, and one compact
  * toolbar over the video, so the picture keeps its size when editing starts.
  */
-export default function SegmentCropPreview({ children, videoWidth, videoHeight, rotation, crop, editing, clipLabel, onChange, onDone, doneKeys }: {
+export default function SegmentCropPreview({ children, videoWidth, videoHeight, rotation, crop, editing, clipLabel, onChange, onDone, doneKeys, finishRef }: {
   children: ReactNode,
   videoWidth: number,
   videoHeight: number,
@@ -33,6 +33,8 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
   onDone: () => void,
   /** Zoom / crop's own shortcut, which also finishes: shown in Done's hint. */
   doneKeys?: string | undefined,
+  /** Set while editing: finishes like Done (a zoom still settling is kept), for the shortcut that closes it. */
+  finishRef?: MutableRefObject<(() => void) | undefined> | undefined,
 }) {
   const { t } = useTranslation();
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -157,6 +159,20 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
   }, [editing, onChange, onDone]);
 
   useEffect(() => () => clearTimeout(wheelTimerRef.current), []);
+
+  const finish = () => {
+    settleZoom();
+    onDone();
+  };
+  useEffect(() => {
+    if (finishRef == null) return undefined;
+    // eslint-disable-next-line no-param-reassign
+    finishRef.current = editing ? finish : undefined;
+    return () => {
+      // eslint-disable-next-line no-param-reassign
+      finishRef.current = undefined;
+    };
+  });
 
   const begin = (event: ReactPointerEvent<HTMLElement>, corner?: CropCorner) => {
     if (event.button !== 0 || interactionRef.current != null) return;
@@ -293,7 +309,7 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
             <output className={styles['zoomValue']}>{zoom.toFixed(1)}×</output>
             <span className={styles['divider']} />
             <button type="button" className={styles['textButton']} onClick={() => { cancelGesture(); onChange(fullFrameCrop); }} disabled={zoom <= 1.001}>{t('Reset')}</button>
-            <button type="button" className={styles['doneButton']} onClick={() => { settleZoom(); onDone(); }} title={t('Done')} data-tip-keys={doneKeys}>{t('Done')}</button>
+            <button type="button" className={styles['doneButton']} onClick={finish} title={t('Done')} data-tip-keys={doneKeys}>{t('Done')}</button>
           </div>
         )}
       </div>

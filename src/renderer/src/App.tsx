@@ -1299,6 +1299,8 @@ function App() {
   }, [currentSegIndexSafe, cutSegments, invertCutSegments]);
   usePreviewAudioGain(videoRef, activeAudioStreams.length === 1 ? activeAudioGainByStreamId[activeAudioStreams[0]!.index] : undefined, filePath, previewClipVolumes);
   const [editingCropSegmentId, setEditingCropSegmentId] = useState<string>();
+  // Finishes crop editing like its Done button (set by the crop editor while it's open).
+  const cropFinishRef = useRef<() => void>();
   const editingCropSegment = !invertCutSegments && currentCutSeg?.segId === editingCropSegmentId ? currentCutSeg : undefined;
   const previewSegment = invertCutSegments ? undefined : getPreviewSegment(cutSegments, currentSegIndexSafe, relevantTime, fileDuration);
   const previewCrop = useMemo(() => getSegmentCrop(editingCropSegment ?? previewSegment ?? {}), [editingCropSegment, previewSegment]);
@@ -6141,7 +6143,12 @@ function App() {
       toggleSegmentSpeedControls,
       addTextOverlay,
       // The same key finishes, as Done does.
-      editCurrentSegmentCrop: () => (editingCropSegmentId != null ? setEditingCropSegmentId(undefined) : editSegmentCrop(currentSegIndexSafe)),
+      // Its shortcut closes the crop editor again, like Done (keeping a zoom that's still settling).
+      editCurrentSegmentCrop: () => {
+        if (editingCropSegmentId == null) editSegmentCrop(currentSegIndexSafe);
+        else if (cropFinishRef.current != null) cropFinishRef.current();
+        else setEditingCropSegmentId(undefined);
+      },
       toggleLastCommands,
       export: () => onExportPress(),
       quickExport: () => quickExport(),
@@ -7083,6 +7090,7 @@ function App() {
                             onChange={changeSegmentCrop}
                             onDone={() => setEditingCropSegmentId(undefined)}
                             doneKeys={keyBindingByAction['editCurrentSegmentCrop']?.keys}
+                            finishRef={cropFinishRef}
                           >
                             {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                             <video
