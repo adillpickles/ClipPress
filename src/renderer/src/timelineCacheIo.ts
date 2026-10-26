@@ -70,16 +70,18 @@ let pruneTimer: ReturnType<typeof setTimeout> | undefined;
 let lastPruneAt = 0;
 
 /**
- * Prunes the cache a while from now: soon after starting, and after it's written to, at most every 10 minutes, so it
- * stays within its limits in a long session of many recordings as well as over many short ones.
+ * Prunes the cache a while from now: soon after starting, and after it's written to, at most every 10 minutes (a write
+ * sooner than that waits for the 10 minutes to pass), so it stays within its limits in a long session of many recordings
+ * as well as over many short ones.
  */
 export function schedulePruneTimelineCache(delayMs: number) {
-  if (pruneTimer != null || (lastPruneAt !== 0 && Date.now() - lastPruneAt < 10 * 60 * 1000)) return;
+  if (pruneTimer != null) return;
+  const cooldownLeft = lastPruneAt === 0 ? 0 : lastPruneAt + 10 * 60 * 1000 - Date.now();
   pruneTimer = setTimeout(() => {
     pruneTimer = undefined;
     lastPruneAt = Date.now();
     pruneTimelineCache().catch((err) => console.warn('Timeline cache pruning failed', err));
-  }, delayMs);
+  }, Math.max(delayMs, cooldownLeft));
 }
 
 async function readEntry(name: string): Promise<Uint8Array | undefined> {
