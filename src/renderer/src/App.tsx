@@ -322,7 +322,7 @@ import type { FileIdentity } from './originalRecycling';
 import { shouldRecycleEditsWithOriginal, shouldRecycleOriginalAfterExport } from './afterExportAction';
 import { fileExists, identifyFile, probeOutput, statOutput } from './originalRecyclingIo';
 import styles from './App.module.css';
-import { DirectoryAccessDeclinedError, UserFacingError } from '../errors';
+import { DirectoryAccessDeclinedError, UnsupportedFileError, UserFacingError } from '../errors';
 import SwalContainer from './components/SwalContainer';
 import ErrorDialog from './components/ErrorDialog';
 import useErrorHandling from './hooks/useErrorHandling';
@@ -483,6 +483,8 @@ function App() {
   // The clip the shelf counts on from: the open one, and after it closes still that one, so "Up next" on the
   // welcome screen is the clip after it and never the one just closed.
   const [shelfAnchorPath, setShelfAnchorPath] = useState<string>();
+  // Recordings from the shelf that couldn't be opened this session (`shelfThumbnailKey`), so they aren't offered again.
+  const [unopenableShelfKeys, setUnopenableShelfKeys] = useState<ReadonlySet<string>>(new Set());
   const [selectedBatchFiles, setSelectedBatchFiles] = useState<string[]>([]);
 
   const allUserSettings = useUserSettingsRoot();
@@ -1945,7 +1947,7 @@ function App() {
     return () => clearTimeout(timer);
   }, [filePath, simpleMode]);
   const shelfPrefetch = !working && (filePath == null || openSettled || (simpleMode && openVisualsIn));
-  const shelf = useShelf({ folder: shelfFolder, order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac, currentPath: filePath ?? shelfAnchorPath, prefetch: shelfPrefetch });
+  const shelf = useShelf({ folder: shelfFolder, order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac, currentPath: filePath ?? shelfAnchorPath, prefetch: shelfPrefetch, unopenable: unopenableShelfKeys });
   const { refresh: refreshShelf, nextClip } = shelf;
   // The shelf's next clip gets its filmstrip and waveform made in the background once the open one's are (and the
   // shelf's own thumbnails may be made), so Next clip opens it with them showing at once.
@@ -5356,7 +5358,16 @@ function App() {
       setWorking({ text: i18n.t('Opening clip'), quiet: true });
       try {
         await withErrorHandling(async () => {
-          await userOpenSingleFile({ path });
+          try {
+            await userOpenSingleFile({ path });
+          } catch (err) {
+            // Next clip and Up next move past it instead of offering it again.
+            if (err instanceof UnsupportedFileError) {
+              const info = await lstat(path).catch(() => undefined);
+              if (info != null) setUnopenableShelfKeys((keys) => new Set([...keys, shelfThumbnailKey({ path, name: basename(path), modifiedAt: info.mtimeMs, size: info.size })]));
+            }
+            throw err;
+          }
         }, i18n.t('Failed to open file'));
       } finally {
         setWorking(undefined);
@@ -5732,7 +5743,7 @@ function App() {
           }
           const folder = firstNewFilePath;
           const queue = buildShelfQueue(await listShelfFolder(folder), { order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac });
-          const first = pickNextClip(queue, undefined, isWindows || isMac) ?? queue[0]?.file;
+          const first = pickNextClip(queue, undefined, isWindows || isMac, unopenableShelfKeys) ?? queue[0]?.file;
           if (first == null) {
             errorToast(i18n.t('No videos in this folder'));
             return;
@@ -5929,6 +5940,7 @@ function App() {
       shelfOrder,
       shelfExports,
       batchOpenSingleFile,
+      unopenableShelfKeys,
     ],
   );
 

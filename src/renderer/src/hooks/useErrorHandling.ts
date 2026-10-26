@@ -25,7 +25,8 @@ export default function useErrorHandling() {
 
       if (err instanceof UnsupportedFileError) {
         console.error(err);
-        handleError({ title: errorMsg, err: i18n.t('Unsupported file') });
+        // Its message names the file and says what's wrong with it (damaged, empty, gone…).
+        handleError({ title: errorMsg, err: err.message || i18n.t('Unsupported file') });
         return;
       }
 

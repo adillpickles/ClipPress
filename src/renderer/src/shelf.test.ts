@@ -95,6 +95,18 @@ describe('shelf', () => {
     expect(pickNextClip(allDone, b.path, true)).toBeUndefined();
   });
 
+  it('passes by a recording that could not be opened, until it changes', () => {
+    const queue = buildShelfQueue(files, { order: 'date', exports: [], caseInsensitive: true });
+    // b, c, a, d: c is damaged
+    const unopenable = new Set([shelfThumbnailKey(c)]);
+    expect(pickNextClip(queue, b.path, true, unopenable)).toBe(a);
+    expect(pickNextClip(queue, undefined, true, unopenable)).toBe(b);
+    // Written again (a new recording under the same name): offered again.
+    const rewritten = { ...c, modifiedAt: 9000 };
+    const queue2 = buildShelfQueue([b, rewritten, a, d], { order: 'name', exports: [], caseInsensitive: true });
+    expect(pickNextClip(queue2, d.path, true, unopenable)).toBe(rewritten);
+  });
+
   it('after a clip closes, offers the one after it and never the closed clip again', () => {
     // The app passes the clip that was open last once the editor closes (App's shelfAnchorPath).
     const queue = buildShelfQueue(files, { order: 'date', exports: [], caseInsensitive: true });

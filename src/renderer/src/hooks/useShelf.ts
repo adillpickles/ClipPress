@@ -39,13 +39,15 @@ export async function listShelfFolder(folder: string): Promise<ShelfFile[]> {
  * Thumbnails live only in memory, dropped when the folder changes: made when a row first shows, and for the rest
  * of the folder in the background while `prefetch` says the editor is done with FFmpeg for now.
  */
-export default function useShelf({ folder, order, exports, caseInsensitive, currentPath, prefetch }: {
+export default function useShelf({ folder, order, exports, caseInsensitive, currentPath, prefetch, unopenable }: {
   folder: string | undefined,
   order: ShelfOrder,
   exports: ShelfExport[],
   caseInsensitive: boolean,
   currentPath: string | undefined,
   prefetch: boolean,
+  /** Recordings that couldn't be opened (`shelfThumbnailKey`): Next clip passes them by. */
+  unopenable: ReadonlySet<string>,
 }) {
   const [listing, setListing] = useState<{ folder: string, files: ShelfFile[] }>();
   const [refreshCount, setRefreshCount] = useState(0);
@@ -77,7 +79,7 @@ export default function useShelf({ folder, order, exports, caseInsensitive, curr
 
   const files = useMemo(() => (listing != null && listing.folder === folder ? listing.files : []), [folder, listing]);
   const queue = useMemo(() => buildShelfQueue(files, { order, exports, caseInsensitive }), [caseInsensitive, exports, files, order]);
-  const nextClip = useMemo(() => pickNextClip(queue, currentPath, caseInsensitive), [caseInsensitive, currentPath, queue]);
+  const nextClip = useMemo(() => pickNextClip(queue, currentPath, caseInsensitive, unopenable), [caseInsensitive, currentPath, queue, unopenable]);
 
   useEffect(() => {
     const store = new ShelfThumbnails({

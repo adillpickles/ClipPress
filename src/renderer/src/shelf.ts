@@ -96,10 +96,11 @@ export function buildShelfQueue(files: readonly ShelfFile[], { order, exports, c
 }
 
 /** The clip to edit after the current one: the next one not yet exported, wrapping round to the top. */
-export function pickNextClip(queue: readonly ShelfItem[], currentPath: string | undefined, caseInsensitive: boolean) {
+export function pickNextClip(queue: readonly ShelfItem[], currentPath: string | undefined, caseInsensitive: boolean, unopenable: ReadonlySet<string> = new Set()) {
   const currentKey = currentPath != null ? shelfPathKey(currentPath, caseInsensitive) : undefined;
   const index = queue.findIndex((item) => shelfPathKey(item.file.path, caseInsensitive) === currentKey);
-  const isCandidate = (item: ShelfItem) => !item.exported && shelfPathKey(item.file.path, caseInsensitive) !== currentKey;
+  // A recording that couldn't be opened this session (damaged, say) isn't offered again, unless it changes.
+  const isCandidate = (item: ShelfItem) => !item.exported && shelfPathKey(item.file.path, caseInsensitive) !== currentKey && !unopenable.has(shelfThumbnailKey(item.file));
   if (index === -1) return queue.find((item) => isCandidate(item))?.file;
   return (queue.slice(index + 1).find((item) => isCandidate(item)) ?? queue.slice(0, index).find((item) => isCandidate(item)))?.file;
 }
