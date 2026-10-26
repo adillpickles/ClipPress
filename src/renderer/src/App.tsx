@@ -4060,6 +4060,7 @@ function App() {
           videoWidth: activeVideoStream.width,
           videoHeight: activeVideoStream.height,
           encodeAllAudio: willMerge,
+          signal: exportAbort.signal,
           onProgress: setProgress,
         });
 
@@ -4098,9 +4099,11 @@ function App() {
             chapterNames,
             preserveMetadataOnMerge,
             mergedOutFilePath,
+            signal: exportAbort.signal,
           });
 
           const createdOutFiles = outFiles.flatMap((file) => (file.created ? [file.path] : []));
+          mergePartsToRemoveOnFailure = [];
           if (autoDeleteMergedSegments && mergedResult.created) await tryDeleteFiles(createdOutFiles);
         }
 
@@ -4260,6 +4263,7 @@ function App() {
         chapters: chaptersToAdd,
         detectedFps,
         encodeAllAudio: willMerge && segmentsToExport.some((segment) => isClipVolumeChanged(segment)),
+        signal: exportAbort.signal,
       });
 
       let mergedOutFilePath: string | undefined;
@@ -4307,10 +4311,12 @@ function App() {
           chapterNames,
           preserveMetadataOnMerge,
           mergedOutFilePath,
+          signal: exportAbort.signal,
         });
 
         // don't delete existing files that were not created by losslesscut now (due to overwrite disabled) https://github.com/mifi/lossless-cut/issues/2436
         const createdOutFiles = outFiles.flatMap((f) => (f.created ? [f.path] : []));
+        mergePartsToRemoveOnFailure = [];
         if (autoDeleteMergedSegments && mergedResult.created) await tryDeleteFiles(createdOutFiles);
       }
 

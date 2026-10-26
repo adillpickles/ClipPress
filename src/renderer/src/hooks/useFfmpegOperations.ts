@@ -271,7 +271,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
   const getOutputPlaybackRateArgs = useCallback(() => (outputPlaybackRate !== 1 ? ['-itsscale', String(1 / outputPlaybackRate)] : []), [outputPlaybackRate]);
 
-  const concatFiles = useCallback(async ({ paths, outDir, outPath, metadataFromPath, includeAllStreams, streams, outFormat, ffmpegExperimental, onProgress = () => undefined, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge, videoTimebase }: {
+  const concatFiles = useCallback(async ({ paths, outDir, outPath, metadataFromPath, includeAllStreams, streams, outFormat, ffmpegExperimental, onProgress = () => undefined, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge, videoTimebase, signal }: {
     paths: string[],
     outDir: string | undefined,
     outPath: string,
@@ -286,6 +286,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     chapters: Chapter[] | undefined,
     preserveMetadataOnMerge: boolean,
     videoTimebase?: number | undefined,
+    /** Cancel: checked right before FFmpeg starts (the probes before it can't be stopped). */
+    signal?: AbortSignal | undefined,
   }) => {
     // Innermost guard for every merge: batch concat, auto-concat of exported segments and
     // the size-limited merge all end up here, and only here is the full input list known.
@@ -392,6 +394,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       console.log(fullCommandLine);
       appendLastCommandsLog(fullCommandLine);
 
+      signal?.throwIfAborted();
       const result = await runFfmpegConcat({ ffmpegArgs, concatTxt, totalDuration, onProgress });
       logStdoutStderr(result);
       await moveExportWithRetry(partialPath, outPath, enableOverwriteOutput);
@@ -636,6 +639,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     videoHeight,
     encodeAllAudio,
     onProgress: onTotalProgress,
+    signal,
   }: {
     outputDir: string,
     segments: SegmentToExport[],
@@ -660,6 +664,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     /** For merges: encode every clip's sound, so the pieces match and none brings cut-off sound along (#53). */
     encodeAllAudio: boolean,
     onProgress: (progress: number) => void,
+    /** Cancel: checked before each clip starts. */
+    signal?: AbortSignal | undefined,
   }) => {
     invariant(filePath != null);
     invariant(outFormat != null);
@@ -750,6 +756,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         const hardwareDecode = canUseHardwareDecode({ enabled: exportGpuAcceleration, inputCount: 1, width: videoWidth, height: videoHeight });
 
         return await pMap(segments, async (segment, index) => {
+          signal?.throwIfAborted();
           const { start, end } = segment;
           const segmentRate = getSegmentPlaybackRate(segment, outputPlaybackRate);
           const finalOutPath = join(outputDir, cutFileNames[index]!);
@@ -947,7 +954,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   }, [appendFfmpegCommandLog, assertOutPathIsNotSource, filePath]);
 
   const cutMultiple = useCallback(async ({
-    outputDir, customOutDir, segments: segmentsIn, cutFileNames, fileDuration, rotation, detectedFps, onProgress: onTotalProgress, keyframeCut, copyFileStreams, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, customTagsByFile, paramsByStreamId, chapters, encodeAllAudio,
+    outputDir, customOutDir, segments: segmentsIn, cutFileNames, fileDuration, rotation, detectedFps, onProgress: onTotalProgress, keyframeCut, copyFileStreams, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, customTagsByFile, paramsByStreamId, chapters, encodeAllAudio, signal,
   }: {
     outputDir: string,
     customOutDir: string | undefined,
@@ -974,6 +981,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     chapters: Chapter[] | undefined,
     /** For merges where some clip's volume changed: encode every clip's sound, so the pieces have the same codec. */
     encodeAllAudio: boolean,
+    /** Cancel: checked before each clip starts. */
+    signal?: AbortSignal | undefined,
   }) => {
     console.log('customTagsByFile', customTagsByFile);
     console.log('paramsByStreamId', paramsByStreamId);
@@ -996,6 +1005,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     // then it will cut the part *from* the keyframe to "end", and concat them together and return the concated file
     // so that for the calling code it looks as if it's just a normal segment
     const cutSegment = async (segment: SegmentToExport, i: number) => {
+      signal?.throwIfAborted();
       const { start: desiredCutFrom, end: cutTo } = segment;
       const clipVolume: ClipVolume = { audioGainDb: segment.audioGainDb, audioMuted: segment.audioMuted };
       const onProgress = (progress: number) => onSingleProgress(i, progress / 2);
@@ -1145,7 +1155,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     }
   }, [shouldSkipExistingFile, assertOutPathIsNotSource, isEncoding, filePath, lossyMode, losslessCutSingle, cutEncodeSmartPart, encCustomBitrate, concatFiles]);
 
-  const concatCutSegments = useCallback(async ({ customOutDir, outFormat, segmentPaths, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapterNames, preserveMetadataOnMerge, mergedOutFilePath }: {
+  const concatCutSegments = useCallback(async ({ customOutDir, outFormat, segmentPaths, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapterNames, preserveMetadataOnMerge, mergedOutFilePath, signal }: {
     customOutDir: string | undefined,
     outFormat: string | undefined,
     segmentPaths: string[],
@@ -1156,6 +1166,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     chapterNames: (string | undefined)[] | undefined,
     preserveMetadataOnMerge: boolean,
     mergedOutFilePath: string,
+    signal?: AbortSignal | undefined,
   }) => {
     const outDir = getOutDir(customOutDir, filePath);
     await assertOutPathIsNotSource(mergedOutFilePath, segmentPaths);
@@ -1171,7 +1182,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     invariant(metadataFromPath != null);
     // need to re-read streams because may have changed
     const { streams } = await readFileFfprobeMeta(metadataFromPath);
-    const { created } = await concatFiles({ paths: segmentPaths, outDir, outPath: mergedOutFilePath, metadataFromPath, outFormat, includeAllStreams: true, streams, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge });
+    const { created } = await concatFiles({ paths: segmentPaths, outDir, outPath: mergedOutFilePath, metadataFromPath, outFormat, includeAllStreams: true, streams, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge, signal });
     onProgress(1);
     return { path: mergedOutFilePath, created };
   }, [assertOutPathIsNotSource, concatFiles, filePath, shouldSkipExistingFile]);
