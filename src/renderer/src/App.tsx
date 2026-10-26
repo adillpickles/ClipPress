@@ -3444,6 +3444,9 @@ function App() {
       }
 
       for (const candidate of candidates) {
+        // A file named after its clip ("Intro.mp4") never replaces one already there, whatever the overwrite setting:
+        // that name may well be another file of the user's. It gets a number instead.
+        const keepExisting = !enableOverwriteOutput || (candidate.clipName ?? '').trim() !== '';
         try {
           let targetFileName = findAvailableSizeLimitedAutoFileName({
             sourceBaseName: sizeLimitedSourceBaseName,
@@ -3466,7 +3469,7 @@ function App() {
           while (
             targetPath != null
           && targetPath !== candidate.currentPath
-          && !enableOverwriteOutput
+          && keepExisting
           && (await mainApi.pathExists(targetPath))
           ) {
             reservedFileNames.add(targetFileName);
@@ -3498,8 +3501,8 @@ function App() {
           }
           if (!targetIsSourceFile && targetPath != null && targetPath !== candidate.currentPath) {
             await assertOutPathsNotSource({ outPaths: [targetPath], protectedPaths: exportProtectedPaths, message: i18n.t('Output name would replace a source file') });
-            if (!enableOverwriteOutput && await mainApi.pathExists(targetPath)) throw new Error('Output file already exists');
-            await moveExportWithRetry(candidate.currentPath, targetPath, enableOverwriteOutput);
+            if (keepExisting && await mainApi.pathExists(targetPath)) throw new Error('Output file already exists');
+            await moveExportWithRetry(candidate.currentPath, targetPath, !keepExisting);
             const result = updatedResults[candidate.resultIndex];
             if (result != null) {
               updatedResults[candidate.resultIndex] = {
