@@ -19,7 +19,7 @@ import {
   getSizeLimitedTwoPassEncodeArgs,
 } from './sizeLimitedFfmpegArgs';
 import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile } from './sizeLimitedResolution';
-import { planSizeLimitedEncode } from './sizeLimitedPlanner';
+import { planSizeLimitedEncode, relaxQualityCapForGenerousBudget } from './sizeLimitedPlanner';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import { buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
 import { getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from './segmentSpeed';
@@ -591,6 +591,7 @@ async function resolveSizeLimitedPlan({
   targetSizeMb,
   duration,
   hasAudio,
+  getOutputPixelRate,
 }: {
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
@@ -603,6 +604,8 @@ async function resolveSizeLimitedPlan({
   targetSizeMb: number,
   duration: number,
   hasAudio: boolean,
+  /** The pixels the encode makes each second at a video bitrate (the size may follow it), when known. */
+  getOutputPixelRate: (plannedVideoBitrate: number) => number | undefined,
 }) {
   const capabilities = await getSizeLimitedEncoderCapabilities();
   const strategy = resolveSizeLimitedStrategy({
@@ -618,7 +621,22 @@ async function resolveSizeLimitedPlan({
   });
   assertStrategySupported({ strategy, capabilities });
   const plan = planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strategy });
-  return { capabilities, strategy, plan };
+  return { capabilities, strategy, plan: relaxQualityCapForGenerousBudget(plan, getOutputPixelRate(plan.initialAttempt.videoBitrate)) };
+}
+
+/** The pixels an encode makes each second (its size and frame rate, else the source's), for judging a budget. */
+function makeOutputPixelRate({ resolution, fps, videoStream, rotation, sourceFps }: {
+  resolution: SizeLimitSimpleResolution,
+  fps: SizeLimitSimpleFps,
+  videoStream: Pick<FFprobeStream, 'width' | 'height'>,
+  rotation: number | undefined,
+  sourceFps: number | undefined,
+}) {
+  return (plannedVideoBitrate: number) => {
+    const profile = resolveSizeLimitedVideoProfile({ resolution, fps, sourceWidth: videoStream.width, sourceHeight: videoStream.height, rotation, sourceFps, plannedVideoBitrate });
+    const pixelRate = (profile.outputWidth ?? videoStream.width ?? 0) * (profile.outputHeight ?? videoStream.height ?? 0) * (profile.outputFps ?? sourceFps ?? 0);
+    return Number.isFinite(pixelRate) && pixelRate > 0 ? pixelRate : undefined;
+  };
 }
 
 export function pickSizeLimitedStreams(streams: FFprobeStream[]) {
@@ -715,6 +733,7 @@ export async function exportSizeLimitedSegment({
     targetSizeMb,
     duration: plannedDuration,
     hasAudio: audioStream != null,
+    getOutputPixelRate: makeOutputPixelRate({ resolution, fps, videoStream, rotation: sourceRotation ?? rotation, sourceFps }),
   });
   let { strategy, plan } = await resolvePlan();
 
@@ -989,6 +1008,7 @@ export async function exportSizeLimitedMerge({
     targetSizeMb,
     duration: plannedDuration,
     hasAudio: audioStream != null,
+    getOutputPixelRate: makeOutputPixelRate({ resolution, fps, videoStream, rotation: sourceRotation ?? rotation, sourceFps }),
   });
   let { strategy, plan } = await resolvePlan();
 

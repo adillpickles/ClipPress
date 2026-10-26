@@ -364,6 +364,15 @@ const undershootQualityCapOffsets = [
   { minGrowthFactor: 1, offset: 3 },
 ] as const;
 
+/**
+ * Video bits per output pixel from which the first attempt starts with the quality cap fully relaxed. Measured on
+ * real recordings (AV1 NVENC, 3 s pieces): `-cq` 28 used at most 0.25 bits per pixel, so a budget like this always
+ * came in far under and was encoded again relaxed (a 1 s clip at 20 MB took two encodes); fully relaxed (`-cq` 14)
+ * used 0.07 to 0.87. A relaxed encode is held only by the peak rate, so below this margin over the most it used,
+ * a short clip can overshoot: those budgets keep the usual first attempt and top-up.
+ */
+const generousVideoBitsPerPixel = 1.1;
+
 function getUndershootQualityCapOffset(growthFactor: number) {
   return undershootQualityCapOffsets.find((step) => growthFactor >= step.minGrowthFactor)?.offset
     ?? undershootQualityCapOffsets.at(-1)!.offset;
@@ -532,6 +541,17 @@ export function planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strate
       strategyId: strategy.plannerProfileId,
     }),
   } satisfies SizeLimitedPlan;
+}
+
+/**
+ * The plan with its first attempt's quality cap already relaxed (as a top-up would) when the budget is generous for
+ * the pixels the encode makes each second (`outputPixelsPerSecond`, undefined when unknown), so it lands in one encode.
+ * A relaxed attempt that still undershoots isn't topped up: the content doesn't need the bits.
+ */
+export function relaxQualityCapForGenerousBudget<T extends SizeLimitedPlan>(plan: T, outputPixelsPerSecond: number | undefined): T {
+  if (outputPixelsPerSecond == null || !(outputPixelsPerSecond > 0)) return plan;
+  if (plan.initialAttempt.videoBitrate / outputPixelsPerSecond < generousVideoBitsPerPixel) return plan;
+  return { ...plan, initialAttempt: { ...plan.initialAttempt, qualityCapOffset: undershootQualityCapOffsets[0].offset } };
 }
 
 /**
