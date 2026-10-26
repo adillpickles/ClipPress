@@ -250,6 +250,14 @@ export function get<T extends keyof Config>(key: T): Config[T] {
 /** One disk read and one bridge response, with no remote object proxies in the renderer. */
 export const getSnapshotJson = () => JSON.stringify(store.store);
 
+// Migration markers and retired settings: written straight to the store, with the same retries.
+function setStored(key: string, val: unknown) {
+  retrySettingsWrite(() => store.set(key, val));
+}
+function deleteStored(key: string) {
+  retrySettingsWrite(() => store.delete(key));
+}
+
 export function set<T extends keyof Config>(key: T, val: Config[T]) {
   retrySettingsWrite(() => {
     if (val === undefined) store.delete(key);
@@ -433,7 +441,7 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
   const enableTransferTimestamps = store.get('enableTransferTimestamps'); // todo remove after a while
   if (enableTransferTimestamps != null) {
     logger.info('Migrating enableTransferTimestamps');
-    store.delete('enableTransferTimestamps');
+    deleteStored('enableTransferTimestamps');
     set('treatOutputFileModifiedTimeAsStart', enableTransferTimestamps ? true : undefined);
   }
 
@@ -457,7 +465,7 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
   const customOutDir = store.get('customOutDir'); // todo remove after a while
   if (customOutDir != null) {
     logger.info('Migrating customOutDir to recentCustomOutDirs');
-    store.delete('customOutDir');
+    deleteStored('customOutDir');
     set('recentCustomOutDirs', [customOutDir]);
     set('enableCustomOutDir', customOutDir != null);
   }
@@ -687,7 +695,7 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     const addedBindings = defaultKeyBindings.filter((binding) => binding.action === 'toggleSegmentSpeedControls'
       && !existingBindings.some((existing) => existing.keys === binding.keys || existing.action === binding.action));
     if (addedBindings.length > 0) set('keyBindings', [...existingBindings, ...addedBindings]);
-    store.set('segmentSpeedShortcutsMigrated', true);
+    setStored('segmentSpeedShortcutsMigrated', true);
   }
 
   // T used to toggle "strip all tracks", which silently left every track out of the next export
@@ -700,7 +708,7 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     const hasTextBinding = withoutOldDefault.some((existing) => existing.action === 'addTextOverlay');
     const migrated = tIsFree && !hasTextBinding ? [...withoutOldDefault, { keys: 'KeyT', action: 'addTextOverlay' as const }] : withoutOldDefault;
     if (migrated.length !== existingBindings.length || migrated.some((binding, i) => binding !== existingBindings[i])) set('keyBindings', migrated);
-    store.set('textShortcutMigrated', true);
+    setStored('textShortcutMigrated', true);
   }
 
   // Ctrl+Y redo for existing settings too, unless Ctrl+Y (either Ctrl key) already does something.
@@ -708,7 +716,7 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     const existingBindings = store.get('keyBindings') as KeyBinding[];
     const isCtrlY = (keys: string) => { const parts = keys.split('+'); return parts.length === 2 && parts.includes('KeyY') && (parts.includes('ControlLeft') || parts.includes('ControlRight')); };
     if (!existingBindings.some((existing) => isCtrlY(existing.keys))) set('keyBindings', [...existingBindings, { keys: 'ControlLeft+KeyY', action: 'redo' }]);
-    store.set('redoCtrlYShortcutMigrated', true);
+    setStored('redoCtrlYShortcutMigrated', true);
   }
 
   // Quick export presets still at their first defaults: Discord 20 MB, Email 17 MB, and a real name for the first.
@@ -716,7 +724,7 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     const existingPresets = normalizeQuickExportPresets(store.get('quickExportPresets'));
     const migratedPresets = migrateQuickExportPresets(existingPresets);
     if (migratedPresets.some((preset, i) => preset !== existingPresets[i])) set('quickExportPresets', migratedPresets);
-    store.set('quickExportPresetsMigrated', true);
+    setStored('quickExportPresetsMigrated', true);
   }
 
   // Single keys that did something hard to notice by accident: D opened the clean-up dialog, R rotated the export.
@@ -730,14 +738,14 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
       return [existing];
     });
     if (migrated.length !== existingBindings.length || migrated.some((binding, i) => binding !== existingBindings[i])) set('keyBindings', migrated);
-    store.set('riskyLetterShortcutsMigrated', true);
+    setStored('riskyLetterShortcutsMigrated', true);
   }
 
   // Delete removes the selected clips, for existing settings too, unless Delete already does something.
   if (store.get('deleteClipsShortcutMigrated') !== true) {
     const existingBindings = store.get('keyBindings') as KeyBinding[];
     if (!existingBindings.some((existing) => existing.keys === 'Delete' || existing.action === 'removeSelectedClips')) set('keyBindings', [...existingBindings, { keys: 'Delete', action: 'removeSelectedClips' as const }]);
-    store.set('deleteClipsShortcutMigrated', true);
+    setStored('deleteClipsShortcutMigrated', true);
   }
 
   // Ctrl+E and Ctrl+1/2/3 (quick exports) for existing settings too, where those keys are still free.
@@ -745,6 +753,6 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     const existingBindings = store.get('keyBindings') as KeyBinding[];
     const withQuickExports = addQuickExportKeyBindings(existingBindings);
     if (withQuickExports !== existingBindings) set('keyBindings', withQuickExports);
-    store.set('quickExportShortcutsMigrated', true);
+    setStored('quickExportShortcutsMigrated', true);
   }
 }
