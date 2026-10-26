@@ -5975,12 +5975,18 @@ function App() {
     closeExportResultDialog();
     await withErrorHandling(async () => {
       // Its newest edits that can be read, wherever they are kept.
-      const { opened, unreadable } = await readNewestProjectCopy(await findProjectFiles(getProjectLookupPaths(path, projectFileLocation, customOutDir, getProjectStoreEnv())), loadLlcProject);
+      const oldPlaceCopies = await findProjectFiles(getProjectLookupPaths(path, projectFileLocation, customOutDir, getProjectStoreEnv()));
+      const { opened, unreadable } = await readNewestProjectCopy(oldPlaceCopies, loadLlcProject);
       for (const { path: copy, error } of unreadable) console.warn('Could not read the edits of a missing recording', copy, error);
       const project = opened?.project;
-      const projectPath = opened?.path;
-      const relocation = await relocateRecording({ oldMediaPath: path, project, projectPath });
+      const relocation = await relocateRecording({ oldMediaPath: path, project, projectPath: opened?.path });
       if (relocation == null || workingRef.current) return;
+      // Moved together with edits kept next to it: whichever copy is newest, at the old place or the new, is opened
+      // (the others are kept aside as usual), never an older one over a newer.
+      const newPlaceCopies = await findProjectFiles(getProjectLookupPaths(relocation.mediaPath, projectFileLocation, customOutDir, getProjectStoreEnv()));
+      const projectPath = newPlaceCopies.length > 0
+        ? (await readNewestProjectCopy([...oldPlaceCopies, ...newPlaceCopies], loadLlcProject)).opened?.path
+        : opened?.path;
       setWorking({ text: i18n.t('Opening clip'), quiet: true });
       try {
         await loadMedia({ filePath: relocation.mediaPath, projectPath, relocatedFrom: relocation.relocatedFrom });
