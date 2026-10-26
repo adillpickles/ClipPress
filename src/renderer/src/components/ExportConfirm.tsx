@@ -709,9 +709,9 @@ function ExportConfirm({
       && !areWeCutting
     ) {
       generic.push({
-        text: t(
-          'Exporting whole file without cutting, because there are no segments to export.',
-        ),
+        text: simpleMode
+          ? t('The whole recording is exported.')
+          : t('Exporting whole file without cutting, because there are no segments to export.'),
       });
     }
 
