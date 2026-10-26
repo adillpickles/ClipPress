@@ -5777,7 +5777,8 @@ function App() {
           }
           const folder = firstNewFilePath;
           const queue = buildShelfQueue(await listShelfFolder(folder), { order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac });
-          const first = pickNextClip(queue, undefined, isWindows || isMac, unopenableShelfKeys) ?? queue[0]?.file;
+          // All exported: the first one that opens.
+          const first = pickNextClip(queue, undefined, isWindows || isMac, unopenableShelfKeys) ?? queue.find((item) => !unopenableShelfKeys.has(shelfThumbnailKey(item.file)))?.file;
           if (first == null) {
             errorToast(i18n.t('No videos in this folder'));
             return;
