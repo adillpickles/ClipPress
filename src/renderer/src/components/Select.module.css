@@ -77,6 +77,28 @@
     background: var(--cp-raised);
     color: var(--cp-text);
     box-shadow: var(--cp-shadow-popover);
+    /* Opens with a short fade and drop, like the app's menus. */
+    opacity: 0;
+    translate: 0 -.25rem;
+    transition: opacity .14s ease-out, translate .14s ease-out, display .14s allow-discrete, overlay .14s allow-discrete;
+  }
+
+  .select:open::picker(select) {
+    opacity: 1;
+    translate: 0 0;
+  }
+
+  @starting-style {
+    .select:open::picker(select) {
+      opacity: 0;
+      translate: 0 -.25rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .select::picker(select) {
+      transition: none;
+    }
   }
 
   .select option {

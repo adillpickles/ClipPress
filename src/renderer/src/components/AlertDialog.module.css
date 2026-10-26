@@ -15,10 +15,13 @@
 }
 
 .AlertDialogContent {
+	/* Centred by its margins, not a transform: a transformed dialog shifts every dropdown list opened inside it
+	   (they're placed against the window). The animations below scale it only while it opens or closes. */
 	position: fixed;
-	top: 50%;
-	left: 50%;
-	transform: translate(-50%, -50%);
+	inset: 0;
+	margin: auto;
+	width: fit-content;
+	height: fit-content;
 	box-sizing: border-box;
 
 	overflow: auto;
@@ -35,7 +38,7 @@
 	box-shadow: var(--cp-shadow-dialog);
 
 	&[data-state="open"] {
-		animation: contentShow 160ms cubic-bezier(0.16, 1, 0.3, 1);
+		animation: contentShow 220ms cubic-bezier(0.16, 1, 0.3, 1);
 	}
 
 	&[data-state="closed"] {
@@ -99,21 +102,28 @@
 @keyframes contentShow {
 	from {
 		opacity: 0;
-		transform: translate(-50%, -48.5%) scale(0.98);
+		transform: translateY(.75rem) scale(0.97);
 	}
 	to {
 		opacity: 1;
-		transform: translate(-50%, -50%) scale(1);
+		transform: none;
 	}
 }
 
 @keyframes contentHide {
 	from {
 		opacity: 1;
-		transform: translate(-50%, -50%) scale(1);
+		transform: none;
 	}
 	to {
 		opacity: 0;
-		transform: translate(-50%, -49%) scale(0.98);
+		transform: translateY(.5rem) scale(0.98);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.AlertDialogContent,
+	.AlertDialogOverlay {
+		animation-duration: 1ms !important;
 	}
 }
