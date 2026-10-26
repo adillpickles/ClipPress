@@ -228,9 +228,8 @@ function Timeline({
   onEditSegmentCrop,
   onToggleSegmentSpeedControls,
   onRemoveSegmentSpeed,
-  onSplitSegment,
-  onDuplicateSegment,
   onRemoveSegment,
+  removeSegmentKeys,
   hasVideo,
 } : {
   fileDurationNonZero: number,
@@ -294,9 +293,9 @@ function Timeline({
   onToggleSegmentSpeedControls: (segmentId: string) => void,
   onRemoveSegmentSpeed: (segmentId: string) => void,
   /** Simple mode's clip-block menu: split a clip at the playhead, duplicate it, remove it. */
-  onSplitSegment?: ((index: number) => void) | undefined,
-  onDuplicateSegment?: ((segment: StateSegment) => void) | undefined,
   onRemoveSegment?: ((index: number, wholeSegment?: true) => void) | undefined,
+  /** The keys that remove the selected clip, shown in the clip menu. */
+  removeSegmentKeys?: string | undefined,
   /** Media with video can have text: its lane is then always shown, so adding text doesn't resize the preview. */
   hasVideo: boolean,
 }) {
@@ -1040,10 +1039,8 @@ function Timeline({
                     filmLoading={!filmstrip.done}
                     lanePx={lanePx}
                     onTrimHandleMouseDown={simpleMode ? onTrimHandleMouseDown : undefined}
-                    getCurrentTime={getCurrentTime}
-                    onSplit={simpleMode ? onSplitSegment : undefined}
-                    onDuplicate={simpleMode ? onDuplicateSegment : undefined}
                     onRemove={simpleMode ? onRemoveSegment : undefined}
+                    removeKeys={removeSegmentKeys}
                   />
                 );
               })}

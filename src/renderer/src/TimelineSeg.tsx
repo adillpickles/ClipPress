@@ -102,7 +102,7 @@ function getClipTiles(tiles: readonly FilmTile[], start: number, end: number, to
 }
 
 function Segment({
-  seg, segNum, color, isActive, selected, onClick, getTimePercent, instant, formatTimecode, invertCutSegments, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmTiles, filmLoading, toLanePercent, lanePx, onTrimHandleMouseDown, getCurrentTime, onSplit, onDuplicate, onRemove,
+  seg, segNum, color, isActive, selected, onClick, getTimePercent, instant, formatTimecode, invertCutSegments, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmTiles, filmLoading, toLanePercent, lanePx, onTrimHandleMouseDown, onRemove, removeKeys,
 }: {
   seg: Omit<StateSegment, 'end'> & { end: number },
   segNum: number,
@@ -125,10 +125,8 @@ function Segment({
   toLanePercent: (time: number) => number,
   lanePx: number,
   onTrimHandleMouseDown: ((edge: 'start' | 'end') => (event: ReactMouseEvent<HTMLElement>) => void) | undefined,
-  getCurrentTime: (() => number) | undefined,
-  onSplit: ((index: number) => void) | undefined,
-  onDuplicate: ((segment: StateSegment) => void) | undefined,
   onRemove: ((index: number, wholeSegment?: true) => void) | undefined,
+  removeKeys: string | undefined,
 }) {
   const { darkMode, prefersReducedMotion, springAnimation, simpleMode } = useUserSettings();
   const { t } = useTranslation();
@@ -205,30 +203,30 @@ function Segment({
     event.stopPropagation();
     onClick();
     const point = { x: event.clientX, y: event.clientY };
-    // Simple mode also has the everyday clip actions here, as the Clips panel's menu does for the same clip.
-    // The playhead is read when the menu opens, so playback never re-renders the clips. On an edge there's nothing to split.
-    const playhead = getCurrentTime?.();
-    const canSplit = playhead != null && playhead > seg.start && playhead < seg.end;
-    const clipActions = simpleMode && (onSplit != null || onDuplicate != null) ? [
-      ...(onSplit != null ? [{ label: t('Split clip at playhead'), enabled: canSplit, click: () => onSplit(segNum) }] : []),
-      ...(onDuplicate != null ? [{ label: t('Duplicate clip'), click: () => onDuplicate(seg) }] : []),
-      { type: 'separator' as const },
-    ] : [];
-    const removeAction = simpleMode && onRemove != null ? [
-      { type: 'separator' as const },
-      { label: t('Remove clip'), click: () => onRemove(segNum, true) },
-    ] : [];
-    openMenu({ at: point,
+    // Simple mode keeps what belongs to a clip on the timeline (splitting has I, O, B and its button; the audio track
+    // has the clip's volume); advanced mode has every speed and volume item.
+    if (simpleMode) {
+      openMenu({
+        at: point,
+        items: [
+          { label: t('Speed'), type: 'checkbox', checked: speedControlsVisible, click: () => onToggleSpeedControls(seg.segId) },
+          { label: t('Zoom / Crop…'), click: () => onEditCrop(segNum) },
+          ...(onRemove != null ? [{ type: 'separator' as const }, { label: t('Remove clip'), keys: removeKeys, click: () => onRemove(segNum, true) }] : []),
+        ],
+      });
+      return;
+    }
+    openMenu({
+      at: point,
       items: [
-        ...clipActions,
         { label: t('Speed controls'), type: 'checkbox', checked: speedControlsVisible, click: () => onToggleSpeedControls(seg.segId) },
         { label: t('Change speed…'), click: () => onEditSpeed(segNum) },
         { label: t('Remove speed change'), enabled: speed !== 1 || speedControlsVisible, click: () => onRemoveSpeed(seg.segId) },
         { type: 'separator' },
         { label: t('Zoom / Crop…'), click: () => onEditCrop(segNum) },
         ...(onEditVolume != null ? [{ label: getClipVolumeMenuLabel(), click: () => onEditVolume(segNum, point) }] : []),
-        ...removeAction,
-      ] });
+      ],
+    });
   };
 
   if (simpleLook) {
@@ -330,7 +328,7 @@ function Segment({
 }
 
 function SegmentOrMarker({
-  seg, toLanePercent, instant, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmTiles, filmLoading, lanePx, onTrimHandleMouseDown, getCurrentTime, onSplit, onDuplicate, onRemove,
+  seg, toLanePercent, instant, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmTiles, filmLoading, lanePx, onTrimHandleMouseDown, onRemove, removeKeys,
 } : {
   seg: StateSegment,
   toLanePercent: (time: number) => number,
@@ -353,12 +351,9 @@ function SegmentOrMarker({
   lanePx: number,
   /** Simple mode: start dragging an edge of the active clip. */
   onTrimHandleMouseDown?: ((edge: 'start' | 'end') => (event: ReactMouseEvent<HTMLElement>) => void) | undefined,
-  /** Read when the clip menu opens, to know whether the playhead is inside this clip. */
-  getCurrentTime?: (() => number) | undefined,
-  /** Simple mode's clip menu: split this clip at the playhead, duplicate it, remove it. */
-  onSplit?: ((index: number) => void) | undefined,
-  onDuplicate?: ((segment: StateSegment) => void) | undefined,
+  /** Simple mode's clip menu: remove the clip (and the keys that do it, for the menu). */
   onRemove?: ((index: number, wholeSegment?: true) => void) | undefined,
+  removeKeys?: string | undefined,
 }) {
   const { getSegColor } = useSegColors();
 
@@ -369,7 +364,7 @@ function SegmentOrMarker({
   const onThisSegClick = useCallback(() => onSegClick(segNum), [onSegClick, segNum]);
 
   if (seg.end != null) {
-    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} instant={instant} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} speedControlsVisible={speedControlsVisible} onEditSpeed={onEditSpeed} onRemoveSpeed={onRemoveSpeed} onToggleSpeedControls={onToggleSpeedControls} onEditCrop={onEditCrop} onEditVolume={onEditVolume} filmTiles={filmTiles} filmLoading={filmLoading} toLanePercent={toLanePercent} lanePx={lanePx} onTrimHandleMouseDown={onTrimHandleMouseDown} getCurrentTime={getCurrentTime} onSplit={onSplit} onDuplicate={onDuplicate} onRemove={onRemove} />;
+    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} instant={instant} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} speedControlsVisible={speedControlsVisible} onEditSpeed={onEditSpeed} onRemoveSpeed={onRemoveSpeed} onToggleSpeedControls={onToggleSpeedControls} onEditCrop={onEditCrop} onEditVolume={onEditVolume} filmTiles={filmTiles} filmLoading={filmLoading} toLanePercent={toLanePercent} lanePx={lanePx} onTrimHandleMouseDown={onTrimHandleMouseDown} onRemove={onRemove} removeKeys={removeKeys} />;
   }
 
   return (

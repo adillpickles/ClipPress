@@ -730,12 +730,6 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     splitSegmentAtTime(firstSegmentAtCursorIndex, relevantTime);
   }, [findSegmentsAtCursor, getRelevantTime, simpleMode, splitSegmentAtTime]);
 
-  // The timeline's clip menu splits the clip that was right-clicked. Copies of a clip overlap it,
-  // so the first clip under the playhead (as splitCurrentSegment takes) could be a different one.
-  const splitSegmentAtPlayhead = useCallback((index: number) => {
-    splitSegmentAtTime(index, getRelevantTime());
-  }, [getRelevantTime, splitSegmentAtTime]);
-
   const createNumSegments = useCallback(async () => {
     if (!checkFileOpened() || currentCutSegOrWholeTimeline.duration <= 0) return;
     const segments = await createNumSegmentsDialog(currentCutSegOrWholeTimeline.duration);
@@ -1012,7 +1006,6 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     setCutEnd,
     labelSegment,
     splitCurrentSegment,
-    splitSegmentAtPlayhead,
     focusSegmentAtCursor,
     selectSegmentsAtCursor,
     createNumSegments,

@@ -185,28 +185,17 @@ const Segment = memo(({
 
     const updateOrder = (dir: number) => updateSegOrder(index, index + dir);
 
+    // Simple mode keeps what belongs to a card in the list: speed and crop are the timeline clip's, and the cards are
+    // dragged to reorder.
     if (simpleMode) {
       return [
-        { label: t('Jump to start time'), click: () => jumpSegStart(index) },
-        { label: t('Jump to end time'), click: () => jumpSegEnd(index) },
-
-        { type: 'separator' },
-
         { label: t('Rename clip'), click: startRenaming },
         { label: t('Duplicate clip'), click: () => onDuplicateSegmentClick(seg) },
-        { label: t('Change speed…'), enabled: seg.end != null, click: () => onEditSpeed(index) },
-        { label: t('Zoom / Crop…'), enabled: seg.end != null, click: () => onEditCrop(index) },
 
         { type: 'separator' },
 
         { label: t('Include in export'), type: 'checkbox', checked: selected === true, click: () => onToggleSegmentSelected(seg) },
         { label: t('Export only this clip'), click: () => onSelectSingleSegment(seg) },
-        { label: t('Include all clips'), click: () => onSelectAllSegments() },
-
-        { type: 'separator' },
-
-        { label: t('Move up'), enabled: index > 0, click: () => updateOrder(-1) },
-        { label: t('Move down'), click: () => updateOrder(1) },
 
         { type: 'separator' },
 

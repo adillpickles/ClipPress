@@ -1104,7 +1104,6 @@ function App() {
     setCutEnd,
     labelSegment,
     splitCurrentSegment,
-    splitSegmentAtPlayhead,
     focusSegmentAtCursor,
     selectSegmentsAtCursor,
     createNumSegments,
@@ -7245,8 +7244,6 @@ function App() {
                           onEditSegmentCrop={editSegmentCrop}
                           onToggleSegmentSpeedControls={toggleSpeedControlsForSegment}
                           onRemoveSegmentSpeed={removeSegmentSpeed}
-                          onSplitSegment={splitSegmentAtPlayhead}
-                          onDuplicateSegment={duplicateSegment}
                           onRemoveSegment={removeSegment}
                           hasVideo={hasVideo}
                         />
