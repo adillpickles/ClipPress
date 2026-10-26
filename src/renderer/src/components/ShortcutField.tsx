@@ -119,7 +119,9 @@ export default function ShortcutField({ action, label, shown, keyBindings, setKe
       e.stopPropagation();
       setHeld(getHeldModifiers(e, sidesRef.current));
     };
-    const onPointerDown = () => stop();
+    // A click anywhere ends recording, when the button comes up: ending it on the way down would remove the element
+    // under the pointer mid-press, and the dialog would take that for a click outside it and close.
+    const onPointerDown = () => window.addEventListener('pointerup', stop, { capture: true, once: true });
     window.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('keyup', onKeyUp, true);
     window.addEventListener('pointerdown', onPointerDown, true);
