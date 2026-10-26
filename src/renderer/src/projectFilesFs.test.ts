@@ -286,11 +286,19 @@ describe('opening a recording whose newest copy of its edits can\'t be read', ()
 describe('keeping backup copies (Start over)', () => {
   it('copies each project file that is there under its backup name, leaving the file itself', async () => {
     await write('clip-proj.llc', project([1, 5]));
-    await files().keepBackupCopies([path.join(dir, 'clip-proj.llc'), path.join(dir, 'missing-proj.llc'), path.join(dir, 'clip-proj.llc')]);
+    expect(await files().keepBackupCopies([path.join(dir, 'clip-proj.llc'), path.join(dir, 'missing-proj.llc'), path.join(dir, 'clip-proj.llc')])).toBe(true);
     const names = (await readdir(dir)).sort();
     expect(names).toHaveLength(2);
     expect(names[0]).toBe('clip-proj.llc');
     expect(names[1]).toMatch(/^clip-proj\.replaced-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.llc$/);
     expect(await readProject(path.join(dir, names[1]!))).toEqual(project([1, 5]));
+  });
+
+  it('says so when saved edits are there but no copy of them could be kept', async () => {
+    await write('clip-proj.llc', project([1, 5]));
+    const noSpace = () => Promise.reject(Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }));
+    expect(await files({ copyFile: noSpace }).keepBackupCopies([path.join(dir, 'clip-proj.llc')])).toBe(false);
+    // Nothing saved yet: nothing to keep, so nothing failed.
+    expect(await files({ copyFile: noSpace }).keepBackupCopies([path.join(dir, 'missing-proj.llc')])).toBe(true);
   });
 });

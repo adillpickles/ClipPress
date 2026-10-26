@@ -111,13 +111,23 @@ export default function createProjectFilesFs({ lstat, stat, rename, copyFile, di
    * A copy of each of these project files that is there, under the backup name next to it (as `keepAsBackup` names it,
    * and the daily clean-up retires after 30 days), before autosave writes something else over them (Start over).
    */
+  /** Resolves false when there were saved edits but not one copy of them could be kept. */
   async function keepBackupCopies(paths: readonly string[]) {
+    let existing = 0;
+    let kept = 0;
     for (const path of new Set(paths)) {
       // eslint-disable-next-line no-await-in-loop, no-continue
       if (await getModifiedAt(path) == null) continue;
-      // eslint-disable-next-line no-await-in-loop
-      await copyFile(path, getReplacedBackupPath(path, Date.now())).catch((err: unknown) => console.warn('Could not keep a copy of the project', path, err));
+      existing += 1;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await copyFile(path, getReplacedBackupPath(path, Date.now()));
+        kept += 1;
+      } catch (err) {
+        console.warn('Could not keep a copy of the project', path, err);
+      }
     }
+    return existing === 0 || kept > 0;
   }
 
   /**

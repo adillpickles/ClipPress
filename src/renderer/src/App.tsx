@@ -1260,7 +1260,19 @@ function App() {
   const startOver = useCallback(async () => {
     if (filePath == null || workingRef.current) return;
     const savePaths = getProjectSavePaths(filePath, projectFileLocation, customOutDir, getProjectStoreEnv());
-    await keepBackupCopies([...savePaths, ...(projectSession?.loadedProjectPath != null ? [projectSession.loadedProjectPath] : [])]);
+    // Busy (quietly) while the saved edits are copied: nothing else opens or edits meanwhile.
+    setWorking({ text: i18n.t('Starting over'), quiet: true });
+    let kept: boolean;
+    try {
+      kept = await keepBackupCopies([...savePaths, ...(projectSession?.loadedProjectPath != null ? [projectSession.loadedProjectPath] : [])]);
+    } finally {
+      setWorking(undefined);
+    }
+    // Without a copy, the edits autosave replaces could only come back by undo, and not after the recording closes.
+    if (!kept) {
+      errorToast(i18n.t('Could not keep a copy of your edits, so nothing was changed.'));
+      return;
+    }
     editHistoryOrder.group(() => {
       resetToWholeRecording();
       setOverlayClips([]);
@@ -1276,7 +1288,7 @@ function App() {
     setPickedClipIds([]);
     setSelectedOverlayId(undefined);
     setCurrentSegIndex(0);
-  }, [customOutDir, editHistoryOrder, filePath, projectFileLocation, projectSession?.loadedProjectPath, resetToWholeRecording, setCurrentSegIndex, setOverlayClips, setParamsByStreamId, setSpeedControlsBySegment, workingRef]);
+  }, [customOutDir, editHistoryOrder, filePath, projectFileLocation, projectSession?.loadedProjectPath, resetToWholeRecording, setCurrentSegIndex, setOverlayClips, setParamsByStreamId, setSpeedControlsBySegment, setWorking, workingRef]);
 
   const [editingSpeedSegmentId, setEditingSpeedSegmentId] = useState<string>();
   const editingSpeedSegment = cutSegments.find((segment) => segment.segId === editingSpeedSegmentId);
