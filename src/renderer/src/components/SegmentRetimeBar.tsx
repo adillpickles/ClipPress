@@ -73,6 +73,11 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
       style={{ left, width }}
       onMouseDown={(event) => event.stopPropagation()}
       onClick={onSelect}
+      // Simple mode's strip: double-click anywhere on it for the exact speed (resetting is in there, and in its menu).
+      onDoubleClick={overlay ? (event) => {
+        event.stopPropagation();
+        onEdit();
+      } : undefined}
       onContextMenu={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -98,11 +103,11 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
         type="button"
         className={styles['retimeHandle']}
         onMouseDown={onHandleMouseDown}
-        onDoubleClick={(event) => {
+        onDoubleClick={overlay ? undefined : (event) => {
           event.stopPropagation();
           if (committedSpeed !== 1) onChange(1);
         }}
-        title={t('Drag right to slow down, left to speed up. Double-click to reset.')}
+        title={overlay ? t('Drag right to slow down, left to speed up. Double-click for an exact speed.') : t('Drag right to slow down, left to speed up. Double-click to reset.')}
         aria-label={`${overlay ? t('Clip speed') : t('Segment speed')} ${Math.round(speed * 100)}%`}
       />
     </div>

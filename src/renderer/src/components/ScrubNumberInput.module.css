@@ -1,0 +1,57 @@
+/* A narrow number field that scrubs (ScrubNumberInput.tsx): the up-down cursor says it can be dragged. */
+.field {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .15rem;
+  box-sizing: border-box;
+  padding: .3rem .55rem;
+  border-radius: var(--cp-radius-sm);
+  border: 1px solid var(--cp-line-strong);
+  background: var(--cp-bg);
+  cursor: ns-resize;
+  transition: border-color .12s ease, background-color .12s ease, box-shadow .12s ease;
+}
+
+.field:hover {
+  border-color: color-mix(in srgb, var(--accent-9) 55%, var(--cp-line-strong));
+}
+
+.field:focus-within {
+  border-color: var(--accent-9);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-9) 25%, transparent);
+}
+
+.scrubbing {
+  border-color: var(--accent-9);
+  background: color-mix(in srgb, var(--accent-9) 10%, var(--cp-bg));
+}
+
+.invalid {
+  border-color: var(--red-9);
+}
+
+.input {
+  all: unset;
+  width: 3.2ch;
+  text-align: right;
+  color: var(--cp-text);
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: inherit;
+}
+
+.input:focus {
+  cursor: text;
+}
+
+/* The field's own ring shows focus (focus-within). */
+.input:focus-visible {
+  outline: none;
+}
+
+.unit {
+  color: var(--cp-text-muted);
+  font-size: .95rem;
+  font-weight: 600;
+}

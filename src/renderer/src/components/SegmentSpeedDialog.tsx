@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import * as Dialog from './Dialog';
 import Button, { DialogButton } from './Button';
-import TextInput from './TextInput';
+import ScrubNumberInput from './ScrubNumberInput';
 import { getSegmentOutputDuration, getSegmentSpeed, isSegmentSpeedValid } from '../segmentSpeed';
 import type { FormatTimecode, StateSegment } from '../types';
 import useUserSettings from '../hooks/useUserSettings';
@@ -38,11 +38,22 @@ export default function SegmentSpeedDialog({ segment, fileDuration, formatTimeco
             if (valid) onApply(speed);
           }}
           >
-            <label className={styles['speedField']} htmlFor="segment-speed-percent">
-              <span>{t('Speed')}</span>
-              <TextInput id="segment-speed-percent" type="number" min={25} max={400} step={1} value={percent} onChange={(event) => setPercent(event.target.value)} autoFocus aria-invalid={!valid} style={{ width: '6em', textAlign: 'right' }} />
-              <span>%</span>
-            </label>
+            <div className={styles['speedField']}>
+              <label htmlFor="segment-speed-percent">{t('Speed')}</label>
+              {/* Drag up for faster, down for slower (5% steps, 1% with Shift), or click to type. */}
+              <ScrubNumberInput
+                id="segment-speed-percent"
+                value={percent}
+                onChange={setPercent}
+                min={25}
+                max={400}
+                step={5}
+                unit="%"
+                label={t('Speed')}
+                title={t('Drag up or down to change it, or click to type')}
+                invalid={!valid}
+              />
+            </div>
             <div className={styles['presets']}>
               {[25, 50, 100, 150, 200, 400].map((value) => (
                 <Button key={value} aria-pressed={Number(percent) === value} onClick={() => setPercent(String(value))}>{value}%</Button>
