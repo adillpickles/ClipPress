@@ -1,4 +1,12 @@
+/* Holds the panel in the editor's row; its width animates when the panel is hidden or shown (SegmentList.tsx). */
+.panelSlot {
+  flex-shrink: 0;
+  display: flex;
+  overflow: hidden;
+}
+
 .panel {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -54,6 +62,7 @@
 }
 
 .scroller {
+  position: relative;
   flex-grow: 1;
   padding: 0 .4rem 0 .5rem;
   overflow-x: hidden;
@@ -71,6 +80,8 @@
 .clip {
   position: relative;
   display: flex;
+  /* Shift+click picks a run of clips: no text selection with it. */
+  user-select: none;
   align-items: center;
   gap: .5rem;
   box-sizing: border-box;
@@ -82,6 +93,31 @@
 
 .clip:hover {
   background: var(--cp-hover);
+}
+
+/* Picked for Delete with Ctrl, Shift or a selection box: a light wash of ClipPress blue. */
+.clipPicked,
+.clipPicked:hover {
+  background: color-mix(in srgb, var(--accent-9) 13%, var(--cp-panel));
+  border-color: color-mix(in srgb, var(--accent-9) 48%, transparent);
+}
+
+/* The selection box, like the desktop's, in light ClipPress blue. */
+.selectionBox {
+  position: absolute;
+  z-index: 5;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--accent-9) 80%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent-9) 16%, transparent);
+  pointer-events: none;
+}
+
+.headerActions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: .1rem;
 }
 
 /* The selected clip in its own colour (--clip-color, set inline): a tinted outline, a soft glow and a faint fill.

@@ -290,7 +290,10 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
     setPanels([]);
     const target = returnFocus.current;
     returnFocus.current = null;
-    if (restoreFocus && target?.isConnected) target.focus({ preventScroll: true });
+    // Opened from the keyboard, focus goes back to what opened it; a text field never lost it. Opened with the mouse, the
+    // page gets it (the app's shortcuts only work from there), as after a click on any button.
+    if (restoreFocus && current.keyboard && target?.isConnected) target.focus({ preventScroll: true });
+    else if (getEditableField(target) == null && document.activeElement instanceof HTMLElement && document.activeElement !== document.body) document.activeElement.blur();
     current.onClose?.();
   }, []);
 

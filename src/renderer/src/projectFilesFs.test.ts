@@ -282,3 +282,15 @@ describe('opening a recording whose newest copy of its edits can\'t be read', ()
     expect(await readProject(at(path.join('Projects', backup!)))).toEqual(project([1]));
   });
 });
+
+describe('keeping backup copies (Start over)', () => {
+  it('copies each project file that is there under its backup name, leaving the file itself', async () => {
+    await write('clip-proj.llc', project([1, 5]));
+    await files().keepBackupCopies([path.join(dir, 'clip-proj.llc'), path.join(dir, 'missing-proj.llc'), path.join(dir, 'clip-proj.llc')]);
+    const names = (await readdir(dir)).sort();
+    expect(names).toHaveLength(2);
+    expect(names[0]).toBe('clip-proj.llc');
+    expect(names[1]).toMatch(/^clip-proj\.replaced-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.llc$/);
+    expect(await readProject(path.join(dir, names[1]!))).toEqual(project([1, 5]));
+  });
+});

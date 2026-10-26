@@ -1,9 +1,10 @@
-import type { SetStateAction, Dispatch, MouseEventHandler, CSSProperties, KeyboardEventHandler, SyntheticEvent } from 'react';
+import type { SetStateAction, Dispatch, MouseEventHandler, CSSProperties, KeyboardEventHandler, SyntheticEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { memo, useMemo, useRef, useCallback, useState, useEffect } from 'react';
 import { FaYinYang, FaSave, FaPlus, FaMinus, FaTag, FaSortNumericDown, FaRegCheckCircle, FaRegCircle } from 'react-icons/fa';
-import { FiCheck, FiEdit2, FiX } from 'react-icons/fi';
+import { FiCheck, FiEdit2, FiMoreHorizontal } from 'react-icons/fi';
+import { LuPanelRightClose } from 'react-icons/lu';
 import { AiOutlineSplitCells } from 'react-icons/ai';
-import { motion } from 'motion/react';
+import { motion, useReducedMotionConfig } from 'motion/react';
 import { useTranslation, Trans } from 'react-i18next';
 import type { DragEndEvent, DragStartEvent, UniqueIdentifier } from '@dnd-kit/core';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
@@ -29,6 +30,8 @@ import { DialogButton } from './components/Button';
 import getSwal from './swal';
 import { getSegmentOutputDuration, getSegmentSpeed } from './segmentSpeed';
 import { hasSegmentCrop } from './segmentCrop';
+import { openMenu } from './components/Menu';
+import type { PickHow } from './clipPicking';
 import styles from './SegmentList.module.css';
 
 
@@ -94,11 +97,19 @@ function ClipNameInput({ name, placeholder, maxLength, onDone }: {
   );
 }
 
+/** How the panel slides out and in: eased, without a bounce, as the editor resizes with it. */
+const panelSlideTransition = { duration: 0.28, ease: [0.3, 0.7, 0.2, 1] } as const;
+const panelSlotVariants = {
+  // `custom` (from AnimatePresence, when it goes): whether the user hid it; closing a recording just removes it.
+  hidden: (animated: boolean) => ({ width: 0, marginLeft: '-0.75rem', transition: animated ? panelSlideTransition : { duration: 0 } }),
+};
+
 // eslint-disable-next-line react/display-name
 const Segment = memo(({
   seg,
   index,
   isActive,
+  picked = false,
   dragging,
   formatTimecode,
   getFrameCount,
@@ -132,11 +143,13 @@ const Segment = memo(({
   seg: StateSegment | InverseCutSegment,
   index: number,
   isActive?: boolean | undefined,
+  /** One of the clips picked for Delete (Ctrl or Shift+click, a selection box). */
+  picked?: boolean | undefined,
   dragging?: boolean | undefined,
   formatTimecode: FormatTimecode,
   getFrameCount: GetFrameCount,
   updateSegOrder: UseSegments['updateSegOrder'],
-  onClick: (i: number) => void,
+  onClick: (i: number, how?: PickHow) => void,
   onRemovePress: UseSegments['removeSegment'],
   onRemoveSelected: UseSegments['removeSelectedSegments'],
   onLabelSelectedSegments: UseSegments['labelSelectedSegments'],
@@ -314,7 +327,10 @@ const Segment = memo(({
 
   const handleSegmentClick = useCallback<MouseEventHandler<HTMLDivElement>>((e) => {
     e.currentTarget.blur();
-    if (!invertCutSegments) onClick(index);
+    let how: PickHow = 'one';
+    if (e.ctrlKey || e.metaKey) how = 'toggle';
+    else if (e.shiftKey) how = 'range';
+    if (!invertCutSegments) onClick(index, how);
   }, [index, invertCutSegments, onClick]);
 
   const handleDraggableClick = useCallback<MouseEventHandler<HTMLDivElement>>((e) => {
@@ -391,7 +407,8 @@ const Segment = memo(({
         onClick={handleSegmentClick}
         onDoubleClick={onDoubleClick}
         style={{ ...colorVars, transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition ?? undefined, visibility: sortable.isDragging ? 'hidden' : undefined }}
-        className={[styles['clip'], ...(isActive ? [styles['clipActive']] : []), ...(!included ? [styles['clipExcluded']] : []), ...(dragging ? [styles['clipDragging']] : [])].join(' ')}
+        className={[styles['clip'], ...(picked && !isActive ? [styles['clipPicked']] : []), ...(isActive ? [styles['clipActive']] : []), ...(!included ? [styles['clipExcluded']] : []), ...(dragging ? [styles['clipDragging']] : [])].join(' ')}
+        aria-pressed={picked || isActive}
       >
         <div
           // eslint-disable-next-line react/jsx-props-no-spreading
@@ -560,14 +577,17 @@ function SegmentList({
   getSegEstimatedSize,
   onEditSpeed, onEditCrop, maxLabelLength,
   renamingSegId, setRenamingSegId,
+  pickedClipIds, onPickClipsInBox, onStartOver, animated,
 }: {
   width: number,
+  /** Shown or hidden by the user (not by opening a recording): it slides, and the editor widens or narrows with it. */
+  animated: boolean,
   fileDuration: number | undefined,
   formatTimecode: FormatTimecode,
   cutSegments: StateSegment[],
   inverseCutSegments: InverseCutSegment[],
   getFrameCount: GetFrameCount,
-  onSegClick: (index: number) => void,
+  onSegClick: (index: number, how?: PickHow) => void,
   currentSegIndex: number,
   updateSegOrder: UseSegments['updateSegOrder'],
   updateSegOrders: UseSegments['updateSegOrders'],
@@ -608,6 +628,11 @@ function SegmentList({
   /** The clip whose name is being edited in place. Held by the app, so "Rename clip…" in the menu can start it too. */
   renamingSegId: string | undefined,
   setRenamingSegId: Dispatch<SetStateAction<string | undefined>>,
+  /** The clips picked for Delete, beside the selected one. */
+  pickedClipIds: readonly string[],
+  /** A selection box touched these clips (added to `before`, what was picked when it started, with Ctrl). */
+  onPickClipsInBox: (touched: readonly string[], additive: boolean, before: readonly string[]) => void,
+  onStartOver: () => void,
 }) {
   const { t } = useTranslation();
   const { getSegColor, nextSegColorIndex } = useSegColors();
@@ -622,7 +647,8 @@ function SegmentList({
   }, [cutSegments, setRenamingSegId, updateSegAtIndex]);
   const [draggingId, setDraggingId] = useState<UniqueIdentifier | undefined>();
 
-  const { invertCutSegments, simpleMode, darkMode, springAnimation } = useUserSettings();
+  const { invertCutSegments, simpleMode, darkMode } = useUserSettings();
+  const reducedMotion = useReducedMotionConfig();
 
   const getButtonColor = useCallback((seg: SegmentColorIndex | undefined, next?: boolean) => getSegColor(seg ? { segColorIndex: next ? seg.segColorIndex + 1 : seg.segColorIndex } : undefined).desaturate(0.3).lightness(darkMode ? 45 : 55).string(), [darkMode, getSegColor]);
   const currentSegColor = useMemo(() => getButtonColor(currentCutSeg), [currentCutSeg, getButtonColor]);
@@ -820,6 +846,55 @@ function SegmentList({
     scrollPaddingEnd: listEdgeRoom,
   });
 
+  // A selection box, dragged from empty room in the list (a card drags to reorder): it picks the clips it touches, live,
+  // added to those already picked with Ctrl. In the list's own coordinates, so it scrolls with it.
+  const rowsRef = useRef<HTMLDivElement>(null);
+  const boxStartRef = useRef<{ x: number, y: number, additive: boolean, before: readonly string[], moved: boolean }>();
+  const [selectionBox, setSelectionBox] = useState<{ left: number, top: number, width: number, height: number }>();
+  const canPick = simpleMode && !invertCutSegments;
+  const toListPoint = (scroller: HTMLElement, e: { clientX: number, clientY: number }) => {
+    const rect = scroller.getBoundingClientRect();
+    return { x: e.clientX - rect.left + scroller.scrollLeft, y: e.clientY - rect.top + scroller.scrollTop };
+  };
+  const onListPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const scroller = scrollerRef.current;
+    if (!canPick || e.button !== 0 || scroller == null || (e.target !== scroller && e.target !== rowsRef.current)) return;
+    // Not on the scroll bar.
+    if (e.clientX >= scroller.getBoundingClientRect().left + scroller.clientWidth) return;
+    e.preventDefault();
+    scroller.setPointerCapture(e.pointerId);
+    boxStartRef.current = { ...toListPoint(scroller, e), additive: e.ctrlKey || e.metaKey, before: pickedClipIds, moved: false };
+  };
+  const onListPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const start = boxStartRef.current;
+    const scroller = scrollerRef.current;
+    if (start == null || scroller == null) return;
+    // Near the top or bottom: the list scrolls on.
+    const rect = scroller.getBoundingClientRect();
+    if (e.clientY < rect.top + 20) scroller.scrollTop -= 12;
+    else if (e.clientY > rect.bottom - 20) scroller.scrollTop += 12;
+    const point = toListPoint(scroller, e);
+    if (!start.moved && Math.hypot(point.x - start.x, point.y - start.y) < 4) return;
+    start.moved = true;
+    const top = Math.min(start.y, point.y);
+    const bottom = Math.max(start.y, point.y);
+    setSelectionBox({ left: Math.min(start.x, point.x), top, width: Math.abs(point.x - start.x), height: bottom - top });
+    // Rows sit in the list at their measured places (below the rows' own offset), shown or not.
+    const rowsTop = rowsRef.current?.offsetTop ?? 0;
+    const touched = rowVirtualizer.measurementsCache
+      .filter((row) => rowsTop + row.end > top && rowsTop + row.start < bottom)
+      .flatMap((row) => (sortableList[row.index] != null ? [sortableList[row.index]!.id] : []));
+    onPickClipsInBox(touched, start.additive, start.before);
+  };
+  const onListPointerUp = () => {
+    const start = boxStartRef.current;
+    if (start == null) return;
+    boxStartRef.current = undefined;
+    setSelectionBox(undefined);
+    // A click on empty room, as on a desktop: nothing picked any more (with Ctrl, as it was).
+    if (!start.moved && !start.additive) onPickClipsInBox([], false, []);
+  };
+
   useEffect(() => {
     if (invertCutSegments) return;
     rowVirtualizer.scrollToIndex(currentSegIndex, { behavior: 'smooth', align: 'auto' });
@@ -855,6 +930,7 @@ function SegmentList({
         seg={seg}
         index={index}
         isActive={isActive}
+        picked={pickedClipIds.includes(seg.segId)}
         dragging={dragging}
         selected={selected}
         onClick={onSegClick}
@@ -916,61 +992,97 @@ function SegmentList({
         </Dialog.Portal>
       </Dialog.Root>
 
+      {/* The slot's width goes to nothing (and the gap before it with it), so the preview and the timeline widen as
+          the panel slides off to the right, in step; the panel inside keeps its width and is cut off at the edge. */}
       <motion.div
-        className={styles['panel']}
-        style={{ width, transition: darkModeTransition }}
-        initial={{ x: width }}
-        animate={{ x: 0 }}
-        exit={{ x: width }}
-        transition={springAnimation}
+        className={styles['panelSlot']}
+        custom={animated}
+        variants={panelSlotVariants}
+        initial={animated ? 'hidden' : false}
+        animate={{ width, marginLeft: '0rem', transition: reducedMotion ? { duration: 0 } : panelSlideTransition }}
+        exit="hidden"
       >
-        <div className={`no-user-select ${styles['header']}`}>
-          <div style={{ minWidth: 0 }}>
-            <div className={styles['headerTitle']}>{simpleMode ? t('Clips') : t('Segments')}</div>
-            <div className={styles['headerSubtitle']}>{getHeader()}</div>
+        <div className={styles['panel']} style={{ width, transition: darkModeTransition }}>
+          <div className={`no-user-select ${styles['header']}`}>
+            <div style={{ minWidth: 0 }}>
+              <div className={styles['headerTitle']}>{simpleMode ? t('Clips') : t('Segments')}</div>
+              <div className={styles['headerSubtitle']}>{getHeader()}</div>
+            </div>
+
+            <div className={styles['headerActions']}>
+              {simpleMode && (
+              <button
+                type="button"
+                className={styles['headerClose']}
+                title={t('More')}
+                aria-haspopup="menu"
+                onClick={(e) => openMenu({
+                  at: e.currentTarget,
+                  keyboard: e.detail === 0,
+                  items: [
+                    { label: t('Include all clips'), click: () => onSelectAllSegments() },
+                    { type: 'separator' },
+                    // No asking: Ctrl+Z, and a backup copy of the saved edits, bring it all back.
+                    { label: t('Start over'), danger: true, click: onStartOver },
+                  ],
+                })}
+              >
+                <FiMoreHorizontal aria-hidden />
+              </button>
+              )}
+              {/* It moves off to the right: the tab at the window's edge brings it back. */}
+              <button type="button" className={styles['headerClose']} title={t('Hide the clips panel')} onClick={toggleSegmentsList}>
+                <LuPanelRightClose aria-hidden />
+              </button>
+            </div>
           </div>
 
-          <button type="button" className={styles['headerClose']} title={t('Hide the clips panel')} aria-label={t('Hide the clips panel')} onClick={toggleSegmentsList}>
-            <FiX aria-hidden />
-          </button>
-        </div>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} onDragStart={handleDragStart} modifiers={[restrictToVerticalAxis]}>
+            <SortableContext items={sortableList} strategy={verticalListSortingStrategy}>
+              {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+              <div
+                ref={scrollerRef}
+                className={`consistent-scrollbar ${styles['scroller']}`}
+                onPointerDown={onListPointerDown}
+                onPointerMove={onListPointerMove}
+                onPointerUp={onListPointerUp}
+                onPointerCancel={onListPointerUp}
+              >
+                {selectionBox != null && <div className={styles['selectionBox']} style={selectionBox} aria-hidden />}
+                <div ref={rowsRef} className={styles['rows']} style={{ height: rowVirtualizer.getTotalSize() }}>
+                  {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const { id, seg } = sortableList[virtualRow.index]!;
+                    const selected = 'selected' in seg ? seg.selected : true;
+                    const isActive = !invertCutSegments && currentSegIndex === virtualRow.index;
 
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} onDragStart={handleDragStart} modifiers={[restrictToVerticalAxis]}>
-          <SortableContext items={sortableList} strategy={verticalListSortingStrategy}>
-            <div ref={scrollerRef} className={`consistent-scrollbar ${styles['scroller']}`}>
-              <div className={styles['rows']} style={{ height: rowVirtualizer.getTotalSize() }}>
-                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const { id, seg } = sortableList[virtualRow.index]!;
-                  const selected = 'selected' in seg ? seg.selected : true;
-                  const isActive = !invertCutSegments && currentSegIndex === virtualRow.index;
-
-                  return (
-                    <div
-                      key={id}
-                      data-index={virtualRow.index}
-                      ref={rowVirtualizer.measureElement}
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        transform: `translateY(${virtualRow.start}px)`,
-                      }}
-                    >
-                      {renderSegment({ seg, index: virtualRow.index, selected, isActive })}
-                    </div>
-                  );
-                })}
+                    return (
+                      <div
+                        key={id}
+                        data-index={virtualRow.index}
+                        ref={rowVirtualizer.measureElement}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          transform: `translateY(${virtualRow.start}px)`,
+                        }}
+                      >
+                        {renderSegment({ seg, index: virtualRow.index, selected, isActive })}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          </SortableContext>
+            </SortableContext>
 
-          <DragOverlay>
-            {draggingSeg ? renderSegment({ seg: draggingSeg.seg, index: sortableList.indexOf(draggingSeg), dragging: true }) : null}
-          </DragOverlay>
-        </DndContext>
+            <DragOverlay>
+              {draggingSeg ? renderSegment({ seg: draggingSeg.seg, index: sortableList.indexOf(draggingSeg), dragging: true }) : null}
+            </DragOverlay>
+          </DndContext>
 
-        {renderFooter()}
+          {renderFooter()}
+        </div>
       </motion.div>
     </>
   );

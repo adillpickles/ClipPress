@@ -102,12 +102,14 @@ function getClipTiles(tiles: readonly FilmTile[], start: number, end: number, to
 }
 
 function Segment({
-  seg, segNum, color, isActive, selected, onClick, getTimePercent, instant, formatTimecode, invertCutSegments, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmTiles, filmLoading, toLanePercent, lanePx, onTrimHandleMouseDown, onRemove, removeKeys,
+  seg, segNum, color, isActive, picked, selected, onClick, getTimePercent, instant, formatTimecode, invertCutSegments, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmTiles, filmLoading, toLanePercent, lanePx, onTrimHandleMouseDown, onRemove, removeKeys,
 }: {
   seg: Omit<StateSegment, 'end'> & { end: number },
   segNum: number,
   color: ColorInstance,
   isActive: boolean,
+  /** Picked in the Clips panel for Delete. */
+  picked: boolean,
   selected: boolean,
   onClick: () => void,
   getTimePercent: (a: number) => string,
@@ -234,7 +236,7 @@ function Segment({
     const showSpeed = speed !== 1 && !speedBand;
     return (
       <motion.div
-        className={[styles['clip'], ...(isActive ? [styles['active']] : []), ...(excluded ? [styles['excluded']] : [])].join(' ')}
+        className={[styles['clip'], ...(picked && !isActive ? [styles['picked']] : []), ...(isActive ? [styles['active']] : []), ...(excluded ? [styles['excluded']] : [])].join(' ')}
         style={{
           ...colorVars,
           position: 'absolute',
@@ -328,12 +330,13 @@ function Segment({
 }
 
 function SegmentOrMarker({
-  seg, toLanePercent, instant, isActive, segNum, onSegClick, invertCutSegments, formatTimecode, selected, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmTiles, filmLoading, lanePx, onTrimHandleMouseDown, onRemove, removeKeys,
+  seg, toLanePercent, instant, isActive, picked = false, segNum, onSegClick, invertCutSegments, formatTimecode, selected, speedControlsVisible, onEditSpeed, onRemoveSpeed, onToggleSpeedControls, onEditCrop, onEditVolume, filmTiles, filmLoading, lanePx, onTrimHandleMouseDown, onRemove, removeKeys,
 } : {
   seg: StateSegment,
   toLanePercent: (time: number) => number,
   instant: boolean,
   isActive: boolean,
+  picked?: boolean,
   segNum: number,
   onSegClick: (a: number) => void,
   invertCutSegments: boolean,
@@ -364,7 +367,7 @@ function SegmentOrMarker({
   const onThisSegClick = useCallback(() => onSegClick(segNum), [onSegClick, segNum]);
 
   if (seg.end != null) {
-    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} onClick={onThisSegClick} getTimePercent={getTimePercent} instant={instant} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} speedControlsVisible={speedControlsVisible} onEditSpeed={onEditSpeed} onRemoveSpeed={onRemoveSpeed} onToggleSpeedControls={onToggleSpeedControls} onEditCrop={onEditCrop} onEditVolume={onEditVolume} filmTiles={filmTiles} filmLoading={filmLoading} toLanePercent={toLanePercent} lanePx={lanePx} onTrimHandleMouseDown={onTrimHandleMouseDown} onRemove={onRemove} removeKeys={removeKeys} />;
+    return <Segment seg={seg as Omit<StateSegment, 'end'> & { end: number }} segNum={segNum} color={segColor} selected={selected} isActive={isActive} picked={picked} onClick={onThisSegClick} getTimePercent={getTimePercent} instant={instant} formatTimecode={formatTimecode} invertCutSegments={invertCutSegments} speedControlsVisible={speedControlsVisible} onEditSpeed={onEditSpeed} onRemoveSpeed={onRemoveSpeed} onToggleSpeedControls={onToggleSpeedControls} onEditCrop={onEditCrop} onEditVolume={onEditVolume} filmTiles={filmTiles} filmLoading={filmLoading} toLanePercent={toLanePercent} lanePx={lanePx} onTrimHandleMouseDown={onTrimHandleMouseDown} onRemove={onRemove} removeKeys={removeKeys} />;
   }
 
   return (

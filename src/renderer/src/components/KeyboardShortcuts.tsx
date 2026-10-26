@@ -359,6 +359,14 @@ const KeyboardShortcuts = memo(({
         name: t('Remove current segment'),
         category: segmentsAndCutpointsCategory,
       },
+      removeSelectedClips: {
+        name: t('Remove the selected clips'),
+        category: segmentsAndCutpointsCategory,
+      },
+      startOver: {
+        name: t('Start over (back to the whole recording)'),
+        category: segmentsAndCutpointsCategory,
+      },
       setCutStart: {
         name: t('Start current segment at current time'),
         category: segmentsAndCutpointsCategory,

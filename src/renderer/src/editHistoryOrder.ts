@@ -29,10 +29,16 @@ export interface EditTracker {
 
 const maxSteps = 500;
 
-export default class EditHistoryOrder<Domain extends string> {
-  private done: Domain[] = [];
+/** A step: one domain's edit, or several made as one (`group`), undone and redone together. */
+type Step<Domain> = Domain | Domain[];
 
-  private undone: Domain[] = [];
+export default class EditHistoryOrder<Domain extends string> {
+  private done: Step<Domain>[] = [];
+
+  private undone: Step<Domain>[] = [];
+
+  /** The domains edited so far by the `group` running now. */
+  private grouping: Domain[] | undefined;
 
   /** The latest edit, while updates with its key may still join its step. */
   private latest: { domain: Domain, coalesceKey: string, time: number } | undefined;
@@ -62,12 +68,19 @@ export default class EditHistoryOrder<Domain extends string> {
   }
 
   private continues(domain: Domain, coalesceKey: string | undefined) {
+    if (this.grouping != null) return false;
     const { latest } = this;
     return coalesceKey != null && latest != null && latest.domain === domain && latest.coalesceKey === coalesceKey
       && this.now() - latest.time < coalesceWindowMs;
   }
 
   private edited(domain: Domain, { newStep, coalesceKey }: { newStep: boolean, coalesceKey: string | undefined }) {
+    if (this.grouping != null) {
+      if (newStep && !this.grouping.includes(domain)) this.grouping.push(domain);
+      this.undone = [];
+      this.latest = undefined;
+      return;
+    }
     if (newStep) {
       this.done.push(domain);
       if (this.done.length > maxSteps) this.done.shift();
@@ -77,14 +90,35 @@ export default class EditHistoryOrder<Domain extends string> {
     this.latest = coalesceKey != null ? { domain, coalesceKey, time: this.now() } : undefined;
   }
 
+  /**
+   * The edits `edit` makes, in any number of domains (one each), become one step: one Ctrl+Z undoes all of them (Start
+   * over resets the clips, the text and the volume at once).
+   */
+  group(edit: () => void) {
+    this.grouping = [];
+    try {
+      edit();
+    } finally {
+      const domains = this.grouping;
+      this.grouping = undefined;
+      if (domains.length > 0) {
+        this.done.push(domains.length === 1 ? domains[0]! : domains);
+        if (this.done.length > maxSteps) this.done.shift();
+      }
+    }
+  }
+
   /** Undo the latest edit. Entries whose history ran out (capacity, reset) are skipped. */
   undo(histories: Record<Domain, EditDomainHistory>) {
     this.latest = undefined;
     while (this.done.length > 0) {
-      const domain = this.done.pop()!;
-      if (histories[domain].back()) {
-        this.undone.push(domain);
-        return domain;
+      const step = this.done.pop()!;
+      const domains = Array.isArray(step) ? [...step].reverse() : [step];
+      // Every part of a group goes back, even if one of them ran out.
+      const undone = domains.map((domain) => histories[domain].back()).some(Boolean);
+      if (undone) {
+        this.undone.push(step);
+        return Array.isArray(step) ? step[0]! : step;
       }
     }
     return undefined;
@@ -93,10 +127,12 @@ export default class EditHistoryOrder<Domain extends string> {
   redo(histories: Record<Domain, EditDomainHistory>) {
     this.latest = undefined;
     while (this.undone.length > 0) {
-      const domain = this.undone.pop()!;
-      if (histories[domain].forward()) {
-        this.done.push(domain);
-        return domain;
+      const step = this.undone.pop()!;
+      const domains = Array.isArray(step) ? step : [step];
+      const redone = domains.map((domain) => histories[domain].forward()).some(Boolean);
+      if (redone) {
+        this.done.push(step);
+        return Array.isArray(step) ? step[0]! : step;
       }
     }
     return undefined;

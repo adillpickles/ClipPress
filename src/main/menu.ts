@@ -279,6 +279,8 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
         { role: 'copy', label: esc(t('Copy')) },
         { role: 'paste', label: esc(t('Paste')) },
         { role: 'selectAll', label: esc(t('Select All')) },
+        // Simple mode has it in the Clips panel's ⋯ menu.
+        ...(simpleMode ? [] : [{ type: 'separator' as const }, action(t('Start over'), 'startOver')] satisfies MenuItemConstructorOptions[]),
         // The tracks are chosen in the export options in simple mode; extracting them is a power tool.
         ...(simpleMode ? [] : [{ type: 'separator' as const }, {
           label: esc(t('Tracks')),

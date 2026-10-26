@@ -230,6 +230,7 @@ function Timeline({
   onRemoveSegmentSpeed,
   onRemoveSegment,
   removeSegmentKeys,
+  pickedClipIds,
   hasVideo,
 } : {
   fileDurationNonZero: number,
@@ -296,6 +297,8 @@ function Timeline({
   onRemoveSegment?: ((index: number, wholeSegment?: true) => void) | undefined,
   /** The keys that remove the selected clip, shown in the clip menu. */
   removeSegmentKeys?: string | undefined,
+  /** Clips picked in the Clips panel for Delete. */
+  pickedClipIds?: readonly string[] | undefined,
   /** Media with video can have text: its lane is then always shown, so adding text doesn't resize the preview. */
   hasVideo: boolean,
 }) {
@@ -1024,6 +1027,7 @@ function Timeline({
                     segNum={i}
                     onSegClick={setCurrentSegIndex}
                     isActive={i === currentSegIndexSafe}
+                    picked={pickedClipIds?.includes(seg.segId) ?? false}
                     toLanePercent={toLanePercent}
                     instant={retimeDragging || segmentDragging}
                     invertCutSegments={invertCutSegments}

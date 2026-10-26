@@ -1,7 +1,6 @@
 import type { ComponentProps } from 'react';
 import { memo, useCallback, useMemo, useState } from 'react';
 import { FiChevronRight, FiEdit2, FiList, FiSettings } from 'react-icons/fi';
-import { LuListVideo } from 'react-icons/lu';
 import { useTranslation } from 'react-i18next';
 import Button from './components/Button';
 import ShelfButton from './components/ShelfButton';
@@ -28,8 +27,6 @@ function TopMenu({
   nextClipKeys,
   exportKeys,
   onOpenNextClip,
-  clipsPanelShown,
-  onShowClipsPanel,
   onExportPress,
   onQuickExportPress,
   segmentsToExport,
@@ -50,8 +47,6 @@ function TopMenu({
   nextClipKeys: string | undefined,
   exportKeys: string | undefined,
   onOpenNextClip: () => void,
-  clipsPanelShown: boolean,
-  onShowClipsPanel: () => void,
   onExportPress: () => void,
   /** Ctrl+click on Export: export right away with the last settings. */
   onQuickExportPress: () => void,
@@ -134,14 +129,6 @@ function TopMenu({
           </Button>
         )}
 
-        {/* The way back to the Clips panel once it's closed; it sits above where the panel opens.
-            Advanced mode names it like the panel's own title there. */}
-        {!clipsPanelShown && (
-          <Button onClick={onShowClipsPanel} title={simpleMode ? t('Show clips') : t('Show sidebar')}>
-            <LuListVideo aria-hidden />
-            {simpleMode ? t('Clips') : t('Segments')}
-          </Button>
-        )}
 
         {/* Advanced mode is unfinished, so its switch only shows once it's turned on in Settings. */}
         {enableAdvancedMode && <SimpleModeButton />}

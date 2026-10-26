@@ -151,10 +151,24 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     setCutSegments(map(newSegmentsOrFn), options);
   }, [setCutSegments]);
 
+  /**
+   * The whole recording as one clip, as a recording opens: simple mode's state with no clips of its own (so removing
+   * the last clip, or starting over, never leaves an empty timeline). Its own undo step.
+   */
+  const resetToWholeRecording = useCallback(() => {
+    clearSegColorCounter();
+    // Not through safeSetCutSegments, which drops `initial`: this is the untouched placeholder, as when opened.
+    setCutSegments(isDurationValid(fileDuration) ? [createIndexedSegment({ segment: { start: 0, end: fileDuration, initial: true } })] : []);
+  }, [clearSegColorCounter, createIndexedSegment, fileDuration, setCutSegments]);
+
   const clearSegments = useCallback(() => {
+    if (simpleMode) {
+      resetToWholeRecording();
+      return;
+    }
     clearSegColorCounter();
     safeSetCutSegments([]);
-  }, [clearSegColorCounter, safeSetCutSegments]);
+  }, [clearSegColorCounter, resetToWholeRecording, safeSetCutSegments, simpleMode]);
 
   const shuffleSegments = useCallback(() => safeSetCutSegments((existingSegments) => [
     ...existingSegments.filter((s) => !s.selected),
@@ -364,6 +378,11 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
   }, [currentCutSegOrWholeTimeline, deleteCurrentCutSeg, fileDuration, filePath, loadCutSegments, videoStream]);
 
   const removeSegments = useCallback((removeSegmentIds: string[]) => {
+    // Simple mode: removing the last clips goes back to the whole recording, as it opened.
+    if (simpleMode && cutSegmentsHistory.getCurrent().every((seg) => removeSegmentIds.includes(seg.segId))) {
+      resetToWholeRecording();
+      return;
+    }
     safeSetCutSegments((existingSegments) => {
       const newSegments = existingSegments.filter((seg) => !removeSegmentIds.includes(seg.segId));
       if (newSegments.length === 0) {
@@ -372,7 +391,7 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
       }
       return newSegments;
     });
-  }, [clearSegColorCounter, safeSetCutSegments]);
+  }, [clearSegColorCounter, cutSegmentsHistory, resetToWholeRecording, safeSetCutSegments, simpleMode]);
 
   const removeSegment = useCallback((index: number, wholeSegment?: true) => {
     const seg = cutSegments[index];
@@ -1018,6 +1037,8 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     currentCutSeg,
     inverseCutSegments,
     clearSegments,
+    resetToWholeRecording,
+    removeSegments,
     clearSegColorCounter,
     loadCutSegments,
     selectedSegments,

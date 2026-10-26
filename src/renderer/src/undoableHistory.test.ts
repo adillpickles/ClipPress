@@ -107,6 +107,36 @@ function createEditor(capacity = 100) {
 }
 
 describe('EditHistoryOrder', () => {
+  it('undoes and redoes the edits of a group in one step', () => {
+    const { order, segments, text, gain, undo, redo } = createEditor();
+    segments.set(1);
+    text.set('Hi');
+    order.group(() => {
+      segments.set(2);
+      text.set('');
+      gain.set(0); // unchanged: no part of the step
+      gain.set(3);
+    });
+    expect(segments.value).toBe(2);
+    expect(undo()).toBe('segments');
+    expect([segments.value, text.value, gain.value]).toEqual([1, 'Hi', 0]);
+    expect(redo()).toBe('segments');
+    expect([segments.value, text.value, gain.value]).toEqual([2, '', 3]);
+    expect(undo()).toBe('segments');
+    // The edits before the group are separate steps, as before.
+    expect(undo()).toBe('text');
+    expect(text.value).toBe('');
+    expect(segments.value).toBe(1);
+  });
+
+  it('never lets a group join an earlier coalescing step', () => {
+    const { order, text, undo } = createEditor();
+    text.set('a', { coalesceKey: 'k' });
+    order.group(() => text.set('ab', { coalesceKey: 'k' }));
+    undo();
+    expect(text.value).toBe('a');
+  });
+
   it('undoes the most recent edit across separately stored state', () => {
     const { segments, text, undo, redo } = createEditor();
     segments.set(1);

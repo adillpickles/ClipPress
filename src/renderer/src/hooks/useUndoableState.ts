@@ -9,6 +9,8 @@ export interface UndoableControls<T> {
   forward: () => boolean,
   /** Replace the whole history, e.g. when a file is opened or closed. */
   reset: (value: T) => void,
+  /** The latest value, with updates made earlier in this tick (React's state shows them only after rendering). */
+  getCurrent: () => T,
 }
 
 /**
@@ -47,6 +49,7 @@ export default function useUndoableState<T>(initial: T, { capacity = 100, tracke
       trackerRef.current?.reset();
       setRawState(value);
     },
+    getCurrent: () => history.current,
   }), [history]);
 
   return [state, setState, controls] as const;

@@ -95,6 +95,8 @@ const defaultKeyBindings: KeyBinding[] = [
 
   { keys: 'Enter', action: 'labelCurrentSegment' },
 
+  { keys: 'Delete', action: 'removeSelectedClips' },
+
   { keys: 'KeyE', action: 'export' },
   ...quickExportKeyBindings,
   { keys: 'ShiftLeft+Slash', action: 'toggleKeyboardShortcuts' },
@@ -713,6 +715,13 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     const migratedPresets = migrateQuickExportPresets(existingPresets);
     if (migratedPresets.some((preset, i) => preset !== existingPresets[i])) set('quickExportPresets', migratedPresets);
     store.set('quickExportPresetsMigrated', true);
+  }
+
+  // Delete removes the selected clips, for existing settings too, unless Delete already does something.
+  if (store.get('deleteClipsShortcutMigrated') !== true) {
+    const existingBindings = store.get('keyBindings') as KeyBinding[];
+    if (!existingBindings.some((existing) => existing.keys === 'Delete' || existing.action === 'removeSelectedClips')) set('keyBindings', [...existingBindings, { keys: 'Delete', action: 'removeSelectedClips' as const }]);
+    store.set('deleteClipsShortcutMigrated', true);
   }
 
   // Ctrl+E and Ctrl+1/2/3 (quick exports) for existing settings too, where those keys are still free.

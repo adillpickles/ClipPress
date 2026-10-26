@@ -1,0 +1,34 @@
+/* Flush with the window's right edge, beside where the panel's header was: rounded on the inside only, so it reads as
+   a handle the panel is tucked behind. */
+.tab {
+  all: unset;
+  position: absolute;
+  top: .25rem;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 2.6rem;
+  box-sizing: border-box;
+  padding-left: .1rem;
+  border: 1px solid var(--cp-line);
+  border-right: none;
+  border-radius: var(--cp-radius) 0 0 var(--cp-radius);
+  background: var(--cp-panel);
+  color: var(--cp-text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: width .15s ease, color .12s ease, background-color .12s ease;
+}
+
+.tab:hover {
+  width: 1.95rem;
+  color: var(--cp-accent-text);
+  background: color-mix(in srgb, var(--accent-9) 10%, var(--cp-panel));
+}
+
+.tab:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}

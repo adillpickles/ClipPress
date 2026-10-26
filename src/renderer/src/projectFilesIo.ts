@@ -27,7 +27,7 @@ const projectFiles = createProjectFilesFs({
   isAbsolute,
   readProject: (path) => loadLlcProject(path).catch(() => undefined),
 });
-export const { findProjectFiles, readNewestProjectCopy, keepCopiesAboutToBeReplaced, keepCopiesNotOpened } = projectFiles;
+export const { findProjectFiles, readNewestProjectCopy, keepBackupCopies, keepCopiesAboutToBeReplaced, keepCopiesNotOpened } = projectFiles;
 const { getModifiedAt, getRecordingPresence, filterNotNewerThan } = projectFiles;
 
 /** In ClipPress's settings folder, next to the projects folder. */

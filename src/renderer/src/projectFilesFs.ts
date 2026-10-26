@@ -108,6 +108,19 @@ export default function createProjectFilesFs({ lstat, stat, rename, copyFile, di
   }
 
   /**
+   * A copy of each of these project files that is there, under the backup name next to it (as `keepAsBackup` names it,
+   * and the daily clean-up retires after 30 days), before autosave writes something else over them (Start over).
+   */
+  async function keepBackupCopies(paths: readonly string[]) {
+    for (const path of new Set(paths)) {
+      // eslint-disable-next-line no-await-in-loop, no-continue
+      if (await getModifiedAt(path) == null) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await copyFile(path, getReplacedBackupPath(path, Date.now())).catch((err: unknown) => console.warn('Could not keep a copy of the project', path, err));
+    }
+  }
+
+  /**
    * Before autosave writes the edits being opened (loaded from `sourcePath`) to `savePaths`: a different copy already in
    * one of those places would be replaced without a word (file times can mislead, e.g. a restored old copy), so it is
    * kept under another name next to it instead (see `keepAsBackup`). A copy of the same edits, however it was written,
@@ -153,5 +166,5 @@ export default function createProjectFilesFs({ lstat, stat, rename, copyFile, di
     return keepCopiesAboutToBeReplaced(savePaths.filter((savePath) => !unreadable.includes(savePath)), openedPath);
   }
 
-  return { getModifiedAt, getRecordingPresence, findProjectFiles, readNewestProjectCopy, filterNotNewerThan, keepCopiesAboutToBeReplaced, keepCopiesNotOpened };
+  return { getModifiedAt, getRecordingPresence, findProjectFiles, readNewestProjectCopy, filterNotNewerThan, keepBackupCopies, keepCopiesAboutToBeReplaced, keepCopiesNotOpened };
 }

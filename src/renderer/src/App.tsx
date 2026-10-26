@@ -16,6 +16,7 @@ import type { IpcRendererEvent } from 'electron';
 import { FiDownload } from 'react-icons/fi';
 import fromPairs from 'lodash/fromPairs';
 import sum from 'lodash/sum';
+import omit from 'lodash/omit';
 import invariant from 'tiny-invariant';
 import type { SweetAlertOptions } from 'sweetalert2';
 import { nanoid } from 'nanoid';
@@ -288,6 +289,7 @@ import { getVideoDisplayAspect } from './filmstrip';
 import { pruneTimelineCache } from './timelineCacheIo';
 import prefetchTimeline from './timelinePrefetch';
 import TooltipLayer from './components/TooltipLayer';
+import ClipsPanelTab from './components/ClipsPanelTab';
 import MenuHost from './components/Menu';
 import { pickHintKeyBindings } from './util/keyNames';
 import useAudioPeaks from './hooks/useAudioPeaks';
@@ -301,7 +303,9 @@ import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, 
 import type { QuickExport } from './quickExport';
 import { normalizeQuickExportPresets } from '../../common/quickExport';
 import { getProjectCopiesToRetire, getProjectLookupPaths, getProjectSavePaths, getProjectStoreEnv, isSameProjectPath } from './projectStore';
-import { filterOwnProjectFiles, findProjectFiles, keepCopiesAboutToBeReplaced, keepCopiesNotOpened, logProjectFiles, readNewestProjectCopy, recycleRecordingProjectCopies } from './projectFilesIo';
+import { filterOwnProjectFiles, findProjectFiles, keepBackupCopies, keepCopiesAboutToBeReplaced, keepCopiesNotOpened, logProjectFiles, readNewestProjectCopy, recycleRecordingProjectCopies } from './projectFilesIo';
+import { getClipsToRemove, pickClip, pickInBox } from './clipPicking';
+import type { PickHow } from './clipPicking';
 import { getProjectMediaCandidates, getProjectMediaOldPath } from './missingRecording';
 import useProjectCleanup from './hooks/useProjectCleanup';
 import useRelocateRecording from './hooks/useRelocateRecording';
@@ -829,11 +833,24 @@ function App() {
     [appendLastCommandsLog],
   );
 
+  // The Clips panel slides only when the user hides or shows it (not as a recording opens or closes); the tab that brings
+  // it back shows once it has gone.
+  const [clipsPanelAnimated, setClipsPanelAnimated] = useState(false);
+  const [clipsPanelGone, setClipsPanelGone] = useState(false);
+  useEffect(() => {
+    if (!clipsPanelAnimated) return undefined;
+    const timer = setTimeout(() => setClipsPanelAnimated(false), 600);
+    return () => clearTimeout(timer);
+  }, [clipsPanelAnimated, showRightBar]);
   const toggleSegmentsList = useCallback(() => {
+    setClipsPanelAnimated(true);
     setShowRightBar((v) => !v);
     // A rename left open when the panel closed would otherwise start again when it reopens.
     setRenamingSegId(undefined);
   }, []);
+  useEffect(() => {
+    if (showRightBar) setClipsPanelGone(false);
+  }, [showRightBar]);
 
   const toggleSafeOutputFileName = useCallback(
     () => setSafeOutputFileName((v) => {
@@ -1090,6 +1107,8 @@ function App() {
     detectSilentScenes,
     detectSceneChanges,
     removeSegment,
+    removeSegments,
+    resetToWholeRecording,
     invertAllSegments,
     fillSegmentsGaps,
     combineOverlappingSegments,
@@ -1180,6 +1199,59 @@ function App() {
     streamParams: streamParamsHistory,
     speedControls: speedControlsHistory,
   }), [cutSegmentsHistory, overlayClipsHistory, speedControlsHistory, streamParamsHistory]);
+  // Clips picked in the Clips panel (Ctrl or Shift+click, a selection box), for Delete; with none picked, Delete takes
+  // the selected clip. Apart from a segment's own `selected`, which is whether it goes in the export.
+  const [pickedClipIds, setPickedClipIds] = useState<readonly string[]>([]);
+  const clipIds = useMemo(() => cutSegments.map((segment) => segment.segId), [cutSegments]);
+  const pickedClips = useMemo(() => clipIds.filter((id) => pickedClipIds.includes(id)), [clipIds, pickedClipIds]);
+  const onClipClick = useCallback((index: number, how: PickHow = 'one') => {
+    const clicked = cutSegments[index];
+    if (clicked == null) return;
+    setSelectedOverlayId(undefined);
+    // Advanced mode has its own selection (the export ticks).
+    const next = pickClip({ ids: clipIds, picked: pickedClips, currentId: cutSegments[currentSegIndexSafe]?.segId, clickedId: clicked.segId, how: simpleMode ? how : 'one' });
+    setPickedClipIds(next.picked);
+    setCurrentSegIndex(Math.max(0, clipIds.indexOf(next.currentId)));
+  }, [clipIds, currentSegIndexSafe, cutSegments, pickedClips, setCurrentSegIndex, simpleMode]);
+  const onPickClipsInBox = useCallback((touched: readonly string[], additive: boolean, before: readonly string[]) => {
+    setPickedClipIds(pickInBox({ ids: clipIds, before, touched, additive }));
+  }, [clipIds]);
+  const removeSelectedClips = useCallback(() => {
+    if (invertCutSegments || workingRef.current) return;
+    // The untouched whole recording is what's left with nothing to remove.
+    if (cutSegments.length === 1 && cutSegments[0]!.initial) return;
+    const ids = getClipsToRemove({ ids: clipIds, picked: pickedClips, currentId: cutSegments[currentSegIndexSafe]?.segId });
+    if (ids.length === 0) return;
+    removeSegments(ids);
+    setPickedClipIds([]);
+  }, [clipIds, currentSegIndexSafe, cutSegments, invertCutSegments, pickedClips, removeSegments, workingRef]);
+
+  /**
+   * Back to the recording as it opened: one clip of the whole recording, no text, the track volume as it was. App
+   * settings and the recording stay. One Ctrl+Z brings it all back, and the saved edits are kept as a backup copy first
+   * (`.replaced-<time>`, retired by the daily clean-up after 30 days); then the fresh state autosaves like any edit.
+   */
+  const startOver = useCallback(async () => {
+    if (filePath == null || workingRef.current) return;
+    const savePaths = getProjectSavePaths(filePath, projectFileLocation, customOutDir, getProjectStoreEnv());
+    await keepBackupCopies([...savePaths, ...(projectSession?.loadedProjectPath != null ? [projectSession.loadedProjectPath] : [])]);
+    editHistoryOrder.group(() => {
+      resetToWholeRecording();
+      setOverlayClips([]);
+      setParamsByStreamId((existing) => {
+        const params = existing.get(filePath);
+        if (params == null || ![...params.values()].some((streamParams) => streamParams.audioGainDb != null)) return existing;
+        const next = new Map(existing);
+        next.set(filePath, new Map([...params].map(([streamIndex, streamParams]) => [streamIndex, omit(streamParams, 'audioGainDb')])));
+        return next;
+      });
+      setSpeedControlsBySegment({});
+    });
+    setPickedClipIds([]);
+    setSelectedOverlayId(undefined);
+    setCurrentSegIndex(0);
+  }, [customOutDir, editHistoryOrder, filePath, projectFileLocation, projectSession?.loadedProjectPath, resetToWholeRecording, setCurrentSegIndex, setOverlayClips, setParamsByStreamId, setSpeedControlsBySegment, workingRef]);
+
   const [editingSpeedSegmentId, setEditingSpeedSegmentId] = useState<string>();
   const editingSpeedSegment = cutSegments.find((segment) => segment.segId === editingSpeedSegmentId);
   // Retimed segments show their speed bar until hidden; Ctrl+R toggles it like Resolve's retime controls.
@@ -2067,6 +2139,7 @@ function App() {
     setExportConfirmOpen(false);
     setOutputPlaybackRateState(1);
     setCurrentFileExportCount(0);
+    setPickedClipIds([]);
   }, [
     editHistoryOrder,
     endProjectSession,
@@ -6021,6 +6094,8 @@ function App() {
       batchOpenSelectedFile,
       closeBatch,
       removeCurrentSegment: () => removeSegment(currentSegIndexSafe, true),
+      removeSelectedClips,
+      startOver,
       removeCurrentCutpoint: () => removeSegment(currentSegIndexSafe),
       undo: () => editHistoryOrder.undo(editHistories),
       redo: () => editHistoryOrder.redo(editHistories),
@@ -6117,6 +6192,8 @@ function App() {
 
     return ret;
   }, [
+    removeSelectedClips,
+    startOver,
     batchFiles.length,
     openNextClip,
     simpleMode,
@@ -6879,8 +6956,6 @@ function App() {
                   onOpenNextClip={openNextClip}
                   nextClipKeys={keyBindingByAction['batchOpenNextFile']?.keys}
                   exportKeys={keyBindingByAction['export']?.keys}
-                  clipsPanelShown={showRightBar}
-                  onShowClipsPanel={toggleSegmentsList}
                   onExportPress={onExportPress}
                   onQuickExportPress={quickExport}
                   segmentsToExport={segmentsToExport}
@@ -6888,6 +6963,9 @@ function App() {
               )}
 
               <div className={styles['mainArea']}>
+                {!showRightBar && clipsPanelGone && isFileOpened && filePath != null && (
+                  <ClipsPanelTab label={simpleMode ? t('Show clips') : t('Show sidebar')} onClick={toggleSegmentsList} />
+                )}
                 <AnimatePresence>
                   {showLeftBar && isFileOpened && (
                     <BatchFilesList
@@ -7215,7 +7293,7 @@ function App() {
                           seekAbs={seekAbs}
                           fileDurationNonZero={timelineDuration}
                           cutSegments={cutSegments}
-                          setCurrentSegIndex={setCurrentSegIndex}
+                          setCurrentSegIndex={onClipClick}
                           currentSegIndexSafe={currentSegIndexSafe}
                           currentCutSeg={currentCutSeg}
                           inverseCutSegments={inverseCutSegments}
@@ -7245,6 +7323,8 @@ function App() {
                           onToggleSegmentSpeedControls={toggleSpeedControlsForSegment}
                           onRemoveSegmentSpeed={removeSegmentSpeed}
                           onRemoveSegment={removeSegment}
+                          removeSegmentKeys={keyBindingByAction['removeSelectedClips']?.keys}
+                          pickedClipIds={pickedClips}
                           hasVideo={hasVideo}
                         />
                       </div>
@@ -7252,16 +7332,17 @@ function App() {
                   )}
                 </div>
 
-                <AnimatePresence>
+                <AnimatePresence custom={clipsPanelAnimated} onExitComplete={() => setClipsPanelGone(true)}>
                   {showRightBar && isFileOpened && filePath != null && (
                     <SegmentList
+                      animated={clipsPanelAnimated}
                       width={rightBarWidth}
                       currentSegIndex={currentSegIndexSafe}
                       cutSegments={cutSegments}
                       inverseCutSegments={inverseCutSegments}
                       getFrameCount={getFrameCount}
                       formatTimecode={formatTimecode}
-                      onSegClick={setCurrentSegIndex}
+                      onSegClick={onClipClick}
                       updateSegOrder={updateSegOrder}
                       updateSegOrders={updateSegOrders}
                       onLabelSegment={labelSegment}
@@ -7309,6 +7390,9 @@ function App() {
                       onEditCrop={editSegmentCrop}
                       renamingSegId={renamingSegId}
                       setRenamingSegId={setRenamingSegId}
+                      pickedClipIds={pickedClips}
+                      onPickClipsInBox={onPickClipsInBox}
+                      onStartOver={startOver}
                     />
                   )}
                 </AnimatePresence>

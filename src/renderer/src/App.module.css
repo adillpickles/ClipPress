@@ -13,6 +13,7 @@ video.video::-webkit-media-text-track-display {
 }
 
 .mainArea {
+  position: relative;
   flex-grow: 1;
   display: flex;
   /* Keeps z-indexes inside the editor (playhead, lane buttons) from rising above sheets and dialogs. */
