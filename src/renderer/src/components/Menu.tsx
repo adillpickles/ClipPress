@@ -509,6 +509,7 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
         // eslint-disable-next-line jsx-a11y/no-static-element-interactions
         <div
           className={styles['layer']}
+          data-app-menu=""
           onPointerDown={(e) => {
             if (e.target !== e.currentTarget) return;
             e.preventDefault();

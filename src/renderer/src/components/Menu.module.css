@@ -3,6 +3,8 @@
   position: fixed;
   inset: 0;
   z-index: 10002;
+  /* A modal dialog turns pointer events off for the rest of the page: a menu over it (a text field's) still takes them. */
+  pointer-events: auto;
 }
 
 .menu {
