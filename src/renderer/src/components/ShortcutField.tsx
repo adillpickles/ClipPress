@@ -21,10 +21,25 @@ function Caps({ keys }: { keys: readonly string[] }) {
   );
 }
 
+const modifierFlags = [
+  ['Control', 'ctrlKey'],
+  ['Shift', 'shiftKey'],
+  ['Alt', 'altKey'],
+  ['Meta', 'metaKey'],
+] as const;
+
 /**
- * An action's shortcuts as key caps that can be changed: click one (or the empty slot) and press the new keys. Each key
- * shows the moment it's pressed, drawn pressed in ClipPress blue; letting go saves it. Escape cancels, ✕ removes it,
- * and keys another action has ask before taking them over.
+ * The modifiers held during a key event, read from the event itself: one whose own key press never reached the page
+ * (held before recording started, say) still counts. Left unless that side's key was seen.
+ */
+function getHeldModifiers(e: KeyboardEvent, sides: Map<string, string>) {
+  return modifierFlags.flatMap(([name, flag]) => (e[flag] ? [sides.get(name) ?? `${name}Left`] : []));
+}
+
+/**
+ * An action's shortcuts as key caps that can be changed: click one, the empty one or the "+" and press the new keys.
+ * Modifiers show as they're held, drawn pressed in ClipPress blue; the shortcut is set the moment its other key goes
+ * down. Escape cancels, ✕ removes it, and keys another action has ask before taking them over.
  */
 export default function ShortcutField({ action, label, shown, keyBindings, setKeyBindings, getActionName }: {
   action: KeyboardAction,
@@ -40,8 +55,7 @@ export default function ShortcutField({ action, label, shown, keyBindings, setKe
   const [recording, setRecording] = useState<string>();
   const [held, setHeld] = useState<string[]>([]);
   const [conflict, setConflict] = useState<{ keys: string, replacing: string, other: KeyBinding }>();
-  const peakRef = useRef<string[]>([]);
-  const heldRef = useRef(new Set<string>());
+  const sidesRef = useRef(new Map<string, string>());
   const conflictRef = useRef<HTMLDivElement>(null);
 
   // The question can open below the visible part of a long list.
@@ -52,8 +66,7 @@ export default function ShortcutField({ action, label, shown, keyBindings, setKe
   const stop = useCallback(() => {
     setRecording(undefined);
     setHeld([]);
-    peakRef.current = [];
-    heldRef.current = new Set();
+    sidesRef.current = new Map();
   }, []);
 
   const save = useCallback((keys: string, replacing: string, takeFrom?: KeyBinding) => {
@@ -81,23 +94,25 @@ export default function ShortcutField({ action, label, shown, keyBindings, setKe
       // The keys are this field's while it records: nothing else in the app reacts to them.
       e.preventDefault();
       e.stopPropagation();
-      if (e.code === 'Escape' && heldRef.current.size === 0) {
+      if (e.repeat) return;
+      if (allModifiers.has(e.code)) {
+        sidesRef.current.set(e.code.replace(/(Left|Right)$/, ''), e.code);
+        setHeld(getHeldModifiers(e, sidesRef.current));
+        return;
+      }
+      const modifiers = getHeldModifiers(e, sidesRef.current);
+      if (e.code === 'Escape' && modifiers.length === 0) {
         stop();
         return;
       }
-      heldRef.current.add(e.code);
-      const keys = [...heldRef.current];
-      setHeld(keys);
-      const valid = fixKeys(keys);
-      if (valid.length > 0) peakRef.current = valid;
+      // Set the moment the key that isn't a modifier goes down, with whatever modifiers are held.
+      const keys = fixKeys([...modifiers, e.code]);
+      if (keys.length > 0) commit(keys.join('+'), recording);
     };
     const onKeyUp = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      heldRef.current.delete(e.code);
-      setHeld([...heldRef.current]);
-      // All let go: the most complete combination pressed is the shortcut (only modifiers isn't one: keep listening).
-      if (heldRef.current.size === 0 && peakRef.current.length > 0) commit(peakRef.current.join('+'), recording);
+      setHeld(getHeldModifiers(e, sidesRef.current));
     };
     const onPointerDown = () => stop();
     window.addEventListener('keydown', onKeyDown, true);
@@ -114,23 +129,23 @@ export default function ShortcutField({ action, label, shown, keyBindings, setKe
 
   const start = (keys: string) => {
     setConflict(undefined);
-    peakRef.current = [];
-    heldRef.current = new Set();
+    sidesRef.current = new Map();
     setHeld([]);
     setRecording(keys);
   };
 
-  // Shown while recording: the keys held now, in binding order where they make one (modifiers first).
-  const heldShown = fixKeys(held).length > 0 ? fixKeys(held) : [...held].sort((a, b) => Number(!allModifiers.has(a)) - Number(!allModifiers.has(b)));
+  // The modifiers held so far, in the order a shortcut shows them.
+  const heldShown = fixKeys([...held, 'KeyA']).filter((key) => key !== 'KeyA');
+  const recordingSlot = (
+    <span className={[styles['slot'], styles['recordingSlot']].join(' ')} aria-live="polite" data-shortcut-recording="">
+      {held.length > 0 ? <Caps keys={heldShown} /> : <span className={styles['prompt']}>{t('Press keys…')}</span>}
+    </span>
+  );
 
   return (
     <div className={styles['field']}>
       <div className={styles['slots']}>
-        {shown.map(({ keys }) => (recording === keys ? (
-          <span key={keys} className={[styles['slot'], styles['recordingSlot']].join(' ')} aria-live="polite">
-            {held.length > 0 ? <Caps keys={heldShown} /> : <span className={styles['prompt']}>{t('Press keys…')}</span>}
-          </span>
-        ) : (
+        {shown.map(({ keys }) => (recording === keys ? <Fragment key={keys}>{recordingSlot}</Fragment> : (
           <span key={keys} className={styles['bindingWrap']}>
             <button type="button" className={styles['slot']} onClick={() => start(keys)} aria-label={t('Change the shortcut for {{action}}', { action: label })}>
               <Caps keys={splitKeyboardKeys(keys)} />
@@ -140,21 +155,24 @@ export default function ShortcutField({ action, label, shown, keyBindings, setKe
             </button>
           </span>
         )))}
-        {recording === '' ? (
-          <span className={[styles['slot'], styles['recordingSlot']].join(' ')} aria-live="polite">
-            {held.length > 0 ? <Caps keys={heldShown} /> : <span className={styles['prompt']}>{t('Press keys…')}</span>}
-          </span>
-        ) : (
-          <button
-            type="button"
-            className={[styles['slot'], styles['emptySlot'], ...(shown.length > 0 ? [styles['addSlot']] : [])].join(' ')}
-            onClick={() => start('')}
-            title={shown.length > 0 ? t('Add another shortcut') : t('Set a shortcut')}
-            aria-label={t('Set a shortcut for {{action}}', { action: label })}
-          >
-            {shown.length > 0 ? <FiPlus aria-hidden /> : <span className={styles['emptyCap']} />}
+        {recording === '' && recordingSlot}
+        {recording !== '' && shown.length === 0 && (
+          // Not set: an empty key cap to fill.
+          <button type="button" className={[styles['slot'], styles['emptySlot']].join(' ')} onClick={() => start('')} title={t('Set a shortcut')} aria-label={t('Set a shortcut for {{action}}', { action: label })}>
+            <span className={styles['emptyCap']} />
           </button>
         )}
+        {/* At the end of every row, set or not, so the key caps of all rows line up. */}
+        <button
+          type="button"
+          className={[styles['slot'], styles['addSlot'], ...(recording != null ? [styles['addSlotHidden']] : [])].join(' ')}
+          onClick={() => start('')}
+          tabIndex={recording != null ? -1 : undefined}
+          title={shown.length > 0 ? t('Add another shortcut') : t('Set a shortcut')}
+          aria-label={shown.length > 0 ? t('Add another shortcut for {{action}}', { action: label }) : t('Set a shortcut for {{action}}', { action: label })}
+        >
+          <FiPlus aria-hidden />
+        </button>
       </div>
       {conflict != null && (
         <div ref={conflictRef} className={styles['conflict']} role="alert">
