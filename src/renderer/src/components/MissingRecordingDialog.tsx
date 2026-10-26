@@ -43,7 +43,7 @@ export default function askToFindRecording(showGenericDialog: ShowGenericDialog,
       }, []);
 
       return (
-        <AlertDialog.Content className={styles['content']} onOpenAutoFocus={handleOpenAutoFocus}>
+        <AlertDialog.Content className={[styles['content'], AlertDialog.messageClassName].join(' ')} onOpenAutoFocus={handleOpenAutoFocus}>
           <AlertDialog.Title>{t('Can\'t find the recording')}</AlertDialog.Title>
           <AlertDialog.Description>{hasEdits ? t('It may have been moved or renamed. Find it to open it with your edits.') : t('It may have been moved or renamed. Find it to open it.')}</AlertDialog.Description>
 

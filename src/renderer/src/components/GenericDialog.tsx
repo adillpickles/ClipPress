@@ -243,7 +243,7 @@ export function useDialog() {
       }, []);
 
       return (
-        <AlertDialog.Content aria-describedby={description} style={{ width: '40vw' }} onOpenAutoFocus={handleOpenAutoFocus}>
+        <AlertDialog.Content className={AlertDialog.messageClassName} aria-describedby={description} style={{ width: '40vw' }} onOpenAutoFocus={handleOpenAutoFocus}>
           <AlertDialog.Title>{title}</AlertDialog.Title>
 
           {description && <AlertDialog.Description>{description}</AlertDialog.Description>}

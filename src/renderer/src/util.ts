@@ -432,8 +432,6 @@ export const getEnableImportChaptersOptions = (): Record<EnableImportChapters, s
   never: i18n.t('Never'),
 } as const);
 
-export const dialogButtonOrder = isWindows ? 'rtl' : 'ltr'; // use ltr for mac and linux, rtl for windows
-
 /** A burst from both bottom corners, up towards the middle. It's drawn in a worker, so it never holds up the app. */
 export function shootConfetti(options?: confetti.Options) {
   // Loaded when first needed (after an export), not at every start.

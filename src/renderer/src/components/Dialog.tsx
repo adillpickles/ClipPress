@@ -5,7 +5,6 @@ import type { ReactNode } from 'react';
 import styles from './Dialog.module.css';
 import { withClass } from './util';
 import CloseButtonRaw from './CloseButton';
-import { dialogButtonOrder } from '../util';
 
 export * from '@radix-ui/react-dialog';
 
@@ -46,11 +45,10 @@ export const CloseButton = () => (
   </Dialog.Close>
 );
 
+/** A dialog's buttons, bottom right, in their written order: the main (blue) one goes last, so it's rightmost. */
 export function ButtonRow({ children }: { children: ReactNode }) {
   return (
-    // Reversed on Windows (the main button first) by the row, not by text direction, which would turn a label such as
-    // "Find it…" into "…Find it".
-    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '.5em', justifyContent: dialogButtonOrder === 'rtl' ? 'flex-start' : 'flex-end', marginTop: '1em', flexDirection: dialogButtonOrder === 'rtl' ? 'row-reverse' : 'row' }}>
+    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '.5em', justifyContent: 'flex-end', marginTop: '1em' }}>
       {children}
     </div>
   );

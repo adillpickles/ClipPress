@@ -5,7 +5,6 @@ import withReactContent from 'sweetalert2-react-content';
 
 import i18n from './i18n';
 import { emitter as animationsEmitter } from './animations';
-import { dialogButtonOrder } from './util';
 
 export const swalContainerWrapperId = 'swal2-container-wrapper';
 
@@ -28,7 +27,8 @@ function initSwal(reducedMotion = false) {
         icon: '',
       },
     }),
-    reverseButtons: dialogButtonOrder === 'ltr',
+    // The main button rightmost, as in the app's own dialogs (Dialog.ButtonRow).
+    reverseButtons: true,
   };
 
   Swal = SwalRaw.mixin({

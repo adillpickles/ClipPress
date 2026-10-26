@@ -118,6 +118,8 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
 
 .clippress-choice-popup .swal2-title {
   margin-bottom: .45rem !important;
+  text-align: left !important;
+  padding: 0 2rem 0 0 !important;
 }
 
 .clippress-choice-close {
@@ -125,6 +127,7 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
 }
 
 .clippress-choice-popup .swal2-html-container {
+  text-align: left !important;
   margin: 0 !important;
   overflow-x: hidden !important;
 }
@@ -238,17 +241,18 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
   font-family: var(--cp-font) !important;
 }
 
+// A message's text is centred (a choice list keeps its own left-aligned layout); the buttons stay bottom right.
 .swal2-popup:not(.swal2-toast) .swal2-title {
   font-size: 1.0625rem !important;
   font-weight: 700 !important;
-  text-align: left !important;
-  padding: 0 2rem 0 0 !important;
+  text-align: center !important;
+  padding: 0 2rem !important;
   margin: 0 0 .5rem !important;
   color: var(--cp-text) !important;
 }
 
 .swal2-popup:not(.swal2-toast) .swal2-html-container {
-  text-align: left !important;
+  text-align: center !important;
   font-size: .9rem !important;
   line-height: 1.5 !important;
   margin: 0 !important;

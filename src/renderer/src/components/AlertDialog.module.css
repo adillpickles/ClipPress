@@ -81,6 +81,13 @@
 	line-height: 1.45;
 }
 
+/* A short message (a question, a notice): its text centred; the buttons stay bottom right. */
+.message .AlertDialogTitle,
+.message .AlertDialogDescription {
+	margin-right: 0;
+	text-align: center;
+}
+
 @keyframes overlayShow {
 	from {
 		opacity: 0;
