@@ -434,20 +434,13 @@ export const getEnableImportChaptersOptions = (): Record<EnableImportChapters, s
 
 export const dialogButtonOrder = isWindows ? 'rtl' : 'ltr'; // use ltr for mac and linux, rtl for windows
 
+/** A burst from both bottom corners, up towards the middle. It's drawn in a worker, so it never holds up the app. */
 export function shootConfetti(options?: confetti.Options) {
   // Loaded when first needed (after an export), not at every start.
-  import('canvas-confetti').then(({ default: confettiFn }) => confettiFn({
-    particleCount: 30,
-    angle: 110,
-    startVelocity: 30,
-    spread: 40,
-    ticks: 25,
-    disableForReducedMotion: true,
-    origin: {
-      x: 0.98,
-      // since they fall down, start a bit higher than random
-      y: 1.03,
-    },
-    ...options,
-  })).catch((err: unknown) => console.warn('Confetti failed', err));
+  import('canvas-confetti').then(({ default: confettiFn }) => {
+    const burst = { particleCount: 60, startVelocity: 55, spread: 50, ticks: 120, disableForReducedMotion: true, ...options };
+    // They start just below the window, as they fall back down.
+    confettiFn({ ...burst, angle: 60, origin: { x: 0.02, y: 1.03 } });
+    confettiFn({ ...burst, angle: 120, origin: { x: 0.98, y: 1.03 } });
+  }).catch((err: unknown) => console.warn('Confetti failed', err));
 }

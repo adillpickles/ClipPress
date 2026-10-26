@@ -839,7 +839,9 @@ function App() {
 
   const showOsNotification = useCallback(
     (text: string) => {
-      if (hideOsNotifications == null) {
+      // Only when ClipPress isn't in front: otherwise the app shows it already, and Windows can take a moment to
+      // show one, holding up the main process right when the result appears.
+      if (hideOsNotifications == null && !document.hasFocus()) {
         // on Linux app name is not shown in notification, see https://github.com/mifi/lossless-cut/issues/2794
         if (isLinux) mainApi.sendOsNotification({ title: 'ClipPress', body: text });
         else mainApi.sendOsNotification({ title: text });
@@ -3953,7 +3955,7 @@ function App() {
         );
         appendSizeLimitedResultNotices(finalizedResults, notices, warnings);
 
-        if (firstCreatedResult != null && simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
+        if (firstCreatedResult != null && simpleMode && !prefersReducedMotion) shootConfetti();
 
         const revealResult = (willMerge ? finalizedResults.at(-1) : undefined)
           ?? firstCreatedResult
@@ -4179,7 +4181,7 @@ function App() {
           }
         }
 
-        if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
+        if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti();
 
         const exportedPaths = getWrittenExportPaths({ files: outFiles, merged: mergedResult, deletedSegments: autoDeleteMergedSegments && mergedResult?.created === true });
         const revealPath = exportedPaths[0] ?? mergedOutFilePath ?? outFiles[0]?.path;
@@ -4415,7 +4417,7 @@ function App() {
 
       if (outFiles.some((file) => file.created) && areWeCutting) notices.add(i18n.t('Cutpoints may be inaccurate.'));
 
-      if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
+      if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti();
 
       // Note: this should be after cleanup, so we don't accidentally open two dialogs at the same time, leading to error *and* success dialog simultaneously https://github.com/mifi/lossless-cut/issues/2609
       const exportedPaths = getWrittenExportPaths({ files: outFiles, merged: mergedResult, deletedSegments: autoDeleteMergedSegments && mergedResult?.created === true });
