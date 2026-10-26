@@ -45,10 +45,13 @@ export const CloseButton = () => (
   </Dialog.Close>
 );
 
-/** A dialog's buttons, bottom right, in their written order: the main (blue) one goes last, so it's rightmost. */
-export function ButtonRow({ children }: { children: ReactNode }) {
+/**
+ * A dialog's buttons in their written order, the main (blue) one last: bottom right in a dialog of settings, centred
+ * under a short message's centred text (`center`).
+ */
+export function ButtonRow({ children, center = false }: { children: ReactNode, center?: boolean }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '.5em', justifyContent: 'flex-end', marginTop: '1em' }}>
+    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '.5em', justifyContent: center ? 'center' : 'flex-end', marginTop: '1em' }}>
       {children}
     </div>
   );

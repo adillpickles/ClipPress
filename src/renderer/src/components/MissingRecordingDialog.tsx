@@ -55,7 +55,7 @@ export default function askToFindRecording(showGenericDialog: ShowGenericDialog,
             </div>
           </div>
 
-          <Dialog.ButtonRow>
+          <Dialog.ButtonRow center>
             <AlertDialog.Cancel asChild>
               <DialogButton>{t('Cancel')}</DialogButton>
             </AlertDialog.Cancel>

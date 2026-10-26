@@ -133,12 +133,12 @@ export function useDialog() {
       }, []);
 
       return (
-        <AlertDialog.Content className={AlertDialog.messageClassName} aria-describedby={description} style={{ width: '40vw' }} onOpenAutoFocus={handleOpenAutoFocus}>
+        <AlertDialog.Content className={AlertDialog.messageClassName} aria-describedby={description} onOpenAutoFocus={handleOpenAutoFocus}>
           <AlertDialog.Title>{title}</AlertDialog.Title>
 
           {description && <AlertDialog.Description>{description}</AlertDialog.Description>}
 
-          <Dialog.ButtonRow>
+          <Dialog.ButtonRow center>
             <AlertDialog.Cancel asChild>
               <DialogButton>{cancelButtonText}</DialogButton>
             </AlertDialog.Cancel>

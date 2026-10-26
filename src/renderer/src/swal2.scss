@@ -126,6 +126,10 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
   color: var(--gray-10) !important;
 }
 
+.clippress-choice-popup .swal2-actions {
+  justify-content: flex-end !important;
+}
+
 .clippress-choice-popup .swal2-html-container {
   text-align: left !important;
   margin: 0 !important;
@@ -260,8 +264,9 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
   color: var(--cp-text-muted) !important;
 }
 
+// Centred under a message's centred text; a choice list keeps them bottom right (below).
 .swal2-popup:not(.swal2-toast) .swal2-actions {
-  justify-content: flex-end !important;
+  justify-content: center !important;
   width: 100% !important;
   margin: 1.25rem 0 0 !important;
   gap: .5rem;
