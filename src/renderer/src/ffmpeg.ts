@@ -5,7 +5,7 @@ import type { FRAMERATE } from 'smpte-timecode';
 import Timecode from 'smpte-timecode';
 import minBy from 'lodash/minBy';
 import invariant from 'tiny-invariant';
-import z from 'zod';
+import { z } from 'zod';
 import { AudioPeaksReader, getPeaksArgs, getPeaksBucketSeconds, getPeaksSampleRate } from './audioPeaks';
 import type { AudioPeaks } from './audioPeaks';
 import { FilmstripStreamReader } from './filmstrip';
