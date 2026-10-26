@@ -119,9 +119,10 @@
    with the clip's, so all of them are round. */
 .retimeBar[data-overlay="true"] {
   top: auto;
-  /* About half the clip's height, the frames showing through: a band to drag and double-click, not a sliver. */
+  /* About a third of the clip's height, the frames showing through, clear of the clip's number at the top left: a band
+     to drag and double-click, not a sliver. */
   bottom: 4px;
-  height: 46%;
+  height: 36%;
   min-height: 18px;
   z-index: 1;
   flex-direction: row;
