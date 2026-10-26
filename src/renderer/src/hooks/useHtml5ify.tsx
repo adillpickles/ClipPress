@@ -119,7 +119,7 @@ export default function useHtml5ify({ filePath, hasVideo, hasAudio, workingRef, 
             <Dialog.Description>
               {batch
                 ? t('ClipPress makes a preview copy of each file in the batch list. Exports always use the original recordings.')
-                : t('ClipPress can\'t play this file directly. Pick how to preview it while you edit. Exports always use the original recording.')}
+                : t('ClipPress can\'t play this file directly. Exports still use the original.')}
             </Dialog.Description>
 
             <div className={styles['options']} role="radiogroup" aria-label={t('Preview method')}>

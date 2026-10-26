@@ -3805,7 +3805,8 @@ function App() {
           );
         }
 
-        if (!exportConfirmEnabled) {
+        // Advanced mode's reminder; the simple editor's result keeps to what matters.
+        if (!exportConfirmEnabled && !simpleMode) {
           notices.add(
             i18n.t(
               'Export options are not shown. You can enable the export sheet again in Settings.',
@@ -4226,7 +4227,8 @@ function App() {
         }
 
         if (outFiles.some((file) => !file.created)) notices.add(i18n.t('Existing outputs were skipped.'));
-        if (!exportConfirmEnabled) {
+        // Advanced mode's reminder; the simple editor's result keeps to what matters.
+        if (!exportConfirmEnabled && !simpleMode) {
           notices.add(
             i18n.t(
               'Export options are not shown. You can enable the export sheet again in Settings.',
@@ -4443,7 +4445,8 @@ function App() {
 
       if (outFiles.some((file) => !file.created)) notices.add(i18n.t('Existing outputs were skipped.'));
 
-      if (!exportConfirmEnabled) {
+      // Advanced mode's reminder; the simple editor's result keeps to what matters.
+      if (!exportConfirmEnabled && !simpleMode) {
         notices.add(
           i18n.t(
             'Export options are not shown. You can enable the export sheet again in Settings.',
@@ -7409,7 +7412,8 @@ function App() {
                               {t('Rotation preview')}
                             </>
                           ) : (
-                            <>{t('FFmpeg-assisted playback')}</>
+                            // The simple editor calls it what the "Make this recording playable" choice does.
+                            simpleMode ? t('Instant preview') : t('FFmpeg-assisted playback')
                           )}
 
                           <div

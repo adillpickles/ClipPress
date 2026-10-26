@@ -721,7 +721,9 @@ function ExportConfirm({
     const reencodesVideo = isSizeLimited || hasOverlayClips || hasSegmentTransforms || isEncoding;
     if (!isSizeLimited && (hasOverlayClips || hasSegmentTransforms)) {
       generic.push({
-        text: t('Text, speed and crop changes are drawn into the picture, so the video is re-encoded instead of copied.'),
+        text: simpleMode
+          ? t('Text, speed and crop are drawn into the video, so this export takes longer.')
+          : t('Text, speed and crop changes are drawn into the picture, so the video is re-encoded instead of copied.'),
       });
     }
 

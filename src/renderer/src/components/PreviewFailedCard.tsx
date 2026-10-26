@@ -19,9 +19,8 @@ export default function PreviewFailedCard({ hint, action }: {
           <FiAlertTriangle aria-hidden className={styles['failedIcon']} />
           {t('Can\'t preview this part')}
         </div>
-        <div className={styles['failedText']}>
-          {t('FFmpeg couldn\'t decode the recording from this point.')} {hint}
-        </div>
+        {/* The title says what went wrong; this says what to do. */}
+        <div className={styles['failedText']}>{hint}</div>
         {action != null && (
           <Button variant="primary" size="sm" onClick={action.onClick} className={styles['failedButton']}>{action.label}</Button>
         )}
