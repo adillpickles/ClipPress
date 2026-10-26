@@ -288,7 +288,7 @@ import PreviewSpinner from './components/PreviewSpinner';
 import useFilmstrip from './hooks/useFilmstrip';
 import { getTimelineCacheKey } from './timelineCache';
 import { getVideoDisplayAspect } from './filmstrip';
-import { pruneTimelineCache } from './timelineCacheIo';
+import { schedulePruneTimelineCache } from './timelineCacheIo';
 import prefetchTimeline from './timelinePrefetch';
 import TooltipLayer from './components/TooltipLayer';
 import ClipsPanelTab from './components/ClipsPanelTab';
@@ -1413,11 +1413,8 @@ function App() {
   // Old backups, and the edits of recordings gone for 30 days, go to the Recycle Bin while ClipPress is idle (#91): not
   // while it opens a clip or exports, nor while a dialog waits for an answer (such as where a recording went).
   useProjectCleanup({ isBusy: () => workingRef.current || genericDialog != null, deleteProjectFile, recentFiles, customOutDir });
-  // The timeline cache on disk is kept within its limits, once a while after starting.
-  useEffect(() => {
-    const timer = setTimeout(() => pruneTimelineCache().catch((err) => console.warn('Timeline cache pruning failed', err)), 60_000);
-    return () => clearTimeout(timer);
-  }, []);
+  // The timeline cache on disk is kept within its limits: shortly after starting, and after it grows.
+  useEffect(() => schedulePruneTimelineCache(5000), []);
   // "Can't find the recording": opening edits whose recording was moved or renamed (#16).
   const relocateRecording = useRelocateRecording({ showGenericDialog, confirmDialog, customOutDir });
 

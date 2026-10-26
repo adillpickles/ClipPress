@@ -35,6 +35,53 @@ const getCacheDir = getTimelineCacheDir;
 export const getTimelineCacheFileName = (key: string, kind: 'strip' | 'peaks') => `${createHash('sha1').update(key).digest('hex')}.${kind}`;
 const getFileName = getTimelineCacheFileName;
 
+/** Deletes what's beyond the cache's limits on disk, and files left half written. */
+export async function pruneTimelineCache() {
+  const dir = getCacheDir();
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch {
+    return;
+  }
+  const now = Date.now();
+  const files: { name: string, size: number, mtimeMs: number }[] = [];
+  for (const name of names) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const { size, mtimeMs } = await stat(join(dir, name));
+      if (name.endsWith('.tmp')) {
+        // eslint-disable-next-line no-await-in-loop
+        if (now - mtimeMs > 60 * 60 * 1000) await unlink(join(dir, name));
+      } else {
+        files.push({ name, size, mtimeMs });
+      }
+    } catch {
+      // Gone meanwhile (another window), or can't be read: left alone.
+    }
+  }
+  for (const name of getCacheFilesToPrune(files, { maxBytes: maxDiskBytes, maxAgeMs: maxDiskAgeMs, now })) {
+    // eslint-disable-next-line no-await-in-loop
+    await unlink(join(dir, name)).catch(() => undefined);
+  }
+}
+
+let pruneTimer: ReturnType<typeof setTimeout> | undefined;
+let lastPruneAt = 0;
+
+/**
+ * Prunes the cache a while from now: soon after starting, and after it's written to, at most every 10 minutes, so it
+ * stays within its limits in a long session of many recordings as well as over many short ones.
+ */
+export function schedulePruneTimelineCache(delayMs: number) {
+  if (pruneTimer != null || (lastPruneAt !== 0 && Date.now() - lastPruneAt < 10 * 60 * 1000)) return;
+  pruneTimer = setTimeout(() => {
+    pruneTimer = undefined;
+    lastPruneAt = Date.now();
+    pruneTimelineCache().catch((err) => console.warn('Timeline cache pruning failed', err));
+  }, delayMs);
+}
+
 async function readEntry(name: string): Promise<Uint8Array | undefined> {
   const path = join(getCacheDir(), name);
   try {
@@ -59,6 +106,7 @@ async function writeEntry(name: string, bytes: Uint8Array) {
       await unlink(tmp).catch(() => undefined);
       throw err;
     });
+    schedulePruneTimelineCache(30_000);
   } catch (err) {
     console.warn('Could not save to the timeline cache', err);
   }
@@ -105,35 +153,4 @@ export async function loadPeaksFromDisk(key: string): Promise<AudioPeaks | undef
 export async function savePeaks(key: string, peaks: AudioPeaks) {
   peaksMemory.put(key, peaks);
   await writeEntry(getFileName(key, 'peaks'), encodePeaks(key, peaks));
-}
-
-/** Deletes what's beyond the cache's limits on disk, and files left half written. */
-export async function pruneTimelineCache() {
-  const dir = getCacheDir();
-  let names: string[];
-  try {
-    names = await readdir(dir);
-  } catch {
-    return;
-  }
-  const now = Date.now();
-  const files: { name: string, size: number, mtimeMs: number }[] = [];
-  for (const name of names) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      const { size, mtimeMs } = await stat(join(dir, name));
-      if (name.endsWith('.tmp')) {
-        // eslint-disable-next-line no-await-in-loop
-        if (now - mtimeMs > 60 * 60 * 1000) await unlink(join(dir, name));
-      } else {
-        files.push({ name, size, mtimeMs });
-      }
-    } catch {
-      // Gone meanwhile (another window), or can't be read: left alone.
-    }
-  }
-  for (const name of getCacheFilesToPrune(files, { maxBytes: maxDiskBytes, maxAgeMs: maxDiskAgeMs, now })) {
-    // eslint-disable-next-line no-await-in-loop
-    await unlink(join(dir, name)).catch(() => undefined);
-  }
 }
