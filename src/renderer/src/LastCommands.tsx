@@ -1,13 +1,15 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DateTime } from 'luxon';
 import sortBy from 'lodash/sortBy.js';
 
 import CopyClipboardButton from './components/CopyClipboardButton';
 import type { FfmpegCommandLog } from './types';
 import Button from './components/Button';
 import * as Dialog from './components/Dialog';
+
+// A command's time of day with seconds, in the system's own format.
+const timeFormat = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: 'numeric', second: 'numeric' });
 
 function LastCommands({ visible, onTogglePress, ffmpegCommandLog, setFfmpegCommandLog }: {
   visible: boolean,
@@ -33,7 +35,7 @@ function LastCommands({ visible, onTogglePress, ffmpegCommandLog, setFfmpegComma
                 // eslint-disable-next-line react/no-array-index-key
                 <div key={i} style={{ whiteSpace: 'pre', padding: '.3em 0', fontFamily: 'monospace', overflow: 'scroll' }}>
                   <CopyClipboardButton text={command} style={{ marginRight: '.5em', verticalAlign: 'middle' }} />
-                  <span style={{ opacity: 0.5, marginRight: '.5em' }}>{DateTime.fromJSDate(time).toLocaleString(DateTime.TIME_WITH_SECONDS)}</span>
+                  <span style={{ opacity: 0.5, marginRight: '.5em' }}>{timeFormat.format(time)}</span>
                   {command}
                 </div>
               ))}
