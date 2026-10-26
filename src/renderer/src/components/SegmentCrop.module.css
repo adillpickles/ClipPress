@@ -2,7 +2,6 @@
    accent. */
 .wrapper {
   --crop-accent: rgba(79, 195, 204, .95); /* brand teal, fixed: drawn over the video in both themes */
-  --crop-ink: rgba(5, 12, 20, .9);
   position: absolute;
   inset: 0;
   display: flex;
@@ -118,25 +117,25 @@
 .corner:hover::before, .corner:focus-visible::before { border-color: var(--crop-accent); }
 .corner:focus-visible { outline: none; }
 
-/* One compact control pill over the bottom of the picture. */
+/* One control pill over the bottom of the picture, on the same surface as the app's popovers (the clip volume one),
+   in either theme. */
 .toolbar {
   position: absolute;
   left: 50%;
-  bottom: 12px;
+  bottom: 14px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   max-width: calc(100% - 24px);
-  padding: 5px 5px 5px 8px;
+  padding: 6px 6px 6px 10px;
   box-sizing: border-box;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, .12);
-  background: rgba(10, 14, 22, .84);
-  backdrop-filter: blur(10px);
-  color: rgba(255, 255, 255, .92);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, .45);
-  font-size: 12px;
+  border: 1px solid var(--cp-line-strong);
+  background: var(--cp-raised);
+  color: var(--cp-text);
+  box-shadow: var(--cp-shadow-popover);
+  font-size: 13px;
   transition: opacity 120ms ease;
 }
 /* Get out of the way while the frame is being dragged. */
@@ -155,44 +154,44 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  font-size: 15px;
+  width: 30px;
+  height: 30px;
+  font-size: 16px;
   padding: 0;
   border-radius: 999px;
   background: transparent;
-  color: inherit;
+  color: var(--cp-text-muted);
 }
-.iconButton:not(:disabled):hover { background: rgba(255, 255, 255, .1); }
+.iconButton:not(:disabled):hover { background: var(--cp-hover); color: var(--cp-text); }
+.iconButton:focus-visible, .textButton:focus-visible, .doneButton:focus-visible { outline: none; box-shadow: var(--cp-focus-ring); }
 
-/* The app's slider, as in the volume popovers; drawn for the dark toolbar in both themes. */
+/* The app's slider, as in the volume popovers. */
 .slider {
-  width: 140px;
+  width: 160px;
   min-width: 60px;
   margin: 0 2px;
   accent-color: var(--cp-accent);
-  color-scheme: dark;
   cursor: pointer;
 }
 
-.zoomValue { min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
-.divider { width: 1px; height: 16px; margin: 0 2px; background: rgba(255, 255, 255, .14); }
+.zoomValue { min-width: 46px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.divider { width: 1px; height: 18px; margin: 0 2px; background: var(--cp-line-strong); }
 
 .textButton {
-  height: 26px;
-  padding: 0 10px;
+  height: 30px;
+  padding: 0 12px;
   border-radius: 999px;
   background: transparent;
-  color: rgba(255, 255, 255, .8);
+  color: var(--cp-text-muted);
 }
-.textButton:not(:disabled):hover { background: rgba(255, 255, 255, .1); color: white; }
+.textButton:not(:disabled):hover { background: var(--cp-hover); color: var(--cp-text); }
 
 .doneButton {
-  height: 26px;
-  padding: 0 14px;
+  height: 30px;
+  padding: 0 16px;
   border-radius: 999px;
-  background: var(--crop-accent);
-  color: var(--crop-ink);
+  background: var(--cp-accent);
+  color: var(--accent-contrast);
   font-weight: 700;
 }
-.doneButton:hover { background: rgba(120, 212, 255, 1); }
+.doneButton:hover { background: var(--cp-accent-hover); }
