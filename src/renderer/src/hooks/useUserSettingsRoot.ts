@@ -87,7 +87,17 @@ export default function useUserSettingsRoot() {
   const [enableAskForFileOpenAction, setEnableAskForFileOpenAction] = useState(safeGetConfigInitial('enableAskForFileOpenAction'));
   useEffect(() => safeSetConfig({ enableAskForFileOpenAction }), [enableAskForFileOpenAction]);
   const [playbackVolume, setPlaybackVolume] = useState(safeGetConfigInitial('playbackVolume'));
-  useEffect(() => safeSetConfig({ playbackVolume }), [playbackVolume]);
+  // Saved once it stops changing: a save rewrites the whole settings file in a synchronous call (~30 ms), and the
+  // volume changes many times a second while a key is held or the slider dragged.
+  const savedPlaybackVolumeRef = useRef(playbackVolume);
+  useEffect(() => {
+    if (playbackVolume === savedPlaybackVolumeRef.current) return undefined;
+    const timer = setTimeout(() => {
+      savedPlaybackVolumeRef.current = playbackVolume;
+      safeSetConfig({ playbackVolume });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [playbackVolume]);
   const [autoSaveProjectFile, setAutoSaveProjectFile] = useState(safeGetConfigInitial('autoSaveProjectFile'));
   useEffect(() => safeSetConfig({ autoSaveProjectFile }), [autoSaveProjectFile]);
   const [wheelSensitivity, setWheelSensitivity] = useState(safeGetConfigInitial('wheelSensitivity'));
