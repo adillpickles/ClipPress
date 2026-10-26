@@ -1261,14 +1261,17 @@ function App() {
   const startOver = useCallback(async () => {
     if (filePath == null || workingRef.current) return;
     const savePaths = getProjectSavePaths(filePath, projectFileLocation, customOutDir, getProjectStoreEnv());
-    // Busy (quietly) while the saved edits are copied: nothing else opens or edits meanwhile.
-    setWorking({ text: i18n.t('Starting over'), quiet: true });
+    // Busy (quietly) while the saved edits are copied: nothing else opens meanwhile. Cancel (shown if it takes a
+    // while) leaves the clips as they are.
+    const abortController = new AbortController();
+    setWorking({ text: i18n.t('Starting over'), quiet: true, abortController });
     let kept: boolean;
     try {
       kept = await keepBackupCopies([...savePaths, ...(projectSession?.loadedProjectPath != null ? [projectSession.loadedProjectPath] : [])]);
     } finally {
       setWorking(undefined);
     }
+    if (abortController.signal.aborted) return;
     // Without a copy, the edits autosave replaces could only come back by undo, and not after the recording closes.
     if (!kept) {
       errorToast(i18n.t('Could not keep a copy of your edits, so nothing was changed.'));
