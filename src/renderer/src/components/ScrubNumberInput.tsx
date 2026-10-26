@@ -61,7 +61,11 @@ export default function ScrubNumberInput({ id, value, onChange, min, max, step, 
       drag.moved = true;
       setScrubbing(true);
       // Locked, the pointer can't hit the screen's edge; without it (refused), dragging still works up to the edge.
-      e.currentTarget.requestPointerLock?.()?.catch?.(() => undefined);
+      // The lock comes a moment later: one that arrives after letting go is let go of at once.
+      const element = e.currentTarget;
+      element.requestPointerLock?.()?.then?.(() => {
+        if (dragRef.current !== drag && document.pointerLockElement === element) document.exitPointerLock();
+      }, () => undefined);
     }
     const grid = e.shiftKey ? fineStep : step;
     onChange(String(onGrid(drag.startValue + (drag.distance / pxPerStep) * fineStep, grid)));
