@@ -5,7 +5,8 @@ import { FiAlertTriangle, FiCheck, FiChevronDown, FiChevronRight, FiCopy, FiFilm
 
 import mainApi from '../mainApi';
 import { getDuration, renderShelfThumbnail } from '../ffmpeg';
-import { readFileSize } from '../util';
+import { readFileSize, showItemInFolder } from '../util';
+import { runSelfFileDrag } from '../selfFileDrag';
 import { formatClipLength } from '../util/clockTime';
 import { bytesPerMb } from '../sizeLimitedPlanner';
 import styles from './ExportResult.module.css';
@@ -82,7 +83,7 @@ function makeDragIcon(img: HTMLImageElement) {
 
 /**
  * A picture of an exported file: hovering shows it can be copied, a click copies the video file itself (to paste into
- * a chat or a folder), and it can be dragged out of the window.
+ * a chat or a folder) with a check mark for a moment, and it can be dragged out of the window.
  */
 function FileCard({ path, thumbnail, copied, onCopy, small = false }: {
   path: string,
@@ -96,7 +97,7 @@ function FileCard({ path, thumbnail, copied, onCopy, small = false }: {
   const name = getResultFileName(path);
   const onDragStart = (e: DragEvent) => {
     e.preventDefault();
-    mainApi.startFileDrag([path], dragIconRef.current).catch((err: unknown) => console.warn('Unable to drag the exported file', err));
+    runSelfFileDrag(() => mainApi.startFileDrag([path], dragIconRef.current)).catch((err: unknown) => console.warn('Unable to drag the exported file', err));
   };
   const onLoad = (e: SyntheticEvent<HTMLImageElement>) => { dragIconRef.current = makeDragIcon(e.currentTarget); };
   return (
@@ -113,8 +114,29 @@ function FileCard({ path, thumbnail, copied, onCopy, small = false }: {
     >
       {thumbnail != null ? <img src={thumbnail} alt="" draggable={false} onLoad={onLoad} /> : <FiFilm aria-hidden className={styles['placeholder']} />}
       {onCopy != null && <span className={styles['copyBadge']} aria-hidden>{copied ? <FiCheck /> : <FiCopy />}</span>}
+      {copied && !small && <span className={styles['copiedLabel']}>{t('Copied')}</span>}
     </button>
   );
+}
+
+/** The file's name: a click shows it in its folder. */
+function FileName({ path }: { path: string }) {
+  const { t } = useTranslation();
+  return (
+    <button type="button" className={styles['name']} onClick={() => showItemInFolder(path)} title={t('Show in folder')}>
+      <span>{getResultFileName(path)}</span>
+    </button>
+  );
+}
+
+/** How long a copy's outcome shows. */
+const copiedShowMs = 1600;
+const autoCopiedShowMs = 2200;
+const copyFailedShowMs = 3500;
+
+function getShowMs({ auto, ok }: { auto: boolean, ok: boolean }) {
+  if (!ok) return copyFailedShowMs;
+  return auto ? autoCopiedShowMs : copiedShowMs;
 }
 
 /**
@@ -130,7 +152,7 @@ export default function ExportResult({ files, copyFiles, warnings, highlight, de
   /** Something to see without opening Details (e.g. the original went to the Recycle Bin). */
   highlight?: ReactNode,
   details?: ReactNode,
-  /** Settings > Export's copy after exporting, already running: its outcome shows as if the picture was clicked. */
+  /** Settings > Export's copy after exporting, already running: the user asked for it, so it only shows in a few words. */
   autoCopied?: Promise<boolean> | undefined,
   /** The dialog's buttons, bottom right, with Details tucked away at the left of the same row. */
   actions: ReactNode,
@@ -138,28 +160,27 @@ export default function ExportResult({ files, copyFiles, warnings, highlight, de
   const { t } = useTranslation();
   const facts = useFileFacts(files);
   const [canCopy, setCanCopy] = useState(false);
-  // What was copied last (its files, as one key) and the short-lived message about it.
-  const [copiedKey, setCopiedKey] = useState<string>();
-  const [message, setMessage] = useState<'copied' | 'failed'>();
-  const messageTimer = useRef<ReturnType<typeof setTimeout>>();
+  // The last copy's outcome, for a moment: its files (as one key), and whether it was a click (or Ctrl+C), which
+  // shows on the pictures it took, or the copy after exporting, which only shows in a few words.
+  const [outcome, setOutcome] = useState<{ key: string, auto: boolean, ok: boolean, id: number }>();
+  const outcomeTimer = useRef<ReturnType<typeof setTimeout>>();
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   useEffect(() => {
     mainApi.canCopyFiles().then(setCanCopy, () => setCanCopy(false));
   }, []);
-  useEffect(() => () => clearTimeout(messageTimer.current), []);
+  useEffect(() => () => clearTimeout(outcomeTimer.current), []);
 
-  const showOutcome = useCallback((key: string, outcome: Promise<boolean>) => {
-    outcome.then((ok) => {
-      if (ok) setCopiedKey(key);
-      setMessage(ok ? 'copied' : 'failed');
-      clearTimeout(messageTimer.current);
-      messageTimer.current = setTimeout(() => setMessage(undefined), 1800);
+  const showOutcome = useCallback((key: string, auto: boolean, copying: Promise<boolean>) => {
+    copying.then((ok) => {
+      setOutcome({ key, auto, ok, id: Date.now() });
+      clearTimeout(outcomeTimer.current);
+      outcomeTimer.current = setTimeout(() => setOutcome(undefined), getShowMs({ auto, ok }));
     });
   }, []);
 
   const copyPaths = useCallback((paths: string[]) => {
-    showOutcome(paths.join('\n'), mainApi.copyFilesToClipboard(paths).then(() => true, (err: unknown) => {
+    showOutcome(paths.join('\n'), false, mainApi.copyFilesToClipboard(paths).then(() => true, (err: unknown) => {
       console.warn('Unable to copy the exported file', err);
       return false;
     }));
@@ -167,7 +188,7 @@ export default function ExportResult({ files, copyFiles, warnings, highlight, de
 
   const mainKey = copyFiles.join('\n');
   useEffect(() => {
-    if (autoCopied != null) showOutcome(mainKey, autoCopied);
+    if (autoCopied != null) showOutcome(mainKey, true, autoCopied);
   }, [autoCopied, mainKey, showOutcome]);
 
   // Ctrl+C in the dialog copies the video, unless some text is selected.
@@ -184,15 +205,19 @@ export default function ExportResult({ files, copyFiles, warnings, highlight, de
   }, [canCopy, copyFiles, copyPaths]);
 
   const single = files.length === 1 ? files[0] : undefined;
-  // A copy of everything (Ctrl+C, or after exporting) ticks every picture it took.
-  const isCopied = (path: string) => copiedKey != null && copiedKey.split('\n').includes(path);
+  // A click or Ctrl+C ticks every picture it took.
+  const isCopied = (path: string) => outcome != null && outcome.ok && !outcome.auto && outcome.key.split('\n').includes(path);
+  // Words only for a copy the user didn't just click: the one after exporting, or one that failed.
+  let statusText: string | undefined;
+  if (outcome != null && !outcome.ok) statusText = t('Couldn\'t copy');
+  else if (outcome?.auto) statusText = t('Copied to clipboard');
 
   return (
     <div className={styles['result']}>
       {single != null && (
         <div className={styles['single']}>
           <FileCard path={single} thumbnail={facts[single]?.thumbnail} copied={isCopied(single)} onCopy={canCopy ? () => copyPaths(copyFiles) : undefined} />
-          <div className={styles['name']} title={single}>{getResultFileName(single)}</div>
+          <FileName path={single} />
           <div className={styles['facts']}>{formatFacts(facts[single] ?? {}) || ' '}</div>
         </div>
       )}
@@ -203,18 +228,13 @@ export default function ExportResult({ files, copyFiles, warnings, highlight, de
             <li key={path} className={styles['row']}>
               <FileCard small path={path} thumbnail={facts[path]?.thumbnail} copied={isCopied(path)} onCopy={canCopy ? () => copyPaths([path]) : undefined} />
               <div className={styles['rowText']}>
-                <div className={styles['name']} title={path}>{getResultFileName(path)}</div>
+                <FileName path={path} />
                 <div className={styles['facts']}>{formatFacts(facts[path] ?? {}) || ' '}</div>
               </div>
             </li>
           ))}
         </ul>
       )}
-
-      <div className={styles['status']} aria-live="polite">
-        {message === 'copied' && <span className={styles['copiedPill']}>{t('Copied')}</span>}
-        {message === 'failed' && <span className={[styles['copiedPill'], styles['failedPill']].join(' ')}>{t('Couldn\'t copy')}</span>}
-      </div>
 
       {highlight != null && <div className={styles['highlight']}>{highlight}</div>}
 
@@ -231,6 +251,17 @@ export default function ExportResult({ files, copyFiles, warnings, highlight, de
             {t('Details')}
           </button>
         )}
+        <span className={styles['status']} aria-live="polite">
+          {statusText != null && outcome != null && (
+            <span
+              key={outcome.id}
+              className={[styles['statusText'], ...(outcome.ok ? [] : [styles['statusFailed']])].join(' ')}
+              style={{ animationDuration: `${getShowMs(outcome)}ms` }}
+            >
+              {statusText}
+            </span>
+          )}
+        </span>
         <div className={styles['actions']}>{actions}</div>
       </div>
       {details != null && detailsOpen && <div className={styles['detailsBody']}>{details}</div>}

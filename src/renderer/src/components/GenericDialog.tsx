@@ -222,14 +222,13 @@ export function useDialog() {
   }, [showGenericDialog, t]);
 
   /**
-   * After an export: the result (ExportResult), then Show in folder and Close, and when the shelf has another clip to
-   * do, Next clip as the main button. Resolves with 'next' when that was chosen.
+   * After an export: the result (ExportResult, where a file's name shows it in its folder), then Close, and when the
+   * shelf has another clip to do, Next clip as the main button. Resolves with 'next' when that was chosen.
    */
-  const openExportResultDialog = useCallback(({ title, files, copyFiles, revealPath, warnings, highlight, details, autoCopied, nextClipName }: {
+  const openExportResultDialog = useCallback(({ title, files, copyFiles, warnings, highlight, details, autoCopied, nextClipName }: {
     title: string,
     files: string[],
     copyFiles: string[],
-    revealPath: string,
     warnings: string[],
     highlight?: string | undefined,
     details?: ReactNode,
@@ -264,7 +263,6 @@ export function useDialog() {
             autoCopied={autoCopied}
             actions={(
               <>
-                {files.length > 0 && <DialogButton onClick={() => showItemInFolder(revealPath)}>{t('Show in folder')}</DialogButton>}
                 <Dialog.Close asChild>
                   <DialogButton primary={nextClipName == null} ref={nextClipName == null ? mainRef : undefined}>{t('Close')}</DialogButton>
                 </Dialog.Close>
@@ -286,8 +284,7 @@ export function useDialog() {
     });
   }), [showGenericDialog, t]);
 
-  const openCutFinishedDialog = useCallback(({ filePath, filePaths, warnings, notices, highlight, showAdvice = true, ...extras }: {
-    filePath: string,
+  const openCutFinishedDialog = useCallback(({ filePaths, warnings, notices, highlight, showAdvice = true, ...extras }: {
     /** Every file the export made. */
     filePaths: string[],
     warnings: string[],
@@ -299,7 +296,6 @@ export function useDialog() {
     title: filePaths.length === 0 ? t('Nothing was exported') : t('Exported'),
     files: filePaths,
     copyFiles: extras.mergedPath != null ? [extras.mergedPath] : filePaths,
-    revealPath: filePath,
     warnings,
     highlight,
     autoCopied: extras.autoCopied,
@@ -318,8 +314,7 @@ export function useDialog() {
     ) : undefined,
   }), [openExportResultDialog, t]);
 
-  const openSizeLimitedFinishedDialog = useCallback(({ filePath, filePaths, warnings, notices, summary, highlight, ...extras }: {
-    filePath: string,
+  const openSizeLimitedFinishedDialog = useCallback(({ filePaths, warnings, notices, summary, highlight, ...extras }: {
     /** Every file the export made. */
     filePaths: string[],
     warnings: string[],
@@ -330,7 +325,6 @@ export function useDialog() {
     title: summary.createdCount > 0 ? t('Exported') : t('Nothing was exported'),
     files: filePaths,
     copyFiles: extras.mergedPath != null ? [extras.mergedPath] : filePaths,
-    revealPath: filePath,
     warnings,
     highlight,
     autoCopied: extras.autoCopied,
@@ -354,7 +348,6 @@ export function useDialog() {
     title: created ? t('Merged') : t('Nothing was exported'),
     files: created ? [filePath] : [],
     copyFiles: created ? [filePath] : [],
-    revealPath: filePath,
     warnings,
     details: (notices.length > 0 || showAdvice) ? (
       <ul className={styles['detailsList']}>

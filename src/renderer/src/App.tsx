@@ -302,6 +302,7 @@ import useShelf, { listShelfFolder } from './hooks/useShelf';
 import { buildShelfQueue, pickNextClip, rememberShelfExport, shelfThumbnailKey } from './shelf';
 import formatSizeLimitedProgressText, { getSizeLimitedStageTitle } from './sizeLimitedProgressText';
 import { findClipEdge, getEdgeSnapDistance } from './clipEdgeSnap';
+import { isSelfFileDrag } from './selfFileDrag';
 import { findFreeFileName } from './util/clipFileNames';
 import getMergePartNames from './mergePartNames';
 import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, resolveExportQuality } from './quickExport';
@@ -4042,12 +4043,7 @@ function App() {
 
         if (firstCreatedResult != null && simpleMode && !prefersReducedMotion) shootConfetti();
 
-        const revealResult = (willMerge ? finalizedResults.at(-1) : undefined)
-          ?? firstCreatedResult
-          ?? finalizedResults[0];
-        invariant(revealResult != null);
         const exportedPaths = finalizedResults.filter((result) => result.created).map((result) => result.path);
-        const revealPath = revealResult.path;
 
         // "Do this automatically after each export" in the clean-up dialog (asked first, when it asks).
         const askedForCleanup = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport === true && cleanupChoices.askForCleanup;
@@ -4084,7 +4080,6 @@ function App() {
           mergedPath: mergedFinal?.created ? mergedFinal.path : undefined,
           closeAfter: newCleanupChoices == null && !closedForRecycling && exportedPaths.length > 0 && !cleanupChoices.cleanupAfterExport && simpleMode && cleanupChoices.closeFile,
           showResult: (extras) => openSizeLimitedFinishedDialog({
-            filePath: revealPath,
             filePaths: exportedPaths,
             warnings: [...warnings],
             notices: [...notices],
@@ -4273,8 +4268,6 @@ function App() {
         if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti();
 
         const exportedPaths = getWrittenExportPaths({ files: outFiles, merged: mergedResult, deletedSegments: autoDeleteMergedSegments && mergedResult?.created === true });
-        const revealPath = exportedPaths[0] ?? mergedOutFilePath ?? outFiles[0]?.path;
-        invariant(revealPath != null);
 
         // "Do this automatically after each export" in the clean-up dialog (asked first, when it asks).
         const askedForCleanup = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport === true && cleanupChoices.askForCleanup;
@@ -4310,7 +4303,6 @@ function App() {
           mergedPath: mergedResult?.created ? mergedResult.path : undefined,
           closeAfter: newCleanupChoices == null && !closedForRecycling && exportedPaths.length > 0 && !cleanupChoices.cleanupAfterExport && simpleMode && cleanupChoices.closeFile,
           showResult: (extras) => openCutFinishedDialog({
-            filePath: revealPath,
             filePaths: exportedPaths,
             warnings: [...warnings],
             notices: [...notices],
@@ -4513,8 +4505,6 @@ function App() {
 
       // Note: this should be after cleanup, so we don't accidentally open two dialogs at the same time, leading to error *and* success dialog simultaneously https://github.com/mifi/lossless-cut/issues/2609
       const exportedPaths = getWrittenExportPaths({ files: outFiles, merged: mergedResult, deletedSegments: autoDeleteMergedSegments && mergedResult?.created === true });
-      const revealPath = exportedPaths[0] ?? mergedOutFilePath ?? outFiles[0]?.path;
-      invariant(revealPath != null);
 
       // "Do this automatically after each export" in the clean-up dialog (asked first, when it asks).
       const askedForCleanup = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport === true && cleanupChoices.askForCleanup;
@@ -4550,7 +4540,6 @@ function App() {
         mergedPath: mergedResult?.created ? mergedResult.path : undefined,
         closeAfter: newCleanupChoices == null && !closedForRecycling && exportedPaths.length > 0 && !cleanupChoices.cleanupAfterExport && simpleMode && cleanupChoices.closeFile,
         showResult: (extras) => openCutFinishedDialog({
-          filePath: revealPath,
           filePaths: exportedPaths,
           warnings: [...warnings],
           notices: [...notices],
@@ -6995,7 +6984,7 @@ function App() {
   useEffect(() => {
     async function onDrop(ev: DragEvent) {
       ev.preventDefault();
-      if (!ev.dataTransfer) return;
+      if (!ev.dataTransfer || isSelfFileDrag()) return;
       const filePaths = [...ev.dataTransfer.files]
         .map((f) => electron.webUtils.getPathForFile(f))
         .filter(Boolean);
@@ -7020,7 +7009,7 @@ function App() {
       setFileDragActive(false);
     };
     const onDragOver = (ev: DragEvent) => {
-      if (!ev.dataTransfer?.types.includes('Files')) return;
+      if (!ev.dataTransfer?.types.includes('Files') || isSelfFileDrag()) return;
       setFileDragActive(true);
       clearTimeout(hideTimeout);
       hideTimeout = setTimeout(end, 350);

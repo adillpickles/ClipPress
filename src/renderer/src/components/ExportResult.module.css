@@ -29,6 +29,8 @@
   background: var(--cp-bg);
   border: 1px solid var(--cp-line);
   cursor: pointer;
+  /* `all: unset` above also drops what makes a draggable element draggable. */
+  -webkit-user-drag: element;
   transition: border-color .15s ease, box-shadow .15s ease;
 }
 
@@ -60,7 +62,8 @@
 }
 
 .thumb:not(:disabled):hover::after,
-.thumb:focus-visible::after {
+.thumb:focus-visible::after,
+.thumbCopied::after {
   opacity: 1;
 }
 
@@ -97,11 +100,29 @@
   transform: none;
 }
 
-/* Copied: a short pulse, and the check mark stays. */
+/* Copied, for a moment: a short pulse, the check mark, and the word under it. */
 .thumbCopied .copyBadge {
   background: var(--cp-accent);
   color: #062126;
+  translate: 0 -.7rem;
   animation: copied-pulse .45s ease-out;
+}
+
+.copiedLabel {
+  position: absolute;
+  z-index: 1;
+  translate: 0 1.5rem;
+  color: white;
+  font-size: .8125rem;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 55%);
+  pointer-events: none;
+  animation: label-in .2s ease-out;
+}
+
+@keyframes label-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .thumbCopied {
@@ -119,14 +140,36 @@
   100% { box-shadow: 0 0 0 10px transparent; }
 }
 
+/* The name: a click shows the file in its folder. */
 .name {
+  all: unset;
+  display: inline-flex;
+  box-sizing: border-box;
   max-width: 100%;
   margin-top: .65rem;
+  padding: 0 .2em;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: .9375rem;
+  cursor: pointer;
+  transition: color .12s ease;
+}
+
+.name > span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 700;
-  font-size: .9375rem;
+}
+
+.name:hover {
+  color: var(--cp-accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.name:focus-visible {
+  box-shadow: var(--cp-focus-ring);
 }
 
 .facts {
@@ -174,38 +217,8 @@
 
 .rowText .name {
   margin-top: 0;
+  margin-left: -.2em;
   font-size: .875rem;
-}
-
-/* "Copied", for a moment. */
-.status {
-  display: flex;
-  justify-content: center;
-  height: 1.5rem;
-  margin-top: .4rem;
-}
-
-.copiedPill {
-  display: inline-flex;
-  align-items: center;
-  height: 1.5rem;
-  padding: 0 .7rem;
-  border-radius: 999px;
-  background: var(--cp-accent-soft);
-  color: var(--cp-accent-text);
-  font-size: .75rem;
-  font-weight: 600;
-  animation: pill-in .18s ease-out;
-}
-
-.failedPill {
-  background: var(--cp-danger-soft);
-  color: var(--red-11);
-}
-
-@keyframes pill-in {
-  from { opacity: 0; transform: translateY(3px); }
-  to { opacity: 1; transform: none; }
 }
 
 .highlight {
@@ -245,6 +258,31 @@
   align-items: center;
   gap: .5rem;
   margin-top: 1rem;
+}
+
+/* A few quiet words for a moment: the copy after exporting, or a copy that failed. Its length comes from the code. */
+.status {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--cp-text-muted);
+  font-size: .75rem;
+}
+
+.statusText {
+  animation: status-life 2s ease forwards;
+}
+
+.statusFailed {
+  color: var(--red-11);
+}
+
+@keyframes status-life {
+  0% { opacity: 0; }
+  8% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 .actions {
@@ -288,5 +326,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .thumbCopied, .thumbCopied .copyBadge, .copiedPill { animation: none; }
+  .thumbCopied, .thumbCopied .copyBadge, .copiedLabel { animation: none; }
 }
