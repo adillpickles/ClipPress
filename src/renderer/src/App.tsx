@@ -1365,10 +1365,21 @@ function App() {
     // The full-size waveform takes the preview's place, which cropping needs; the small waveform lane can stay.
     if (waveformModePreference === 'big-waveform') setWaveformMode(undefined);
     setCurrentSegIndex(index);
-    seekAbs(segment.start);
+    // Stay where the playhead is when it's in this clip (on a text just added, say); otherwise show the clip's start.
+    const time = getRelevantTime();
+    if (!(time >= segment.start && time <= segment.end)) seekAbs(segment.start);
     setSelectedOverlayId(undefined);
     setEditingCropSegmentId(segment.segId);
-  }, [activeVideoStream, cutSegments, invertCutSegments, pause, seekAbs, setCurrentSegIndex, setWaveformMode, waveformModePreference, workingRef]);
+  }, [activeVideoStream, cutSegments, getRelevantTime, invertCutSegments, pause, seekAbs, setCurrentSegIndex, setWaveformMode, waveformModePreference, workingRef]);
+
+  // Add Text while zooming / cropping finishes that first (like Done), so the new text shows and can be edited.
+  const addTextOverlayNow = useCallback(() => {
+    if (editingCropSegmentId != null) {
+      if (cropFinishRef.current != null) cropFinishRef.current();
+      else setEditingCropSegmentId(undefined);
+    }
+    addTextOverlay();
+  }, [addTextOverlay, editingCropSegmentId]);
 
   const changeSegmentCrop = useCallback((crop: SegmentCrop) => {
     if (editingCropSegmentId == null || workingRef.current) return;
@@ -6356,7 +6367,7 @@ function App() {
       addSegment,
       duplicateCurrentSegment,
       toggleSegmentSpeedControls,
-      addTextOverlay,
+      addTextOverlay: addTextOverlayNow,
       // The same key finishes, as Done does.
       // Its shortcut closes the crop editor again, like Done (keeping a zoom that's still settling).
       editCurrentSegmentCrop: () => {
@@ -6489,7 +6500,7 @@ function App() {
     duplicateCurrentSegment,
     toggleLastCommands,
     toggleSegmentSpeedControls,
-    addTextOverlay,
+    addTextOverlayNow,
     editSegmentCrop,
     extractCurrentSegmentFramesAsImages,
     extractSelectedSegmentsFramesAsImages,
@@ -7537,7 +7548,7 @@ function App() {
                           playbackRate={playbackRate}
                           currentFrame={currentFrame}
                           playbackMode={playbackMode}
-                          onAddTextOverlay={addTextOverlay}
+                          onAddTextOverlay={addTextOverlayNow}
                           onEditSegmentCrop={editCurrentSegmentCrop}
                           canEditSegmentCrop={!invertCutSegments && currentCutSeg?.end != null}
                           onSplitClip={splitCurrentSegment}
