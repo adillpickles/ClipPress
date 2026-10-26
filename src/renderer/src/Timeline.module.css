@@ -249,3 +249,31 @@
     repeating-linear-gradient(135deg, rgb(255 255 255 / 6%) 0 1.5px, transparent 1.5px 7px),
     linear-gradient(180deg, rgb(17 17 17 / 15%), rgb(17 17 17 / 35%));
 }
+
+/* I or O locked onto a clip edge: a soft ClipPress-blue line there, fading out. */
+.edgeSnapCue {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--accent-9);
+  box-shadow: 0 0 6px 1px color-mix(in srgb, var(--accent-9) 70%, transparent);
+  pointer-events: none;
+  animation: edge-snap-cue .9s ease-out forwards;
+}
+
+@keyframes edge-snap-cue {
+  0% { opacity: 0; transform: scaleY(.6); }
+  15% { opacity: 1; transform: scaleY(1); }
+  60% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edgeSnapCue {
+    animation: none;
+  }
+}

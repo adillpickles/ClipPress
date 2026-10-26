@@ -16,6 +16,7 @@ import { createSegment, sortSegments, invertSegments, combineOverlappingSegments
 import type { FfmpegDialog } from '../ffmpegParameters';
 import { parameters as allFfmpegParameters, getHint, getLabel } from '../ffmpegParameters';
 import { maxSegmentsAllowed } from '../util/constants';
+import { getNewClipEnd, snapCutEnd, snapCutStart } from '../clipEdgeSnap';
 import type { DefiniteSegmentBase, ParseTimecode, SegmentBase, SegmentToExport, StateSegment, UpdateSegAtIndex } from '../types';
 import { segmentTagsSchema } from '../types';
 import type { UndoableSetOptions } from '../undoableHistory';
@@ -44,7 +45,7 @@ type ParameterDialogParameters = Record<string, string>;
 
 const offsetSegments = (segments: DefiniteSegmentBase[], offset: number) => segments.map((s) => ({ start: s.start + offset, end: s.end + offset }));
 
-function useSegments({ filePath, workingRef, setWorking, setProgress, videoStream, fileDuration, getRelevantTime, maxLabelLength, checkFileOpened, invertCutSegments, segmentsToChaptersOnly, timecodePlaceholder, parseTimecode, appendFfmpegCommandLog, fileDurationNonZero, mainFileMeta, seekAbs, activeVideoStreamIndex, activeAudioStreamIndexes, handleError, showGenericDialog, simpleMode, ffmpegHwaccel, editTracker }: {
+function useSegments({ filePath, workingRef, setWorking, setProgress, videoStream, fileDuration, getRelevantTime, maxLabelLength, checkFileOpened, invertCutSegments, segmentsToChaptersOnly, timecodePlaceholder, parseTimecode, appendFfmpegCommandLog, fileDurationNonZero, mainFileMeta, seekAbs, activeVideoStreamIndex, activeAudioStreamIndexes, handleError, showGenericDialog, simpleMode, ffmpegHwaccel, editTracker, getEdgeSnapDistance, onEdgeSnap }: {
   filePath?: string | undefined,
   workingRef: MutableRefObject<boolean>,
   setWorking: (w: { text: string, abortController?: AbortController } | undefined) => void,
@@ -70,6 +71,10 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
   ffmpegHwaccel: FfmpegHwAccel,
   /** Reports every segment edit to the shared undo order. */
   editTracker?: EditTracker | undefined,
+  /** How near a clip edge I and O lock onto it (seconds); undefined: they don't. */
+  getEdgeSnapDistance?: (() => number | undefined) | undefined,
+  /** I or O locked onto a clip edge, at this time. */
+  onEdgeSnap?: ((time: number) => void) | undefined,
 }) {
   const { t } = useTranslation();
 
@@ -589,9 +594,8 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     safeSetCutSegments(sortBy(cutSegments, (seg) => seg.start));
   }, [cutSegments, safeSetCutSegments]);
 
-  const addSegment = useCallback(() => {
+  const addSegmentAt = useCallback((suggestedStart: number) => {
     try {
-      const suggestedStart = getRelevantTime();
       /* if (keyframeCut) {
         const keyframeAlignedStart = getSafeCutTime(suggestedStart, true);
         if (keyframeAlignedStart != null) suggestedStart = keyframeAlignedStart;
@@ -601,7 +605,8 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
 
       const initial = isInitialSegment(cutSegments);
 
-      const suggestedEnd = simpleMode ? Math.min(suggestedStart + 10, fileDuration) : undefined;
+      // Simple mode: 10 s, unless the next clip starts sooner (a new clip doesn't run into it).
+      const suggestedEnd = simpleMode ? getNewClipEnd({ start: suggestedStart, length: 10, duration: fileDuration, clips: initial ? [] : cutSegments }) : undefined;
       const newSegment = createIndexedSegment({ segment: { start: suggestedStart, end: suggestedEnd }, incrementCount: !initial });
 
       // if initial segment, replace it instead
@@ -614,7 +619,9 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     } catch (err) {
       console.error(err);
     }
-  }, [getRelevantTime, fileDuration, cutSegments, simpleMode, createIndexedSegment, safeSetCutSegments]);
+  }, [fileDuration, cutSegments, simpleMode, createIndexedSegment, safeSetCutSegments]);
+
+  const addSegment = useCallback(() => addSegmentAt(getRelevantTime()), [addSegmentAt, getRelevantTime]);
 
   const duplicateSegment = useCallback((segment: Pick<StateSegment, 'start' | 'end'> & Partial<Pick<StateSegment, 'name' | 'speed' | 'crop' | 'audioGainDb' | 'audioMuted'>>) => {
     try {
@@ -638,15 +645,23 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     duplicateSegment(currentCutSeg);
   }, [currentCutSeg, duplicateSegment]);
 
+  // Clips that count as edges to snap to: none while the only clip is the whole recording.
+  const snapClips = useMemo(() => (isInitialSegment(cutSegments) ? [] : cutSegments), [cutSegments]);
+
   const setCutStart = useCallback(() => {
     if (!checkFileOpened()) return;
 
-    const relevantTime = getRelevantTime();
+    // Just next to a clip's end, I starts the new clip exactly there, so the two sit back to back.
+    const playheadTime = getRelevantTime();
+    const snapDistance = getEdgeSnapDistance?.();
+    const snapped = snapDistance != null ? snapCutStart({ time: playheadTime, clips: snapClips, distance: snapDistance }) : undefined;
+    const relevantTime = snapped ?? playheadTime;
+    if (snapped != null && snapped !== playheadTime) onEdgeSnap?.(snapped);
     // https://github.com/mifi/lossless-cut/issues/168
     // If current time is after the end of the current segment in the timeline, or there is no segment,
     // conveniently add a new segment that starts at playerTime
     if (currentCutSeg == null || (currentCutSeg.end != null && relevantTime >= currentCutSeg.end)) {
-      addSegment();
+      addSegmentAt(relevantTime);
     } else {
       try {
         const startTime = relevantTime;
@@ -659,13 +674,18 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
         toastError(err);
       }
     }
-  }, [checkFileOpened, getRelevantTime, currentCutSeg, addSegment, setCutTime]);
+  }, [checkFileOpened, getRelevantTime, getEdgeSnapDistance, snapClips, onEdgeSnap, currentCutSeg, addSegmentAt, setCutTime]);
 
   const setCutEnd = useCallback(() => {
     if (!checkFileOpened()) return;
 
     try {
-      const endTime = getRelevantTime();
+      // Just next to where the next clip starts, O ends this one exactly there.
+      const playheadTime = getRelevantTime();
+      const snapDistance = getEdgeSnapDistance?.();
+      const snapped = snapDistance != null ? snapCutEnd({ time: playheadTime, clips: snapClips, currentIndex: currentSegIndexSafe, distance: snapDistance }) : undefined;
+      const endTime = snapped ?? playheadTime;
+      if (snapped != null && snapped !== playheadTime) onEdgeSnap?.(snapped);
 
       /* if (keyframeCut) {
         const keyframeAlignedCutTo = getSafeCutTime(endTime, false);
@@ -675,7 +695,7 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     } catch (err) {
       toastError(err);
     }
-  }, [checkFileOpened, getRelevantTime, setCutTime]);
+  }, [checkFileOpened, getRelevantTime, getEdgeSnapDistance, snapClips, currentSegIndexSafe, onEdgeSnap, setCutTime]);
 
   const labelSegment = useCallback(async (index: number) => {
     const seg = cutSegments[index];

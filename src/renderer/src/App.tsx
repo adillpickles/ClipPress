@@ -301,6 +301,7 @@ import { ShelfUpNext } from './components/Shelf';
 import useShelf, { listShelfFolder } from './hooks/useShelf';
 import { buildShelfQueue, pickNextClip, rememberShelfExport, shelfThumbnailKey } from './shelf';
 import formatSizeLimitedProgressText, { getSizeLimitedStageTitle } from './sizeLimitedProgressText';
+import { getEdgeSnapDistance } from './clipEdgeSnap';
 import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, resolveExportQuality } from './quickExport';
 import type { QuickExport } from './quickExport';
 import { normalizeQuickExportPresets } from '../../common/quickExport';
@@ -721,6 +722,22 @@ function App() {
     () => (zoomedDuration != null ? zoomWindowStartTime + zoomedDuration : undefined),
     [zoomedDuration, zoomWindowStartTime],
   );
+
+  // The simple editor: I and O lock onto a clip edge the playhead is just next to, so clips sit back to back. The
+  // playhead goes to the edge (unless playing), and a short blue line on the timeline shows where.
+  const getEdgeSnapDistanceNow = useCallback(() => (
+    simpleMode && zoomedDuration != null ? getEdgeSnapDistance({ visibleDuration: zoomedDuration, fps: detectedFps }) : undefined
+  ), [detectedFps, simpleMode, zoomedDuration]);
+  const [edgeSnapCue, setEdgeSnapCue] = useState<{ time: number, id: number }>();
+  const onEdgeSnap = useCallback((time: number) => {
+    setEdgeSnapCue((previous) => ({ time, id: (previous?.id ?? 0) + 1 }));
+    if (!playingRef.current) seekAbs(time);
+  }, [playingRef, seekAbs]);
+  useEffect(() => {
+    if (edgeSnapCue == null) return undefined;
+    const timer = setTimeout(() => setEdgeSnapCue(undefined), 900);
+    return () => clearTimeout(timer);
+  }, [edgeSnapCue]);
 
   useEffect(
     () => setDocumentTitle({ filePath, working: working?.text, progress }),
@@ -1170,6 +1187,8 @@ function App() {
     currentCutSegOrWholeTimeline,
     segColorCounter,
   } = useSegments({
+    getEdgeSnapDistance: getEdgeSnapDistanceNow,
+    onEdgeSnap,
     filePath,
     workingRef,
     setWorking,
@@ -7294,6 +7313,7 @@ function App() {
                         />
 
                         <Timeline
+                          edgeSnapCue={edgeSnapCue}
                           shouldShowKeyframes={shouldShowKeyframes}
                           waveforms={waveforms}
                           overviewWaveform={overviewWaveform}

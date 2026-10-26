@@ -209,6 +209,7 @@ function Timeline({
   waveformHeight,
   showThumbnails,
   playing,
+  edgeSnapCue,
   isFileOpened,
   onWheel,
   commandedTimeRef,
@@ -274,6 +275,8 @@ function Timeline({
   waveformHeight: number,
   showThumbnails: boolean,
   playing: boolean,
+  /** I or O just locked onto a clip edge here: a short line shows where. */
+  edgeSnapCue?: { time: number, id: number } | undefined,
   isFileOpened: boolean,
   onWheel: WheelEventHandler,
   commandedTimeRef: MutableRefObject<number>,
@@ -1098,6 +1101,10 @@ function Timeline({
                 onClipClick={setCurrentSegIndex}
                 onClipContextMenu={onEditClipVolume}
               />
+            )}
+
+            {edgeSnapCue != null && (
+              <div key={edgeSnapCue.id} className={styles['edgeSnapCue']} style={{ left: `${toLanePercent(edgeSnapCue.time)}%` }} aria-hidden />
             )}
 
             <Playhead playing={playing} commandedTime={commandedTime} getCurrentTime={getCurrentTime} calculateTimelinePos={calculateTimelinePos} lanePx={lanePx} />
