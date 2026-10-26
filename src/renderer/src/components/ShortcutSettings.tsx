@@ -188,6 +188,9 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
   }, [keyBindings, remember, setKeyBindings]);
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // Only keys pressed in the Settings dialog itself, not in one opened over it (Every action…, with its own recorder).
+      const settingsDialog = document.getElementById(searchId)?.closest('[role="dialog"]');
+      if (settingsDialog == null || !(e.target instanceof Node) || !settingsDialog.contains(e.target)) return;
       // Not while a shortcut is being recorded (those keys are the new shortcut), nor in a text field (its own undo).
       if (document.querySelector('[data-shortcut-recording]') != null) return;
       if (e.target instanceof Element && e.target.closest('input, textarea, [contenteditable="true"]') != null) return;
@@ -205,7 +208,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [keyBindings, setKeyBindings]);
+  }, [keyBindings, searchId, setKeyBindings]);
 
   const onResetClick = async () => {
     if (!await confirmDialog({ confirmButtonText: t('Reset'), description: t('Put every shortcut back as it came?') })) return;
