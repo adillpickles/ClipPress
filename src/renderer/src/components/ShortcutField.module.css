@@ -138,8 +138,9 @@
   cursor: pointer;
 }
 
+/* Shown on hover, and while its key cap has keyboard focus, so Tab can reach it. */
 .bindingWrap:hover .remove,
-.remove:focus-visible {
+.bindingWrap:focus-within .remove {
   display: inline-flex;
 }
 

@@ -15,4 +15,4 @@ export function fixKeys(keys: string[]) {
 }
 
 /** Left and right modifier keys do the same (useKeyboard), so a binding's keys compare with both as the left one. */
-export const normalizeBindingKeys = (keys: string) => keys.split('+').map((key) => key.replace(/^(Control|Shift|Alt|Meta)Right$/, '$1Left')).sort().join('+');
+export const normalizeBindingKeys = (keys: string) => uniq(keys.split('+').map((key) => key.replace(/^(Control|Shift|Alt|Meta)Right$/, '$1Left'))).sort().join('+');
