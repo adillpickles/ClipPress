@@ -3623,6 +3623,9 @@ function App() {
     invariant(filePath != null && outputDir != null);
     emitEvent({ eventName: 'export-start', path: filePath });
     const listOutputDirNames = async () => new Set<string>(await readdir(outputDir).catch(() => []));
+    // Cancel stops the FFmpeg running then; between steps it's caught here, so the next step doesn't start.
+    const exportAbort = new AbortController();
+    const setExportWorking = (state: { text: string, detailText?: string | undefined }) => setWorking({ ...state, abortController: exportAbort });
 
     const quality = resolveExportQuality({
       isSizeLimited: isSizeLimitedExport,
@@ -3651,7 +3654,7 @@ function App() {
 
     if (workingRef.current) return;
     try {
-      setWorking({ text: i18n.t('Exporting'), detailText: withQuickExportLabel(undefined) });
+      setExportWorking({ text: i18n.t('Exporting'), detailText: withQuickExportLabel(undefined) });
       // Checked again before the original is recycled, so a file that changed meanwhile is never touched.
       const sourceIdentity = await identifyFile(filePath);
 
@@ -3714,7 +3717,7 @@ function App() {
           ) return;
           currentWorkingText = text;
           currentWorkingDetailText = detailText;
-          setWorking({ text, detailText: withQuickExportLabel(detailText) });
+          setExportWorking({ text, detailText: withQuickExportLabel(detailText) });
         };
         // A job's last tick (done) comes without its stage: keep the stage it was at.
         let lastStage: { jobIndex: number, metadata: SizeLimitedProgressMetadata } | undefined;
@@ -3764,6 +3767,7 @@ function App() {
             index,
             segment,
           ] of sizeLimitedSegmentsForExport.entries()) {
+            exportAbort.signal.throwIfAborted();
             const outPath = cutOutPaths[index];
             invariant(outPath != null);
             updateWorkingState({
@@ -3811,6 +3815,7 @@ function App() {
 
         let mergedOutFilePath: string | undefined;
         if (willMerge) {
+          exportAbort.signal.throwIfAborted();
           const mergedJobIndex = shouldProduceSeparateOutputs
             ? sizeLimitedSegmentsForExport.length
             : 0;
@@ -4020,7 +4025,8 @@ function App() {
           addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
         }
 
-        setWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined) });
+        exportAbort.signal.throwIfAborted();
+        setExportWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined) });
         const outFiles = await cutMultipleWithTextOverlays({
           outputDir,
           segments: segmentsToExport,
@@ -4050,8 +4056,9 @@ function App() {
         let mergedResult: ExportedFile | undefined;
 
         if (willMerge) {
+          exportAbort.signal.throwIfAborted();
           setProgress(0);
-          setWorking({ text: i18n.t('Joining your clips'), detailText: withQuickExportLabel(undefined) });
+          setExportWorking({ text: i18n.t('Joining your clips'), detailText: withQuickExportLabel(undefined) });
 
           const chapterNames = segmentsToChapters && !invertCutSegments
             ? segmentsToExport.map((segment) => segment.name)
@@ -4099,7 +4106,7 @@ function App() {
         if (exportExtraStreams) {
           try {
             setProgress(undefined);
-            setWorking({
+            setExportWorking({
               text: i18n.t('Extracting {{count}} unprocessable tracks', {
                 count: nonCopiedExtraStreams.length,
               }),
@@ -4214,7 +4221,8 @@ function App() {
       }
 
       // throw (() => { const err = new Error('test'); err.code = 'ENOENT'; return err; })();
-      setWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined) });
+      exportAbort.signal.throwIfAborted();
+      setExportWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined) });
       const outFiles = await cutMultiple({
         outputDir,
         customOutDir,
@@ -4251,8 +4259,9 @@ function App() {
           cutMergedFileTemplateOrDefault,
         );
 
+        exportAbort.signal.throwIfAborted();
         setProgress(0);
-        setWorking({ text: i18n.t('Joining your clips'), detailText: withQuickExportLabel(undefined) });
+        setExportWorking({ text: i18n.t('Joining your clips'), detailText: withQuickExportLabel(undefined) });
 
         const chapterNames = segmentsToChapters && !invertCutSegments
           ? segmentsToExport.map((s) => s.name)
@@ -4326,7 +4335,7 @@ function App() {
       if (exportExtraStreams) {
         try {
           setProgress(undefined); // If extracting extra streams takes a long time, prevent loader from being stuck at 100%
-          setWorking({
+          setExportWorking({
             text: i18n.t('Extracting {{count}} unprocessable tracks', {
               count: nonCopiedExtraStreams.length,
             }),
