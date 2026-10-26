@@ -6196,9 +6196,10 @@ function App() {
       seekForwardsKeyframe: () => seekClosestKeyframe(1),
       seekPreviousFrame: () => shortStep(-1),
       seekNextFrame: () => shortStep(1),
-      jumpPrevSegment: () => jumpSeg({ rel: -1 }),
+      // The simple editor's ↑ / ↓ also show the clip they select, so I and O then act on the clip in view.
+      jumpPrevSegment: () => jumpSeg({ rel: -1, ...(simpleMode && { seek: true as const }) }),
       jumpSeekPrevSegment: () => jumpSeg({ rel: -1, seek: true }),
-      jumpNextSegment: () => jumpSeg({ rel: 1 }),
+      jumpNextSegment: () => jumpSeg({ rel: 1, ...(simpleMode && { seek: true as const }) }),
       jumpSeekNextSegment: () => jumpSeg({ rel: 1, seek: true }),
       jumpFirstSegment: () => jumpSeg({ abs: 0 }),
       jumpSeekFirstSegment: () => jumpSeg({ abs: 0, seek: true }),
