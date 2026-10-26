@@ -326,12 +326,6 @@
   box-shadow: var(--cp-focus-ring);
 }
 
-.disclosureHint {
-  color: var(--cp-text-subtle);
-  font-size: .75rem;
-  font-weight: 400;
-}
-
 /* Advanced mode summary */
 
 .selectionPill {

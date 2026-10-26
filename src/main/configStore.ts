@@ -163,7 +163,6 @@ const defaults: Config = {
   enableAutoHtml5ify: true,
   keyBindings: defaultKeyBindings,
   customFfPath: undefined,
-  storeProjectInWorkingDir: true,
   projectFileLocation: 'app',
   enableOverwriteOutput: true,
   mouseWheelZoomModifierKey: 'ctrl',

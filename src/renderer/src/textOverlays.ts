@@ -119,10 +119,6 @@ export function isOverlayActiveAtTime(overlayClip: OverlayClip, time: number) {
   return time >= overlayClip.start && time <= overlayClip.end;
 }
 
-export function doOverlayAndSegmentOverlap(overlayClip: OverlayClip, segment: { start: number, end: number }) {
-  return overlayClip.start < segment.end && overlayClip.end > segment.start;
-}
-
 export interface TextLaneRow {
   /** 0 is the top row. */
   row: number,

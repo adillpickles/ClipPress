@@ -8,7 +8,6 @@ export const primaryTextColor = 'var(--accent-11)';
 /** Text and icons on a solid `primaryColor` background. */
 export const primaryContrastColor = 'var(--accent-contrast)';
 export const controlsBackground = 'var(--gray-2)';
-export const timelineBackground = 'var(--gray-3)';
 export const darkModeTransition = 'background-color .25s ease, border-color .25s ease, color .25s ease, box-shadow .25s ease';
 
 /**

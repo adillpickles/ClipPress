@@ -148,7 +148,6 @@ export interface Config {
   enableAutoHtml5ify: boolean,
   keyBindings: KeyBinding[],
   customFfPath: string | undefined,
-  storeProjectInWorkingDir: boolean,
   projectFileLocation: ProjectFileLocation,
   enableOverwriteOutput: boolean,
   mouseWheelZoomModifierKey: ModifierKey,
