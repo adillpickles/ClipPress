@@ -7,9 +7,10 @@
   pointer-events: auto;
 }
 
+/* As wide as its items: one with a shortcut adds room for the keys. */
 .menu {
   position: fixed;
-  min-width: 13rem;
+  min-width: 9rem;
   max-width: 22rem;
   max-height: calc(100vh - 12px);
   overflow-y: auto;
@@ -22,7 +23,8 @@
   color: var(--cp-text);
   font-size: .8125rem;
   outline: none;
-  animation: menu-in .12s ease;
+  animation: menu-in .14s cubic-bezier(.2, .8, .2, 1);
+  transform-origin: top center;
 }
 
 .item {
@@ -101,7 +103,7 @@
 }
 
 @keyframes menu-in {
-  from { opacity: 0; transform: translateY(-3px); }
+  from { opacity: 0; transform: translateY(-4px) scale(.98); }
   to { opacity: 1; transform: none; }
 }
 
