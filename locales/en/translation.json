@@ -863,7 +863,7 @@
   "Note that depending on input parameters, up to {{estimatedMaxNumFiles}} files may be produced!": "Note that depending on input parameters, up to {{estimatedMaxNumFiles}} files may be produced!",
   "Note that this only applies when extracting multiple frames. When \"Frame number\" is selected, frame numbers are relative to the start of the segment (starting from 1).": "Note that this only applies when extracting multiple frames. When \"Frame number\" is selected, frame numbers are relative to the start of the segment (starting from 1).",
   "Note: Keyframe cut is recommended for most common files": "Note: Keyframe cut is recommended for most common files",
-  "Nothing is left to export: the clips remove all of it.": "Nothing is left to export: the clips remove all of it.",
+  "Nothing is left to export: the clips cover all of it, or overlap.": "Nothing is left to export: the clips cover all of it, or overlap.",
   "Nothing was exported": "Nothing was exported",
   "OK": "OK",
   "Oldest first. Click again for newest first.": "Oldest first. Click again for newest first.",

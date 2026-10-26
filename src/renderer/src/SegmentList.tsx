@@ -688,8 +688,8 @@ function SegmentList({
 
   function getHeader() {
     if (segmentsOrInverse.length === 0) {
-      // "Clips are: Removed" with nothing left between them.
-      if (invertCutSegments && simpleMode) return t('Nothing is left to export: the clips remove all of it.');
+      // "Clips are: Removed" with nothing to export: they cover everything, or they overlap (which this mode can't cut).
+      if (invertCutSegments && simpleMode) return t('Nothing is left to export: the clips cover all of it, or overlap.');
       if (invertCutSegments) {
         return (
           <Trans>You have enabled the &quot;invert segments&quot; mode <FaYinYang style={{ verticalAlign: 'middle' }} /> which will cut away selected segments instead of keeping them. But there is no space between any segments, or at least two segments are overlapping. This would not produce any output. Either make room between segments or click the Yinyang <FaYinYang style={{ verticalAlign: 'middle' }} /> symbol below to disable this mode. Alternatively you may combine overlapping segments from the menu.</Trans>
