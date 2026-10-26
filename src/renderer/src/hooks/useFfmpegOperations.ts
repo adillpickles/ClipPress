@@ -1070,7 +1070,14 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       }
 
       const cutEncodeWholePart = async () => {
-        await cutEncodeSmartPartWrapper({ cutFrom: desiredCutFrom, cutTo, outPath: finalOutPath });
+        // Through a temporary file like every export, so a cancelled or failed one leaves nothing half written.
+        const partialPath = getPartialPath(finalOutPath);
+        try {
+          await cutEncodeSmartPartWrapper({ cutFrom: desiredCutFrom, cutTo, outPath: partialPath });
+          await moveExportWithRetry(partialPath, finalOutPath, enableOverwriteOutput);
+        } finally {
+          await removePartial(partialPath);
+        }
         onSingleProgress(i, 1);
         return { path: finalOutPath, created: true };
       };
@@ -1161,7 +1168,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     } finally {
       if (chaptersPath) await tryDeleteFiles([chaptersPath]);
     }
-  }, [shouldSkipExistingFile, assertOutPathIsNotSource, isEncoding, filePath, lossyMode, losslessCutSingle, cutEncodeSmartPart, encCustomBitrate, concatFiles]);
+  }, [shouldSkipExistingFile, assertOutPathIsNotSource, isEncoding, filePath, lossyMode, losslessCutSingle, cutEncodeSmartPart, encCustomBitrate, concatFiles, enableOverwriteOutput]);
 
   const concatCutSegments = useCallback(async ({ customOutDir, outFormat, segmentPaths, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapterNames, preserveMetadataOnMerge, mergedOutFilePath, signal }: {
     customOutDir: string | undefined,
