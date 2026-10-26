@@ -21,6 +21,13 @@ See also https://github.com/mifi/lossless-cut/issues/2515
 
 interface KeyEventParams { e: KeyboardEvent, action: KeyboardAction | undefined }
 
+/** A button or tick box in the app itself (not in a dialog or a menu, whose keys are theirs). */
+function isPlainControl(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  const isControl = target instanceof HTMLButtonElement || target.getAttribute('role') === 'button' || (target instanceof HTMLInputElement && (target.type === 'checkbox' || target.type === 'radio'));
+  return isControl && target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [data-export-sheet], .swal2-container') == null;
+}
+
 export default ({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfirm, exportConfirmOpen }: {
   keyBindings: KeyBinding[],
   keyUpActions: Record<string, () => void>,
@@ -70,7 +77,9 @@ export default ({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfi
     // From now on, only handle key events when focus is on document body
     // because we don't allow focus to anything else
     // except for inputs, buttons, dialogs etc, which we want allowed to handle keys normally.
-    if (e.target !== document.body) {
+    // A button or tick box the user just clicked keeps the focus, though: shortcuts with Ctrl, Alt or Win (Ctrl+Z…)
+    // and Delete mean nothing to it, so they still work; Space, Enter and the arrows stay its own.
+    if (e.target !== document.body && !(isPlainControl(e.target) && (e.ctrlKey || e.metaKey || e.altKey || e.code === 'Delete'))) {
       return;
     }
     // Alternatively, this is how mousetrap does it:
