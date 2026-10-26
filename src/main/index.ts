@@ -32,6 +32,7 @@ import { isSafeKey } from './objectKeys.js';
 import { isAllowedAppNavigation, isExternallyOpenableUrl } from './navigation.js';
 import * as ffmpeg from './ffmpeg.js';
 import * as compatPlayer from './compatPlayer.js';
+import { canCopyFiles, copyFilesToClipboard, startFileDrag } from './fileClipboard.js';
 import { downloadMediaUrl } from './ffmpeg.js';
 import type UpdateController from './updateController.js';
 import type { UpdateStatus } from '../common/updates.js';
@@ -746,6 +747,11 @@ const remoteApi = {
   quitApp,
   setProgressBar,
   sendOsNotification,
+  canCopyFiles: () => canCopyFiles,
+  copyFilesToClipboard,
+  startFileDrag: async (paths: string[], iconDataUrl?: string) => {
+    if (mainWindow != null) await startFileDrag(mainWindow.webContents, paths, iconDataUrl);
+  },
   getUpdateStatus,
   checkForUpdates,
   downloadUpdate,

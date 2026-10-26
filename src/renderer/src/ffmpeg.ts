@@ -462,7 +462,7 @@ async function renderThumbnail(filePath: string, timestamp: number, signal: Abor
  * thread skips setting up a pool per process when several run at once. Hardware decoding was slower here (its
  * set-up costs more than decoding one frame).
  */
-export async function renderShelfThumbnail(filePath: string, signal: AbortSignal) {
+export async function renderShelfThumbnail(filePath: string, signal: AbortSignal, height = 72) {
   const attempt = (seekArgs: string[]) => async () => {
     const { stdout } = await runFfmpeg([
       '-hide_banner',
@@ -472,8 +472,8 @@ export async function renderShelfThumbnail(filePath: string, signal: AbortSignal
       '-map', '0:v:0',
       '-an', '-sn', '-dn',
       '-frames:v', '1',
-      // Twice the shelf's 36 px, for sharp thumbnails on a 2x display.
-      '-vf', 'scale=-2:72',
+      // By default twice the shelf's 36 px, for sharp thumbnails on a 2x display.
+      '-vf', `scale=-2:${height}`,
       '-q:v', '6',
       '-f', 'image2',
       '-c:v', 'mjpeg',

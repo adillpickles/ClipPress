@@ -302,6 +302,7 @@ import useShelf, { listShelfFolder } from './hooks/useShelf';
 import { buildShelfQueue, pickNextClip, rememberShelfExport, shelfThumbnailKey } from './shelf';
 import formatSizeLimitedProgressText, { getSizeLimitedStageTitle } from './sizeLimitedProgressText';
 import { findClipEdge, getEdgeSnapDistance } from './clipEdgeSnap';
+import { findFreeFileName } from './util/clipFileNames';
 import getMergePartNames from './mergePartNames';
 import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, resolveExportQuality } from './quickExport';
 import type { QuickExport } from './quickExport';
@@ -518,6 +519,8 @@ function App() {
     exportConfirmEnabled,
     trashSourceAfterExport,
     trashProjectWithSource,
+    copyAfterExport,
+    playOnOpen,
     segmentsToChapters,
     simpleMode,
     cutFileTemplate,
@@ -720,6 +723,11 @@ function App() {
     }, 400);
     videoLoadedRef.current.waiters.push(waiter);
   }), []);
+  // Settings > Editing > Start playing when a clip opens: the file it last started, so a reload doesn't start it again.
+  const autoPlayedPathRef = useRef<string>();
+  useEffect(() => {
+    if (filePath == null) autoPlayedPathRef.current = undefined;
+  }, [filePath]);
   const onVideoLoaded = useCallback((path: string | undefined) => {
     const loaded = videoLoadedRef.current;
     loaded.path = path;
@@ -2652,10 +2660,13 @@ function App() {
         maxLabelLength,
         outputFileNameMinZeroPadding,
         fallbackTemplate,
+        // The simple editor without a file name of the user's own: a named clip's file is its name.
+        nameAfterClips: simpleMode && cutFileTemplate == null && template === defaultCutFileTemplate,
       });
     },
     [
       currentFileExportCount,
+      cutFileTemplate,
       exportCount,
       exportNamingSourcePath,
       fileDuration,
@@ -2669,6 +2680,7 @@ function App() {
       outputFileNameMinZeroPadding,
       safeOutputFileName,
       segmentsToExport,
+      simpleMode,
     ],
   );
 
@@ -2894,8 +2906,8 @@ function App() {
             filePath: outPath,
             notices: [...notices],
             warnings: [...warnings],
-            sourceCount: paths.length,
             created,
+            showAdvice: !simpleMode,
           });
         }
       } catch (err) {
@@ -2940,6 +2952,7 @@ function App() {
       }
     },
     [
+      simpleMode,
       workingRef,
       ensureWritableOutDir,
       customOutDir,
@@ -3030,6 +3043,39 @@ function App() {
     clearSegments();
   }, [batchListRemoveFile, clearSegments, filePath, resetState]);
 
+  // Set once openShelfClip exists (further down), for the result's Next clip.
+  const openShelfClipRef = useRef<(path: string) => void>();
+
+  /**
+   * The end of every export: copies the video (Settings > Export > Copy the video after exporting), shows the result,
+   * and closes the recording when "After exporting" says so. With another clip to do on the shelf, the result offers it
+   * and the recording only closes once the result is dismissed, so the next clip is one click away.
+   */
+  const finishExport = useCallback(({ exportedPaths, mergedPath, closeAfter, showResult }: {
+    exportedPaths: string[],
+    mergedPath?: string | undefined,
+    closeAfter: boolean,
+    showResult: (extras: { autoCopied?: Promise<boolean> | undefined, nextClipName?: string | undefined, mergedPath?: string | undefined }) => Promise<'next' | undefined>,
+  }) => {
+    const copyPaths = mergedPath != null ? [mergedPath] : exportedPaths;
+    const autoCopied = copyAfterExport && isWindows && copyPaths.length > 0
+      ? mainApi.copyFilesToClipboard(copyPaths).then(() => true, (err: unknown) => {
+        console.warn('Unable to copy the exported video', err);
+        return false;
+      })
+      : undefined;
+    const next = simpleMode && exportedPaths.length > 0 ? nextClip : undefined;
+    const result = hideAllNotifications ? undefined : showResult({ autoCopied, nextClipName: next?.name, mergedPath });
+    if (result == null || next == null) {
+      if (closeAfter) closeCurrentFileAfterExport();
+      return;
+    }
+    result.then((choice) => {
+      if (choice === 'next') openShelfClipRef.current?.(next.path);
+      else if (closeAfter) closeCurrentFileAfterExport();
+    });
+  }, [closeCurrentFileAfterExport, copyAfterExport, hideAllNotifications, nextClip, simpleMode]);
+
   /**
    * Settings > Export > "Move the original to the Recycle Bin after export". Only after every planned file was
    * written and checked, only through the Recycle Bin, and never if the original changed during the export.
@@ -3090,8 +3136,8 @@ function App() {
       // Settings > Projects > "Recycle edits with the original": every copy of them, so none brings them back (#91).
       const editsRecycled = shouldRecycleEditsWithOriginal(trashProjectWithSource, cleanupAfter) && (await recycleRecordingProjectCopies(sourcePath, customOutDir, deleteProjectFile)) > 0;
       highlights.add(editsRecycled
-        ? i18n.t('The original recording and its edits were moved to the Recycle Bin. You can restore them from there.')
-        : i18n.t('The original recording was moved to the Recycle Bin. You can restore it from there.'));
+        ? i18n.t('The original recording and its edits were moved to the Recycle Bin.')
+        : i18n.t('The original recording was moved to the Recycle Bin.'));
     } else if (result.reason === 'changed') {
       warnings.add(i18n.t('The original recording was kept, because it changed during the export.'));
     } else if (result.reason === 'refused') {
@@ -3296,6 +3342,7 @@ function App() {
           segment,
           index,
         ),
+        clipName: simpleMode ? segment.name : undefined,
       })),
     );
 
@@ -3304,6 +3351,7 @@ function App() {
       problems: getSizeLimitedAutoNameProblems(fileNames),
     } satisfies GeneratedOutFileNames;
   }, [
+    simpleMode,
     buildSizeLimitedAutoFileNames,
     getSizeLimitedAutoNameProblems,
     getSizeLimitedSeparateSuffixLabelForSegment,
@@ -3356,6 +3404,7 @@ function App() {
         currentPath: string;
         sizeLabel: number;
         suffixLabel: string;
+        clipName?: string | undefined;
       }
 
       const candidates: RenameCandidate[] = [];
@@ -3372,6 +3421,8 @@ function App() {
                 segment,
                 index,
               ),
+              // The simple editor names a clip's file after it ("Adil.mp4").
+              clipName: simpleMode ? segment.name : undefined,
             });
           }
         }
@@ -3402,6 +3453,7 @@ function App() {
             item: {
               sizeLabel: candidate.sizeLabel,
               suffixLabel: candidate.suffixLabel,
+              clipName: candidate.clipName,
             },
             isReserved: (fileName) => reservedFileNames.has(fileName),
           });
@@ -3426,6 +3478,7 @@ function App() {
               item: {
                 sizeLabel: candidate.sizeLabel,
                 suffixLabel: candidate.suffixLabel,
+                clipName: candidate.clipName,
               },
               isReserved: (fileName) => reservedFileNames.has(fileName),
             });
@@ -3472,6 +3525,7 @@ function App() {
       return { results: updatedResults, warnings: [...renameWarnings] };
     },
     [
+      simpleMode,
       customOutDir,
       enableOverwriteOutput,
       exportProtectedPaths,
@@ -3672,6 +3726,20 @@ function App() {
         if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return false;
         throw err;
       }
+    };
+    // A file named after its clip (the simple editor) never replaces one already in the folder: it gets a number.
+    const keepClipNamesFree = async (fileNames: string[]) => {
+      if (!simpleMode || cutFileTemplate != null) return fileNames;
+      const assigned = new Set<string>();
+      const free: string[] = [];
+      for (const [index, fileName] of fileNames.entries()) {
+        const named = (segmentsToExport[index]?.name ?? '') !== '';
+        // eslint-disable-next-line no-await-in-loop
+        const name = named ? await findFreeFileName(fileName, async (candidate) => assigned.has(candidate.toLowerCase()) || isOutputNameTaken(candidate)) : fileName;
+        assigned.add(name.toLowerCase());
+        free.push(name);
+      }
+      return free;
     };
     // The clip files a merged-only export has written, deleted again if it fails or is cancelled before the merge.
     const mergePartsWritten: string[] = [];
@@ -3992,21 +4060,24 @@ function App() {
             console.warn('Export completed but cleanup failed', error);
             warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
           });
-        } else if (!closedForRecycling && exportedPaths.length > 0 && !cleanupChoices.cleanupAfterExport && simpleMode && cleanupChoices.closeFile) {
-          closeCurrentFileAfterExport();
         }
 
-        if (!hideAllNotifications) {
-          showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
-          openSizeLimitedFinishedDialog({
+        if (!hideAllNotifications) showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
+        const mergedFinal = willMerge ? finalizedResults.at(-1) : undefined;
+        finishExport({
+          exportedPaths,
+          mergedPath: mergedFinal?.created ? mergedFinal.path : undefined,
+          closeAfter: newCleanupChoices == null && !closedForRecycling && exportedPaths.length > 0 && !cleanupChoices.cleanupAfterExport && simpleMode && cleanupChoices.closeFile,
+          showResult: (extras) => openSizeLimitedFinishedDialog({
             filePath: revealPath,
             filePaths: exportedPaths,
             warnings: [...warnings],
             notices: [...notices],
             highlight: [...highlights][0],
             summary: resultSummary,
-          });
-        }
+            ...extras,
+          }),
+        });
 
         setExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
         setCurrentFileExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
@@ -4071,7 +4142,7 @@ function App() {
           const generated = await generateCutFileNames(
             cutFileTemplateOrDefault,
           );
-          cutFileNames = generated.fileNames;
+          cutFileNames = await keepClipNamesFree(generated.fileNames);
           if (generated.problems.error != null) {
             warnings.add(generated.problems.error);
             warnings.add(t('Fell back to default output file name'));
@@ -4215,21 +4286,23 @@ function App() {
             console.warn('Export completed but cleanup failed', error);
             warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
           });
-        } else if (!closedForRecycling && exportedPaths.length > 0 && !cleanupChoices.cleanupAfterExport && simpleMode && cleanupChoices.closeFile) {
-          closeCurrentFileAfterExport();
         }
 
-        if (!hideAllNotifications) {
-          showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
-          openCutFinishedDialog({
+        if (!hideAllNotifications) showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
+        finishExport({
+          exportedPaths,
+          mergedPath: mergedResult?.created ? mergedResult.path : undefined,
+          closeAfter: newCleanupChoices == null && !closedForRecycling && exportedPaths.length > 0 && !cleanupChoices.cleanupAfterExport && simpleMode && cleanupChoices.closeFile,
+          showResult: (extras) => openCutFinishedDialog({
             filePath: revealPath,
             filePaths: exportedPaths,
             warnings: [...warnings],
             notices: [...notices],
             highlight: [...highlights][0],
-            fileCount: exportedPaths.length,
-          });
-        }
+            showAdvice: !simpleMode,
+            ...extras,
+          }),
+        });
 
         setExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
         setCurrentFileExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
@@ -4267,7 +4340,7 @@ function App() {
         addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
       } else {
         const generated = await generateCutFileNames(cutFileTemplateOrDefault);
-        cutFileNames = generated.fileNames;
+        cutFileNames = await keepClipNamesFree(generated.fileNames);
         if (generated.problems.error != null) {
           console.warn(
             'Output segments file name invalid, using default instead',
@@ -4452,21 +4525,23 @@ function App() {
           console.warn('Export completed but cleanup failed', error);
           warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
         });
-      } else if (!closedForRecycling && exportedPaths.length > 0 && !cleanupChoices.cleanupAfterExport && simpleMode && cleanupChoices.closeFile) {
-        closeCurrentFileAfterExport();
       }
 
-      if (!hideAllNotifications) {
-        showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
-        openCutFinishedDialog({
+      if (!hideAllNotifications) showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
+      finishExport({
+        exportedPaths,
+        mergedPath: mergedResult?.created ? mergedResult.path : undefined,
+        closeAfter: newCleanupChoices == null && !closedForRecycling && exportedPaths.length > 0 && !cleanupChoices.cleanupAfterExport && simpleMode && cleanupChoices.closeFile,
+        showResult: (extras) => openCutFinishedDialog({
           filePath: revealPath,
           filePaths: exportedPaths,
           warnings: [...warnings],
           notices: [...notices],
           highlight: [...highlights][0],
-          fileCount: exportedPaths.length,
-        });
-      }
+          showAdvice: !simpleMode,
+          ...extras,
+        }),
+      });
 
       setExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
       setCurrentFileExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
@@ -4513,6 +4588,8 @@ function App() {
       setProgress(undefined);
     }
   }, [
+    cutFileTemplate,
+    finishExport,
     activeVideoStream,
     recycleOriginalAfterExport,
     trashSourceAfterExport,
@@ -4528,7 +4605,6 @@ function App() {
     buildSizeLimitedResultSummary,
     cleanupChoices,
     cleanupFiles,
-    closeCurrentFileAfterExport,
     concatCutSegments,
     copyFileStreams,
     customOutDir,
@@ -5457,6 +5533,9 @@ function App() {
     }
     await batchOpenSingleFile(path);
   }, [batchOpenSingleFile, refreshShelf, showNotification]);
+  useEffect(() => {
+    openShelfClipRef.current = (path) => { openShelfClip(path); };
+  }, [openShelfClip]);
   const openNextClip = useCallback(() => {
     if (nextClip != null) openShelfClip(nextClip.path);
   }, [nextClip, openShelfClip]);
@@ -7249,6 +7328,10 @@ function App() {
                               onLoadedData={() => {
                                 setVideoBusy(false);
                                 onVideoLoaded(filePath);
+                                if (playOnOpen && filePath != null && autoPlayedPathRef.current !== filePath) {
+                                  autoPlayedPathRef.current = filePath;
+                                  play();
+                                }
                                 // For measuring how fast a file opens (read by tests; costs nothing).
                                 performance.mark('clippress:video-loaded');
                               }}

@@ -63,3 +63,25 @@
   align-items: center;
   gap: .35rem;
 }
+
+/* After an export (ExportResult): one file, or several in rows. */
+.exportResult {
+  width: min(29rem, 92vw);
+}
+
+.exportResultWide {
+  width: min(32rem, 92vw);
+}
+
+.centredTitle {
+  margin-left: 2.5rem;
+  text-align: center;
+}
+
+.detailsList {
+  margin: 0;
+  padding-left: 1.1em;
+  display: flex;
+  flex-direction: column;
+  gap: .25em;
+}

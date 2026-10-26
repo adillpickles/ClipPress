@@ -1,4 +1,5 @@
 import type { SizeLimitControlMode, SizeLimitPreset } from '../../common/types.js';
+import { numberFileName } from './util/clipFileNames';
 
 const bytesPerMb = 1024 * 1024;
 const maxAutoFileNameLength = 250;
@@ -11,6 +12,8 @@ export type SizeLimitedAutoSizeLabel = number | typeof sizeLimitedFinalSizePlace
 export interface SizeLimitedAutoNameItem {
   sizeLabel: SizeLimitedAutoSizeLabel,
   suffixLabel?: string | undefined,
+  /** A named clip in the simple editor: its file is just that name ("Adil.mp4", then "Adil (2).mp4"). */
+  clipName?: string | undefined,
 }
 
 function sanitizeAutoNamePart(value: string, safeOutputFileName: boolean) {
@@ -67,6 +70,11 @@ function buildAutoName({
   disambiguator?: number | undefined,
 }) {
   const ext = '.mp4';
+  const clipName = sanitizeAutoNamePart(item.clipName ?? '', safeOutputFileName);
+  if (clipName.length > 0) {
+    const stem = safeOutputFileName ? clipName.slice(0, maxAutoFileNameLength - ext.length - 5).trimEnd() : clipName;
+    return numberFileName(`${stem}${ext}`, disambiguator ?? 1);
+  }
   const disambiguatorSuffix = disambiguator != null ? `-${disambiguator}` : '';
   const parts = [
     formatAutoSizeLabel(item.sizeLabel),

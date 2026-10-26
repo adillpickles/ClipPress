@@ -107,6 +107,10 @@ export interface Config {
   trashSourceAfterExport: boolean,
   /** When ClipPress moves the source recording to the Recycle Bin after an export, move every copy of its edits there too. */
   trashProjectWithSource: boolean,
+  /** After an export, put the exported video on the clipboard (Windows), to paste it straight into a chat. */
+  copyAfterExport: boolean,
+  /** Start playing a clip as soon as it opens. */
+  playOnOpen: boolean,
   askBeforeClose: boolean,
   enableImportChapters: EnableImportChapters,
   enableAskForFileOpenAction: boolean,

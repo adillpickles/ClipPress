@@ -1,0 +1,292 @@
+/* The dialog after an export (ExportResult.tsx): the video as a picture, centred, with its name and facts. */
+.result {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.single {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 0;
+  margin-top: .35rem;
+}
+
+/* The picture: a click copies the video, a drag takes the file out. */
+.thumb {
+  all: unset;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  max-width: 22rem;
+  aspect-ratio: 16 / 9;
+  box-sizing: border-box;
+  border-radius: var(--cp-radius-lg);
+  overflow: hidden;
+  background: var(--cp-bg);
+  border: 1px solid var(--cp-line);
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.thumb:disabled {
+  cursor: default;
+}
+
+.placeholder {
+  font-size: 1.6rem;
+  color: var(--cp-text-subtle);
+}
+
+/* Hover: a light blue tint and the copy icon. */
+.thumb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--cp-accent) 30%, transparent);
+  opacity: 0;
+  transition: opacity .15s ease;
+  pointer-events: none;
+}
+
+.thumb:not(:disabled):hover::after,
+.thumb:focus-visible::after {
+  opacity: 1;
+}
+
+.thumb:not(:disabled):hover,
+.thumb:focus-visible {
+  border-color: var(--cp-accent);
+}
+
+.thumb:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.copyBadge {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 999px;
+  background: rgb(10 14 20 / 62%);
+  color: white;
+  font-size: 1.15rem;
+  opacity: 0;
+  transform: scale(.9);
+  transition: opacity .15s ease, transform .15s ease;
+  pointer-events: none;
+}
+
+.thumb:not(:disabled):hover .copyBadge,
+.thumb:focus-visible .copyBadge,
+.thumbCopied .copyBadge {
+  opacity: 1;
+  transform: none;
+}
+
+/* Copied: a short pulse, and the check mark stays. */
+.thumbCopied .copyBadge {
+  background: var(--cp-accent);
+  color: #062126;
+  animation: copied-pulse .45s ease-out;
+}
+
+.thumbCopied {
+  animation: copied-ring .6s ease-out;
+}
+
+@keyframes copied-pulse {
+  0% { transform: scale(.8); }
+  55% { transform: scale(1.12); }
+  100% { transform: none; }
+}
+
+@keyframes copied-ring {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cp-accent) 55%, transparent); }
+  100% { box-shadow: 0 0 0 10px transparent; }
+}
+
+.name {
+  max-width: 100%;
+  margin-top: .65rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  font-size: .9375rem;
+}
+
+.facts {
+  margin-top: .15rem;
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Several files: one row each. */
+.list {
+  list-style: none;
+  margin: .35rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  max-height: 17rem;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  min-width: 0;
+}
+
+.thumbSmall {
+  flex-shrink: 0;
+  width: 6.5rem;
+  border-radius: var(--cp-radius);
+}
+
+.thumbSmall .copyBadge {
+  width: 1.9rem;
+  height: 1.9rem;
+  font-size: .9rem;
+}
+
+.rowText {
+  min-width: 0;
+  flex: 1;
+}
+
+.rowText .name {
+  margin-top: 0;
+  font-size: .875rem;
+}
+
+/* "Copied", for a moment. */
+.status {
+  display: flex;
+  justify-content: center;
+  height: 1.5rem;
+  margin-top: .4rem;
+}
+
+.copiedPill {
+  display: inline-flex;
+  align-items: center;
+  height: 1.5rem;
+  padding: 0 .7rem;
+  border-radius: 999px;
+  background: var(--cp-accent-soft);
+  color: var(--cp-accent-text);
+  font-size: .75rem;
+  font-weight: 600;
+  animation: pill-in .18s ease-out;
+}
+
+.failedPill {
+  background: var(--cp-danger-soft);
+  color: var(--red-11);
+}
+
+@keyframes pill-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+
+.highlight {
+  margin-top: .25rem;
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+  text-align: center;
+}
+
+/* Real problems, shown plainly. */
+.warnings {
+  list-style: none;
+  margin: .5rem 0 0;
+  padding: .55rem .75rem;
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  border-radius: var(--cp-radius);
+  background: var(--cp-warning-soft);
+  font-size: .8125rem;
+}
+
+.warnings li {
+  display: flex;
+  gap: .45rem;
+  align-items: baseline;
+}
+
+.warnings svg {
+  flex-shrink: 0;
+  color: var(--cp-warning);
+  transform: translateY(.1em);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin-top: 1rem;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Details: small and quiet, at the left of the buttons. */
+.detailsToggle {
+  all: unset;
+  flex-shrink: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .25em;
+  margin-left: -.35em;
+  padding: .2em .45em .2em .3em;
+  border-radius: var(--cp-radius);
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+  font-weight: 600;
+  transition: background-color .12s ease, color .12s ease;
+}
+
+.detailsToggle:hover {
+  color: var(--cp-text-muted);
+  background: var(--cp-hover);
+}
+
+.detailsToggle:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.detailsBody {
+  margin-top: .5rem;
+  font-size: .8125rem;
+  color: var(--cp-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thumbCopied, .thumbCopied .copyBadge, .copiedPill { animation: none; }
+}

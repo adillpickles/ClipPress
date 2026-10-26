@@ -9,7 +9,7 @@ import Switch from './Switch';
 import UpdateSettings from './UpdateSettings';
 import useUserSettings from '../hooks/useUserSettings';
 import { askForFfPath } from '../dialogs';
-import { getEnableImportChaptersOptions, isMasBuild, isStoreBuild } from '../util';
+import { getEnableImportChaptersOptions, isMasBuild, isStoreBuild, isWindows } from '../util';
 import type { SupportedLanguage } from '../../../common/i18n';
 import { langNames } from '../../../common/i18n';
 import type { CaptureFormat, Config, EnableImportChapters, ProjectFileLocation, TimecodeFormat } from '../../../common/types.js';
@@ -59,7 +59,7 @@ function Settings({
     window.require('electron').shell.openPath(getProjectsDir(getProjectStoreEnv())).catch?.(() => undefined);
   }, []);
 
-  const { customOutDir, setCustomOutDir, changeOutDir, ensureWritableOutDirWithFilePath, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, waveformHeight, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport, enableAdvancedMode, setEnableAdvancedMode, trashProjectWithSource, setTrashProjectWithSource } = useUserSettings();
+  const { customOutDir, setCustomOutDir, changeOutDir, ensureWritableOutDirWithFilePath, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, waveformHeight, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport, enableAdvancedMode, setEnableAdvancedMode, trashProjectWithSource, setTrashProjectWithSource, copyAfterExport, setCopyAfterExport, playOnOpen, setPlayOnOpen } = useUserSettings();
 
   const onLangChange = useCallback<ChangeEventHandler<HTMLSelectElement>>((e) => {
     const { value } = e.target;
@@ -243,6 +243,10 @@ function Settings({
       case 'editing': {
         return (
           <>
+            <SettingRow label={t('Start playing when a clip opens')}>
+              <Switch checked={playOnOpen} onCheckedChange={setPlayOnOpen} aria-label={t('Start playing when a clip opens')} />
+            </SettingRow>
+
             <SettingRow
               label={t('Clips are')}
               value={invertCutSegments ? t('The export keeps everything except the clips.') : t('The export contains only the clips.')}
@@ -307,6 +311,13 @@ function Settings({
                 )}
               </div>
             </SettingRow>
+
+            {/* Files go on the clipboard through Windows (see src/main/fileClipboard.ts). */}
+            {isWindows && (
+              <SettingRow label={t('Copy the video after exporting')} description={t('Puts the exported video on the clipboard.')}>
+                <Switch checked={copyAfterExport} onCheckedChange={setCopyAfterExport} aria-label={t('Copy the video after exporting')} />
+              </SettingRow>
+            )}
 
             <SettingRow
               label={t('Move the original to the Recycle Bin after export')}

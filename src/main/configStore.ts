@@ -127,6 +127,8 @@ const defaults: Config = {
   exportConfirmEnabled: true,
   trashSourceAfterExport: false,
   trashProjectWithSource: true,
+  copyAfterExport: true,
+  playOnOpen: false,
   askBeforeClose: false,
   enableImportChapters: 'ask',
   enableAskForFileOpenAction: true,

@@ -114,6 +114,10 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ trashSourceAfterExport }), [trashSourceAfterExport]);
   const [trashProjectWithSource, setTrashProjectWithSource] = useState(safeGetConfigInitial('trashProjectWithSource'));
   useEffect(() => safeSetConfig({ trashProjectWithSource }), [trashProjectWithSource]);
+  const [copyAfterExport, setCopyAfterExport] = useState(safeGetConfigInitial('copyAfterExport'));
+  useEffect(() => safeSetConfig({ copyAfterExport }), [copyAfterExport]);
+  const [playOnOpen, setPlayOnOpen] = useState(safeGetConfigInitial('playOnOpen'));
+  useEffect(() => safeSetConfig({ playOnOpen }), [playOnOpen]);
   const [segmentsToChapters, setSegmentsToChapters] = useState(safeGetConfigInitial('segmentsToChapters'));
   useEffect(() => safeSetConfig({ segmentsToChapters }), [segmentsToChapters]);
   const [savedSimpleMode, setSimpleMode] = useState(safeGetConfigInitial('simpleMode'));
@@ -329,6 +333,8 @@ export default function useUserSettingsRoot() {
     exportConfirmEnabled,
     trashSourceAfterExport,
     trashProjectWithSource,
+    copyAfterExport,
+    playOnOpen,
     segmentsToChapters,
     simpleMode,
     enableAdvancedMode,
@@ -428,6 +434,8 @@ export default function useUserSettingsRoot() {
     exportConfirmEnabled,
     trashSourceAfterExport,
     trashProjectWithSource,
+    copyAfterExport,
+    playOnOpen,
     segmentsToChapters,
     simpleMode,
     enableAdvancedMode,
@@ -543,6 +551,8 @@ export default function useUserSettingsRoot() {
     setExportConfirmEnabled,
     setTrashSourceAfterExport,
     setTrashProjectWithSource,
+    setCopyAfterExport,
+    setPlayOnOpen,
     setSegmentsToChapters,
     setSimpleMode,
     setEnableAdvancedMode,
