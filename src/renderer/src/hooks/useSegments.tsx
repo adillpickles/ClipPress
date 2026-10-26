@@ -334,10 +334,11 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
 
   const detectBlackScenes = useCallback(async () => {
     const { start, end } = currentCutSegOrWholeTimeline;
-    deleteCurrentCutSeg();
     const dialogType = 'blackdetect';
     const parameters = await showParametersDialog({ title: i18n.t('Enter parameters'), dialogType, parameters: getFfmpegParameters(dialogType), docUrl: 'https://ffmpeg.org/ffmpeg-filters.html#blackdetect' });
     if (parameters == null) return;
+    // Only once the parameters are confirmed: Cancel leaves the clip where it was.
+    deleteCurrentCutSeg();
     const { mode, ...filterOptions } = parameters;
     setFfmpegParametersForDialog(dialogType, parameters);
     invariant(mode === '1' || mode === '2');
@@ -347,10 +348,11 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
 
   const detectSilentScenes = useCallback(async () => {
     const { start, end } = currentCutSegOrWholeTimeline;
-    deleteCurrentCutSeg();
     const dialogType = 'silencedetect';
     const parameters = await showParametersDialog({ title: i18n.t('Enter parameters'), dialogType, parameters: getFfmpegParameters(dialogType), docUrl: 'https://ffmpeg.org/ffmpeg-filters.html#silencedetect' });
     if (parameters == null) return;
+    // Only once the parameters are confirmed: Cancel leaves the clip where it was.
+    deleteCurrentCutSeg();
     setFfmpegParametersForDialog(dialogType, parameters);
     const { mode, ...filterOptions } = parameters;
     invariant(mode === '1' || mode === '2');
@@ -360,10 +362,11 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
 
   const detectSceneChanges = useCallback(async () => {
     const { start, end } = currentCutSegOrWholeTimeline;
-    deleteCurrentCutSeg();
     const dialogType = 'sceneChange';
     const parameters = await showParametersDialog({ title: i18n.t('Enter parameters'), dialogType, parameters: getFfmpegParameters(dialogType) });
     if (parameters == null) return;
+    // Only once the parameters are confirmed: Cancel leaves the clip where it was.
+    deleteCurrentCutSeg();
     setFfmpegParametersForDialog(dialogType, parameters);
     invariant(filePath != null);
     // eslint-disable-next-line prefer-destructuring
