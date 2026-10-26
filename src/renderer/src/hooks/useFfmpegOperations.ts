@@ -6,7 +6,7 @@ import pMap from 'p-map';
 import invariant from 'tiny-invariant';
 import i18n from 'i18next';
 
-import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists } from '../util';
+import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists, moveExportWithRetry } from '../util';
 import { assertOutPathsNotSource } from '../util/sourceProtection';
 import { isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, getDuration, createChaptersFromSegments, readFileFfprobeMeta, getExperimentalArgs, getVideoTimescaleArgs, logStdoutStderr, runFfmpegConcat, RefuseOverwriteError, runFfmpeg } from '../ffmpeg';
 import { getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
@@ -30,8 +30,19 @@ import mainApi from '../mainApi';
 import { getHwaccelArgs } from '../../../common/util';
 import { getTempWorkDir } from '../util/tempFiles';
 
-const { join, resolve, dirname } = window.require('path');
-const { writeFile, mkdir, access, constants: { W_OK } } = window.require('fs/promises');
+const { join, resolve, dirname, extname } = window.require('path');
+const { writeFile, mkdir, access, rm, constants: { W_OK } } = window.require('fs/promises');
+
+/**
+ * Where an export's FFmpeg writes before the finished file is put in place: beside it, keeping the extension (FFmpeg
+ * tells the format from it where none is given). So a cancelled or failed export leaves no half-written file, and
+ * doesn't wipe an earlier export of the same name.
+ */
+function getPartialPath(outPath: string) {
+  const ext: string = extname(outPath);
+  return `${outPath.slice(0, outPath.length - ext.length)}.partial-${nanoid(6)}${ext}`;
+}
+const removePartial = async (path: string) => rm(path, { force: true }).catch((err: unknown) => console.warn('Could not remove a temporary export file', path, err));
 
 
 export class OutputNotWritableError extends Error {
@@ -297,6 +308,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       chaptersPath = await writeChaptersFfmetadata(outDir, chaptersWithNames);
     }
 
+    const partialPath = getPartialPath(outPath);
     try {
       let inputArgs: string[] = [];
       let inputIndex = 0;
@@ -366,7 +378,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         ...getVideoTimescaleArgs(videoTimebase),
 
         ...(outFormat ? ['-f', outFormat] : []),
-        '-y', outPath,
+        '-y', partialPath,
       ];
 
       // https://superuser.com/questions/787064/filename-quoting-in-ffmpeg-concat
@@ -382,15 +394,17 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
       const result = await runFfmpegConcat({ ffmpegArgs, concatTxt, totalDuration, onProgress });
       logStdoutStderr(result);
+      await moveExportWithRetry(partialPath, outPath, enableOverwriteOutput);
 
       await transferTimestamps({ inPath: metadataFromPath, outPath, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, duration: totalDuration });
       onProgress(1);
 
       return { haveExcludedStreams: excludedStreamIds.length > 0, created: true };
     } finally {
+      await removePartial(partialPath);
       if (chaptersPath) await tryDeleteFiles([chaptersPath]);
     }
-  }, [appendLastCommandsLog, assertOutPathIsNotSource, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+  }, [appendLastCommandsLog, assertOutPathIsNotSource, enableOverwriteOutput, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   const losslessCutSingle = useCallback(async ({
     keyframeCut: ssBeforeInput, avoidNegativeTs, copyFileStreams, cutFrom, cutTo, chaptersPath, onProgress, outPath,
@@ -423,6 +437,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   }) => {
     const frameDuration = getFrameDuration(detectedFps);
     await assertOutPathIsNotSource(outPath, copyFileStreams.map((source) => source.path));
+    const partialPath = getPartialPath(outPath);
 
     const cuttingStart = isCuttingStart(cutFrom);
     const cutFromWithAdjustment = cutFrom + cutFromAdjustmentFrames * frameDuration;
@@ -583,15 +598,20 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
       ...getVideoTimescaleArgs(videoTimebase),
 
-      '-f', outFormat, '-y', outPath,
+      '-f', outFormat, '-y', partialPath,
     ];
 
     appendFfmpegCommandLog(ffmpegArgs);
-    const result = await runFfmpegWithProgress({ ffmpegArgs, duration: cutDuration, onProgress });
-    logStdoutStderr(result);
+    try {
+      const result = await runFfmpegWithProgress({ ffmpegArgs, duration: cutDuration, onProgress });
+      logStdoutStderr(result);
+      await moveExportWithRetry(partialPath, outPath, enableOverwriteOutput);
+    } finally {
+      await removePartial(partialPath);
+    }
 
     await transferTimestamps({ inPath: filePath, outPath, cutFrom, cutTo, treatInputFileModifiedTimeAsStart, duration: isDurationValid(fileDuration) ? fileDuration : undefined, treatOutputFileModifiedTimeAsStart });
-  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, cutFromAdjustmentFrames, cutToAdjustmentFrames, filePath, getOutputPlaybackRateArgs, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, cutFromAdjustmentFrames, cutToAdjustmentFrames, enableOverwriteOutput, filePath, getOutputPlaybackRateArgs, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   const cutMultipleWithTextOverlays = useCallback(async ({
     outputDir,
@@ -740,6 +760,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
           }
 
           await maybeMkDeepOutDir({ outputDir, fileOutPath: finalOutPath });
+          const partialPath = getPartialPath(finalOutPath);
 
           const segmentDuration = getSegmentOutputDuration(segment, outputPlaybackRate);
           const getMediaInputArgs = (useHardwareDecode: boolean) => flatMap(copyFileStreamsFiltered, ({ path }) => [
@@ -800,29 +821,34 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
             '-shortest',
             '-t', segmentDuration.toFixed(5),
             '-f', outFormat,
-            '-y', finalOutPath,
+            '-y', partialPath,
           ];
 
-          await runWithGpuFallbacks({
-            hardwareDecode,
-            run: async (useHardwareDecode) => {
-              const ffmpegArgs = getFfmpegArgs(useHardwareDecode);
-              appendFfmpegCommandLog(ffmpegArgs);
-              const result = await runFfmpegWithProgress({
-                ffmpegArgs,
-                duration: segmentDuration,
-                onProgress: (progress) => onSingleProgress(index, progress),
-              });
-              logStdoutStderr(result);
-            },
-            onGpuEncoderFailed: async (error) => {
-              if (gpuH264 == null) return false;
-              console.warn(`${gpuH264.encoder} failed; continuing on the next encoder`, error);
-              markGpuEncoderFailed(gpuH264.encoder);
-              gpuH264 = pickGpuEncoder(await getSizeLimitedEncoderCapabilities(), 'h264');
-              return true;
-            },
-          });
+          try {
+            await runWithGpuFallbacks({
+              hardwareDecode,
+              run: async (useHardwareDecode) => {
+                const ffmpegArgs = getFfmpegArgs(useHardwareDecode);
+                appendFfmpegCommandLog(ffmpegArgs);
+                const result = await runFfmpegWithProgress({
+                  ffmpegArgs,
+                  duration: segmentDuration,
+                  onProgress: (progress) => onSingleProgress(index, progress),
+                });
+                logStdoutStderr(result);
+              },
+              onGpuEncoderFailed: async (error) => {
+                if (gpuH264 == null) return false;
+                console.warn(`${gpuH264.encoder} failed; continuing on the next encoder`, error);
+                markGpuEncoderFailed(gpuH264.encoder);
+                gpuH264 = pickGpuEncoder(await getSizeLimitedEncoderCapabilities(), 'h264');
+                return true;
+              },
+            });
+            await moveExportWithRetry(partialPath, finalOutPath, enableOverwriteOutput);
+          } finally {
+            await removePartial(partialPath);
+          }
 
           await transferTimestamps({
             inPath: filePath,
@@ -843,7 +869,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     } finally {
       if (chaptersPath != null) await tryDeleteFiles([chaptersPath]);
     }
-  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, exportGpuAcceleration, filePath, outputPlaybackRate, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, enableOverwriteOutput, exportGpuAcceleration, filePath, outputPlaybackRate, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   // inspired by https://gist.github.com/fernandoherreradelasheras/5eca67f4200f1a7cc8281747da08496e
   const cutEncodeSmartPart = useCallback(async ({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate, videoTimebase, allFilesMeta, copyFileStreams, videoStreamIndex, paramsByStreamId, ffmpegExperimental, hasBFrames, clipVolume, forceAudioEncode }: {
