@@ -13,6 +13,8 @@ import type { ParseTimecode } from '../types';
 import type { FindKeyframeMode } from '../ffmpeg';
 import { dangerColor, primaryColor, warningColor } from '../colors';
 import getSwal from '../swal';
+import FileOpenChoice from '../components/FileOpenChoice';
+import type { FileOpenExtra } from '../components/FileOpenChoice';
 import isDev from '../isDev';
 import mainApi from '../mainApi';
 import type { ProjectSaveFailure } from '../projectAutoSave';
@@ -155,6 +157,33 @@ export async function askForFileOpenAction(inputOptions: Record<string, string>)
 
   await swal;
 
+  return value;
+}
+
+/** The simple editor's version: open the dropped file or cancel, with the rest under "More options". */
+export async function askForFileOpenChoice({ fileName, extras }: { fileName: string, extras: FileOpenExtra[] }) {
+  let value: string | undefined;
+  const swal = getSwal().ReactSwal.fire({
+    title: i18n.t('Open new file'),
+    html: (
+      <FileOpenChoice
+        fileName={fileName}
+        extras={extras}
+        onChoose={(key) => {
+          value = key;
+          getSwal().Swal.close();
+        }}
+      />
+    ),
+    showCancelButton: false,
+    showConfirmButton: false,
+    showCloseButton: true,
+    customClass: {
+      popup: 'clippress-choice-popup clippress-open-choice',
+      closeButton: 'clippress-choice-close',
+    },
+  });
+  await swal;
   return value;
 }
 

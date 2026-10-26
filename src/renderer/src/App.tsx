@@ -180,6 +180,7 @@ import {
   askForOutDir,
   askForImportChapters,
   askForFileOpenAction,
+  askForFileOpenChoice,
   showDiskFull,
   showExportFailedDialog,
   showConcatFailedDialog,
@@ -5557,12 +5558,13 @@ function App() {
   ]);
 
   const addStreamSourceFile = useCallback(
-    async (path: string) => {
+    /** `only`: just the new file's audio (a separate mic or commentary recording) or video tracks kept; else all. */
+    async (path: string, only?: 'audio' | 'video') => {
       if (allFilesMeta[path]) return undefined; // Already added?
       const fileMeta = await readFileFfprobeMeta(path);
       // console.log('streams', fileMeta.streams);
       setExternalFilesMeta((old) => ({ ...old, [path]: fileMeta }));
-      setCopyStreamIdsForPath(path, () => fromPairs(fileMeta.streams.map(({ index }) => [index, true])));
+      setCopyStreamIdsForPath(path, () => fromPairs(fileMeta.streams.map(({ index, codec_type: type }) => [index, only == null || type === only])));
       return fileMeta;
     },
     [allFilesMeta, setCopyStreamIdsForPath],
@@ -5800,7 +5802,24 @@ function App() {
 
           let openFileResponse: string | undefined;
           if (inputOptionsKeys.length === 1) [openFileResponse] = inputOptionsKeys;
-          if (enableAskForFileOpenAction && inputOptionsKeys.length > 1) openFileResponse = await askForFileOpenAction(inputOptions);
+          if (enableAskForFileOpenAction && inputOptionsKeys.length > 1 && simpleMode && inputOptions.open != null) {
+            // Open or cancel, the rest under "More options": its audio, its video or both added to this recording, or
+            // the other choices in plain words.
+            openFileResponse = await askForFileOpenChoice({
+              fileName: basename(firstNewFilePath),
+              extras: [
+                ...(inputOptions.tracks != null ? [
+                  { key: 'tracksAudio', label: i18n.t('Its audio'), add: 'audio' as const },
+                  { key: 'tracksVideo', label: i18n.t('Its video'), add: 'video' as const },
+                  { key: 'tracks', label: i18n.t('Both'), add: 'both' as const },
+                ] : []),
+                ...(inputOptions.mergeWithCurrentFile != null ? [{ key: 'mergeWithCurrentFile', label: i18n.t('Join it after this recording') }] : []),
+                ...(inputOptions.project != null ? [{ key: 'project', label: inputOptions.project }] : []),
+                ...(inputOptions.subtitles != null ? [{ key: 'subtitles', label: inputOptions.subtitles }] : []),
+                ...(inputOptions.addToBatch != null ? [{ key: 'addToBatch', label: inputOptions.addToBatch }] : []),
+              ],
+            });
+          } else if (enableAskForFileOpenAction && inputOptionsKeys.length > 1) openFileResponse = await askForFileOpenAction(inputOptions);
           else if (newFilePaths.length === 1) openFileResponse = 'open';
 
           if (openFileResponse === 'open') {
@@ -5817,6 +5836,11 @@ function App() {
           }
           if (openFileResponse === 'tracks') {
             await addStreamSourceFile(firstNewFilePath);
+            setStreamsSelectorShown(true);
+            return;
+          }
+          if (openFileResponse === 'tracksAudio' || openFileResponse === 'tracksVideo') {
+            await addStreamSourceFile(firstNewFilePath, openFileResponse === 'tracksAudio' ? 'audio' : 'video');
             setStreamsSelectorShown(true);
             return;
           }

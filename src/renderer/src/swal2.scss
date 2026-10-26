@@ -129,6 +129,13 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
   overflow-x: hidden !important;
 }
 
+// The simple editor's open choice (FileOpenChoice): its own layout, with room for focus rings and nothing to scroll.
+.clippress-open-choice .swal2-html-container {
+  overflow: visible !important;
+  padding: 4px !important;
+  margin: -4px !important;
+}
+
 .clippress-choice-modal {
   display: flex;
   flex-direction: column;
