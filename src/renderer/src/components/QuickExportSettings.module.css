@@ -68,3 +68,30 @@
   font-size: .8125rem;
   font-weight: 600;
 }
+
+/* ✕ on a quick export that was added (the first three always stay). */
+.remove {
+  all: unset;
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  color: var(--cp-text-subtle);
+  cursor: pointer;
+  transition: background-color .12s ease, color .12s ease;
+}
+
+.remove:hover {
+  color: var(--red-11);
+  background: var(--cp-danger-soft);
+}
+
+.remove:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.add {
+  margin-top: .6rem;
+}

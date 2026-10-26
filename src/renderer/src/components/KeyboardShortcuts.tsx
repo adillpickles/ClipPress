@@ -604,6 +604,13 @@ const KeyboardShortcuts = memo(({
         name: t('Quick export {{number}}: {{preset}}', { number: 3, preset: quickExportLabels[2] }),
         category: outputCategory,
       },
+      // The ones added in Settings > Export (or not, yet).
+      quickExportPreset4: { name: t('Quick export {{number}}: {{preset}}', { number: 4, preset: quickExportLabels[3] ?? '' }), category: outputCategory },
+      quickExportPreset5: { name: t('Quick export {{number}}: {{preset}}', { number: 5, preset: quickExportLabels[4] ?? '' }), category: outputCategory },
+      quickExportPreset6: { name: t('Quick export {{number}}: {{preset}}', { number: 6, preset: quickExportLabels[5] ?? '' }), category: outputCategory },
+      quickExportPreset7: { name: t('Quick export {{number}}: {{preset}}', { number: 7, preset: quickExportLabels[6] ?? '' }), category: outputCategory },
+      quickExportPreset8: { name: t('Quick export {{number}}: {{preset}}', { number: 8, preset: quickExportLabels[7] ?? '' }), category: outputCategory },
+      quickExportPreset9: { name: t('Quick export {{number}}: {{preset}}', { number: 9, preset: quickExportLabels[8] ?? '' }), category: outputCategory },
       captureSnapshot: {
         name: t('Capture snapshot'),
         category: outputCategory,
@@ -841,12 +848,16 @@ const KeyboardShortcuts = memo(({
   const searchQueryTrimmed = searchQuery.toLowerCase().trim();
   const isSearching = !!searchQueryTrimmed;
 
+  // Quick exports that haven't been added (Settings > Export) aren't listed.
+  const isUnusedQuickExport = useCallback((action: KeyboardAction) => (quickExportPresetActions as readonly KeyboardAction[]).indexOf(action) >= quickExportLabels.length, [quickExportLabels.length]);
   const actionEntries = useMemo(() => (Object.entries(actionsMap) as unknown as [keyof typeof actionsMap, typeof actionsMap[keyof typeof actionsMap]][]).filter(([key, { name, category }]) => (
-    !isSearching
-    || key.toLocaleLowerCase().includes(searchQueryTrimmed)
-    || name.toLowerCase().includes(searchQueryTrimmed)
-    || (category != null && category.toLowerCase().includes(searchQueryTrimmed))
-  )), [actionsMap, isSearching, searchQueryTrimmed]);
+    !isUnusedQuickExport(key) && (
+      !isSearching
+      || key.toLocaleLowerCase().includes(searchQueryTrimmed)
+      || name.toLowerCase().includes(searchQueryTrimmed)
+      || (category != null && category.toLowerCase().includes(searchQueryTrimmed))
+    )
+  )), [actionsMap, isSearching, isUnusedQuickExport, searchQueryTrimmed]);
 
   const categoriesWithActions = useMemo(() => Object.entries(groupBy(actionEntries, ([, { category }]) => category)), [actionEntries]);
 
@@ -1014,7 +1025,7 @@ function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
         { label: t('Last settings'), actions: ['quickExport'] },
         {
           label: t('Presets'),
-          actions: [...quickExportPresetActions],
+          actions: quickExportPresetActions.slice(0, quickExportLabels.length),
           title: quickExportLabels.map((preset, index) => t('Quick export {{number}}: {{preset}}', { number: index + 1, preset })).join('\n'),
         },
       ],

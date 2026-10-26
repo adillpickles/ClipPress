@@ -9,7 +9,7 @@ import { normalizeQuickExportPresets, quickExportPresetActions } from '../../../
 import useUserSettings from '../hooks/useUserSettings';
 import { getModifier, getModifierKeyNames } from '../hooks/useTimelineScroll';
 import { getQuickExportPresetLabel } from '../quickExport';
-import { getEventBindingKeys, normalizeBindingKeys } from '../shortcutKeys';
+import { getEventBindingKeys, getShownBindings, normalizeBindingKeys } from '../shortcutKeys';
 import { isMac } from '../util';
 import Button from './Button';
 import Select from './Select';
@@ -22,12 +22,6 @@ import { useAppContext } from '../contexts';
 import renderKeys from './renderKeys';
 import { SettingsSearchContext, matchesSearch, useSettingsSearch } from './settingsSearch';
 import styles from './Settings.module.css';
-
-/** On Windows a Windows-key twin of a Ctrl shortcut (and on a Mac a Ctrl twin of a Cmd one) isn't listed apart. */
-function getShownBindings(bindings: readonly KeyBinding[]) {
-  const twinOf = (keys: string) => keys.replaceAll(isMac ? 'Control' : 'Meta', isMac ? 'Meta' : 'Control');
-  return bindings.filter((binding) => !(binding.keys.includes(isMac ? 'Control' : 'Meta') && bindings.some((other) => other !== binding && other.keys === twinOf(binding.keys))));
-}
 
 function ModifierSelect({ value, setValue, label }: { value: ModifierKey, setValue: (v: ModifierKey) => void, label: string }) {
   return (
@@ -52,66 +46,12 @@ function WheelGesture({ modifier, setModifier, label, gesture }: { modifier: Mod
 interface ShortcutItem { action: KeyboardAction, label: string }
 
 /**
- * Settings > Shortcuts: the shortcuts of everything one makes sense for, grouped, each changed by clicking its keys
- * and pressing new ones. The mouse and wheel gestures sit with the timeline's. Every action (the advanced ones too) is
- * in the full list of the shortcuts dialog.
+ * The Shortcuts tab's groups of actions and their names, which Settings > Export's quick exports use too (to say which
+ * action already has a shortcut).
  */
-export default function ShortcutSettings({ onAllShortcutsRequested, onTunerRequested, formatSeconds, showAdvancedSettings }: {
-  onAllShortcutsRequested: () => void,
-  onTunerRequested: (type: TunerType) => void,
-  formatSeconds: (seconds: number) => string,
-  showAdvancedSettings: boolean,
-}) {
+export function useShortcutGroups() {
   const { t } = useTranslation();
-  const outerQuery = useSettingsSearch();
-  const [ownQuery, setOwnQuery] = useState('');
-  const searchId = useId();
-  const {
-    keyBindings, setKeyBindings, resetKeyBindings, quickExportPresets,
-    mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey,
-    segmentMouseModifierKey, setSegmentMouseModifierKey, invertTimelineScroll, setInvertTimelineScroll, wheelSensitivity, keyboardNormalSeekSpeed,
-    mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, keyboardSeekSpeed2, keyboardSeekSpeed3, keyboardSeekAccFactor,
-    simpleMode,
-  } = useUserSettings();
-  const { confirmDialog } = useAppContext();
-
-  // Shortcut changes made here can be undone and redone, with the keys Undo and Redo are set to.
-  const historyRef = useRef<{ past: KeyBinding[][], future: KeyBinding[][] }>({ past: [], future: [] });
-  const remember = useCallback(() => {
-    historyRef.current = { past: [...historyRef.current.past.slice(-49), keyBindings], future: [] };
-  }, [keyBindings]);
-  const changeKeyBindings = useCallback((update: (bindings: KeyBinding[]) => KeyBinding[]) => {
-    const next = update(keyBindings);
-    if (next === keyBindings) return;
-    remember();
-    setKeyBindings(next);
-  }, [keyBindings, remember, setKeyBindings]);
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      // Not while a shortcut is being recorded (those keys are the new shortcut), nor in a text field (its own undo).
-      if (document.querySelector('[data-shortcut-recording]') != null) return;
-      if (e.target instanceof Element && e.target.closest('input, textarea, [contenteditable="true"]') != null) return;
-      const pressed = normalizeBindingKeys(getEventBindingKeys(e));
-      const isAction = (name: KeyboardAction) => keyBindings.some((binding) => binding.action === name && normalizeBindingKeys(binding.keys) === pressed);
-      const undo = isAction('undo');
-      if (!undo && !isAction('redo')) return;
-      const { past, future } = historyRef.current;
-      const restore = undo ? past.at(-1) : future.at(-1);
-      if (restore == null) return;
-      e.preventDefault();
-      e.stopPropagation();
-      historyRef.current = undo ? { past: past.slice(0, -1), future: [...future, keyBindings] } : { past: [...past, keyBindings], future: future.slice(0, -1) };
-      setKeyBindings(restore);
-    };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [keyBindings, setKeyBindings]);
-
-  const onResetClick = async () => {
-    if (!await confirmDialog({ confirmButtonText: t('Reset'), description: t('Put every shortcut back as it came?') })) return;
-    remember();
-    resetKeyBindings();
-  };
+  const { quickExportPresets, simpleMode } = useUserSettings();
 
   const quickExportLabels = useMemo(() => normalizeQuickExportPresets(quickExportPresets).map((preset) => getQuickExportPresetLabel(preset, (key, options) => t(key, options))), [quickExportPresets, t]);
 
@@ -187,7 +127,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
       items: [
         { action: 'export', label: t('Export') },
         { action: 'quickExport', label: t('Export with the last settings') },
-        ...quickExportPresetActions.map((action, index) => ({ action, label: t('Quick export {{number}}: {{preset}}', { number: index + 1, preset: quickExportLabels[index] ?? '' }) })),
+        ...quickExportLabels.map((preset, index) => ({ action: quickExportPresetActions[index]!, label: t('Quick export {{number}}: {{preset}}', { number: index + 1, preset }) })),
         { action: 'batchOpenNextFile', label: t('Open the next clip in the folder') },
       ],
     },
@@ -207,7 +147,73 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
     ['seekNextFrame', t('Next frame')],
     ...groups.flatMap((group) => group.items.map((item) => [item.action, item.label] as const)),
   ]), [groups, t]);
-  const getActionName = (action: KeyboardAction) => names.get(action) ?? action;
+  const getActionName = useCallback((action: KeyboardAction) => names.get(action) ?? action, [names]);
+
+  return { groups, getActionName };
+}
+
+/**
+ * Settings > Shortcuts: the shortcuts of everything one makes sense for, grouped, each changed by clicking its keys
+ * and pressing new ones. The mouse and wheel gestures sit with the timeline's. Every action (the advanced ones too) is
+ * in the full list of the shortcuts dialog.
+ */
+export default function ShortcutSettings({ onAllShortcutsRequested, onTunerRequested, formatSeconds, showAdvancedSettings }: {
+  onAllShortcutsRequested: () => void,
+  onTunerRequested: (type: TunerType) => void,
+  formatSeconds: (seconds: number) => string,
+  showAdvancedSettings: boolean,
+}) {
+  const { t } = useTranslation();
+  const outerQuery = useSettingsSearch();
+  const [ownQuery, setOwnQuery] = useState('');
+  const searchId = useId();
+  const {
+    keyBindings, setKeyBindings, resetKeyBindings,
+    mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey,
+    segmentMouseModifierKey, setSegmentMouseModifierKey, invertTimelineScroll, setInvertTimelineScroll, wheelSensitivity, keyboardNormalSeekSpeed,
+    mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, keyboardSeekSpeed2, keyboardSeekSpeed3, keyboardSeekAccFactor,
+  } = useUserSettings();
+  const { confirmDialog } = useAppContext();
+
+  // Shortcut changes made here can be undone and redone, with the keys Undo and Redo are set to.
+  const historyRef = useRef<{ past: KeyBinding[][], future: KeyBinding[][] }>({ past: [], future: [] });
+  const remember = useCallback(() => {
+    historyRef.current = { past: [...historyRef.current.past.slice(-49), keyBindings], future: [] };
+  }, [keyBindings]);
+  const changeKeyBindings = useCallback((update: (bindings: KeyBinding[]) => KeyBinding[]) => {
+    const next = update(keyBindings);
+    if (next === keyBindings) return;
+    remember();
+    setKeyBindings(next);
+  }, [keyBindings, remember, setKeyBindings]);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Not while a shortcut is being recorded (those keys are the new shortcut), nor in a text field (its own undo).
+      if (document.querySelector('[data-shortcut-recording]') != null) return;
+      if (e.target instanceof Element && e.target.closest('input, textarea, [contenteditable="true"]') != null) return;
+      const pressed = normalizeBindingKeys(getEventBindingKeys(e));
+      const isAction = (name: KeyboardAction) => keyBindings.some((binding) => binding.action === name && normalizeBindingKeys(binding.keys) === pressed);
+      const undo = isAction('undo');
+      if (!undo && !isAction('redo')) return;
+      const { past, future } = historyRef.current;
+      const restore = undo ? past.at(-1) : future.at(-1);
+      if (restore == null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      historyRef.current = undo ? { past: past.slice(0, -1), future: [...future, keyBindings] } : { past: [...past, keyBindings], future: future.slice(0, -1) };
+      setKeyBindings(restore);
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [keyBindings, setKeyBindings]);
+
+  const onResetClick = async () => {
+    if (!await confirmDialog({ confirmButtonText: t('Reset'), description: t('Put every shortcut back as it came?') })) return;
+    remember();
+    resetKeyBindings();
+  };
+
+  const { groups, getActionName } = useShortcutGroups();
   const query = [outerQuery, ownQuery].filter(Boolean).join(' ');
   const keysText = (action: KeyboardAction) => keyBindings.filter((b) => b.action === action).map((b) => b.keys.replaceAll(/Left|Right|Key|Digit/g, '').replaceAll('Control', 'Ctrl')).join(' ');
 

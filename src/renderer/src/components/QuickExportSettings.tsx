@@ -1,13 +1,16 @@
-import { Fragment, useCallback, useMemo } from 'react';
+import { Fragment, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { FiPlus, FiX } from 'react-icons/fi';
 
 import useUserSettings from '../hooks/useUserSettings';
-import { normalizeQuickExportPresets, quickExportPresetActions } from '../../../common/quickExport';
+import { newQuickExportPreset, normalizeQuickExportPresets, quickExportPresetActions, removeQuickExportPreset, defaultQuickExportPresets } from '../../../common/quickExport';
 import type { ExportEncodeMode, KeyboardAction, QuickExportPreset, SizeLimitPreset } from '../../../common/types';
-import { splitKeyboardKeys } from '../util';
 import { describeExportQuality } from '../quickExport';
-import renderKeys from './renderKeys';
+import { getShownBindings } from '../shortcutKeys';
+import Button from './Button';
 import HelpTip from './HelpTip';
+import ShortcutField from './ShortcutField';
+import { useShortcutGroups } from './ShortcutSettings';
 import Select from './Select';
 import TextInput from './TextInput';
 import SizeLimitMbInput from './SizeLimitMbInput';
@@ -15,26 +18,45 @@ import styles from './QuickExportSettings.module.css';
 
 /**
  * Settings > Export: the quick export shortcuts. The first exports with the last settings and has nothing to set;
- * each of the others gets a name and a quality (Original quality, or a size limit with a preset).
+ * each of the others gets a name and a quality (Original quality, or a size limit with a preset). Three are always
+ * there; "Add shortcut" adds more, up to nine, each with its own shortcut.
  */
 export default function QuickExportSettings() {
   const { t } = useTranslation();
-  const { quickExportPresets, setQuickExportPresets, keyBindings } = useUserSettings();
+  const { quickExportPresets, setQuickExportPresets, keyBindings, setKeyBindings } = useUserSettings();
+  const { getActionName } = useShortcutGroups();
+  // The one just added, whose shortcut is being recorded.
+  const [added, setAdded] = useState<number>();
 
   const presets = useMemo(() => normalizeQuickExportPresets(quickExportPresets), [quickExportPresets]);
   const updatePreset = useCallback((index: number, change: Partial<QuickExportPreset>) => {
     setQuickExportPresets(presets.map((preset, i) => (i === index ? { ...preset, ...change } : preset)));
   }, [presets, setQuickExportPresets]);
-
-  // Their shortcuts as they are now (they can be changed like any other); the first one, if there are several.
-  const renderShortcut = (action: KeyboardAction) => {
-    const keys = keyBindings.find((binding) => binding.action === action)?.keys;
-    return (
-      <span className={styles['keys']}>
-        {keys != null ? renderKeys(splitKeyboardKeys(keys)) : <span className={styles['noKeys']} title={t('No shortcut')}>–</span>}
-      </span>
-    );
+  const addPreset = () => {
+    setAdded(presets.length);
+    setQuickExportPresets([...presets, newQuickExportPreset]);
   };
+  const removePreset = (index: number) => {
+    const removed = removeQuickExportPreset(presets, keyBindings, index);
+    setAdded(undefined);
+    setQuickExportPresets(removed.presets);
+    setKeyBindings(removed.keyBindings);
+  };
+
+  // Their shortcuts, set and changed here as in the Shortcuts tab.
+  const renderShortcut = (action: KeyboardAction, label: string, recordAtStart = false) => (
+    <ShortcutField
+      key={`${action}-${recordAtStart}`}
+      action={action}
+      label={label}
+      shown={getShownBindings(keyBindings.filter((binding) => binding.action === action))}
+      keyBindings={keyBindings}
+      setKeyBindings={(update) => setKeyBindings(update(keyBindings))}
+      getActionName={getActionName}
+      recordAtStart={recordAtStart}
+      canAddMore={false}
+    />
+  );
 
   return (
     <div className={styles['block']}>
@@ -47,7 +69,7 @@ export default function QuickExportSettings() {
       </div>
 
       <div className={styles['list']}>
-        {renderShortcut('quickExport')}
+        {renderShortcut('quickExport', t('Export with the last settings'))}
         <div className={styles['lastSettings']}>{t('With the last settings')}</div>
 
         {presets.map((preset, index) => {
@@ -55,10 +77,10 @@ export default function QuickExportSettings() {
           if (action == null) return null;
           const number = index + 1;
           const isSizeLimited = preset.encodeMode === 'size_limited';
-          // Three cells of the list's grid: shortcut, name, quality.
+          // Three cells of the list's grid: shortcut, name, and quality (with ✕ at its end for one that was added).
           return (
             <Fragment key={action}>
-              {renderShortcut(action)}
+              {renderShortcut(action, t('Quick export {{number}}', { number }), added === index)}
               <TextInput
                 value={preset.name}
                 placeholder={describeExportQuality({ isSizeLimited, sizeLimitMb: preset.sizeLimitMb }, (key, options) => t(key, options))}
@@ -100,11 +122,23 @@ export default function QuickExportSettings() {
                     </Select>
                   </>
                 )}
+                {index >= defaultQuickExportPresets.length && (
+                  <button type="button" className={styles['remove']} onClick={() => removePreset(index)} title={t('Remove')} aria-label={t('Remove quick export {{number}}', { number })}>
+                    <FiX aria-hidden />
+                  </button>
+                )}
               </div>
             </Fragment>
           );
         })}
       </div>
+
+      {presets.length < quickExportPresetActions.length && (
+        <Button variant="ghost" size="sm" className={styles['add']} onClick={addPreset}>
+          <FiPlus aria-hidden />
+          {t('Add shortcut')}
+        </Button>
+      )}
     </div>
   );
 }

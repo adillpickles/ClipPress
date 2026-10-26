@@ -41,7 +41,7 @@ function getHeldModifiers(e: KeyboardEvent, sides: Map<string, string>) {
  * Modifiers show as they're held, drawn pressed in ClipPress blue; the shortcut is set the moment its other key goes
  * down. Escape cancels, ✕ removes it, and keys another action has ask before taking them over.
  */
-export default function ShortcutField({ action, label, shown, keyBindings, setKeyBindings, getActionName }: {
+export default function ShortcutField({ action, label, shown, keyBindings, setKeyBindings, getActionName, recordAtStart = false, canAddMore = true }: {
   action: KeyboardAction,
   label: string,
   /** This action's bindings to show (a Windows-key twin of a Ctrl one isn't shown on Windows). */
@@ -49,10 +49,14 @@ export default function ShortcutField({ action, label, shown, keyBindings, setKe
   keyBindings: readonly KeyBinding[],
   setKeyBindings: (update: (bindings: KeyBinding[]) => KeyBinding[]) => void,
   getActionName: (other: KeyboardAction) => string,
+  /** Records a new shortcut straight away (a quick export just added). */
+  recordAtStart?: boolean,
+  /** The "+" for another shortcut; without it (a tight row), more are added in the Shortcuts tab. */
+  canAddMore?: boolean,
 }) {
   const { t } = useTranslation();
   // Which binding is being recorded: its keys, or '' for a new one.
-  const [recording, setRecording] = useState<string>();
+  const [recording, setRecording] = useState<string | undefined>(recordAtStart ? '' : undefined);
   const [held, setHeld] = useState<string[]>([]);
   const [conflict, setConflict] = useState<{ keys: string, replacing: string, other: KeyBinding }>();
   const sidesRef = useRef(new Map<string, string>());
@@ -163,6 +167,7 @@ export default function ShortcutField({ action, label, shown, keyBindings, setKe
           </button>
         )}
         {/* At the end of every row, set or not, so the key caps of all rows line up. */}
+        {canAddMore && (
         <button
           type="button"
           className={[styles['slot'], styles['addSlot'], ...(recording != null ? [styles['addSlotHidden']] : [])].join(' ')}
@@ -173,6 +178,7 @@ export default function ShortcutField({ action, label, shown, keyBindings, setKe
         >
           <FiPlus aria-hidden />
         </button>
+        )}
       </div>
       {conflict != null && (
         <div ref={conflictRef} className={styles['conflict']} role="alert">

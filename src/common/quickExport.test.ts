@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { addQuickExportKeyBindings, defaultQuickExportPresets, migrateQuickExportPresets, normalizeQuickExportPresets, quickExportKeyBindings } from './quickExport.js';
+import { addQuickExportKeyBindings, defaultQuickExportPresets, migrateQuickExportPresets, newQuickExportPreset, normalizeQuickExportPresets, quickExportKeyBindings, removeQuickExportPreset } from './quickExport.js';
 import type { KeyBinding } from './types.js';
 
 describe('normalizeQuickExportPresets', () => {
@@ -64,5 +64,32 @@ describe('addQuickExportKeyBindings', () => {
   it('returns the same list when there is nothing to add', () => {
     const all = [...quickExportKeyBindings];
     expect(addQuickExportKeyBindings(all)).toBe(all);
+  });
+});
+
+describe('quick exports the user adds', () => {
+  const added = { name: 'Twitter', encodeMode: 'size_limited' as const, sizeLimitMb: 15, sizeLimitPreset: 'fast' as const };
+
+  it('keeps them after the three first ones, up to nine in all, a broken one made a new one', () => {
+    expect(normalizeQuickExportPresets([...defaultQuickExportPresets, added, { sizeLimitMb: -1 }])).toEqual([...defaultQuickExportPresets, added, newQuickExportPreset]);
+    expect(normalizeQuickExportPresets([...defaultQuickExportPresets, ...Array.from({ length: 10 }, () => added)])).toHaveLength(9);
+    expect(normalizeQuickExportPresets([...defaultQuickExportPresets, null, added])).toEqual([...defaultQuickExportPresets, added]);
+  });
+
+  it('removing one moves the later ones and their shortcuts up a place', () => {
+    const presets = [...defaultQuickExportPresets, added, { ...added, name: 'Other' }];
+    const keyBindings = [
+      { keys: 'ControlLeft+Digit3', action: 'quickExportPreset3' as const },
+      { keys: 'ControlLeft+Digit4', action: 'quickExportPreset4' as const },
+      { keys: 'ControlLeft+Digit5', action: 'quickExportPreset5' as const },
+      { keys: 'KeyE', action: 'export' as const },
+    ];
+    const removed = removeQuickExportPreset(presets, keyBindings, 3);
+    expect(removed.presets.map((preset) => preset.name)).toEqual(['Original quality', 'Discord', 'Email', 'Other']);
+    expect(removed.keyBindings).toEqual([
+      { keys: 'ControlLeft+Digit3', action: 'quickExportPreset3' },
+      { keys: 'ControlLeft+Digit5', action: 'quickExportPreset4' },
+      { keys: 'KeyE', action: 'export' },
+    ]);
   });
 });

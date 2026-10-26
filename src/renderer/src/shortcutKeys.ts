@@ -1,7 +1,8 @@
 import orderBy from 'lodash/orderBy';
 import uniq from 'lodash/uniq';
 
-import { allModifiers, altModifiers, controlModifiers, metaModifiers, shiftModifiers } from './util';
+import type { KeyBinding } from '../../common/types';
+import { allModifiers, altModifiers, controlModifiers, isMac, metaModifiers, shiftModifiers } from './util';
 
 /**
  * Pressed keys as a key binding, modifiers first in Windows' order (Ctrl + Shift + Alt + Win); empty when it isn't one:
@@ -22,3 +23,9 @@ export function getEventBindingKeys(e: { code: string, ctrlKey: boolean, shiftKe
 
 /** Left and right modifier keys do the same (useKeyboard), so a binding's keys compare with both as the left one. */
 export const normalizeBindingKeys = (keys: string) => uniq(keys.split('+').map((key) => key.replace(/^(Control|Shift|Alt|Meta)Right$/, '$1Left'))).sort().join('+');
+
+/** On Windows a Windows-key twin of a Ctrl shortcut (and on a Mac a Ctrl twin of a Cmd one) isn't listed apart. */
+export function getShownBindings(bindings: readonly KeyBinding[]) {
+  const twinOf = (keys: string) => keys.replaceAll(isMac ? 'Control' : 'Meta', isMac ? 'Meta' : 'Control');
+  return bindings.filter((binding) => !(binding.keys.includes(isMac ? 'Control' : 'Meta') && bindings.some((other) => other !== binding && other.keys === twinOf(binding.keys))));
+}

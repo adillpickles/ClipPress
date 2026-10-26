@@ -4723,6 +4723,8 @@ function App() {
     if (!filePath || workingRef.current) return;
     const translate = (key: string, options: Record<string, string | number>) => i18n.t(key, options);
     const preset = presetIndex != null ? normalizeQuickExportPresets(quickExportPresets)[presetIndex] : undefined;
+    // A shortcut left on a quick export that isn't there any more does nothing.
+    if (presetIndex != null && preset == null) return;
     await onExportConfirm(preset != null
       ? { label: getQuickExportPresetLabel(preset, translate), quality: preset }
       : { label: getLastSettingsLabel({ isSizeLimited: isSizeLimitedExport, sizeLimitMb }, translate) });
@@ -6362,6 +6364,12 @@ function App() {
       quickExportPreset1: () => quickExport(0),
       quickExportPreset2: () => quickExport(1),
       quickExportPreset3: () => quickExport(2),
+      quickExportPreset4: () => quickExport(3),
+      quickExportPreset5: () => quickExport(4),
+      quickExportPreset6: () => quickExport(5),
+      quickExportPreset7: () => quickExport(6),
+      quickExportPreset8: () => quickExport(7),
+      quickExportPreset9: () => quickExport(8),
       extractCurrentSegmentFramesAsImages,
       extractSelectedSegmentsFramesAsImages,
       reorderSegsByStartTime,

@@ -1,7 +1,10 @@
 import type { ExportEncodeMode, KeyBinding, KeyboardAction, QuickExportPreset, SizeLimitPreset } from './types.ts';
 
-/** Ctrl+1, Ctrl+2 and Ctrl+3, in the order of `Config['quickExportPresets']`. */
-export const quickExportPresetActions = ['quickExportPreset1', 'quickExportPreset2', 'quickExportPreset3'] as const satisfies readonly KeyboardAction[];
+/** Ctrl+1, Ctrl+2 and Ctrl+3, then any the user adds, in the order of `Config['quickExportPresets']`. */
+export const quickExportPresetActions = [
+  'quickExportPreset1', 'quickExportPreset2', 'quickExportPreset3', 'quickExportPreset4', 'quickExportPreset5',
+  'quickExportPreset6', 'quickExportPreset7', 'quickExportPreset8', 'quickExportPreset9',
+] as const satisfies readonly KeyboardAction[];
 
 /**
  * Discord takes 20 MB from a free account (since August 2026). Gmail takes 25 MB, but counts the attachment as sent:
@@ -39,23 +42,48 @@ export const quickExportKeyBindings: KeyBinding[] = [
   { keys: 'ControlLeft+Digit3', action: 'quickExportPreset3' },
 ];
 
+/** A quick export the user adds: fitting a size, as most of them do. */
+export const newQuickExportPreset: QuickExportPreset = { name: '', encodeMode: 'size_limited', sizeLimitMb: 20, sizeLimitPreset: 'quality' };
+
 const encodeModes: readonly ExportEncodeMode[] = ['lossless', 'size_limited'];
 const sizeLimitPresets: readonly SizeLimitPreset[] = ['max_quality', 'quality', 'fast'];
 
-/** Always three presets: a missing or broken one (a hand-edited settings file) is the default for its place. */
+function normalizePreset(value: unknown, fallback: QuickExportPreset): QuickExportPreset {
+  if (value == null || typeof value !== 'object') return fallback;
+  const { name, encodeMode, sizeLimitMb, sizeLimitPreset } = value as Partial<Record<keyof QuickExportPreset, unknown>>;
+  return {
+    name: typeof name === 'string' ? name : fallback.name,
+    encodeMode: encodeModes.find((mode) => mode === encodeMode) ?? fallback.encodeMode,
+    sizeLimitMb: typeof sizeLimitMb === 'number' && Number.isFinite(sizeLimitMb) && sizeLimitMb > 0 ? sizeLimitMb : fallback.sizeLimitMb,
+    sizeLimitPreset: sizeLimitPresets.find((preset) => preset === sizeLimitPreset) ?? fallback.sizeLimitPreset,
+  };
+}
+
+/**
+ * Always the three first presets (a missing or broken one, from a hand-edited settings file, is the default for its
+ * place), then the ones the user added, one per action at most.
+ */
 export function normalizeQuickExportPresets(stored: unknown): QuickExportPreset[] {
   const list: unknown[] = Array.isArray(stored) ? stored : [];
-  return defaultQuickExportPresets.map((fallback, index) => {
-    const value = list[index];
-    if (value == null || typeof value !== 'object') return fallback;
-    const { name, encodeMode, sizeLimitMb, sizeLimitPreset } = value as Partial<Record<keyof QuickExportPreset, unknown>>;
-    return {
-      name: typeof name === 'string' ? name : fallback.name,
-      encodeMode: encodeModes.find((mode) => mode === encodeMode) ?? fallback.encodeMode,
-      sizeLimitMb: typeof sizeLimitMb === 'number' && Number.isFinite(sizeLimitMb) && sizeLimitMb > 0 ? sizeLimitMb : fallback.sizeLimitMb,
-      sizeLimitPreset: sizeLimitPresets.find((preset) => preset === sizeLimitPreset) ?? fallback.sizeLimitPreset,
-    };
-  });
+  const builtIn = defaultQuickExportPresets.map((fallback, index) => normalizePreset(list[index], fallback));
+  const added = list.slice(defaultQuickExportPresets.length, quickExportPresetActions.length)
+    .filter((value) => value != null && typeof value === 'object')
+    .map((value) => normalizePreset(value, newQuickExportPreset));
+  return [...builtIn, ...added];
+}
+
+/** Removes a quick export the user added: the ones after it move up a place, and their shortcuts with them. */
+export function removeQuickExportPreset(presets: readonly QuickExportPreset[], keyBindings: readonly KeyBinding[], index: number) {
+  const actionIndex = (action: KeyboardAction) => (quickExportPresetActions as readonly KeyboardAction[]).indexOf(action);
+  return {
+    presets: presets.filter((_preset, i) => i !== index),
+    keyBindings: keyBindings.flatMap((binding) => {
+      const i = actionIndex(binding.action);
+      if (i === -1 || i < index) return [binding];
+      if (i === index) return [];
+      return [{ ...binding, action: quickExportPresetActions[i - 1]! }];
+    }),
+  };
 }
 
 // Left and right modifier keys do the same (see useKeyboard), so Ctrl+E is taken whichever Ctrl a binding names.
