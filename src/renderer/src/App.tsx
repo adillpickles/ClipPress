@@ -302,6 +302,7 @@ import useShelf, { listShelfFolder } from './hooks/useShelf';
 import { buildShelfQueue, pickNextClip, rememberShelfExport, shelfThumbnailKey } from './shelf';
 import formatSizeLimitedProgressText, { getSizeLimitedStageTitle } from './sizeLimitedProgressText';
 import { getEdgeSnapDistance } from './clipEdgeSnap';
+import getMergePartNames from './mergePartNames';
 import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, resolveExportQuality } from './quickExport';
 import type { QuickExport } from './quickExport';
 import { normalizeQuickExportPresets } from '../../common/quickExport';
@@ -339,7 +340,7 @@ import {
 } from './textOverlays';
 
 const electron = window.require('electron');
-const { lstat } = window.require('fs/promises');
+const { lstat, readdir } = window.require('fs/promises');
 const {
   parse: parsePath,
   join: pathJoin,
@@ -3618,6 +3619,7 @@ function App() {
   const onExportConfirm = useCallback(async (quickExport?: QuickExport) => {
     invariant(filePath != null && outputDir != null);
     emitEvent({ eventName: 'export-start', path: filePath });
+    const listOutputDirNames = async () => new Set<string>(await readdir(outputDir).catch(() => []));
 
     const quality = resolveExportQuality({
       isSizeLimited: isSizeLimitedExport,
@@ -4000,7 +4002,8 @@ function App() {
         let cutFileNames: string[];
         if (willMerge && autoDeleteMergedSegments) {
           const generated = await generateCutFileNames(defaultCutFileTemplate);
-          cutFileNames = generated.fileNames;
+          // Made and deleted again: never on a file already there (an earlier export's clips).
+          cutFileNames = getMergePartNames(generated.fileNames, await listOutputDirNames());
           addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
         } else {
           const generated = await generateCutFileNames(
@@ -4190,7 +4193,8 @@ function App() {
       // https://github.com/mifi/lossless-cut/issues/2637
       if (willMerge && autoDeleteMergedSegments) {
         const generated = await generateCutFileNames(defaultCutFileTemplate);
-        cutFileNames = generated.fileNames;
+        // Made and deleted again: never on a file already there (an earlier export's clips).
+        cutFileNames = getMergePartNames(generated.fileNames, await listOutputDirNames());
         addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
       } else {
         const generated = await generateCutFileNames(cutFileTemplateOrDefault);
