@@ -1,0 +1,29 @@
+/* ConfirmButton: red under the pointer, as an action that can't be taken back. */
+.idle:hover,
+.idle:focus-visible {
+  color: var(--cp-danger);
+  background-color: var(--cp-danger-soft);
+}
+
+.asking {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  animation: asking-in .14s ease-out;
+}
+
+.question {
+  color: var(--cp-text);
+  font-size: .8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@keyframes asking-in {
+  from { opacity: 0; transform: translateX(-3px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .asking { animation: none; }
+}

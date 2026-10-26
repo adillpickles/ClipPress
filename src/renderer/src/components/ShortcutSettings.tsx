@@ -12,13 +12,13 @@ import { getQuickExportPresetLabel } from '../quickExport';
 import { getEventBindingKeys, getShownBindings, normalizeBindingKeys } from '../shortcutKeys';
 import { isMac } from '../util';
 import Button from './Button';
+import ConfirmButton from './ConfirmButton';
 import Select from './Select';
 import SettingRow from './SettingRow';
 import ShortcutField from './ShortcutField';
 import Switch from './Switch';
 import TextInput from './TextInput';
 import type { TunerType } from '../types';
-import { useAppContext } from '../contexts';
 import renderKeys from './renderKeys';
 import { SettingsSearchContext, matchesSearch, useSettingsSearch } from './settingsSearch';
 import styles from './Settings.module.css';
@@ -173,7 +173,6 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
     segmentMouseModifierKey, setSegmentMouseModifierKey, invertTimelineScroll, setInvertTimelineScroll, wheelSensitivity, keyboardNormalSeekSpeed,
     mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, keyboardSeekSpeed2, keyboardSeekSpeed3, keyboardSeekAccFactor,
   } = useUserSettings();
-  const { confirmDialog } = useAppContext();
 
   // Shortcut changes made here can be undone and redone, with the keys Undo and Redo are set to.
   const historyRef = useRef<{ past: KeyBinding[][], future: KeyBinding[][] }>({ past: [], future: [] });
@@ -210,8 +209,8 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [keyBindings, searchId, setKeyBindings]);
 
-  const onResetClick = async () => {
-    if (!await confirmDialog({ confirmButtonText: t('Reset'), description: t('Put every shortcut back as it came?') })) return;
+  // Confirmed in place (ConfirmButton), and Ctrl+Z brings the shortcuts back.
+  const resetAll = () => {
     remember();
     resetKeyBindings();
   };
@@ -293,7 +292,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
 
       <div className={styles['shortcutActions']}>
         <Button onClick={onAllShortcutsRequested}>{t('Every action…')}</Button>
-        <Button variant="ghost" onClick={onResetClick}>{t('Reset all shortcuts')}</Button>
+        <ConfirmButton question={t('Reset every shortcut?')} confirmLabel={t('Reset')} onConfirm={resetAll}>{t('Reset all shortcuts')}</ConfirmButton>
       </div>
     </SettingsSearchContext.Provider>
   );

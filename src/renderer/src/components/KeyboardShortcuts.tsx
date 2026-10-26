@@ -16,6 +16,7 @@ import { fixKeys } from '../shortcutKeys';
 import * as Dialog from './Dialog';
 import Warning from './Warning';
 import Button, { DialogButton } from './Button';
+import ConfirmButton from './ConfirmButton';
 import Action from './Action';
 import TextInput from './TextInput';
 import renderKeys from './renderKeys';
@@ -861,20 +862,12 @@ const KeyboardShortcuts = memo(({
 
   const categoriesWithActions = useMemo(() => Object.entries(groupBy(actionEntries, ([, { category }]) => category)), [actionEntries]);
 
-  const onDeleteBindingClick = useCallback(async ({ action, keys }: { action: KeyboardAction, keys: string }) => {
-    if (!(await confirmDialog({ title: t('Remove this shortcut?'), description: t('These keys will no longer run "{{name}}".', { name: actionsMap[action]?.name ?? action }), confirmButtonText: t('Remove') }))) return;
-
+  // Confirmed in place (ConfirmButton).
+  const onDeleteBindingClick = useCallback(({ action, keys }: { action: KeyboardAction, keys: string }) => {
     console.log('Delete key binding', action, keys);
     setKeyBindings((existingBindings) => existingBindings.filter((existingBinding) => !(existingBinding.keys === keys && existingBinding.action === action)));
-  }, [actionsMap, confirmDialog, setKeyBindings, t]);
+  }, [setKeyBindings]);
 
-
-  const onResetClick = useCallback(async () => {
-    // One clear question (Cancel keeps focus), rather than the same one twice.
-    if (!(await confirmDialog({ title: t('Reset all shortcuts?'), description: t('Your own shortcuts will be replaced by the defaults.'), confirmButtonText: t('Reset') }))) return;
-
-    resetKeyBindings();
-  }, [confirmDialog, resetKeyBindings, t]);
 
   const onAddBindingClick = useCallback((action: KeyboardAction) => {
     setCreatingBinding(action);
@@ -938,7 +931,7 @@ const KeyboardShortcuts = memo(({
                     {bindingsForThisAction.map(({ keys }) => (
                       <div key={keys} className={styles['binding']}>
                         {renderKeys(splitKeyboardKeys(keys))}
-                        <Button size="sm" variant="ghost" className={styles['bindingRemove']} title={t('Remove shortcut')} aria-label={t('Remove shortcut')} onClick={() => onDeleteBindingClick({ action, keys })}><FaTrash aria-hidden style={{ fontSize: '.75em' }} /></Button>
+                        <ConfirmButton size="sm" className={styles['bindingRemove']} confirmLabel={t('Remove')} onConfirm={() => onDeleteBindingClick({ action, keys })}><FaTrash aria-label={t('Remove shortcut')} style={{ fontSize: '.75em' }} /></ConfirmButton>
                       </div>
                     ))}
 
@@ -955,7 +948,11 @@ const KeyboardShortcuts = memo(({
         ))}
       </div>
 
-      {!isSearching && <Button onClick={onResetClick} style={{ marginBottom: '1em' }}><FaUndo aria-hidden />{t('Reset all shortcuts')}</Button>}
+      {!isSearching && (
+        <div style={{ marginBottom: '1em' }}>
+          <ConfirmButton question={t('Reset every shortcut?')} confirmLabel={t('Reset')} onConfirm={resetKeyBindings}><FaUndo aria-hidden />{t('Reset all shortcuts')}</ConfirmButton>
+        </div>
+      )}
 
       <CreateBinding actionsMap={actionsMap} action={creatingBinding} setCreatingBinding={setCreatingBinding} onNewKeyBindingConfirmed={onNewKeyBindingConfirmed} />
     </>
