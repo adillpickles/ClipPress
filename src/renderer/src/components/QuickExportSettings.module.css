@@ -22,6 +22,8 @@
 .list {
   display: grid;
   grid-template-columns: max-content minmax(6rem, 9rem) minmax(0, 1fr);
+  /* A row's name and quality fill in beside its key caps even when a question takes the row below (.shortcut). */
+  grid-auto-flow: dense;
   align-items: center;
   gap: .5rem .75rem;
   margin-top: .7rem;
@@ -94,4 +96,15 @@
 
 .add {
   margin-top: .6rem;
+}
+
+/* A shortcut's key caps sit in the first column; its "Already used by…" question takes a row of its own, so the
+   columns keep their widths. */
+.shortcut {
+  display: contents;
+}
+
+.shortcut [role="alert"] {
+  grid-column: 1 / -1;
+  justify-self: end;
 }

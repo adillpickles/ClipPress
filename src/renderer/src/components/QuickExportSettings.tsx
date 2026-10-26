@@ -55,6 +55,7 @@ export default function QuickExportSettings() {
       getActionName={getActionName}
       recordAtStart={recordAtStart}
       canAddMore={false}
+      className={styles['shortcut']}
     />
   );
 

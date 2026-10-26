@@ -41,7 +41,7 @@ function getHeldModifiers(e: KeyboardEvent, sides: Map<string, string>) {
  * Modifiers show as they're held, drawn pressed in ClipPress blue; the shortcut is set the moment its other key goes
  * down. Escape cancels, ✕ removes it, and keys another action has ask before taking them over.
  */
-export default function ShortcutField({ action, label, shown, keyBindings, setKeyBindings, getActionName, recordAtStart = false, canAddMore = true }: {
+export default function ShortcutField({ action, label, shown, keyBindings, setKeyBindings, getActionName, recordAtStart = false, canAddMore = true, className }: {
   action: KeyboardAction,
   label: string,
   /** This action's bindings to show (a Windows-key twin of a Ctrl one isn't shown on Windows). */
@@ -53,6 +53,7 @@ export default function ShortcutField({ action, label, shown, keyBindings, setKe
   recordAtStart?: boolean,
   /** The "+" for another shortcut; without it (a tight row), more are added in the Shortcuts tab. */
   canAddMore?: boolean,
+  className?: string | undefined,
 }) {
   const { t } = useTranslation();
   // Which binding is being recorded: its keys, or '' for a new one.
@@ -147,7 +148,7 @@ export default function ShortcutField({ action, label, shown, keyBindings, setKe
   );
 
   return (
-    <div className={styles['field']}>
+    <div className={[styles['field'], ...(className != null ? [className] : [])].join(' ')}>
       <div className={styles['slots']}>
         {shown.map(({ keys }) => (recording === keys ? <Fragment key={keys}>{recordingSlot}</Fragment> : (
           <span key={keys} className={styles['bindingWrap']}>
