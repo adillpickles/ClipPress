@@ -5574,14 +5574,20 @@ function App() {
   const addStreamSourceFile = useCallback(
     /** `only`: just the new file's audio (a separate mic or commentary recording) or video tracks kept; else all. */
     async (path: string, only?: 'audio' | 'video') => {
-      if (allFilesMeta[path]) return undefined; // Already added?
+      const added = allFilesMeta[path];
+      if (added != null && path === filePath) return undefined;
+      if (added != null) {
+        // Added before (say, its audio): the tracks asked for now are kept too.
+        setCopyStreamIdsForPath(path, (old) => ({ ...old, ...fromPairs(added.streams.flatMap(({ index, codec_type: type }) => (only == null || type === only ? [[index, true]] : []))) }));
+        return undefined;
+      }
       const fileMeta = await readFileFfprobeMeta(path);
       // console.log('streams', fileMeta.streams);
       setExternalFilesMeta((old) => ({ ...old, [path]: fileMeta }));
       setCopyStreamIdsForPath(path, () => fromPairs(fileMeta.streams.map(({ index, codec_type: type }) => [index, only == null || type === only])));
       return fileMeta;
     },
-    [allFilesMeta, setCopyStreamIdsForPath],
+    [allFilesMeta, filePath, setCopyStreamIdsForPath],
   );
 
   const updateStreamParams = useCallback<
