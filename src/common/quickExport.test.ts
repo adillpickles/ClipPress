@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { addQuickExportKeyBindings, defaultQuickExportPresets, normalizeQuickExportPresets, quickExportKeyBindings } from './quickExport.js';
+import { addQuickExportKeyBindings, defaultQuickExportPresets, migrateQuickExportPresets, normalizeQuickExportPresets, quickExportKeyBindings } from './quickExport.js';
 import type { KeyBinding } from './types.js';
 
 describe('normalizeQuickExportPresets', () => {
@@ -28,6 +28,19 @@ describe('normalizeQuickExportPresets', () => {
       { ...defaultQuickExportPresets[1], name: 'Nitro', sizeLimitMb: 50 },
       defaultQuickExportPresets[2],
     ]);
+  });
+});
+
+describe('migrateQuickExportPresets', () => {
+  it('updates presets still at the first defaults, and leaves changed ones alone', () => {
+    const firstDefaults = [
+      { name: '', encodeMode: 'lossless', sizeLimitMb: 10, sizeLimitPreset: 'quality' },
+      { name: 'Discord', encodeMode: 'size_limited', sizeLimitMb: 10, sizeLimitPreset: 'quality' },
+      { name: 'Email', encodeMode: 'size_limited', sizeLimitMb: 20, sizeLimitPreset: 'quality' },
+    ] as const;
+    expect(migrateQuickExportPresets(firstDefaults.map((p) => ({ ...p })))).toEqual(defaultQuickExportPresets);
+    const changed = [{ ...firstDefaults[0], name: 'Keep' }, { ...firstDefaults[1], sizeLimitMb: 50 }, { ...firstDefaults[2] }];
+    expect(migrateQuickExportPresets(changed)).toEqual([changed[0], changed[1], defaultQuickExportPresets[2]]);
   });
 });
 

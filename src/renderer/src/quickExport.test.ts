@@ -58,7 +58,7 @@ describe('isChaptersOnlyExport', () => {
 
 describe('quick export labels', () => {
   it('names the default presets', () => {
-    expect(defaultQuickExportPresets.map((preset) => getQuickExportPresetLabel(preset, t))).toEqual(['Original quality', 'Discord · 10 MB', 'Email · 20 MB']);
+    expect(defaultQuickExportPresets.map((preset) => getQuickExportPresetLabel(preset, t))).toEqual(['Original quality', 'Discord · 20 MB', 'Email · 17 MB']);
   });
 
   it('shows a name once when it says the same as the quality', () => {

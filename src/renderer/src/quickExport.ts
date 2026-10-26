@@ -68,7 +68,9 @@ export function describeExportQuality({ isSizeLimited, sizeLimitMb }: Pick<Expor
 export function getQuickExportPresetLabel(preset: QuickExportPreset, t: TranslateQuickExport) {
   const quality = describeExportQuality({ isSizeLimited: preset.encodeMode === 'size_limited', sizeLimitMb: preset.sizeLimitMb }, t);
   const name = preset.name.trim();
-  return name === '' || name === quality ? quality : `${name} · ${quality}`;
+  // The first preset's default name is stored in English: in another language, it's the quality's own words.
+  const isDefaultName = name === '' || name === quality || (preset.encodeMode === 'lossless' && name === 'Original quality');
+  return isDefaultName ? quality : `${name} · ${quality}`;
 }
 
 /** Ctrl+E (and Ctrl+click), with the sheet's settings: "Last settings · 10 MB". */

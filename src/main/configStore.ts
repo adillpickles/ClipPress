@@ -12,7 +12,7 @@ import { moveSettingsOutOfInstallFolder, noteSettingsFoldersForInstaller } from 
 import { getInstallationDir, isWindowsFolderInside } from './installation.js';
 import { isWindows, pathExists } from './util.js';
 import { fallbackLng } from './i18nCommon.js';
-import { addQuickExportKeyBindings, defaultQuickExportPresets, quickExportKeyBindings } from '../common/quickExport.js';
+import { addQuickExportKeyBindings, defaultQuickExportPresets, migrateQuickExportPresets, normalizeQuickExportPresets, quickExportKeyBindings } from '../common/quickExport.js';
 
 const { app } = electron;
 
@@ -705,6 +705,14 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     const isCtrlY = (keys: string) => { const parts = keys.split('+'); return parts.length === 2 && parts.includes('KeyY') && (parts.includes('ControlLeft') || parts.includes('ControlRight')); };
     if (!existingBindings.some((existing) => isCtrlY(existing.keys))) set('keyBindings', [...existingBindings, { keys: 'ControlLeft+KeyY', action: 'redo' }]);
     store.set('redoCtrlYShortcutMigrated', true);
+  }
+
+  // Quick export presets still at their first defaults: Discord 20 MB, Email 17 MB, and a real name for the first.
+  if (store.get('quickExportPresetsMigrated') !== true) {
+    const existingPresets = normalizeQuickExportPresets(store.get('quickExportPresets'));
+    const migratedPresets = migrateQuickExportPresets(existingPresets);
+    if (migratedPresets.some((preset, i) => preset !== existingPresets[i])) set('quickExportPresets', migratedPresets);
+    store.set('quickExportPresetsMigrated', true);
   }
 
   // Ctrl+E and Ctrl+1/2/3 (quick exports) for existing settings too, where those keys are still free.
