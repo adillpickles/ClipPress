@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import HelpTip from './HelpTip';
+import { matchesSearch, useSettingsSearch } from './settingsSearch';
 import styles from './Settings.module.css';
 
 /**
@@ -8,7 +9,7 @@ import styles from './Settings.module.css';
  * (hover or focus), so the screen isn't full of explanations; a live value (a folder, a percentage, a status)
  * stays visible under the name.
  */
-export default function SettingRow({ label, description, details, value, children, controlId }: {
+export default function SettingRow({ label, description, details, value, children, controlId, keywords }: {
   label: ReactNode,
   /** What the setting does: shown on hover or focus of the "i". */
   description?: ReactNode,
@@ -19,11 +20,15 @@ export default function SettingRow({ label, description, details, value, childre
   children: ReactNode,
   /** The id of the control, so that the label focuses it. */
   controlId?: string | undefined,
+  /** More words the Settings search finds it by. */
+  keywords?: string | undefined,
 }) {
+  const query = useSettingsSearch();
+  if (!matchesSearch(query, label, description, details, keywords)) return null;
   const hasHelp = description != null || details != null;
 
   return (
-    <div className={styles['row']}>
+    <div className={styles['row']} data-setting-row="">
       <div className={styles['rowText']}>
         <div className={styles['rowLabel']}>
           {controlId != null ? <label htmlFor={controlId}>{label}</label> : label}

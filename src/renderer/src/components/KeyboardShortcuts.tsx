@@ -3,8 +3,6 @@ import { memo, Fragment, useEffect, useMemo, useCallback, useState, useRef } fro
 import { useTranslation } from 'react-i18next';
 import { FaMouse, FaPlus, FaStepForward, FaStepBackward, FaUndo, FaTrash, FaSave, FaHammer } from 'react-icons/fa';
 import groupBy from 'lodash/groupBy';
-import orderBy from 'lodash/orderBy';
-import uniq from 'lodash/uniq';
 import { AnimatePresence, motion } from 'motion/react';
 
 import useUserSettings from '../hooks/useUserSettings';
@@ -13,7 +11,8 @@ import SegmentCutpointButton from './SegmentCutpointButton';
 import { getModifier } from '../hooks/useTimelineScroll';
 import type { KeyBinding, KeyboardAction, ModifierKey } from '../../../common/types';
 import type { StateSegment } from '../types';
-import { allModifiers, altModifiers, controlModifiers, metaModifiers, shiftModifiers, splitKeyboardKeys } from '../util';
+import { splitKeyboardKeys } from '../util';
+import { fixKeys } from '../shortcutKeys';
 import * as Dialog from './Dialog';
 import Warning from './Warning';
 import Button, { DialogButton } from './Button';
@@ -31,16 +30,6 @@ type Category = string;
 
 type ActionsMap = Record<KeyboardAction, { name: string, category?: Category, before?: ReactNode }>;
 
-
-// For modifier keys you can use shift, ctrl, alt, or meta.
-// You can substitute option for alt and command for meta.
-function fixKeys(keys: string[]) {
-  const uniqed = uniq(keys);
-  const nonModifierKeys = keys.filter((key) => !allModifiers.has(key));
-  if (nonModifierKeys.length === 0) return []; // only modifiers is invalid
-  if (nonModifierKeys.length > 1) return []; // can only have one non-modifier
-  return orderBy(uniqed, [(key) => !shiftModifiers.has(key), (key) => !controlModifiers.has(key), (key) => !altModifiers.has(key), (key) => !metaModifiers.has(key), (key) => key]);
-}
 
 // eslint-disable-next-line react/display-name
 const CreateBinding = memo(({
@@ -1080,7 +1069,7 @@ function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
 }
 
 function KeyboardShortcutsDialog({
-  isShown, onHide, keyBindings, setKeyBindings, resetKeyBindings, currentCutSeg, getKeyboardAction,
+  isShown, onHide, keyBindings, setKeyBindings, resetKeyBindings, currentCutSeg, getKeyboardAction, onChangeShortcutsRequested, initialView,
 }: {
   isShown: boolean,
   onHide: () => void,
@@ -1089,10 +1078,13 @@ function KeyboardShortcutsDialog({
   resetKeyBindings: () => void,
   currentCutSeg: StateSegment | undefined,
   getKeyboardAction: (action: KeyboardAction) => () => void,
+  /** Settings > Shortcuts, where they're changed: this dialog is the quick reference. */
+  onChangeShortcutsRequested: () => void,
+  initialView?: 'essentials' | 'all' | undefined,
 }) {
   const { t } = useTranslation();
   const { simpleMode } = useUserSettings();
-  const [view, setView] = useState<'essentials' | 'all'>();
+  const [view, setView] = useState<'essentials' | 'all' | undefined>(initialView);
   const effectiveView = view ?? (simpleMode ? 'essentials' : 'all');
 
   const handleTriggerActionClick = useCallback((action: KeyboardAction) => {
@@ -1129,6 +1121,7 @@ function KeyboardShortcutsDialog({
                 { value: 'all', label: t('All shortcuts') },
               ]}
             />
+            <Button variant="ghost" size="sm" onClick={onChangeShortcutsRequested}>{t('Change shortcuts…')}</Button>
           </div>
 
           <div className={styles['body']}>

@@ -1,7 +1,6 @@
 import type { ChangeEventHandler, KeyboardEventHandler } from 'react';
 import { memo, useCallback, useId, useMemo, useState } from 'react';
-import { FiFolder, FiX } from 'react-icons/fi';
-import { FaRegKeyboard } from 'react-icons/fa';
+import { FiFolder, FiSearch, FiX } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import invariant from 'tiny-invariant';
 
@@ -13,35 +12,27 @@ import { askForFfPath } from '../dialogs';
 import { getEnableImportChaptersOptions, isMasBuild, isStoreBuild } from '../util';
 import type { SupportedLanguage } from '../../../common/i18n';
 import { langNames } from '../../../common/i18n';
-import type { CaptureFormat, Config, EnableImportChapters, ModifierKey, ProjectFileLocation, TimecodeFormat } from '../../../common/types.js';
+import type { CaptureFormat, Config, EnableImportChapters, ProjectFileLocation, TimecodeFormat } from '../../../common/types.js';
 import { getProjectsDir, getProjectStoreEnv } from '../projectStore';
 import styles from './Settings.module.css';
 import Select from './Select';
 import Button from './Button';
-import { getModifierKeyNames } from '../hooks/useTimelineScroll';
 import type { TunerType } from '../types';
 import SettingRow from './SettingRow';
 import QuickExportSettings from './QuickExportSettings';
+import ShortcutSettings from './ShortcutSettings';
+import TextInput from './TextInput';
+import { SettingsSearchContext, matchesSearch } from './settingsSearch';
 import getAfterExportAction from '../afterExportAction';
 import type { AfterExportAction } from '../afterExportAction';
 import { DirectoryAccessDeclinedError } from '../../errors';
 
-function ModifierKeySetting({ label, description, value, setValue }: { label: string, description?: string, value: ModifierKey, setValue: (v: ModifierKey) => void }) {
-  const id = useId();
-  return (
-    <SettingRow label={label} description={description} controlId={id}>
-      <Select id={id} value={value} onChange={(e) => setValue(e.target.value as ModifierKey)}>
-        {Object.entries(getModifierKeyNames()).map(([key, name]) => (
-          <option key={key} value={key}>{name}</option>
-        ))}
-      </Select>
-    </SettingRow>
-  );
-}
-
-type Category = 'general' | 'interface' | 'editing' | 'export' | 'snapshots' | 'input' | 'projects' | 'updates' | 'advanced';
+export type SettingsCategory = 'general' | 'interface' | 'editing' | 'export' | 'snapshots' | 'shortcuts' | 'projects' | 'updates' | 'advanced';
+type Category = SettingsCategory;
 
 function Settings({
+  category,
+  setCategory,
   onTunerRequested,
   onKeyboardShortcutsDialogRequested,
   askForCleanupChoices,
@@ -49,6 +40,9 @@ function Settings({
   showAdvancedSettings,
   setShowAdvancedSettings,
 }: {
+  /** The tab shown: held by the app, so the shortcuts dialog can open Settings at Shortcuts. */
+  category: Category,
+  setCategory: (newCategory: Category) => void,
   onTunerRequested: (type: TunerType) => void,
   onKeyboardShortcutsDialogRequested: () => void,
   askForCleanupChoices: () => Promise<unknown>,
@@ -57,13 +51,15 @@ function Settings({
   setShowAdvancedSettings: (v: boolean) => void,
 }) {
   const { t } = useTranslation();
-  const [category, setCategory] = useState<Category>('general');
+  // Searching shows the matching settings of every tab at once.
+  const [query, setQuery] = useState('');
+  const searching = query.trim() !== '';
   const projectLocationId = useId();
   const showProjectsFolder = useCallback(() => {
     window.require('electron').shell.openPath(getProjectsDir(getProjectStoreEnv())).catch?.(() => undefined);
   }, []);
 
-  const { customOutDir, setCustomOutDir, changeOutDir, ensureWritableOutDirWithFilePath, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, wheelSensitivity, waveformHeight, keyboardNormalSeekSpeed, keyboardSeekSpeed2, keyboardSeekSpeed3, keyboardSeekAccFactor, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, invertTimelineScroll, setInvertTimelineScroll, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey, setSegmentMouseModifierKey, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport, enableAdvancedMode, setEnableAdvancedMode, trashProjectWithSource, setTrashProjectWithSource } = useUserSettings();
+  const { customOutDir, setCustomOutDir, changeOutDir, ensureWritableOutDirWithFilePath, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, waveformHeight, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport, enableAdvancedMode, setEnableAdvancedMode, trashProjectWithSource, setTrashProjectWithSource } = useUserSettings();
 
   const onLangChange = useCallback<ChangeEventHandler<HTMLSelectElement>>((e) => {
     const { value } = e.target;
@@ -119,7 +115,7 @@ function Settings({
     { id: 'editing', label: t('Editing') },
     { id: 'export', label: t('Export') },
     { id: 'snapshots', label: t('Snapshots') },
-    { id: 'input', label: t('Keyboard & mouse') },
+    { id: 'shortcuts', label: t('Shortcuts') },
     { id: 'projects', label: t('Projects') },
     ...(!isStoreBuild ? [{ id: 'updates' as const, label: t('Updates') }] : []),
     ...(showAdvancedSettings ? [{ id: 'advanced' as const, label: t('Advanced') }] : []),
@@ -158,8 +154,8 @@ function Settings({
     e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
   };
 
-  function renderCategory() {
-    switch (activeCategory) {
+  function renderCategory(shown: Category) {
+    switch (shown) {
       case 'general': {
         return (
           <>
@@ -328,7 +324,14 @@ function Settings({
               <Button onClick={askForCleanupChoices}>{t('Choose…')}</Button>
             </SettingRow>
 
-            <QuickExportSettings />
+            {matchesSearch(query, t('Quick exports'), t('Original quality'), 'Discord Email Ctrl') && (
+              <div data-setting-row="">
+                <QuickExportSettings />
+                {!searching && (
+                  <Button variant="ghost" size="sm" className={styles['moreShortcuts']} onClick={() => setCategory('shortcuts')}>{t('More shortcuts')}</Button>
+                )}
+              </div>
+            )}
 
             {showAdvancedSettings && (
               <SettingRow
@@ -440,51 +443,14 @@ function Settings({
         );
       }
 
-      case 'input': {
+      case 'shortcuts': {
         return (
-          <>
-            <SettingRow label={t('Keyboard shortcuts')} description={t('See and change every shortcut.')}>
-              <Button onClick={onKeyboardShortcutsDialogRequested}>
-                <FaRegKeyboard aria-hidden />
-                {t('Open…')}
-              </Button>
-            </SettingRow>
-
-            <ModifierKeySetting label={t('Move or resize a clip')} description={t('Hold this key and drag a clip\'s edge on the timeline.')} value={segmentMouseModifierKey} setValue={setSegmentMouseModifierKey} />
-            <ModifierKeySetting label={t('Zoom with the wheel')} value={mouseWheelZoomModifierKey} setValue={setMouseWheelZoomModifierKey} />
-            <ModifierKeySetting label={t('Step frames with the wheel')} value={mouseWheelFrameSeekModifierKey} setValue={setMouseWheelFrameSeekModifierKey} />
-            {showAdvancedSettings && (
-              <ModifierKeySetting label={t('Jump keyframes with the wheel')} value={mouseWheelKeyframeSeekModifierKey} setValue={setMouseWheelKeyframeSeekModifierKey} />
-            )}
-
-            <SettingRow label={t('Reverse wheel direction')} description={t('On the timeline.')}>
-              <Switch checked={invertTimelineScroll ?? false} onCheckedChange={setInvertTimelineScroll} aria-label={t('Reverse wheel direction')} />
-            </SettingRow>
-
-            <SettingRow label={t('Wheel and trackpad sensitivity')} value={wheelSensitivity.toFixed(2)}>
-              <Button onClick={() => onTunerRequested('wheelSensitivity')}>{t('Adjust')}</Button>
-            </SettingRow>
-
-            <SettingRow label={t('Arrow key seek step')} description={t('How far the arrow keys move.')} value={formatSeconds(keyboardNormalSeekSpeed)}>
-              <Button onClick={() => onTunerRequested('keyboardNormalSeekSpeed')}>{t('Adjust')}</Button>
-            </SettingRow>
-
-            {showAdvancedSettings && (
-              <>
-                <SettingRow label={t('Longer seek step')} value={formatSeconds(keyboardSeekSpeed2)}>
-                  <Button onClick={() => onTunerRequested('keyboardSeekSpeed2')}>{t('Adjust')}</Button>
-                </SettingRow>
-
-                <SettingRow label={t('Longest seek step')} value={formatSeconds(keyboardSeekSpeed3)}>
-                  <Button onClick={() => onTunerRequested('keyboardSeekSpeed3')}>{t('Adjust')}</Button>
-                </SettingRow>
-
-                <SettingRow label={t('Seek acceleration')} description={t('How quickly holding a seek key speeds up.')} value={`×${keyboardSeekAccFactor.toFixed(2)}`}>
-                  <Button onClick={() => onTunerRequested('keyboardSeekAccFactor')}>{t('Adjust')}</Button>
-                </SettingRow>
-              </>
-            )}
-          </>
+          <ShortcutSettings
+            onAllShortcutsRequested={onKeyboardShortcutsDialogRequested}
+            onTunerRequested={onTunerRequested}
+            formatSeconds={formatSeconds}
+            showAdvancedSettings={showAdvancedSettings}
+          />
         );
       }
 
@@ -613,22 +579,31 @@ function Settings({
   return (
     <div className={styles['layout']}>
       <nav className={styles['nav']} aria-label={t('Settings categories')}>
-        <div className={styles['navList']} role="tablist" aria-orientation="vertical" onKeyDown={onTabListKeyDown}>
-          {categories.map((c) => (
-            <button
-              key={c.id}
-              id={getTabId(c.id)}
-              type="button"
-              role="tab"
-              aria-selected={c.id === activeCategory}
-              aria-controls={c.id === activeCategory ? panelId : undefined}
-              tabIndex={c.id === activeCategory ? 0 : -1}
-              className={[styles['navItem'], ...(c.id === activeCategory ? [styles['navItemActive']] : [])].join(' ')}
-              onClick={() => setCategory(c.id)}
-            >
-              {c.label}
-            </button>
-          ))}
+        <div className={styles['navTop']}>
+          <div className={styles['settingsSearch']}>
+            <FiSearch aria-hidden />
+            <TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('Search settings')} aria-label={t('Search settings')} />
+          </div>
+          <div className={styles['navList']} role="tablist" aria-orientation="vertical" onKeyDown={onTabListKeyDown}>
+            {categories.map((c) => (
+              <button
+                key={c.id}
+                id={getTabId(c.id)}
+                type="button"
+                role="tab"
+                aria-selected={!searching && c.id === activeCategory}
+                aria-controls={c.id === activeCategory ? panelId : undefined}
+                tabIndex={c.id === activeCategory ? 0 : -1}
+                className={[styles['navItem'], ...(!searching && c.id === activeCategory ? [styles['navItemActive']] : [])].join(' ')}
+                onClick={() => {
+                  setQuery('');
+                  setCategory(c.id);
+                }}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className={styles['advancedToggle']}>
@@ -637,11 +612,26 @@ function Settings({
         </div>
       </nav>
 
-      {/* Keyed by tab, so each one opens scrolled to the top. */}
-      <div key={activeCategory} id={panelId} className={`consistent-scrollbar ${styles['content']}`} role="tabpanel" aria-labelledby={getTabId(activeCategory)}>
-        <h2 className={styles['contentTitle']}>{activeLabel}</h2>
-        {renderCategory()}
-      </div>
+      {searching ? (
+        <SettingsSearchContext.Provider value={query}>
+          {/* Every tab's matching settings under its name; tabs with none hide (CSS), and so does the "none found". */}
+          <div className={`consistent-scrollbar ${styles['content']} ${styles['searchResults']}`} role="region" aria-label={t('Search results')}>
+            {categories.map((c) => (
+              <section key={c.id} className={styles['searchSection']}>
+                <h2 className={styles['contentTitle']}>{c.label}</h2>
+                {renderCategory(c.id)}
+              </section>
+            ))}
+            <div className={styles['noResults']}>{t('No settings match "{{query}}".', { query })}</div>
+          </div>
+        </SettingsSearchContext.Provider>
+      ) : (
+        // Keyed by tab, so each one opens scrolled to the top.
+        <div key={activeCategory} id={panelId} className={`consistent-scrollbar ${styles['content']}`} role="tabpanel" aria-labelledby={getTabId(activeCategory)}>
+          <h2 className={styles['contentTitle']}>{activeLabel}</h2>
+          {renderCategory(activeCategory)}
+        </div>
+      )}
     </div>
   );
 }

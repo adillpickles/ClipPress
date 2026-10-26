@@ -37,9 +37,9 @@ const defaultKeyBindings: KeyBinding[] = [
   { keys: 'KeyI', action: 'setCutStart' },
   { keys: 'KeyO', action: 'setCutEnd' },
   { keys: 'Backspace', action: 'removeCurrentCutpoint' },
-  { keys: 'KeyD', action: 'cleanupFilesDialog' },
   { keys: 'KeyB', action: 'splitCurrentSegment' },
-  { keys: 'KeyR', action: 'increaseRotation' },
+  // R is crop in photo editors; it used to rotate the export, unseen in the simple editor (rotation is still bindable).
+  { keys: 'KeyR', action: 'editCurrentSegmentCrop' },
   { keys: 'ControlLeft+KeyR', action: 'toggleSegmentSpeedControls' },
   { keys: 'MetaLeft+KeyR', action: 'toggleSegmentSpeedControls' },
   { keys: 'KeyG', action: 'goToTimecode' },
@@ -715,6 +715,20 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     const migratedPresets = migrateQuickExportPresets(existingPresets);
     if (migratedPresets.some((preset, i) => preset !== existingPresets[i])) set('quickExportPresets', migratedPresets);
     store.set('quickExportPresetsMigrated', true);
+  }
+
+  // Single keys that did something hard to notice by accident: D opened the clean-up dialog, R rotated the export.
+  // Settings still holding those defaults lose D, and R zooms / crops instead (if that has no key of its own).
+  if (store.get('riskyLetterShortcutsMigrated') !== true) {
+    const existingBindings = store.get('keyBindings') as KeyBinding[];
+    const cropBound = existingBindings.some((existing) => existing.action === 'editCurrentSegmentCrop');
+    const migrated = existingBindings.flatMap((existing): KeyBinding[] => {
+      if (existing.keys === 'KeyD' && existing.action === 'cleanupFilesDialog') return [];
+      if (existing.keys === 'KeyR' && existing.action === 'increaseRotation') return cropBound ? [] : [{ keys: 'KeyR', action: 'editCurrentSegmentCrop' }];
+      return [existing];
+    });
+    if (migrated.length !== existingBindings.length || migrated.some((binding, i) => binding !== existingBindings[i])) set('keyBindings', migrated);
+    store.set('riskyLetterShortcutsMigrated', true);
   }
 
   // Delete removes the selected clips, for existing settings too, unless Delete already does something.

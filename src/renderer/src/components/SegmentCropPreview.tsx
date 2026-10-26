@@ -20,7 +20,7 @@ const corners: CropCorner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-r
  * text box editor: an accent frame with a label tab, round corner handles, and one compact
  * toolbar over the video, so the picture keeps its size when editing starts.
  */
-export default function SegmentCropPreview({ children, videoWidth, videoHeight, rotation, crop, editing, clipLabel, onChange, onDone }: {
+export default function SegmentCropPreview({ children, videoWidth, videoHeight, rotation, crop, editing, clipLabel, onChange, onDone, doneKeys }: {
   children: ReactNode,
   videoWidth: number,
   videoHeight: number,
@@ -31,6 +31,8 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
   clipLabel?: string | undefined,
   onChange: (nextCrop: SegmentCrop) => void,
   onDone: () => void,
+  /** Zoom / crop's own shortcut, which also finishes: shown in Done's hint. */
+  doneKeys?: string | undefined,
 }) {
   const { t } = useTranslation();
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -291,7 +293,7 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
             <output className={styles['zoomValue']}>{zoom.toFixed(1)}×</output>
             <span className={styles['divider']} />
             <button type="button" className={styles['textButton']} onClick={() => { cancelGesture(); onChange(fullFrameCrop); }} disabled={zoom <= 1.001}>{t('Reset')}</button>
-            <button type="button" className={styles['doneButton']} onClick={() => { settleZoom(); onDone(); }}>{t('Done')}</button>
+            <button type="button" className={styles['doneButton']} onClick={() => { settleZoom(); onDone(); }} title={t('Done')} data-tip-keys={doneKeys}>{t('Done')}</button>
           </div>
         )}
       </div>

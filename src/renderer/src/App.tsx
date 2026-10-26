@@ -52,6 +52,7 @@ import LastCommands from './LastCommands';
 import StreamsSelector from './StreamsSelector';
 import SegmentList from './SegmentList';
 import Settings from './components/Settings';
+import type { SettingsCategory } from './components/Settings';
 import Timeline from './Timeline';
 import BottomBar from './BottomBar';
 import ExportConfirm from './components/ExportConfirm';
@@ -453,8 +454,10 @@ function App() {
   const [renamingSegId, setRenamingSegId] = useState<string>();
   const [lastCommandsVisible, setLastCommandsVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>('general');
   const [tunerVisible, setTunerVisible] = useState<TunerType>();
   const [keyboardShortcutsVisible, setKeyboardShortcutsVisible] = useState(false);
+  const [keyboardShortcutsView, setKeyboardShortcutsView] = useState<'all'>();
   const [alwaysConcatMultipleFiles, setAlwaysConcatMultipleFiles] = useState(false);
   const [editingSegmentTagsSegmentIndex, setEditingSegmentTagsSegmentIndex] = useState<number>();
   const [editingSegmentTags, setEditingSegmentTags] = useState<SegmentTags>();
@@ -6128,7 +6131,8 @@ function App() {
       duplicateCurrentSegment,
       toggleSegmentSpeedControls,
       addTextOverlay,
-      editCurrentSegmentCrop: () => editSegmentCrop(currentSegIndexSafe),
+      // The same key finishes, as Done does.
+      editCurrentSegmentCrop: () => (editingCropSegmentId != null ? setEditingCropSegmentId(undefined) : editSegmentCrop(currentSegIndexSafe)),
       toggleLastCommands,
       export: () => onExportPress(),
       quickExport: () => quickExport(),
@@ -6216,6 +6220,7 @@ function App() {
 
     return ret;
   }, [
+    editingCropSegmentId,
     removeSelectedClips,
     startOver,
     batchFiles.length,
@@ -6910,7 +6915,10 @@ function App() {
   ), [playbackVolume, previewAudioGainControls, setPlaybackVolume, toggleMuted, updateAudioGainForStream]);
   const editCurrentSegmentCrop = useCallback(() => editSegmentCrop(currentSegIndexSafe), [currentSegIndexSafe, editSegmentCrop]);
   const closeConcatDialog = useCallback(() => setConcatDialogOpen(false), []);
-  const closeKeyboardShortcuts = useCallback(() => setKeyboardShortcutsVisible(false), [setKeyboardShortcutsVisible]);
+  const closeKeyboardShortcuts = useCallback(() => {
+    setKeyboardShortcutsVisible(false);
+    setKeyboardShortcutsView(undefined);
+  }, [setKeyboardShortcutsVisible]);
 
   function renderSubtitles() {
     if (!activeSubtitle) return null;
@@ -7065,6 +7073,7 @@ function App() {
                             clipLabel={editingCropSegment != null ? (editingCropSegment.name || t('Clip {{number}}', { number: currentSegIndexSafe + 1 })) : undefined}
                             onChange={changeSegmentCrop}
                             onDone={() => setEditingCropSegmentId(undefined)}
+                            doneKeys={keyBindingByAction['editCurrentSegmentCrop']?.keys}
                           >
                             {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                             <video
@@ -7582,10 +7591,14 @@ function App() {
 
                     <div className={styles['settingsDialogBody']}>
                       <Settings
+                        category={settingsCategory}
+                        setCategory={setSettingsCategory}
                         onTunerRequested={onTunerRequested}
-                        onKeyboardShortcutsDialogRequested={
-                          toggleKeyboardShortcuts
-                        }
+                        onKeyboardShortcutsDialogRequested={() => {
+                          // From Settings: every action, the advanced ones too.
+                          setKeyboardShortcutsView('all');
+                          toggleKeyboardShortcuts();
+                        }}
                         askForCleanupChoices={changeCleanupChoices}
                         onProjectFileLocationChange={changeProjectFileLocation}
                         showAdvancedSettings={showAdvancedSettings}
@@ -7648,6 +7661,12 @@ function App() {
                     currentCutSeg={currentCutSeg}
                     resetKeyBindings={resetKeyBindings}
                     getKeyboardAction={getKeyboardAction}
+                    initialView={keyboardShortcutsView}
+                    onChangeShortcutsRequested={() => {
+                      closeKeyboardShortcuts();
+                      setSettingsCategory('shortcuts');
+                      setSettingsVisible(true);
+                    }}
                   />
                 </Suspense>
               )}

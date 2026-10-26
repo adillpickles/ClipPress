@@ -157,3 +157,100 @@
   align-items: center;
   gap: .5rem;
 }
+
+/* The search over all of Settings, above the tabs. */
+.navTop {
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+}
+
+.settingsSearch,
+.shortcutSearch {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.settingsSearch > svg,
+.shortcutSearch > svg {
+  position: absolute;
+  left: .6rem;
+  color: var(--cp-text-subtle);
+  font-size: .85rem;
+  pointer-events: none;
+}
+
+.settingsSearch input,
+.shortcutSearch input {
+  width: 100%;
+  padding-left: 1.85rem;
+}
+
+.shortcutSearch {
+  margin: .5rem 0 .25rem;
+}
+
+/* Searching: a tab with no matching setting hides, and the message shows only when nothing matches at all. */
+.searchSection:not(:has([data-setting-row])) {
+  display: none;
+}
+
+.noResults {
+  display: none;
+  margin-top: 1.5rem;
+  color: var(--cp-text-muted);
+  font-size: .875rem;
+}
+
+.searchResults:not(:has([data-setting-row])) .noResults {
+  display: block;
+}
+
+/* Shortcuts: groups with a small heading; a group with no shortcut matching the search hides. */
+.group {
+  margin-top: .9rem;
+}
+
+.group:not(:has([data-setting-row])) {
+  display: none;
+}
+
+.groupTitle {
+  margin: 0;
+  padding-bottom: .2rem;
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.group .row {
+  padding: .45rem 0;
+}
+
+.gesture {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+}
+
+.fixedKeys {
+  display: inline-flex;
+  align-items: center;
+  padding: .2rem .4rem;
+  opacity: .75;
+}
+
+.shortcutActions {
+  display: flex;
+  gap: .5rem;
+  margin-top: 1.25rem;
+}
+
+.moreShortcuts {
+  margin-top: .35rem;
+}
