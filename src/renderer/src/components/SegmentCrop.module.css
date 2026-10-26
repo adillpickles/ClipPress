@@ -24,6 +24,8 @@
 .frame {
   position: absolute;
   box-sizing: border-box;
+  /* For the chip, which fits itself to the frame's width (below). */
+  container-type: inline-size;
   border: 1.5px solid rgba(255, 255, 255, .92);
   border-radius: 3px;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, .25);
@@ -80,13 +82,17 @@
 .chipClip { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .chipClip::after { content: '·'; margin-left: 6px; opacity: .6; }
 .chipSize { flex-shrink: 0; font-variant-numeric: tabular-nums; opacity: .8; }
+/* A small frame (a portrait clip zoomed far in) keeps only the size, and a tiny one no chip at all. */
+@container (max-width: 200px) { .chipClip { display: none; } }
+@container (max-width: 110px) { .chip { display: none; } }
 
 /* Corner brackets: an L over each corner, drawn inside the frame so the preview's edge never clips them (the frame
    fills the picture when editing starts). A bigger target than the old dots. */
 .corner {
   position: absolute;
-  width: 22px;
-  height: 22px;
+  /* At most half the frame each way, so two corners never overlap on a tiny frame. */
+  width: min(22px, 50%);
+  height: min(22px, 50%);
   min-width: 0;
   padding: 0;
   border: 0;
