@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { stat } from 'node:fs/promises';
 import readline from 'node:readline';
+import { constants as osConstants, setPriority } from 'node:os';
 import type { Options as ExecaOptions, ResultPromise } from 'execa';
 import assert from 'node:assert';
 import type { Readable } from 'node:stream';
@@ -215,6 +216,16 @@ export const runFfmpegStreaming = (args: readonly string[], { cancelId, onOutput
 }) => withCancelId(cancelId, async (cancelSignal) => {
   await loadExeca();
   const process = runFfmpegProcess(args, { ...(cancelSignal != null && { cancelSignal }), buffer: false }, { logCli: false });
+  // The timeline's pictures are made while the recording opens and plays: below normal priority, the player and the
+  // UI come first (with all of FFmpeg's decoding threads at normal priority, the page could miss frames for 0.3 s),
+  // and so do other programs, such as a game.
+  if (process.pid != null) {
+    try {
+      setPriority(process.pid, osConstants.priority.PRIORITY_BELOW_NORMAL);
+    } catch (err) {
+      logger.warn('Could not lower the priority of FFmpeg', err);
+    }
+  }
   let stdout: Buffer[] = [];
   let stderrLines: string[] = [];
   let timer: ReturnType<typeof setTimeout> | undefined;

@@ -48,11 +48,14 @@ function AudioLane({ peaks, trackGainDb, height, segments, activeIndex, noneTick
     const dpr = window.devicePixelRatio || 1;
     const width = Math.round(canvasWidth);
     const innerHeight = height - 10;
-    canvas.width = Math.round(width * dpr);
-    canvas.height = Math.round(innerHeight * dpr);
+    // Resized only when its size changes: that reallocates it.
+    if (canvas.width !== Math.round(width * dpr)) canvas.width = Math.round(width * dpr);
+    if (canvas.height !== Math.round(innerHeight * dpr)) canvas.height = Math.round(innerHeight * dpr);
     canvas.style.width = `${width}px`;
     canvas.style.height = `${innerHeight}px`;
-    const ctx = canvas.getContext('2d');
+    // Drawn by the CPU (willReadFrequently asks for that): a waveform this small takes it a millisecond, where the GPU's
+    // first canvas of a session held up the page for over 150 ms while the recording opened.
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (ctx == null) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, innerHeight);
@@ -75,6 +78,9 @@ function AudioLane({ peaks, trackGainDb, height, segments, activeIndex, noneTick
     const volumeAt = (time: number) => trackFactor * (louder.find((clip) => time >= clip.start && time < clip.end)?.factor ?? 1);
 
     const mid = innerHeight / 2;
+    // One path per colour, filled once each.
+    const keptBars = new Path2D();
+    const cutBars = new Path2D();
     for (let x = 0; x < width; x += 1) {
       const px = canvasLeft + x;
       if (px > lanePx) break;
@@ -83,11 +89,14 @@ function AudioLane({ peaks, trackGainDb, height, segments, activeIndex, noneTick
       const middle = (from + to) / 2;
       const peak = Math.min(1, peakBetween(peaks, from, to) * volumeAt(middle));
       const h = Math.max(1, peak * (innerHeight - 2));
-      const keptHere = isKept(middle);
-      ctx.fillStyle = keptHere ? kept : cut;
-      ctx.globalAlpha = keptHere ? 0.95 : 0.4;
-      ctx.fillRect(x, mid - h / 2, 1, h);
+      (isKept(middle) ? keptBars : cutBars).rect(x, mid - h / 2, 1, h);
     }
+    ctx.fillStyle = kept;
+    ctx.globalAlpha = 0.95;
+    ctx.fill(keptBars);
+    ctx.fillStyle = cut;
+    ctx.globalAlpha = 0.4;
+    ctx.fill(cutBars);
     ctx.globalAlpha = 1;
   }, [activeIndex, canvasLeft, canvasWidth, height, invertCutSegments, lanePx, noneTicked, peaks, pxToTime, segments, trackGainDb, viewportPx]);
 
