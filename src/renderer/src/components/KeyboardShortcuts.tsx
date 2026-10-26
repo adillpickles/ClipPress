@@ -296,20 +296,21 @@ const KeyboardShortcuts = memo(({
         name: t('Forward seek (longest)'),
         category: seekingCategory,
       },
+      // What these do in the simple editor (see App): Alt+← / → go to clip edges, Ctrl+← / → step a frame.
       seekBackwardsKeyframe: {
-        name: t('Seek previous keyframe'),
+        name: simpleMode ? t('Go to the clip edge before') : t('Seek previous keyframe'),
         category: seekingCategory,
       },
       seekForwardsKeyframe: {
-        name: t('Seek next keyframe'),
+        name: simpleMode ? t('Go to the clip edge after') : t('Seek next keyframe'),
         category: seekingCategory,
       },
       seekBackwardsPercent: {
-        name: t('Seek backward 1% of timeline at current zoom'),
+        name: simpleMode ? t('Step backward 1 frame') : t('Seek backward 1% of timeline at current zoom'),
         category: seekingCategory,
       },
       seekForwardsPercent: {
-        name: t('Seek forward 1% of timeline at current zoom'),
+        name: simpleMode ? t('Step forward 1 frame') : t('Seek forward 1% of timeline at current zoom'),
         category: seekingCategory,
       },
       jumpCutStart: {
@@ -953,7 +954,7 @@ const KeyboardShortcuts = memo(({
 /** The clip workflow's shortcuts at a glance (#20), read from the current bindings. */
 function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
   const { t } = useTranslation();
-  const { segmentMouseModifierKey } = useUserSettings();
+  const { segmentMouseModifierKey, simpleMode } = useUserSettings();
   const quickExportLabels = useQuickExportLabels();
 
   const groups = useMemo(() => [
@@ -963,7 +964,8 @@ function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
       items: [
         { label: t('Play / pause'), actions: ['togglePlayResetSpeed'] },
         { label: t('Back / forward'), actions: ['seekBackwards', 'seekForwards'] },
-        { label: t('Previous / next frame'), actions: ['seekPreviousFrame', 'seekNextFrame'] },
+        // Ctrl+← / → in the simple editor (see App).
+        { label: t('Previous / next frame'), actions: simpleMode ? ['seekBackwardsPercent', 'seekForwardsPercent'] : ['seekPreviousFrame', 'seekNextFrame'] },
         { label: t('Slower / faster'), actions: ['reducePlaybackRate', 'increasePlaybackRate'] },
         { label: t('Mute'), actions: ['toggleMuted'] },
       ],
@@ -978,6 +980,7 @@ function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
         { label: t('Split the clip'), actions: ['splitCurrentSegment'] },
         { label: t('Previous / next clip'), actions: ['jumpPrevSegment', 'jumpNextSegment'] },
         { label: t('Go to clip start / end'), actions: ['jumpCutStart', 'jumpCutEnd'] },
+        ...(simpleMode ? [{ label: t('Clip edge before / after'), actions: ['seekBackwardsKeyframe', 'seekForwardsKeyframe'] satisfies KeyboardAction[] }] : []),
         { label: t('Rename the clip'), actions: ['labelCurrentSegment'] },
       ],
     },
@@ -1016,7 +1019,7 @@ function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
         },
       ],
     },
-  ] satisfies { id: string, title: string, items: { label: string, actions: KeyboardAction[], title?: string }[] }[], [quickExportLabels, t]);
+  ] satisfies { id: string, title: string, items: { label: string, actions: KeyboardAction[], title?: string }[] }[], [quickExportLabels, simpleMode, t]);
 
   // The first binding of each action (most have one); unbound actions show a dash.
   const keysFor = (action: KeyboardAction) => keyBindings.find((binding) => binding.action === action)?.keys;

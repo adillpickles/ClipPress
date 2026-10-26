@@ -1,16 +1,38 @@
 import { describe, expect, it } from 'vitest';
 
-import { getEdgeSnapDistance, getNewClipEnd, snapCutEnd, snapCutStart } from './clipEdgeSnap';
+import { findClipEdge, getEdgeSnapDistance, getNewClipEnd, snapCutEnd, snapCutStart } from './clipEdgeSnap';
 
 describe('getEdgeSnapDistance', () => {
-  it('is a few pixels of the timeline in view', () => {
-    expect(getEdgeSnapDistance({ visibleDuration: 30, fps: 60 })).toBeCloseTo(0.21);
+  it('is 3 frames with the whole recording in view, 1 frame once zoomed in', () => {
+    expect(getEdgeSnapDistance({ duration: 120, zoom: 1, fps: 60, laneWidthPx: 1100 })).toBeCloseTo(3 / 60);
+    expect(getEdgeSnapDistance({ duration: 120, zoom: 1.5, fps: 60, laneWidthPx: 1100 })).toBeCloseTo(1 / 60);
+    expect(getEdgeSnapDistance({ duration: 120, zoom: 1, fps: undefined })).toBeCloseTo(3 / 30);
   });
 
-  it('is never less than a frame and a half, nor more than half a second', () => {
-    expect(getEdgeSnapDistance({ visibleDuration: 2, fps: 60 })).toBeCloseTo(1.5 / 60);
-    expect(getEdgeSnapDistance({ visibleDuration: 2, fps: undefined })).toBeCloseTo(1.5 / 30);
-    expect(getEdgeSnapDistance({ visibleDuration: 900, fps: 60 })).toBe(0.5);
+  it('never snaps across a gap you can see', () => {
+    // A 5 s recording: 3 frames would be 11 px of the timeline, so it's 2 px.
+    expect(getEdgeSnapDistance({ duration: 5, zoom: 1, fps: 60, laneWidthPx: 1100 })).toBeCloseTo((2 * 5) / 1100);
+    // Deep zoom: a frame is many pixels wide.
+    expect(getEdgeSnapDistance({ duration: 120, zoom: 40, fps: 60, laneWidthPx: 1100 })).toBeCloseTo((2 * 3) / 1100);
+  });
+});
+
+describe('findClipEdge', () => {
+  const clips = [{ start: 4, end: 8 }, { start: 20, end: 25 }];
+  const frame = 1 / 60;
+
+  it('goes to the clip edge before or after, with the recording start and end as edges too', () => {
+    expect(findClipEdge({ time: 10, clips, duration: 90, direction: -1, frame })).toBe(8);
+    expect(findClipEdge({ time: 10, clips, duration: 90, direction: 1, frame })).toBe(20);
+    expect(findClipEdge({ time: 2, clips, duration: 90, direction: -1, frame })).toBe(0);
+    expect(findClipEdge({ time: 30, clips, duration: 90, direction: 1, frame })).toBe(90);
+  });
+
+  it('passes the edge the playhead is already on, and stops at the ends', () => {
+    expect(findClipEdge({ time: 8.004, clips, duration: 90, direction: -1, frame })).toBe(4);
+    expect(findClipEdge({ time: 8, clips, duration: 90, direction: 1, frame })).toBe(20);
+    expect(findClipEdge({ time: 0, clips, duration: 90, direction: -1, frame })).toBeUndefined();
+    expect(findClipEdge({ time: 90, clips, duration: 90, direction: 1, frame })).toBeUndefined();
   });
 });
 

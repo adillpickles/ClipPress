@@ -71,6 +71,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
     mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey,
     segmentMouseModifierKey, setSegmentMouseModifierKey, invertTimelineScroll, setInvertTimelineScroll, wheelSensitivity, keyboardNormalSeekSpeed,
     mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, keyboardSeekSpeed2, keyboardSeekSpeed3, keyboardSeekAccFactor,
+    simpleMode,
   } = useUserSettings();
   const { confirmDialog } = useAppContext();
 
@@ -122,8 +123,14 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
         { action: 'togglePlayResetSpeed', label: t('Play / pause') },
         { action: 'seekBackwards', label: t('Back a little') },
         { action: 'seekForwards', label: t('Forward a little') },
-        { action: 'seekPreviousFrame', label: t('Previous frame') },
-        { action: 'seekNextFrame', label: t('Next frame') },
+        // The simple editor steps a frame with Ctrl+← / → (these actions, see App); , and . still work.
+        ...(simpleMode ? [
+          { action: 'seekBackwardsPercent', label: t('Previous frame') },
+          { action: 'seekForwardsPercent', label: t('Next frame') },
+        ] as const : [
+          { action: 'seekPreviousFrame', label: t('Previous frame') },
+          { action: 'seekNextFrame', label: t('Next frame') },
+        ] as const),
         { action: 'reducePlaybackRate', label: t('Play slower') },
         { action: 'increasePlaybackRate', label: t('Play faster') },
         { action: 'toggleMuted', label: t('Mute the preview') },
@@ -142,10 +149,15 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
         { action: 'removeSelectedClips', label: t('Remove the selected clips') },
         { action: 'duplicateCurrentSegment', label: t('Duplicate the clip') },
         { action: 'labelCurrentSegment', label: t('Rename the clip') },
-        { action: 'jumpPrevSegment', label: t('Select the clip before') },
-        { action: 'jumpNextSegment', label: t('Select the clip after') },
+        { action: 'jumpPrevSegment', label: t('Select and go to the clip before') },
+        { action: 'jumpNextSegment', label: t('Select and go to the clip after') },
         { action: 'jumpCutStart', label: t('Go to the clip\'s start') },
         { action: 'jumpCutEnd', label: t('Go to the clip\'s end') },
+        // Alt+← / →: clip edges in the simple editor, keyframes in advanced mode (see App).
+        ...(simpleMode ? [
+          { action: 'seekBackwardsKeyframe', label: t('Go to the clip edge before') },
+          { action: 'seekForwardsKeyframe', label: t('Go to the clip edge after') },
+        ] as const : []),
         { action: 'startOver', label: t('Start over') },
       ],
     },
@@ -187,9 +199,14 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
         { action: 'cleanupFilesDialog', label: t('Close and clean up files') },
       ],
     },
-  ], [quickExportLabels, t]);
+  ], [quickExportLabels, simpleMode, t]);
 
-  const names = useMemo(() => new Map(groups.flatMap((group) => group.items.map((item) => [item.action, item.label] as const))), [groups]);
+  // , and . aren't listed in the simple editor, but can still be named when their keys are taken.
+  const names = useMemo(() => new Map<KeyboardAction, string>([
+    ['seekPreviousFrame', t('Previous frame')],
+    ['seekNextFrame', t('Next frame')],
+    ...groups.flatMap((group) => group.items.map((item) => [item.action, item.label] as const)),
+  ]), [groups, t]);
   const getActionName = (action: KeyboardAction) => names.get(action) ?? action;
   const query = [outerQuery, ownQuery].filter(Boolean).join(' ');
   const keysText = (action: KeyboardAction) => keyBindings.filter((b) => b.action === action).map((b) => b.keys.replaceAll(/Left|Right|Key|Digit/g, '').replaceAll('Control', 'Ctrl')).join(' ');

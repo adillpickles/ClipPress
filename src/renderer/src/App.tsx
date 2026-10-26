@@ -301,7 +301,7 @@ import { ShelfUpNext } from './components/Shelf';
 import useShelf, { listShelfFolder } from './hooks/useShelf';
 import { buildShelfQueue, pickNextClip, rememberShelfExport, shelfThumbnailKey } from './shelf';
 import formatSizeLimitedProgressText, { getSizeLimitedStageTitle } from './sizeLimitedProgressText';
-import { getEdgeSnapDistance } from './clipEdgeSnap';
+import { findClipEdge, getEdgeSnapDistance } from './clipEdgeSnap';
 import getMergePartNames from './mergePartNames';
 import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, resolveExportQuality } from './quickExport';
 import type { QuickExport } from './quickExport';
@@ -752,8 +752,10 @@ function App() {
   // The simple editor: I and O lock onto a clip edge the playhead is just next to, so clips sit back to back. The
   // playhead goes to the edge (unless playing), and a short blue line on the timeline shows where.
   const getEdgeSnapDistanceNow = useCallback(() => (
-    simpleMode && zoomedDuration != null ? getEdgeSnapDistance({ visibleDuration: zoomedDuration, fps: detectedFps }) : undefined
-  ), [detectedFps, simpleMode, zoomedDuration]);
+    simpleMode && isDurationValid(fileDuration)
+      ? getEdgeSnapDistance({ duration: fileDuration, zoom: zoomUnrounded, fps: detectedFps, laneWidthPx: document.querySelector('[data-timeline-scroller]')?.clientWidth })
+      : undefined
+  ), [detectedFps, fileDuration, simpleMode, zoomUnrounded]);
   const [edgeSnapCue, setEdgeSnapCue] = useState<{ time: number, id: number }>();
   const onEdgeSnap = useCallback((time: number) => {
     setEdgeSnapCue((previous) => ({ time, id: (previous?.id ?? 0) + 1 }));
@@ -5341,6 +5343,13 @@ function App() {
     [findNearestKeyFrameTime, getRelevantTime, seekAbs],
   );
 
+  // Alt+← / → in the simple editor, which shows no keyframes: the clip edge before or after.
+  const seekClipEdge = useCallback((direction: -1 | 1) => {
+    if (!isDurationValid(fileDuration)) return;
+    const time = findClipEdge({ time: getRelevantTime(), clips: isInitialSegment(cutSegments) ? [] : cutSegments, duration: fileDuration, direction, frame: 1 / (detectedFps || 30) });
+    if (time != null) seekAbs(time);
+  }, [cutSegments, detectedFps, fileDuration, getRelevantTime, seekAbs]);
+
   const onTimelineWheel = useTimelineScroll({
     wheelSensitivity,
     mouseWheelZoomModifierKey,
@@ -6220,10 +6229,12 @@ function App() {
       seekForwards: () => seekRelAccelerated(keyboardNormalSeekSpeed),
       seekForwards2: () => seekRelAccelerated(keyboardSeekSpeed2),
       seekForwards3: () => seekRelAccelerated(keyboardSeekSpeed3),
-      seekBackwardsPercent: () => seekRelPercent(-0.01),
-      seekForwardsPercent: () => seekRelPercent(0.01),
-      seekBackwardsKeyframe: () => seekClosestKeyframe(-1),
-      seekForwardsKeyframe: () => seekClosestKeyframe(1),
+      // The simple editor: Ctrl+← / → step one frame (1% of the view only looks like a frame when zoomed in), and
+      // Alt+← / → go to the clip edge before or after. Advanced mode keeps LosslessCut's.
+      seekBackwardsPercent: () => (simpleMode ? shortStep(-1) : seekRelPercent(-0.01)),
+      seekForwardsPercent: () => (simpleMode ? shortStep(1) : seekRelPercent(0.01)),
+      seekBackwardsKeyframe: () => (simpleMode ? seekClipEdge(-1) : seekClosestKeyframe(-1)),
+      seekForwardsKeyframe: () => (simpleMode ? seekClipEdge(1) : seekClosestKeyframe(1)),
       seekPreviousFrame: () => shortStep(-1),
       seekNextFrame: () => shortStep(1),
       // The simple editor's ↑ / ↓ also show the clip they select, so I and O then act on the clip in view.
@@ -6459,6 +6470,7 @@ function App() {
     keyboardSeekSpeed3,
     seekRelPercent,
     seekClosestKeyframe,
+    seekClipEdge,
     shortStep,
     jumpSeg,
     zoomRel,

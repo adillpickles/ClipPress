@@ -872,6 +872,8 @@ function Timeline({
           // Sized by the window, never by the (zoomed, many times wider) lane inside it.
           style={{ overflowX: 'scroll', overflowY: 'hidden', contain: 'inline-size' }}
           className="hide-scrollbar"
+          // Its width tells how many pixels a time gap takes (I and O don't snap across a gap you can see).
+          data-timeline-scroller=""
           onWheel={onWheel}
           onScroll={onTimelineScroll}
           ref={timelineScrollerRef}
