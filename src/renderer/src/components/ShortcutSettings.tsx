@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FaMouse } from 'react-icons/fa';
 import { FiSearch } from 'react-icons/fi';
@@ -9,6 +9,7 @@ import { normalizeQuickExportPresets, quickExportPresetActions } from '../../../
 import useUserSettings from '../hooks/useUserSettings';
 import { getModifier, getModifierKeyNames } from '../hooks/useTimelineScroll';
 import { getQuickExportPresetLabel } from '../quickExport';
+import { getEventBindingKeys, normalizeBindingKeys } from '../shortcutKeys';
 import { isMac } from '../util';
 import Button from './Button';
 import Select from './Select';
@@ -72,8 +73,43 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
     mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, keyboardSeekSpeed2, keyboardSeekSpeed3, keyboardSeekAccFactor,
   } = useUserSettings();
   const { confirmDialog } = useAppContext();
+
+  // Shortcut changes made here can be undone and redone, with the keys Undo and Redo are set to.
+  const historyRef = useRef<{ past: KeyBinding[][], future: KeyBinding[][] }>({ past: [], future: [] });
+  const remember = useCallback(() => {
+    historyRef.current = { past: [...historyRef.current.past.slice(-49), keyBindings], future: [] };
+  }, [keyBindings]);
+  const changeKeyBindings = useCallback((update: (bindings: KeyBinding[]) => KeyBinding[]) => {
+    const next = update(keyBindings);
+    if (next === keyBindings) return;
+    remember();
+    setKeyBindings(next);
+  }, [keyBindings, remember, setKeyBindings]);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Not while a shortcut is being recorded (those keys are the new shortcut), nor in a text field (its own undo).
+      if (document.querySelector('[data-shortcut-recording]') != null) return;
+      if (e.target instanceof Element && e.target.closest('input, textarea, [contenteditable="true"]') != null) return;
+      const pressed = normalizeBindingKeys(getEventBindingKeys(e));
+      const isAction = (name: KeyboardAction) => keyBindings.some((binding) => binding.action === name && normalizeBindingKeys(binding.keys) === pressed);
+      const undo = isAction('undo');
+      if (!undo && !isAction('redo')) return;
+      const { past, future } = historyRef.current;
+      const restore = undo ? past.at(-1) : future.at(-1);
+      if (restore == null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      historyRef.current = undo ? { past: past.slice(0, -1), future: [...future, keyBindings] } : { past: [...past, keyBindings], future: future.slice(0, -1) };
+      setKeyBindings(restore);
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [keyBindings, setKeyBindings]);
+
   const onResetClick = async () => {
-    if (await confirmDialog({ confirmButtonText: t('Reset'), description: t('Put every shortcut back as it came?') })) resetKeyBindings();
+    if (!await confirmDialog({ confirmButtonText: t('Reset'), description: t('Put every shortcut back as it came?') })) return;
+    remember();
+    resetKeyBindings();
   };
 
   const quickExportLabels = useMemo(() => normalizeQuickExportPresets(quickExportPresets).map((preset) => getQuickExportPresetLabel(preset, (key, options) => t(key, options))), [quickExportPresets, t]);
@@ -106,8 +142,8 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
         { action: 'removeSelectedClips', label: t('Remove the selected clips') },
         { action: 'duplicateCurrentSegment', label: t('Duplicate the clip') },
         { action: 'labelCurrentSegment', label: t('Rename the clip') },
-        { action: 'jumpPrevSegment', label: t('Previous clip') },
-        { action: 'jumpNextSegment', label: t('Next clip in the list') },
+        { action: 'jumpPrevSegment', label: t('Select the clip before') },
+        { action: 'jumpNextSegment', label: t('Select the clip after') },
         { action: 'jumpCutStart', label: t('Go to the clip\'s start') },
         { action: 'jumpCutEnd', label: t('Go to the clip\'s end') },
         { action: 'startOver', label: t('Start over') },
@@ -140,7 +176,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
         { action: 'export', label: t('Export') },
         { action: 'quickExport', label: t('Export with the last settings') },
         ...quickExportPresetActions.map((action, index) => ({ action, label: t('Quick export {{number}}: {{preset}}', { number: index + 1, preset: quickExportLabels[index] ?? '' }) })),
-        { action: 'batchOpenNextFile', label: t('Next clip') },
+        { action: 'batchOpenNextFile', label: t('Open the next clip in the folder') },
       ],
     },
     {
@@ -177,7 +213,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
                   label={label}
                   shown={getShownBindings(keyBindings.filter((binding) => binding.action === action))}
                   keyBindings={keyBindings}
-                  setKeyBindings={setKeyBindings}
+                  setKeyBindings={changeKeyBindings}
                   getActionName={getActionName}
                 />
               </div>

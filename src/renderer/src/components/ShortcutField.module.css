@@ -120,6 +120,11 @@
   opacity: 1;
 }
 
+/* While recording: gone, but its room kept so the row doesn't shift. */
+.addSlot.addSlotHidden {
+  visibility: hidden;
+}
+
 .remove {
   all: unset;
   position: absolute;
@@ -147,6 +152,12 @@
 .remove:hover {
   color: var(--red-11);
   border-color: color-mix(in srgb, var(--red-9) 50%, transparent);
+}
+
+/* About to remove it: the key cap's highlight turns red too (the pointer covers the ✕ itself). */
+.bindingWrap:has(.remove:hover) .slot {
+  border-color: color-mix(in srgb, var(--red-9) 55%, transparent);
+  background: color-mix(in srgb, var(--red-9) 12%, transparent);
 }
 
 .conflict {
