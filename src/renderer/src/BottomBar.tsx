@@ -45,7 +45,7 @@ import { getSegColor as getSegColorRaw } from './util/colors';
 import { isExactDurationMatch } from './util/duration';
 import { zoomMax } from './util/constants';
 import useUserSettings from './hooks/useUserSettings';
-import { askForPlaybackRate, checkAppPath } from './dialogs';
+import { askForPlaybackRate } from './dialogs';
 import type {
   FormatTimecode,
   ParseTimecode,
@@ -515,10 +515,6 @@ function BottomBar({
   const { invertCutSegments, setInvertCutSegments, simpleMode } = useUserSettings();
 
   const rotationStr = `${rotation}°`;
-
-  useEffect(() => {
-    checkAppPath();
-  }, []);
 
   const handleChangePlaybackRateClick = useCallback(async () => {
     const newRate = await askForPlaybackRate({

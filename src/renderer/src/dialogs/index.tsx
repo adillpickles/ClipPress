@@ -3,19 +3,17 @@ import i18n from 'i18next';
 import { Trans } from 'react-i18next';
 import invariant from 'tiny-invariant';
 import { FaArrowRight, FaExclamationTriangle, FaInfoCircle, FaQuestionCircle } from 'react-icons/fa';
-import ky from 'ky';
 import pMap from 'p-map';
 
 import { formatDuration } from '../util/duration';
 import { parseYouTube } from '../edlFormats';
-import { appPath, isMasBuild, isStoreBuild, isWindows, isWindowsStoreBuild, trashFile, unlinkWithRetry } from '../util';
+import { isMasBuild, isWindows, trashFile, unlinkWithRetry } from '../util';
 import type { ParseTimecode } from '../types';
 import type { FindKeyframeMode } from '../ffmpeg';
 import { dangerColor, primaryColor, warningColor } from '../colors';
 import getSwal from '../swal';
 import FileOpenChoice from '../components/FileOpenChoice';
 import type { FileOpenExtra } from '../components/FileOpenChoice';
-import isDev from '../isDev';
 import mainApi from '../mainApi';
 import type { ProjectSaveFailure } from '../projectAutoSave';
 import type { UserCloseChoice } from '../saveBeforeClose';
@@ -755,47 +753,6 @@ export function toastError(err: unknown) {
   const text = err instanceof Error ? err.message : String(err);
   const textTruncated = text.slice(0, 300);
   getSwal().toast.fire({ icon: 'error', title: i18n.t('Error'), text: textTruncated });
-}
-
-export async function checkAppPath() {
-  try {
-    const forceCheckMs = false;
-    const forceCheckTitle = false;
-    // this code is purposefully obfuscated to try to detect the most basic cloned app submissions to the MS Store
-    // eslint-disable-next-line no-useless-concat, one-var, one-var-declaration-per-line
-    const mf = 'mi' + 'fi.no', ap = 'Los' + 'slessC' + 'ut';
-    let payload: string | undefined;
-    if (isWindowsStoreBuild || (isDev && forceCheckMs)) {
-      const appPathOrMock = isDev ? String.raw`C:\Program Files\WindowsApps\37672NoveltyStudio.MediaConverter_9.0.6.0_x64__vjhnv588cyf84` : appPath;
-      const pathMatch = appPathOrMock.replaceAll('\\', '/').match(/Windows ?Apps\/([^/]+)/); // find the first component after WindowsApps
-      // example pathMatch: 37672NoveltyStudio.MediaConverter_9.0.6.0_x64__vjhnv588cyf84
-      if (!pathMatch) {
-        console.warn('Unknown path match', appPathOrMock);
-        return;
-      }
-      const pathSeg = pathMatch[1];
-      if (pathSeg == null) return;
-      if (pathSeg.startsWith(`57275${mf}.${ap}_`)) return;
-      // this will report the path and may return a msg
-      payload = `msstore-app-id:${pathSeg}`;
-      // also check all store fakes (different title:)
-    } else if (isStoreBuild || (isDev && forceCheckTitle)) {
-      const { title } = document;
-      if (!title.includes(ap)) {
-        payload = `store-app-title:${title}`;
-      }
-    }
-
-    if (payload) {
-      // eslint-disable-next-line no-useless-concat
-      const url = 'htt' + 'ps:/' + '/los' + 'sles' + 'sc' + 'ut-anal' + 'ytics.mi' + 'fi.n' + `o/${payload.length}/${encodeURIComponent(btoa(payload))}`;
-      // console.log('Reporting app', pathSeg, url);
-      const response = await ky(url).json<{ invalid?: boolean, title: string, text: string }>();
-      if (response.invalid) getSwal().toast.fire({ timer: 60000, icon: 'error', title: response.title, text: response.text });
-    }
-  } catch (err) {
-    if (isDev) console.warn(err instanceof Error && err.message);
-  }
 }
 
 export function mustDisallowVob() {
