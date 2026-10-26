@@ -340,7 +340,7 @@ import {
 } from './textOverlays';
 
 const electron = window.require('electron');
-const { lstat, readdir } = window.require('fs/promises');
+const { lstat } = window.require('fs/promises');
 const {
   parse: parsePath,
   join: pathJoin,
@@ -3632,7 +3632,18 @@ function App() {
   const onExportConfirm = useCallback(async (quickExport?: QuickExport) => {
     invariant(filePath != null && outputDir != null);
     emitEvent({ eventName: 'export-start', path: filePath });
-    const listOutputDirNames = async () => new Set<string>(await readdir(outputDir).catch(() => []));
+    // A name taken in the output folder; an error other than "not there" stops the export instead of risking a file.
+    const isOutputNameTaken = async (name: string) => {
+      try {
+        await lstat(pathJoin(outputDir, name));
+        return true;
+      } catch (err) {
+        if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return false;
+        throw err;
+      }
+    };
+    // A merged-only export's clip files, deleted again if it fails or is cancelled (their names were free).
+    let mergePartsToRemoveOnFailure: string[] = [];
     // Cancel stops the FFmpeg running then; between steps it's caught here, so the next step doesn't start.
     const exportAbort = new AbortController();
     const setExportWorking = (state: { text: string, detailText?: string | undefined }) => setWorking({ ...state, abortController: exportAbort });
@@ -4022,7 +4033,8 @@ function App() {
         if (willMerge && autoDeleteMergedSegments) {
           const generated = await generateCutFileNames(defaultCutFileTemplate);
           // Made and deleted again: never on a file already there (an earlier export's clips).
-          cutFileNames = getMergePartNames(generated.fileNames, await listOutputDirNames());
+          cutFileNames = await getMergePartNames(generated.fileNames, isOutputNameTaken);
+          mergePartsToRemoveOnFailure = cutFileNames.map((name) => pathJoin(outputDir, name));
           addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
         } else {
           const generated = await generateCutFileNames(
@@ -4219,7 +4231,8 @@ function App() {
       if (willMerge && autoDeleteMergedSegments) {
         const generated = await generateCutFileNames(defaultCutFileTemplate);
         // Made and deleted again: never on a file already there (an earlier export's clips).
-        cutFileNames = getMergePartNames(generated.fileNames, await listOutputDirNames());
+        cutFileNames = await getMergePartNames(generated.fileNames, isOutputNameTaken);
+        mergePartsToRemoveOnFailure = cutFileNames.map((name) => pathJoin(outputDir, name));
         addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
       } else {
         const generated = await generateCutFileNames(cutFileTemplateOrDefault);
@@ -4430,6 +4443,10 @@ function App() {
       emitEvent({ eventName: 'export-complete', paths: exportedPaths });
     } catch (err) {
       emitEvent({ eventName: 'export-complete' });
+
+      // A merged-only export that stopped part way: its clip files go (only those that were written).
+      const leftParts = (await Promise.all(mergePartsToRemoveOnFailure.map(async (path) => ((await lstat(path).catch(() => undefined)) != null ? path : undefined)))).filter((path) => path != null);
+      if (leftParts.length > 0) await tryDeleteFiles(leftParts);
 
       if (isAbortedError(err)) return;
 
