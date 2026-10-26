@@ -23,6 +23,8 @@ export default function useContextMenu(
     const onContextMenu = (e: MouseEvent) => {
       const items = templateRef.current;
       if (items.length === 0) return;
+      // A text field inside (renaming a clip) keeps its own menu: Cut, Copy, Paste.
+      if (e.target instanceof Element && e.target.closest('textarea, [contenteditable="true"], input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"])') != null) return;
       e.preventDefault();
       openMenu({ items, at: { x: e.clientX, y: e.clientY } });
     };
