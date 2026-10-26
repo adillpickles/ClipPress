@@ -1,7 +1,7 @@
 import type { CSSProperties, MutableRefObject, PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FaMinus, FaPlus } from 'react-icons/fa';
+import { FiZoomIn, FiZoomOut } from 'react-icons/fi';
 
 import type { CropCorner, SegmentCrop } from '../segmentCrop';
 import { fullFrameCrop, getSegmentCropPixels, isSameSegmentCrop, minCropSize, moveSegmentCrop, resizeSegmentCrop, zoomSegmentCrop } from '../segmentCrop';
@@ -16,9 +16,9 @@ const wheelCommitDelayMs = 350;
 const corners: CropCorner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 
 /**
- * Shows each segment's crop in the preview and, while editing, the crop frame. Styled like the
- * text box editor: an accent frame with a label tab, round corner handles, and one compact
- * toolbar over the video, so the picture keeps its size when editing starts.
+ * Shows each segment's crop in the preview and, while editing, the crop frame: a white frame with corner brackets
+ * (as in the Photos app and phone editors), a faint thirds grid, a small chip with the clip and the size, and one
+ * compact toolbar over the video, so the picture keeps its size when editing starts.
  */
 export default function SegmentCropPreview({ children, videoWidth, videoHeight, rotation, crop, editing, clipLabel, onChange, onDone, doneKeys, finishRef }: {
   children: ReactNode,
@@ -27,7 +27,7 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
   rotation: number | undefined,
   crop: SegmentCrop,
   editing: boolean,
-  /** The clip being cropped, named on the frame's tab: a crop is per clip, not for the whole export. */
+  /** The clip being cropped, named in the frame's chip: a crop is per clip, not for the whole export. */
   clipLabel?: string | undefined,
   onChange: (nextCrop: SegmentCrop) => void,
   onDone: () => void,
@@ -223,8 +223,6 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
     height: `${100 / visibleCrop.height}%`,
   };
   const frameStyle: CSSProperties = { left: `${currentCrop.x * 100}%`, top: `${currentCrop.y * 100}%`, width: `${currentCrop.width * 100}%`, height: `${currentCrop.height * 100}%` };
-  // The tab sits above the frame like the text box's, or inside it when there is no room.
-  const tabInside = currentCrop.y * surfaceHeight < 22;
 
   return (
     <div ref={wrapperRef} className={styles['wrapper']}>
@@ -239,7 +237,6 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
             role="group"
             aria-label={t('Crop frame')}
             data-dragging={dragging}
-            data-tab-inside={tabInside}
             style={frameStyle}
           >
             <button
@@ -257,10 +254,10 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
               }}
             />
             <div className={styles['grid']} />
-            <div className={styles['tab']} onPointerDown={(event) => begin(event)}>
-              {t('Crop')}
-              {clipLabel != null && clipLabel !== '' && <span className={styles['tabClip']} title={clipLabel}>{clipLabel}</span>}
-              <span className={styles['tabDetail']}>{pixels.width}×{pixels.height}</span>
+            {/* Which clip, and the size it makes; the frame itself is what drags. */}
+            <div className={styles['chip']}>
+              {clipLabel != null && clipLabel !== '' && <span className={styles['chipClip']}>{clipLabel}</span>}
+              <span className={styles['chipSize']}>{pixels.width} × {pixels.height}</span>
             </div>
             {corners.map((corner) => (
               <button
@@ -286,7 +283,7 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
 
         {editing && (
           <div className={styles['toolbar']} role="group" aria-label={t('Zoom and crop controls')} data-dragging={dragging}>
-            <button type="button" className={styles['iconButton']} onClick={() => setZoom((current) => current - zoomButtonStep, true)} disabled={zoom <= 1.001} title={t('Zoom out')} aria-label={t('Zoom out')}><FaMinus size={9} /></button>
+            <button type="button" className={styles['iconButton']} onClick={() => setZoom((current) => current - zoomButtonStep, true)} disabled={zoom <= 1.001} title={t('Zoom out')} aria-label={t('Zoom out')}><FiZoomOut aria-hidden /></button>
             <input
               className={styles['slider']}
               type="range"
@@ -295,7 +292,7 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
               step={1}
               value={Math.round(zoom * 100)}
               aria-label={t('Zoom')}
-              aria-valuetext={`${zoom.toFixed(2)}×`}
+              aria-valuetext={`${Math.round(zoom * 100)}%`}
               onPointerDown={settleZoom}
               onChange={(event) => { const value = Number(event.target.value) / 100; setZoom(() => value, false); }}
               onPointerUp={settleZoom}
@@ -303,8 +300,8 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
               onBlur={settleZoom}
               onKeyDown={(event) => event.stopPropagation()}
             />
-            <button type="button" className={styles['iconButton']} onClick={() => setZoom((current) => current + zoomButtonStep, true)} disabled={zoom >= maxZoom - 0.001} title={t('Zoom in')} aria-label={t('Zoom in')}><FaPlus size={9} /></button>
-            <output className={styles['zoomValue']}>{zoom.toFixed(1)}×</output>
+            <button type="button" className={styles['iconButton']} onClick={() => setZoom((current) => current + zoomButtonStep, true)} disabled={zoom >= maxZoom - 0.001} title={t('Zoom in')} aria-label={t('Zoom in')}><FiZoomIn aria-hidden /></button>
+            <output className={styles['zoomValue']}>{Math.round(zoom * 100)}%</output>
             <span className={styles['divider']} />
             <button type="button" className={styles['textButton']} onClick={() => { cancelGesture(); onChange(fullFrameCrop); }} disabled={zoom <= 1.001}>{t('Reset')}</button>
             <button type="button" className={styles['doneButton']} onClick={finish} title={t('Done')} data-tip-keys={doneKeys}>{t('Done')}</button>

@@ -1,4 +1,5 @@
-/* Shares the text box editor's look (TextOverlayEditor): cyan accent, label tab, round handles. */
+/* A white frame with corner brackets, as in the Photos app and phone editors; the toolbar and focus rings use the
+   accent. */
 .wrapper {
   --crop-accent: rgba(79, 195, 204, .95); /* brand teal, fixed: drawn over the video in both themes */
   --crop-ink: rgba(5, 12, 20, .9);
@@ -17,12 +18,15 @@
 .dim {
   position: absolute;
   pointer-events: none;
-  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .62);
+  border-radius: 3px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .6);
 }
 .frame {
   position: absolute;
   box-sizing: border-box;
-  border: 1.5px solid var(--crop-accent);
+  border: 1.5px solid rgba(255, 255, 255, .92);
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .25);
 }
 .frame[data-dragging="true"] .grid { opacity: 1; }
 
@@ -39,62 +43,74 @@
 }
 .move:focus-visible { outline: 2px solid var(--crop-accent); outline-offset: -5px; }
 
-/* Rule-of-thirds guides, only while adjusting. */
+/* Rule-of-thirds guides: faint while editing, clearer while adjusting. */
 .grid {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0;
+  opacity: .55;
   transition: opacity 120ms ease;
   background:
     linear-gradient(to right, transparent calc(33.33% - .5px), rgba(255, 255, 255, .35) calc(33.33% - .5px), rgba(255, 255, 255, .35) calc(33.33% + .5px), transparent calc(33.33% + .5px), transparent calc(66.66% - .5px), rgba(255, 255, 255, .35) calc(66.66% - .5px), rgba(255, 255, 255, .35) calc(66.66% + .5px), transparent calc(66.66% + .5px)),
     linear-gradient(to bottom, transparent calc(33.33% - .5px), rgba(255, 255, 255, .35) calc(33.33% - .5px), rgba(255, 255, 255, .35) calc(33.33% + .5px), transparent calc(33.33% + .5px), transparent calc(66.66% - .5px), rgba(255, 255, 255, .35) calc(66.66% - .5px), rgba(255, 255, 255, .35) calc(66.66% + .5px), transparent calc(66.66% + .5px));
 }
 
-/* Matches the text box's move tab. Sits inside the frame when the crop touches the top edge. */
-.tab {
+/* Which clip and the size it makes, quietly inside the frame's top-left corner. */
+.chip {
   position: absolute;
-  /* Clear of the corner handle. */
   left: 10px;
-  bottom: 100%;
+  top: 10px;
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 20px;
-  padding: 0 8px;
-  border-radius: 6px 6px 0 0;
-  background: var(--crop-accent);
-  color: var(--crop-ink);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .04em;
-  text-transform: uppercase;
+  max-width: calc(100% - 20px);
+  padding: 3px 9px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: rgba(10, 12, 16, .62);
+  backdrop-filter: blur(6px);
+  color: rgba(255, 255, 255, .92);
+  font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
-  cursor: move;
+  pointer-events: none;
   user-select: none;
-  touch-action: none;
 }
-.frame[data-tab-inside="true"] .tab { bottom: auto; top: 0; border-radius: 0 0 6px 6px; }
-.tabDetail { font-weight: 600; letter-spacing: 0; text-transform: none; opacity: .72; font-variant-numeric: tabular-nums; }
-/* The clip's own name as written, cut short so a long one doesn't run over the corner handle. */
-.tabClip { min-width: 0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; font-weight: 700; letter-spacing: 0; text-transform: none; }
+/* The clip's own name as written, cut short before the size. */
+.chipClip { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chipClip::after { content: '·'; margin-left: 6px; opacity: .6; }
+.chipSize { flex-shrink: 0; font-variant-numeric: tabular-nums; opacity: .8; }
 
-/* Same handle as the text box's resize corner. */
+/* Corner brackets: an L over each corner, drawn inside the frame so the preview's edge never clips them (the frame
+   fills the picture when editing starts). A bigger target than the old dots. */
 .corner {
   position: absolute;
-  width: 14px;
-  height: 14px;
+  width: 22px;
+  height: 22px;
   min-width: 0;
   padding: 0;
-  transform: translate(-50%, -50%);
-  border-radius: 999px;
-  border: 2px solid rgba(5, 12, 20, .6);
-  background: var(--crop-accent);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+  border: 0;
+  background: transparent;
   touch-action: none;
-  transition: transform 100ms ease;
 }
-.corner:hover, .corner:focus-visible { transform: translate(-50%, -50%) scale(1.2); outline: none; }
+.corner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 0 solid white;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6));
+  transition: border-color 100ms ease;
+}
+.corner[data-crop-corner="top-left"] { transform: translate(-1.5px, -1.5px); }
+.corner[data-crop-corner="top-left"]::before { border-top-width: 4px; border-left-width: 4px; border-top-left-radius: 8px; }
+.corner[data-crop-corner="top-right"] { transform: translate(calc(-100% + 1.5px), -1.5px); }
+.corner[data-crop-corner="top-right"]::before { border-top-width: 4px; border-right-width: 4px; border-top-right-radius: 8px; }
+.corner[data-crop-corner="bottom-left"] { transform: translate(-1.5px, calc(-100% + 1.5px)); }
+.corner[data-crop-corner="bottom-left"]::before { border-bottom-width: 4px; border-left-width: 4px; border-bottom-left-radius: 8px; }
+.corner[data-crop-corner="bottom-right"] { transform: translate(calc(-100% + 1.5px), calc(-100% + 1.5px)); }
+.corner[data-crop-corner="bottom-right"]::before { border-bottom-width: 4px; border-right-width: 4px; border-bottom-right-radius: 8px; }
+.corner:hover::before, .corner:focus-visible::before { border-color: var(--crop-accent); }
+.corner:focus-visible { outline: none; }
 
 /* One compact control pill over the bottom of the picture. */
 .toolbar {
@@ -133,8 +149,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
+  font-size: 15px;
   padding: 0;
   border-radius: 999px;
   background: transparent;
@@ -152,7 +169,7 @@
   cursor: pointer;
 }
 
-.zoomValue { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.zoomValue { min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
 .divider { width: 1px; height: 16px; margin: 0 2px; background: rgba(255, 255, 255, .14); }
 
 .textButton {
