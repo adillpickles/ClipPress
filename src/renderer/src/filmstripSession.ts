@@ -1,5 +1,6 @@
-import { countFramesBetween, getDetailRequest, getFilmstripArgs, getFilmstripChunks, getFilmstripDetailArgs, getFilmstripFallbackArgs, getFilmstripInterval, getKeyframeSpacing, mergeRanges, servesView } from './filmstrip';
+import { countFramesBetween, getCoarseTargets, getDetailRequest, getFilmstripArgs, getFilmstripChunks, getFilmstripCoarseArgs, getFilmstripDetailArgs, getFilmstripFallbackArgs, getFilmstripInterval, getKeyframeSpacing, mergeRanges, servesView } from './filmstrip';
 import type { FilmstripFrame, FilmstripView, TimeRange } from './filmstrip';
+import type { CachedStrip, CachedStripFrame } from './timelineCache';
 
 /**
  * Runs one FFmpeg pass, handing over each frame as it's made; resolves with how many came (ffmpeg.ts). Rejects with
@@ -29,10 +30,21 @@ export interface FilmstripSessionOptions {
   /** The recording's start time, subtracted from FFmpeg's timestamps (the player starts at 0). */
   timeOffset: number,
   frameHeight: number,
+  /** The video's displayed width / height, from probing it; the frames' own, if they turn out clearly different. */
+  aspect?: number | undefined,
   run: FilmstripRunner,
   revoke: (url: string) => void,
   /** Something changed (called often while frames arrive: the caller batches). */
   onChange: () => void,
+  /** The default strip from the timeline cache: shown at once, and never revoked here (the cache owns its frames). */
+  cached?: CachedStrip | undefined,
+  /**
+   * How long the start may wait for the timeline to say what it shows (it measures itself first), so the tiles in
+   * view can be made first.
+   */
+  viewWaitMs?: number | undefined,
+  /** The default strip is complete: the timeline cache takes it over (and frees its frames). */
+  onComplete?: ((strip: CachedStrip) => void) | undefined,
 }
 
 /**
@@ -50,6 +62,9 @@ class FilmPass {
   readonly keyframes: boolean;
 
   state: 'waiting' | 'running' | 'done' = 'waiting';
+
+  /** FFmpeg made all of it. */
+  ok = false;
 
   /** The last frame's time so far. */
   readTo: number;
@@ -72,12 +87,19 @@ class FilmPass {
   }
 
   add(frame: FilmstripFrame) {
-    this.frames.push({ time: frame.time, url: frame.url });
+    this.frames.push({ time: frame.time, url: frame.url, blob: frame.blob });
     this.readTo = Math.max(this.readTo, frame.time);
+  }
+
+  /** Takes out its frame at exactly `time`, if it has one. */
+  take(time: number) {
+    const index = this.frames.findIndex((frame) => frame.time === time);
+    return index !== -1 ? this.frames.splice(index, 1)[0] : undefined;
   }
 
   finish() {
     this.state = 'done';
+    this.ok = true;
   }
 
   /** Stops it where it got to; what it made so far stays. */
@@ -111,6 +133,21 @@ export default class FilmstripSession {
 
   private detail: FilmPass[] = [];
 
+  /** Denser frames of windows zoomed out of: not shown, but back at once if their window is zoomed into again. */
+  private parked: FilmPass[] = [];
+
+  /** The frames the tiles in view show, made first (getFilmstripCoarseArgs); the strip takes them over. */
+  private coarse: FilmPass | undefined;
+
+  /** Frames the timeline cache owns (they came from it, or went to it): not revoked here. */
+  private readonly borrowed = new Set<string>();
+
+  private started = false;
+
+  private aspectChecked = false;
+
+  private startTimer: ReturnType<typeof setTimeout> | undefined;
+
   private aspect: number | undefined;
 
   private view: FilmstripView | undefined;
@@ -138,7 +175,21 @@ export default class FilmstripSession {
 
   constructor(options: FilmstripSessionOptions) {
     this.options = options;
-    this.stretches = getFilmstripChunks(options.duration).map(({ from, length }) => new FilmPass({ from, to: from + length }));
+    const { cached } = options;
+    if (cached != null) {
+      // Complete already: one stretch with every frame.
+      const whole = new FilmPass({ from: 0, to: options.duration });
+      cached.frames.forEach((frame) => {
+        whole.add(frame);
+        this.borrowed.add(frame.url);
+      });
+      whole.finish();
+      this.stretches = [whole];
+      this.aspect = cached.aspect ?? options.aspect;
+    } else {
+      this.stretches = getFilmstripChunks(options.duration).map(({ from, length }) => new FilmPass({ from, to: from + length }));
+      this.aspect = options.aspect;
+    }
   }
 
   get done() {
@@ -146,7 +197,14 @@ export default class FilmstripSession {
   }
 
   start() {
-    for (let i = 0; i < concurrency; i += 1) this.startNextStretch();
+    if (this.disposed || this.started || this.done) return;
+    // The coarse pass needs the tiles in view: the timeline says once it has measured itself, a frame or two later.
+    const { viewWaitMs = 0 } = this.options;
+    if (this.view == null && viewWaitMs > 0 && this.startTimer == null) {
+      this.startTimer = setTimeout(() => this.startNow(), viewWaitMs);
+      return;
+    }
+    this.startNow();
   }
 
   /** What the timeline shows: stretches in view are made first, and zoomed in, denser frames once it settles. */
@@ -154,11 +212,12 @@ export default class FilmstripSession {
     this.view = view;
     clearTimeout(this.detailTimer);
     if (this.disposed) return;
+    if (this.startTimer != null && !this.started) this.startNow();
     this.detailTimer = setTimeout(() => this.updateDetail(), detailDelayMs);
   }
 
   snapshot(): FilmstripSnapshot {
-    const passes = [...this.stretches, ...this.detail];
+    const passes = [...(this.coarse != null ? [this.coarse] : []), ...this.stretches, ...this.detail];
     this.cached ??= {
       frames: passes.flatMap((pass) => pass.frames).sort((a, b) => a.time - b.time),
       covered: mergeRanges(passes.flatMap((pass) => pass.covered ?? [])),
@@ -178,14 +237,53 @@ export default class FilmstripSession {
   dispose() {
     this.disposed = true;
     clearTimeout(this.detailTimer);
-    const passes = [...this.stretches, ...this.detail];
+    clearTimeout(this.startTimer);
+    const passes = [...(this.coarse != null ? [this.coarse] : []), ...this.stretches, ...this.detail, ...this.parked];
     passes.forEach((pass) => pass.abortController.abort());
-    passes.flatMap((pass) => pass.frames).forEach((frame) => this.options.revoke(frame.url));
+    passes.flatMap((pass) => pass.frames).forEach((frame) => {
+      if (!this.borrowed.has(frame.url)) this.options.revoke(frame.url);
+    });
     this.retired.forEach((url) => this.options.revoke(url));
     this.stretches.forEach((pass) => pass.frames.splice(0));
+    this.coarse = undefined;
     this.detail = [];
+    this.parked = [];
     this.retired = [];
     this.cached = undefined;
+  }
+
+  private startNow() {
+    clearTimeout(this.startTimer);
+    if (this.disposed || this.started) return;
+    this.started = true;
+    if (!this.startCoarse()) this.startStretches();
+  }
+
+  private startStretches() {
+    for (let i = 0; i < concurrency; i += 1) this.startNextStretch();
+  }
+
+  /**
+   * Makes the frames of the tiles in view first, when the strip would have many more (a quick pass that reads only
+   * keyframes), so the view fills at once rather than from left to right. Whether it started.
+   */
+  private startCoarse() {
+    const { view } = this;
+    const { filePath, duration, frameHeight } = this.options;
+    const interval = getFilmstripInterval(duration);
+    const tileTimes = view?.tileTimes;
+    if (packetFilterUnsupported || view == null || tileTimes == null || tileTimes.length === 0 || duration / interval < tileTimes.length * 2) return false;
+    const pass = new FilmPass({ from: Math.max(0, view.from), to: Math.min(duration, view.to) });
+    pass.state = 'running';
+    this.coarse = pass;
+    this.runPass(pass, getFilmstripCoarseArgs({ filePath, times: getCoarseTargets(tileTimes, interval), interval, height: frameHeight })).then((result) => {
+      if (this.disposed) return;
+      if (typeof result === 'number') pass.finish();
+      else pass.stop();
+      this.changed();
+      this.startStretches();
+    });
+    return true;
   }
 
   private changed() {
@@ -207,8 +305,19 @@ export default class FilmstripSession {
             this.options.revoke(frame.url);
             return;
           }
-          pass.add(frame);
-          this.aspect ??= frame.aspect;
+          // The coarse pass made this one already, and a tile may show it: the strip takes that one over.
+          const twin = pass !== this.coarse && this.stretches.includes(pass) ? this.coarse?.take(frame.time) : undefined;
+          if (twin != null) {
+            this.options.revoke(frame.url);
+            pass.add(twin);
+          } else {
+            pass.add(frame);
+          }
+          // The probed shape stays (the tiles were laid out with it), unless the frames are another (a rotated video).
+          if (!this.aspectChecked && frame.aspect != null) {
+            this.aspectChecked = true;
+            if (this.aspect == null || Math.abs(frame.aspect / this.aspect - 1) > 0.02) this.aspect = frame.aspect;
+          }
           this.changed();
         },
       });
@@ -240,9 +349,29 @@ export default class FilmstripSession {
         if (result === 'stopped' && !this.disposed && next.to < end) this.stretches.push(new FilmPass({ from: next.to, to: end }));
       }
       this.changed();
-      if (this.done) this.updateDetail();
-      else this.startNextStretch();
+      if (this.done) {
+        this.finishStrip();
+        this.updateDetail();
+      } else {
+        this.startNextStretch();
+      }
     });
+  }
+
+  /** The strip is complete: coarse frames it didn't take over go, and the timeline cache gets it. */
+  private finishStrip() {
+    const { coarse } = this;
+    if (coarse != null) {
+      this.coarse = undefined;
+      coarse.abortController.abort();
+      this.retired.push(...coarse.frames.map((frame) => frame.url));
+      this.changed();
+    }
+    if (this.disposed || this.options.onComplete == null || !this.stretches.every((stretch) => stretch.ok)) return;
+    const frames = this.baseFrames.filter((frame): frame is CachedStripFrame => frame.blob != null).sort((a, b) => a.time - b.time);
+    if (frames.length === 0 || frames.length !== this.baseFrames.length) return;
+    frames.forEach((frame) => this.borrowed.add(frame.url));
+    this.options.onComplete({ frames, aspect: this.aspect });
   }
 
   private async runStretch(stretch: FilmPass) {
@@ -270,14 +399,22 @@ export default class FilmstripSession {
     const { duration } = this.options;
     const wanted = getDetailRequest({ view, baseFrames: this.baseFrames, duration, keyframesInStrip, keyframeSpacing: this.keyframeSpacing });
     if (wanted == null) {
-      // Zoomed back out: the default strip is enough again.
+      // Zoomed back out: the default strip is enough again (the denser frames are kept aside for zooming back in).
       if (this.detail.length > 0) {
-        this.retireDetail(this.detail);
+        this.parkDetail();
         this.changed();
       }
       return;
     }
     if (this.detail.some((pass) => servesView(pass, view, wanted))) return;
+    const parked = this.parked.find((pass) => servesView(pass, view, wanted));
+    if (parked != null) {
+      this.parked = this.parked.filter((pass) => pass !== parked);
+      this.detail.push(parked);
+      this.trimDetail();
+      this.changed();
+      return;
+    }
     // A window still being made that's no longer in view stops where it got to.
     this.detail.forEach((pass) => pass.stop());
     this.retireDetail(this.detail.filter((pass) => pass.to <= pass.from));
@@ -334,5 +471,22 @@ export default class FilmstripSession {
       this.retired.push(...pass.frames.map((frame) => frame.url));
     });
     this.detail = this.detail.filter((pass) => !passes.includes(pass));
+    this.parked = this.parked.filter((pass) => !passes.includes(pass));
+  }
+
+  /** Sets the denser frames aside (those still being made stop where they got to), at most maxDetailFrames of them. */
+  private parkDetail() {
+    this.detail.forEach((pass) => pass.stop());
+    this.retireDetail(this.detail.filter((pass) => pass.frames.length === 0 || pass.to <= pass.from));
+    this.parked.push(...this.detail);
+    this.detail = [];
+    let total = this.parked.reduce((sum, pass) => sum + pass.frames.length, 0);
+    const dropped: FilmPass[] = [];
+    for (const pass of this.parked) {
+      if (total <= maxDetailFrames) break;
+      total -= pass.frames.length;
+      dropped.push(pass);
+    }
+    this.retireDetail(dropped);
   }
 }

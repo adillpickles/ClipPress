@@ -28,7 +28,7 @@ import formatClockTime from './util/clockTime';
 import { getSegmentOutputDuration, getSegmentSpeed, getSpeedForOutputDuration } from './segmentSpeed';
 import { createTimelineMap, getMaxScale, getRetimeAutoScrollStep, getWarpedImageSpans } from './timelineMap';
 import type { TimelineMap } from './timelineMap';
-import { fadeInArrivingFrame, filmTileHeight, getFilmTiles } from './filmstrip';
+import { fadeInArrivingFrame, filmTileHeight, getFilmTileSlots, getFilmTiles } from './filmstrip';
 import type { FilmTile } from './filmstrip';
 import type { Filmstrip } from './hooks/useFilmstrip';
 import type { AudioPeaks } from './audioPeaks';
@@ -832,8 +832,9 @@ function Timeline({
   const filmTileSeconds = lanePx > 0 ? ((laneDuration / lanePx) * filmTileWidth) / getMaxScale(timelineMap, visibleStart, visibleEnd) : 0;
   useEffect(() => {
     if (!showFilm || !(filmTileSeconds > 0) || !(visibleEnd > visibleStart)) return;
-    setFilmstripView({ from: visibleStart, to: visibleEnd, tileSeconds: filmTileSeconds });
-  }, [filmTileSeconds, setFilmstripView, showFilm, visibleEnd, visibleStart]);
+    const tileTimes = getFilmTileSlots({ tileWidth: filmTileWidth, fromPx: visibleStartPx, toPx: visibleStartPx + scrollerWidth, lanePx, pxToTime }).map((slot) => slot.time);
+    setFilmstripView({ from: visibleStart, to: visibleEnd, tileSeconds: filmTileSeconds, tileTimes });
+  }, [filmTileSeconds, filmTileWidth, lanePx, pxToTime, scrollerWidth, setFilmstripView, showFilm, visibleEnd, visibleStart, visibleStartPx]);
 
   const formatHoverLabel = useCallback((hoverTime: number) => {
     const time = hoverTime + startTimeOffset;

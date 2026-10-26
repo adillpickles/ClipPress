@@ -7,6 +7,7 @@ import type path from 'node:path';
 import type fs from 'node:fs';
 import type fsPromises from 'node:fs/promises';
 import type os from 'node:os';
+import type crypto from 'node:crypto';
 import type mimeTypes from 'mime-types';
 import type i18nextFsBackend from 'i18next-fs-backend';
 import type cueParser from 'cue-parser';
@@ -45,6 +46,7 @@ declare global {
       T extends 'fs' ? typeof fs :
       T extends 'fs/promises' ? typeof fsPromises :
       T extends 'os' ? typeof os :
+      T extends 'crypto' ? typeof crypto :
       T extends 'node:fs/promises' ? typeof fsPromises :
       T extends 'mime-types' ? typeof mimeTypes :
       T extends 'i18next-fs-backend' ? typeof i18nextFsBackend :

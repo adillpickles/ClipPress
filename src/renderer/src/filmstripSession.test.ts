@@ -27,7 +27,7 @@ function createRunner() {
         count += 1;
         urlCount += 1;
         const url = `blob:${urlCount}`;
-        onFrame({ time, url, aspect: 4 / 3 });
+        onFrame({ time, url, aspect: 4 / 3, blob: new Blob([url]) });
         return url;
       },
       finish: (fail, errorName) => {
@@ -179,7 +179,7 @@ describe('FilmstripSession', () => {
     failing.dispose();
   });
 
-  it('makes denser frames once zoomed in and settled, and drops them when zoomed out', async () => {
+  it('makes denser frames once zoomed in and settled, and sets them aside when zoomed out', async () => {
     vi.useFakeTimers();
     const session = create();
     session.start();
@@ -215,13 +215,20 @@ describe('FilmstripSession', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(session.snapshot().frames).toHaveLength(123);
 
-    // Zoomed out: back to the default strip, the denser frames are let go (once the timeline has moved on).
+    // Zoomed out: back to the default strip; the denser frames are set aside (the stopped window with what it made).
     session.setView({ from: 0, to: 120, tileSeconds: 7 });
     await vi.advanceTimersByTimeAsync(250);
     expect(session.snapshot().frames).toHaveLength(120);
-    expect(session.takeRetired().sort()).toEqual(detailUrls.sort());
+    expect(session.takeRetired()).toEqual([]);
+
+    // Zoomed back into a window made before: its frames are back, with no new FFmpeg pass.
+    session.setView({ from: 80, to: 84, tileSeconds: 0.24 });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(runner.runs).toHaveLength(3);
+    expect(session.snapshot().frames).toHaveLength(121);
     expect(revoked).toEqual([]);
     session.dispose();
+    expect(revoked.sort()).toEqual(expect.arrayContaining(detailUrls.sort()));
   });
 
   it('makes a long zoomed-in window of a long recording from its keyframes, and closer in from every frame', async () => {
@@ -416,6 +423,78 @@ describe('FilmstripSession', () => {
     expect(session.snapshot().frames.length - baseCount).toBeLessThanOrEqual(600);
     expect(session.takeRetired().length).toBeGreaterThan(0);
     session.dispose();
+  });
+
+  it('shows a strip from the timeline cache at once, and leaves its frames to the cache', async () => {
+    vi.useFakeTimers();
+    const blob = new Blob(['x']);
+    const cached = { frames: Array.from({ length: 120 }, (_, t) => ({ time: t, url: `blob:cached-${t}`, blob })), aspect: 4 / 3 };
+    const onComplete = vi.fn();
+    const session = create({ cached, onComplete });
+    session.start();
+    expect(runner.runs).toHaveLength(0);
+    expect(session.snapshot()).toMatchObject({ done: true, aspect: 4 / 3, covered: [{ from: 0, to: 120 }] });
+    expect(session.snapshot().frames).toHaveLength(120);
+    // Zoomed in: denser frames are made as usual, and they're its own.
+    session.setView({ from: 60, to: 64, tileSeconds: 0.24 });
+    await vi.advanceTimersByTimeAsync(250);
+    const detailUrl = runner.runs[0]!.frame(60.125);
+    session.dispose();
+    expect(revoked).toEqual([detailUrl]);
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('makes the tiles in view first, then the strip, which takes their frames over and goes to the cache', async () => {
+    const onComplete = vi.fn();
+    const session = create({ onComplete });
+    const tileTimes = Array.from({ length: 16 }, (_, i) => (i + 0.5) * 7.5);
+    session.setView({ from: 0, to: 120, tileSeconds: 7.5, tileTimes });
+    session.start();
+    expect(runner.runs).toHaveLength(1);
+    const coarse = runner.runs[0]!;
+    expect(coarse.args).toContain('-discard:v');
+    // The keyframe for each tile, and one the strip won't have.
+    const coarseUrls = new Map(tileTimes.map((time) => [Math.floor(time), coarse.frame(Math.floor(time))]));
+    const stray = coarse.frame(50.5);
+    coarse.finish();
+    await flush();
+    expect(session.snapshot().covered).toEqual([{ from: 0, to: 120 }]);
+    expect(runner.runs).toHaveLength(2);
+    const strip = runner.runs[1]!;
+    expect(strip.args).not.toContain('-discard:v');
+    const stripUrls = Array.from({ length: 120 }, (_, t) => strip.frame(t));
+    // Its own copies of the coarse frames are freed at once.
+    expect(revoked.sort()).toEqual(stripUrls.filter((_, t) => coarseUrls.has(t)).sort());
+    strip.finish();
+    await flush();
+    expect(session.snapshot().done).toBe(true);
+    expect(session.takeRetired()).toEqual([stray]);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    const handed = onComplete.mock.calls[0]![0].frames as { time: number, url: string }[];
+    expect(handed).toHaveLength(120);
+    handed.filter((f) => coarseUrls.has(f.time)).forEach((f) => expect(f.url).toBe(coarseUrls.get(f.time)));
+    // The cache owns them now.
+    revoked = [];
+    session.dispose();
+    expect(revoked).toEqual([]);
+  });
+
+  it('starts without the tiles in view if the timeline is slow to say', async () => {
+    vi.useFakeTimers();
+    const session = create({ viewWaitMs: 80 });
+    session.start();
+    expect(runner.runs).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(runner.runs).toHaveLength(1);
+    expect(runner.runs[0]!.args).not.toContain('-discard:v');
+    session.dispose();
+    // It says in time: the tiles in view first.
+    const other = create({ viewWaitMs: 80 });
+    other.start();
+    other.setView({ from: 0, to: 120, tileSeconds: 7.5, tileTimes: Array.from({ length: 16 }, (_, i) => (i + 0.5) * 7.5) });
+    expect(runner.runs).toHaveLength(2);
+    expect(runner.runs[1]!.args).toContain('-discard:v');
+    other.dispose();
   });
 
   it('frees everything when the recording closes', async () => {

@@ -283,6 +283,9 @@ import useStreamsMeta from './hooks/useStreamsMeta';
 import { bottomStyle, videoStyle } from './styles';
 import PreviewSpinner from './components/PreviewSpinner';
 import useFilmstrip from './hooks/useFilmstrip';
+import { getTimelineCacheKey } from './timelineCache';
+import { getVideoDisplayAspect } from './filmstrip';
+import { pruneTimelineCache } from './timelineCacheIo';
 import useAudioPeaks from './hooks/useAudioPeaks';
 import AudioTrackHeader from './components/AudioTrackHeader';
 import ClipVolumePopover from './components/ClipVolumePopover';
@@ -1313,6 +1316,11 @@ function App() {
   // Old backups, and the edits of recordings gone for 30 days, go to the Recycle Bin while ClipPress is idle (#91): not
   // while it opens a clip or exports, nor while a dialog waits for an answer (such as where a recording went).
   useProjectCleanup({ isBusy: () => workingRef.current || genericDialog != null, deleteProjectFile, recentFiles, customOutDir });
+  // The timeline cache on disk is kept within its limits, once a while after starting.
+  useEffect(() => {
+    const timer = setTimeout(() => pruneTimelineCache().catch((err) => console.warn('Timeline cache pruning failed', err)), 60_000);
+    return () => clearTimeout(timer);
+  }, []);
   // "Can't find the recording": opening edits whose recording was moved or renamed (#16).
   const relocateRecording = useRelocateRecording({ showGenericDialog, confirmDialog, customOutDir });
 
@@ -1785,11 +1793,18 @@ function App() {
   // The timeline has the recording's length from then on too, rather than a placeholder of a second until the player
   // has it: the filmstrip showed that second's frames all along the lane, and made denser frames of it.
   const timelineDuration = isDurationValid(fileDuration) ? fileDuration : (probedDuration ?? fileDurationNonZero);
+  // The timeline cache knows a recording by its path, size and modified time (a changed file is made again).
+  const timelineCacheKey = useMemo(() => (filePath != null && mainFileMeta != null
+    ? getTimelineCacheKey({ path: filePath, size: Number(mainFileMeta.stats.size), mtimeMs: Number(mainFileMeta.stats.mtime), caseInsensitive: isWindows || isMac })
+    : undefined), [filePath, mainFileMeta]);
+  const filmstripAspect = useMemo(() => (mainVideoStream != null ? getVideoDisplayAspect(mainVideoStream) : undefined), [mainVideoStream]);
   const filmstrip = useFilmstrip({
     filePath,
     duration: openDuration,
     enabled: simpleMode && hasVideo,
     timeOffset: filmstripTimeOffset,
+    cacheKey: timelineCacheKey,
+    aspect: filmstripAspect,
   });
 
   // Simple mode's audio track under the clips: its waveform, made once per open recording.
@@ -1799,6 +1814,7 @@ function App() {
     streamIndex: activeAudioStreams[0]?.index ?? mainAudioStream?.index,
     duration: openDuration,
     enabled: showAudioLane,
+    cacheKey: timelineCacheKey,
   });
   // While the filmstrip and the waveform of a recording that's opening are made, background work waits (keyframes,
   // FFmpeg's self-check, the encoder check).
@@ -1819,7 +1835,6 @@ function App() {
   const shelfPrefetch = !working && (filePath == null || openSettled || (simpleMode && openVisualsIn));
   const shelf = useShelf({ folder: shelfFolder, order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac, currentPath: filePath ?? shelfAnchorPath, prefetch: shelfPrefetch });
   const { refresh: refreshShelf, nextClip } = shelf;
-
   const { thumbnailsSorted, setThumbnails } = useThumbnails({
     filePath,
     zoomedDuration,

@@ -24,6 +24,13 @@ export function getFilmstripFrameHeight(devicePixelRatio: number) {
   return Math.min(160, Math.max(96, Math.ceil((filmTileHeight * devicePixelRatio) / 16) * 16));
 }
 
+/** A video stream's displayed width / height (its sample aspect ratio applied), from probing it. */
+export function getVideoDisplayAspect({ width, height, sample_aspect_ratio: sar }: { width?: number | undefined, height?: number | undefined, sample_aspect_ratio?: string | undefined }) {
+  if (!(typeof width === 'number' && width > 0 && typeof height === 'number' && height > 0)) return undefined;
+  const [num, den] = (sar ?? '').split(':').map(Number);
+  return (width * (num! > 0 && den! > 0 ? num! / den! : 1)) / height;
+}
+
 /** Seconds between frames: one per keyframe for short recordings, sparser for long ones. */
 export function getFilmstripInterval(duration: number) {
   return Math.max(1, duration / filmstripTargetCount);
@@ -92,6 +99,44 @@ export function getFilmstripArgs({ filePath, from, length, interval, height, key
     '-vf', `${getScaleFilter(height)},showinfo`,
     ...outputArgs,
   ];
+}
+
+/**
+ * Picks the first keyframe at or after each of `times` (sorted), as getKeyframePickExpression does for the multiples
+ * of `interval`: variable 0 counts the times passed so far.
+ */
+export function getKeyframeListPickExpression(times: readonly number[], interval: number) {
+  const tolerance = Math.min(0.2, interval / 5);
+  const passed = times.map((time) => `gte(pts*tb\\,${(time - tolerance).toFixed(3)})`).join('+');
+  return `if(key\\,if(gt(${passed}\\,ld(0))\\,st(0\\,${passed})*0\\,1)\\,1)`;
+}
+
+/**
+ * The strip's own frames for the tiles in view (getCoarseTargets), before the rest: only keyframes are read
+ * (`-discard:v nokey`), so it takes a fraction of the default strip's time and the view fills at once.
+ */
+export function getFilmstripCoarseArgs({ filePath, times, interval, height }: { filePath: string, times: readonly number[], interval: number, height: number }) {
+  return [
+    '-hide_banner',
+    '-nostats',
+    '-discard:v', 'nokey',
+    '-bsf:v', `noise=drop='${getKeyframeListPickExpression(times, interval)}'`,
+    '-copyts',
+    '-i', filePath,
+    '-map', '0:v:0',
+    '-an', '-sn', '-dn',
+    '-vf', `${getScaleFilter(height)},showinfo`,
+    ...outputArgs,
+  ];
+}
+
+/**
+ * The default strip's grid points that the tiles at `tileTimes` will show (a tile shows the last frame at or before
+ * its middle, and the strip has the first keyframe at or after each multiple of `interval`), so the coarse pass makes
+ * exactly the frames the strip would put there.
+ */
+export function getCoarseTargets(tileTimes: readonly number[], interval: number) {
+  return [...new Set(tileTimes.map((time) => Math.max(0, Math.floor(time / interval) * interval)))].sort((a, b) => a - b);
 }
 
 /**
@@ -196,6 +241,8 @@ export interface FilmstripFrame {
   /** Seconds from the start of the recording (as the player counts it). */
   time: number,
   url: string,
+  /** The image behind `url`, for the timeline cache (timelineCache.ts). */
+  blob?: Blob | undefined,
 }
 
 export interface StreamedFrame {
@@ -288,6 +335,27 @@ export interface FilmTile {
   url: string | undefined,
 }
 
+/** Where the tiles for pixels [fromPx, toPx) sit, and the time each one shows (that of its middle). */
+export function getFilmTileSlots({ tileWidth, fromPx, toPx, lanePx, pxToTime }: {
+  tileWidth: number,
+  fromPx: number,
+  toPx: number,
+  lanePx: number,
+  pxToTime: (px: number) => number,
+}) {
+  if (!(tileWidth > 0) || !(lanePx > 0)) return [];
+  const first = Math.max(0, Math.floor(fromPx / tileWidth));
+  const end = Math.min(Math.ceil(lanePx / tileWidth), Math.ceil(toPx / tileWidth));
+  const slots: { left: number, width: number, time: number }[] = [];
+  for (let i = first; i < end; i += 1) {
+    const left = Math.round(i * tileWidth);
+    const right = Math.round((i + 1) * tileWidth);
+    // The last tile runs past the lane's end (and is cut off there): its middle is that of the part showing.
+    slots.push({ left, width: right - left, time: pxToTime((left + Math.min(right, lanePx)) / 2) });
+  }
+  return slots;
+}
+
 /**
  * The strip as tiles of the video's shape side by side, for pixels [fromPx, toPx) of a lane `lanePx` wide. Every
  * tile shows the frame at its middle, once that part of the recording has been read. Tiles sit on one grid from
@@ -302,18 +370,8 @@ export function getFilmTiles({ frames, covered, tileWidth, fromPx, toPx, lanePx,
   lanePx: number,
   pxToTime: (px: number) => number,
 }): FilmTile[] {
-  if (!(tileWidth > 0) || !(lanePx > 0)) return [];
-  const first = Math.max(0, Math.floor(fromPx / tileWidth));
-  const end = Math.min(Math.ceil(lanePx / tileWidth), Math.ceil(toPx / tileWidth));
-  const tiles: FilmTile[] = [];
-  for (let i = first; i < end; i += 1) {
-    const left = Math.round(i * tileWidth);
-    const right = Math.round((i + 1) * tileWidth);
-    // The last tile runs past the lane's end (and is cut off there): its middle is that of the part showing.
-    const time = pxToTime((left + Math.min(right, lanePx)) / 2);
-    tiles.push({ left, width: right - left, url: isCovered(covered, time) ? getFrameAt(frames, time)?.url : undefined });
-  }
-  return tiles;
+  return getFilmTileSlots({ tileWidth, fromPx, toPx, lanePx, pxToTime })
+    .map(({ left, width, time }) => ({ left, width, url: isCovered(covered, time) ? getFrameAt(frames, time)?.url : undefined }));
 }
 
 /**
@@ -325,8 +383,11 @@ export const fadeInArrivingFrame = (className: string) => (img: HTMLImageElement
   if (img != null && !img.complete) img.classList.add(className);
 };
 
-/** What the timeline shows: a stretch of the recording, and how much of it one tile spans. */
-export interface FilmstripView { from: number, to: number, tileSeconds: number }
+/**
+ * What the timeline shows: a stretch of the recording, how much of it one tile spans, and the times the tiles in view
+ * show (for the coarse first pass).
+ */
+export interface FilmstripView { from: number, to: number, tileSeconds: number, tileTimes?: readonly number[] | undefined }
 
 export interface DetailRequest {
   from: number,

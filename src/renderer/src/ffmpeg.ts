@@ -576,7 +576,8 @@ export async function streamFilmstripFrames({ args, timeOffset, signal, onFrame 
         if (signal.aborted) return;
         reader.push(stdout, stderrLines).forEach(({ time, image, aspect }) => {
           count += 1;
-          onFrame({ time, aspect, url: URL.createObjectURL(safeCreateBlob(image, { type: 'image/jpeg' })) });
+          const blob = safeCreateBlob(image, { type: 'image/jpeg' });
+          onFrame({ time, aspect, url: URL.createObjectURL(blob), blob });
         });
       },
     });
