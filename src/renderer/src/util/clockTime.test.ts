@@ -24,9 +24,11 @@ describe('formatClockTime', () => {
     expect(formatClockTime(-5)).toBe('-0:05');
   });
 
-  test('lengths always read m:ss.s, so a row and the total agree', () => {
-    expect(formatClipLength(12.65)).toBe('0:12.6');
-    expect(formatClipLength(25)).toBe('0:25.0');
+  test('lengths read in seconds under a minute, then m:ss.s', () => {
+    expect(formatClipLength(12.65)).toBe('12.6 s');
+    expect(formatClipLength(25)).toBe('25.0 s');
+    expect(formatClipLength(1.2)).toBe('1.2 s');
+    expect(formatClipLength(59.99)).toBe('59.9 s');
     expect(formatClipLength(89.6)).toBe('1:29.6');
     expect(formatClipLength(90)).toBe('1:30.0');
     expect(formatClipLength(3723.25)).toBe('1:02:03.2');

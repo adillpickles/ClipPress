@@ -23,9 +23,11 @@ export default function formatClockTime(seconds: number, { showHours = false, de
 }
 
 /**
- * How long something lasts (a clip, the export), e.g. `0:12.6` or `1:30.0`. Simple mode writes every length
- * this one way, so the Clips panel, its total and the speed band can be compared at a glance.
+ * How long something lasts (a clip, the export): `12.6 s` under a minute, then `1:30.0`. Simple mode writes every
+ * length this one way, so the Clips panel, its total and the speed band can be compared at a glance. Truncated, like
+ * the clock.
  */
 export function formatClipLength(seconds: number) {
+  if (Math.abs(seconds) < 60) return `${(Math.floor(Math.abs(seconds) * 10 + 1e-6) / 10).toFixed(1)} s`;
   return formatClockTime(seconds, { decimals: 1 });
 }
