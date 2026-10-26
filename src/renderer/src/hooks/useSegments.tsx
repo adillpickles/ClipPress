@@ -487,7 +487,8 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
     safeSetCutSegments(cutSegmentsNew, fileDuration, options);
   }, [cutSegments, safeSetCutSegments, fileDuration]);
 
-  const setCutTime = useCallback((type: 'start' | 'end' | 'move', time: number | undefined) => {
+  /** `options`: a drag passes one coalesceKey for all its moves, so it undoes as one step. */
+  const setCutTime = useCallback((type: 'start' | 'end' | 'move', time: number | undefined, options?: UndoableSetOptions) => {
     if (!isDurationValid(fileDuration) || currentCutSeg == null) return;
 
     const clampStart = (start: number) => Math.min(Math.max(start, 0), fileDuration);
@@ -498,20 +499,20 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
       if (currentCutSeg.end != null && time >= currentCutSeg.end) {
         throw new UserFacingError(i18n.t('Segment start time must precede end time'));
       }
-      updateSegAtIndex(currentSegIndexSafe, { start: clampStart(time) });
+      updateSegAtIndex(currentSegIndexSafe, { start: clampStart(time) }, options);
     }
     if (type === 'end') {
       if (time != null && time <= currentCutSeg.start) {
         throw new UserFacingError(i18n.t('Segment start time must precede end time'));
       }
-      updateSegAtIndex(currentSegIndexSafe, { end: clampEnd(time) });
+      updateSegAtIndex(currentSegIndexSafe, { end: clampEnd(time) }, options);
     }
     if (type === 'move') {
       invariant(time != null);
       updateSegAtIndex(currentSegIndexSafe, {
         start: clampStart(time),
         ...(currentCutSeg.end != null && { end: clampEnd(time + (currentCutSeg.end - currentCutSeg.start)) }),
-      });
+      }, options);
     }
   }, [currentSegIndexSafe, currentCutSeg, fileDuration, updateSegAtIndex]);
 

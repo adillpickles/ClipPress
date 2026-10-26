@@ -548,6 +548,8 @@ function Timeline({
 
     mouseDownRef.current = e.target;
     let scrubbing = false;
+    // Every move of one drag is one undo step.
+    const undo = { coalesceKey: `segment-drag:${Date.now()}` };
 
     function onMouseMove(e2: MouseEvent) {
       if (mouseDownRef.current == null) return;
@@ -560,11 +562,11 @@ function Timeline({
       try {
         // eslint-disable-next-line unicorn/prefer-switch
         if (resizingSegmentRef.current?.operation === 'start') {
-          setCutTime('start', mouseDragTimelinePos);
+          setCutTime('start', mouseDragTimelinePos, undo);
         } else if (resizingSegmentRef?.current?.operation === 'end') {
-          setCutTime('end', mouseDragTimelinePos);
+          setCutTime('end', mouseDragTimelinePos, undo);
         } else if (resizingSegmentRef?.current?.operation === 'move') {
-          setCutTime('move', mouseDragTimelinePos - (resizingSegmentRef.current.offset ?? 0));
+          setCutTime('move', mouseDragTimelinePos - (resizingSegmentRef.current.offset ?? 0), undo);
         }
       } catch (err) {
         console.warn('Error while resizing segment:', err instanceof Error ? err.message : err);
@@ -600,6 +602,8 @@ function Timeline({
     setSegmentDragging(true);
     mouseDownRef.current = e.target;
     let scrubbing = false;
+    // The whole drag is one undo step, not one per mouse move.
+    const undo = { coalesceKey: `trim:${edge}:${Date.now()}` };
 
     function onMouseMove(e2: MouseEvent) {
       if (!scrubbing) {
@@ -609,7 +613,7 @@ function Timeline({
       const time = getMouseTimelinePos(e2);
       seekAbs(time);
       try {
-        setCutTime(edge, time);
+        setCutTime(edge, time, undo);
       } catch (err) {
         console.warn('Error while trimming clip:', err instanceof Error ? err.message : err);
       }
