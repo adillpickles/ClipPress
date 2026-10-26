@@ -77,6 +77,9 @@
     background: var(--cp-raised);
     color: var(--cp-text);
     box-shadow: var(--cp-shadow-popover);
+    /* A thin bar without arrows, the app's own, not Windows'. */
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--gray-9) 60%, transparent) transparent;
     /* Opens with a short fade and drop, like the app's menus. */
     opacity: 0;
     translate: 0 -.25rem;
