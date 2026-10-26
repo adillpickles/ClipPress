@@ -286,6 +286,7 @@ import useFilmstrip from './hooks/useFilmstrip';
 import { getTimelineCacheKey } from './timelineCache';
 import { getVideoDisplayAspect } from './filmstrip';
 import { pruneTimelineCache } from './timelineCacheIo';
+import prefetchTimeline from './timelinePrefetch';
 import useAudioPeaks from './hooks/useAudioPeaks';
 import AudioTrackHeader from './components/AudioTrackHeader';
 import ClipVolumePopover from './components/ClipVolumePopover';
@@ -1835,6 +1836,23 @@ function App() {
   const shelfPrefetch = !working && (filePath == null || openSettled || (simpleMode && openVisualsIn));
   const shelf = useShelf({ folder: shelfFolder, order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac, currentPath: filePath ?? shelfAnchorPath, prefetch: shelfPrefetch });
   const { refresh: refreshShelf, nextClip } = shelf;
+  // The shelf's next clip gets its filmstrip and waveform made in the background once the open one's are (and the
+  // shelf's own thumbnails may be made), so Next clip opens it with them showing at once.
+  const nextClipPath = nextClip?.path;
+  const nextClipCacheKey = nextClip != null ? getTimelineCacheKey({ path: nextClip.path, size: nextClip.size, mtimeMs: nextClip.modifiedAt, caseInsensitive: isWindows || isMac }) : undefined;
+  useEffect(() => {
+    if (!simpleMode || !shelfPrefetch || nextClipPath == null || nextClipCacheKey == null) return undefined;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      prefetchTimeline({ path: nextClipPath, cacheKey: nextClipCacheKey, signal: controller.signal })
+        .catch((err) => console.warn('Could not prepare the next clip', err));
+    }, 1000);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [nextClipCacheKey, nextClipPath, shelfPrefetch, simpleMode]);
+
   const { thumbnailsSorted, setThumbnails } = useThumbnails({
     filePath,
     zoomedDuration,
