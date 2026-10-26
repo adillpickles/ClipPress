@@ -66,6 +66,11 @@ function getNvencMultipassArgs(strategy: SizeLimitedResolvedStrategy, { twoPass,
   return !twoPass && !isFast ? ['-multipass', 'qres'] : [];
 }
 
+/** Whether the encoder has a quality cap that `qualityCapOffset` relaxes (only AV1 NVENC's `-cq`). */
+export function hasQualityCap(encoder: SizeLimitedResolvedStrategy['encoder']) {
+  return encoder === 'av1_nvenc';
+}
+
 function resolveNvencCq({ baseCq, qualityCapOffset }: { baseCq: number, qualityCapOffset: number | undefined }) {
   if (qualityCapOffset == null || qualityCapOffset <= 0) return String(baseCq);
   return String(Math.max(minNvencCq, baseCq - qualityCapOffset));

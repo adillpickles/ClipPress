@@ -20,6 +20,7 @@ import {
 } from './sizeLimitedFfmpegArgs';
 import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile } from './sizeLimitedResolution';
 import { planSizeLimitedEncode, relaxQualityCapForGenerousBudget } from './sizeLimitedPlanner';
+import { hasQualityCap } from './sizeLimitedEncoderArgs';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import { buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
 import { getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from './segmentSpeed';
@@ -621,6 +622,8 @@ async function resolveSizeLimitedPlan({
   });
   assertStrategySupported({ strategy, capabilities });
   const plan = planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strategy });
+  // Elsewhere the relaxation would change nothing but skip the top-up. Checked again after a GPU encoder fallback.
+  if (!hasQualityCap(strategy.encoder)) return { capabilities, strategy, plan };
   return { capabilities, strategy, plan: relaxQualityCapForGenerousBudget(plan, getOutputPixelRate(plan.initialAttempt.videoBitrate)) };
 }
 
