@@ -1,6 +1,6 @@
 import { finalizeSizeLimitedExecutionResult } from './sizeLimitedExecutionPolicy';
 import { getNextSizeLimitedAttempt } from './sizeLimitedPlanner';
-import type { SizeLimitedExecutionResult, SizeLimitedPlan, SizeLimitedResolvedStrategy, SizeLimitedRetryStep } from './sizeLimitedTypes';
+import type { SizeLimitedExecutionResult, SizeLimitedPlan, SizeLimitedResolvedStrategy, SizeLimitedRetryReason, SizeLimitedRetryStep } from './sizeLimitedTypes';
 
 /**
  * Runs encode attempts until one fits the size limit as well as the plan allows. File access and
@@ -19,8 +19,8 @@ export default async function runSizeLimitedAttempts<Files extends { outPath: st
   plan: SizeLimitedPlan,
   strategy: SizeLimitedResolvedStrategy,
   buildAttempt: (attempt: SizeLimitedRetryStep) => Promise<Files>,
-  /** Encodes one attempt to `files.outPath`. */
-  runAttempt: (files: Files, attempt: SizeLimitedRetryStep) => Promise<void>,
+  /** Encodes one attempt to `files.outPath`; after the first, `retryReason` says why it runs. */
+  runAttempt: (files: Files, attempt: SizeLimitedRetryStep, retryReason: SizeLimitedRetryReason | undefined) => Promise<void>,
   /** Removes an attempt's intermediate files (first-pass output, pass logs). */
   cleanUpAttempt: (files: Files) => Promise<void>,
   readFileSize: (path: string) => Promise<number>,
@@ -38,6 +38,7 @@ export default async function runSizeLimitedAttempts<Files extends { outPath: st
   let bestUnderCap: SizeLimitedExecutionResult | undefined;
   let smallestOverCap: SizeLimitedExecutionResult | undefined;
   let currentAttempt: SizeLimitedRetryStep | undefined = plan.initialAttempt;
+  let retryReason: SizeLimitedRetryReason | undefined;
 
   try {
     while (currentAttempt != null) {
@@ -46,7 +47,7 @@ export default async function runSizeLimitedAttempts<Files extends { outPath: st
 
       try {
         // eslint-disable-next-line no-await-in-loop
-        await runAttempt(files, currentAttempt);
+        await runAttempt(files, currentAttempt, retryReason);
 
         // eslint-disable-next-line no-await-in-loop
         const size = await readFileSize(files.outPath);
@@ -61,6 +62,7 @@ export default async function runSizeLimitedAttempts<Files extends { outPath: st
           strategy,
         } satisfies SizeLimitedExecutionResult;
 
+        retryReason = metTarget ? 'sharper' : 'smaller';
         if (metTarget) {
           // Keep whichever under-cap result filled more of the budget.
           if (bestUnderCap == null || candidate.size > bestUnderCap.size) {

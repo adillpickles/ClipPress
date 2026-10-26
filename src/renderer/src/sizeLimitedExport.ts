@@ -435,8 +435,9 @@ function makeProgressMetadata({
   maxAttempts,
   phaseNumber,
   phaseCount,
+  retryReason,
 }: SizeLimitedProgressMetadata) {
-  return { attemptNumber, maxAttempts, phaseNumber, phaseCount } satisfies SizeLimitedProgressMetadata;
+  return { attemptNumber, maxAttempts, phaseNumber, phaseCount, retryReason } satisfies SizeLimitedProgressMetadata;
 }
 
 async function runSinglePassEncode({
@@ -507,7 +508,7 @@ async function executeAttempts({
     plan,
     strategy,
     buildAttempt: (attempt) => buildAttempt(attempt),
-    runAttempt: async (attemptFiles, attempt) => {
+    runAttempt: async (attemptFiles, attempt, retryReason) => {
       if (strategy.executionMode === 'ffmpeg_two_pass') {
         const { pass1Args } = attemptFiles;
         if (pass1Args == null) throw new UserFacingError('2-pass encoding was not configured correctly');
@@ -521,12 +522,14 @@ async function executeAttempts({
             maxAttempts: plan.maxAttempts,
             phaseNumber: 1,
             phaseCount: 2,
+            retryReason,
           }),
           pass2ProgressMetadata: makeProgressMetadata({
             attemptNumber: attempt.attemptNumber,
             maxAttempts: plan.maxAttempts,
             phaseNumber: 2,
             phaseCount: 2,
+            retryReason,
           }),
         });
       } else {
@@ -539,6 +542,7 @@ async function executeAttempts({
             maxAttempts: plan.maxAttempts,
             phaseNumber: 1,
             phaseCount: 1,
+            retryReason,
           }),
         });
       }

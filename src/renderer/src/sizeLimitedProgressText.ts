@@ -3,30 +3,43 @@ import type { SizeLimitedProgressMetadata } from './sizeLimitedTypes';
 export type TranslateProgressText = (key: string, options: Record<string, string | number>) => string;
 
 /**
- * The line under "Exporting" or "Merging" while a Fit a file size export runs.
+ * The title while a Fit a file size export encodes: what it's doing, in plain words. A retry starts the bar again, so
+ * it says why instead of "Attempt 2/3", which reads like something failed: the last try came out over the limit
+ * (smaller), or well under it, so there's room for more detail (the top-up, see getNextSizeLimitedUndershootStep).
+ */
+export function getSizeLimitedStageTitle({ metadata, sizeText, t }: {
+  metadata: SizeLimitedProgressMetadata | undefined,
+  /** The size it's fitting to, e.g. "10 MB". */
+  sizeText: string,
+  t: TranslateProgressText,
+}) {
+  if (metadata?.retryReason === 'smaller') return t('Making it a bit smaller', {});
+  if (metadata?.retryReason === 'sharper') return t('Making it a bit sharper', {});
+  return t('Fitting to {{size}}', { size: sizeText });
+}
+
+/**
+ * The line under the title while a Fit a file size export runs.
  *
- * Simple mode counts clips ("Clip 1 of 2"), and the merge step gets no count of its own (its title already says
- * "Merging", and it isn't a clip). A retry starts the bar again, so it says why, instead of "Attempt 2/3", which
- * reads like something failed. The wording doesn't say which way: a retry makes the file smaller when it came
- * out over the limit, but bigger when it came out well under it (the top-up, see getNextSizeLimitedUndershootStep).
- * Both passes of a 2-pass encode share one bar, so passes aren't mentioned.
+ * Simple mode counts clips ("Clip 1 of 2"); the step that joins them says so instead, as it isn't a clip. Both passes
+ * of a 2-pass encode share one bar, so passes aren't mentioned, and the title already says when it's a retry.
  * Advanced mode keeps the exact file, attempt and pass counters.
  */
-export default function formatSizeLimitedProgressText({ jobIndex, totalJobs, clipCount, metadata, simpleMode, t }: {
+export default function formatSizeLimitedProgressText({ jobIndex, totalJobs, clipCount, joinedClipCount = 0, metadata, simpleMode, t }: {
   jobIndex: number,
   /** Every encode in this export: one per clip file, plus the merge. */
   totalJobs: number,
   /** How many of those make a file per clip (0 when only the merged file is made). They come first. */
   clipCount: number,
+  /** How many clips the merge joins into one file. */
+  joinedClipCount?: number | undefined,
   metadata: SizeLimitedProgressMetadata | undefined,
   simpleMode: boolean,
   t: TranslateProgressText,
 }) {
   if (simpleMode) {
-    const parts: string[] = [];
-    if (clipCount > 1 && jobIndex < clipCount) parts.push(t('Clip {{current}} of {{total}}', { current: jobIndex + 1, total: clipCount }));
-    if (metadata != null && metadata.attemptNumber > 1) parts.push(t('Fine-tuning the size', {}));
-    return parts.length > 0 ? parts.join(' · ') : undefined;
+    if (jobIndex < clipCount) return clipCount > 1 ? t('Clip {{current}} of {{total}}', { current: jobIndex + 1, total: clipCount }) : undefined;
+    return joinedClipCount > 1 ? t('Joining {{count}} clips', { count: joinedClipCount }) : undefined;
   }
 
   const stageParts: string[] = [];

@@ -1,8 +1,7 @@
 import { memo, useEffect, useState } from 'react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotionConfig } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import useInterval from 'react-use/lib/useInterval';
-import { FiLoader } from 'react-icons/fi';
 
 import Button from './Button';
 import formatClockTime from '../util/clockTime';
@@ -61,6 +60,8 @@ function WorkingCard({ text, detailText, progress, onAbortClick }: {
   onAbortClick: () => void
 }) {
   const { t } = useTranslation();
+  // The app's own Reduce motion setting as well as Windows': the bar's shimmer stops.
+  const reduceMotion = useReducedMotionConfig() === true;
 
   const [startedAt] = useState(() => new Date());
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -84,9 +85,20 @@ function WorkingCard({ text, detailText, progress, onAbortClick }: {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 8 }}
       >
-        <div className={styles['title']}>
-          <FiLoader aria-hidden className={`${styles['titleIcon']} spinner-animation`} />
-          {text}
+        {/* What it's doing now, in plain words; the new stage fades in over the old. No spinner: the bar below
+            always moves. */}
+        <div className={styles['title']} role="status">
+          <AnimatePresence initial={false} mode="popLayout">
+            <motion.span
+              key={text}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.2 }}
+            >
+              {text}
+            </motion.span>
+          </AnimatePresence>
         </div>
 
         {detailText != null && (
@@ -106,10 +118,14 @@ function WorkingCard({ text, detailText, progress, onAbortClick }: {
           )}
         </div>
 
-        {progress != null && (
+        {/* A soft shimmer runs along the bar, so it's clear work goes on while the percent moves slowly; with no
+            percent yet, a sweep. */}
+        {progress != null ? (
           <div className={styles['progressTrack']}>
-            <div className={styles['progressFill']} style={{ width: `${Math.max(progress * 100, 4)}%` }} />
+            <div className={[styles['progressFill'], ...(reduceMotion ? [styles['still']] : [])].join(' ')} style={{ width: `${Math.max(progress * 100, 4)}%` }} />
           </div>
+        ) : (
+          <div className={[styles['indeterminate'], styles['indeterminateTall'], ...(reduceMotion ? [styles['still']] : [])].join(' ')} aria-hidden />
         )}
 
         <div className={styles['actions']}>

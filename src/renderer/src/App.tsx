@@ -300,7 +300,7 @@ import ClipVolumePopover from './components/ClipVolumePopover';
 import { ShelfUpNext } from './components/Shelf';
 import useShelf, { listShelfFolder } from './hooks/useShelf';
 import { buildShelfQueue, pickNextClip, rememberShelfExport, shelfThumbnailKey } from './shelf';
-import formatSizeLimitedProgressText from './sizeLimitedProgressText';
+import formatSizeLimitedProgressText, { getSizeLimitedStageTitle } from './sizeLimitedProgressText';
 import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, resolveExportQuality } from './quickExport';
 import type { QuickExport } from './quickExport';
 import { normalizeQuickExportPresets } from '../../common/quickExport';
@@ -382,6 +382,9 @@ type EditDomain = 'segments' | 'overlays' | 'streamParams' | 'speedControls';
 
 // Loaded the first time the shortcuts open, not at every start.
 const KeyboardShortcuts = lazy(() => import('./components/KeyboardShortcuts'));
+
+// The export card's title while the clips are cut from the recording.
+const getCuttingText = (clipCount: number) => (clipCount > 1 ? i18n.t('Cutting your clips') : i18n.t('Cutting your clip'));
 
 function App() {
   // For measuring startup (read by tests; costs nothing).
@@ -3104,15 +3107,17 @@ function App() {
   );
 
   const formatSizeLimitedJobStageText = useCallback(
-    ({ jobIndex, totalJobs, clipCount, metadata }: {
+    ({ jobIndex, totalJobs, clipCount, joinedClipCount, metadata }: {
       jobIndex: number;
       totalJobs: number;
       clipCount: number;
+      joinedClipCount: number;
       metadata: SizeLimitedProgressMetadata | undefined;
     }) => formatSizeLimitedProgressText({
       jobIndex,
       totalJobs,
       clipCount,
+      joinedClipCount,
       metadata,
       simpleMode,
       t: (key, options) => i18n.t(key, options),
@@ -3651,6 +3656,14 @@ function App() {
         const totalJobs = (shouldProduceSeparateOutputs
           ? sizeLimitedSegmentsForExport.length
           : 0) + (willMerge ? 1 : 0);
+        const clipCount = shouldProduceSeparateOutputs ? sizeLimitedSegmentsForExport.length : 0;
+        const joinedClipCount = willMerge ? sizeLimitedSegmentsForExport.length : 0;
+        // The title says what it's doing: fitting to the size, or why it tries again.
+        const getStageTitle = (metadata: SizeLimitedProgressMetadata | undefined) => getSizeLimitedStageTitle({
+          metadata,
+          sizeText: formatRequestedSizeLimit(quality.sizeLimitMb),
+          t: (key, options) => i18n.t(key, options),
+        });
         let currentWorkingText = i18n.t('Exporting');
         let currentWorkingDetailText: string | undefined;
         const updateWorkingState = ({
@@ -3668,27 +3681,24 @@ function App() {
           currentWorkingDetailText = detailText;
           setWorking({ text, detailText: withQuickExportLabel(detailText) });
         };
+        // A job's last tick (done) comes without its stage: keep the stage it was at.
+        let lastStage: { jobIndex: number, metadata: SizeLimitedProgressMetadata } | undefined;
         const updateJobProgress = ({
           jobIndex,
-          jobText,
           jobProgress,
-          metadata,
+          metadata: reported,
         }: {
           jobIndex: number;
-          jobText: string;
           jobProgress: number;
           metadata?: SizeLimitedProgressMetadata | undefined;
         }) => {
           const safeTotalJobs = Math.max(totalJobs, 1);
           setProgress((jobIndex + jobProgress) / safeTotalJobs);
+          if (reported != null) lastStage = { jobIndex, metadata: reported };
+          const metadata = reported ?? (lastStage?.jobIndex === jobIndex ? lastStage.metadata : undefined);
           updateWorkingState({
-            text: jobText,
-            detailText: formatSizeLimitedJobStageText({
-              jobIndex,
-              totalJobs,
-              clipCount: shouldProduceSeparateOutputs ? sizeLimitedSegmentsForExport.length : 0,
-              metadata,
-            }),
+            text: getStageTitle(metadata),
+            detailText: formatSizeLimitedJobStageText({ jobIndex, totalJobs, clipCount, joinedClipCount, metadata }),
           });
         };
 
@@ -3722,13 +3732,8 @@ function App() {
             const outPath = cutOutPaths[index];
             invariant(outPath != null);
             updateWorkingState({
-              text: i18n.t('Exporting'),
-              detailText: formatSizeLimitedJobStageText({
-                jobIndex: index,
-                totalJobs,
-                clipCount: shouldProduceSeparateOutputs ? sizeLimitedSegmentsForExport.length : 0,
-                metadata: undefined,
-              }),
+              text: getStageTitle(undefined),
+              detailText: formatSizeLimitedJobStageText({ jobIndex: index, totalJobs, clipCount, joinedClipCount, metadata: undefined }),
             });
 
             const result = await exportSizeLimitedSegment({
@@ -3763,12 +3768,7 @@ function App() {
               overlayClips: hasOverlayClips ? overlayClips : undefined,
               overlayVideoWidth: sizeLimitedVideoStream.width,
               overlayVideoHeight: sizeLimitedVideoStream.height,
-              onProgress: (jobProgress, metadata) => updateJobProgress({
-                jobIndex: index,
-                jobText: i18n.t('Exporting'),
-                jobProgress,
-                metadata,
-              }),
+              onProgress: (jobProgress, metadata) => updateJobProgress({ jobIndex: index, jobProgress, metadata }),
             });
             results.push(result);
           }
@@ -3780,13 +3780,8 @@ function App() {
             ? sizeLimitedSegmentsForExport.length
             : 0;
           updateWorkingState({
-            text: i18n.t('Merging'),
-            detailText: formatSizeLimitedJobStageText({
-              jobIndex: mergedJobIndex,
-              totalJobs,
-              clipCount: shouldProduceSeparateOutputs ? sizeLimitedSegmentsForExport.length : 0,
-              metadata: undefined,
-            }),
+            text: getStageTitle(undefined),
+            detailText: formatSizeLimitedJobStageText({ jobIndex: mergedJobIndex, totalJobs, clipCount, joinedClipCount, metadata: undefined }),
           });
 
           const generatedMergedFileNames = useAutoMergedNaming
@@ -3843,12 +3838,7 @@ function App() {
             overlayClips: hasOverlayClips ? overlayClips : undefined,
             overlayVideoWidth: sizeLimitedVideoStream.width,
             overlayVideoHeight: sizeLimitedVideoStream.height,
-            onProgress: (jobProgress, metadata) => updateJobProgress({
-              jobIndex: mergedJobIndex,
-              jobText: i18n.t('Merging'),
-              jobProgress,
-              metadata,
-            }),
+            onProgress: (jobProgress, metadata) => updateJobProgress({ jobIndex: mergedJobIndex, jobProgress, metadata }),
           });
           results.push(mergedResult);
         }
@@ -3994,6 +3984,7 @@ function App() {
           addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
         }
 
+        setWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined) });
         const outFiles = await cutMultipleWithTextOverlays({
           outputDir,
           segments: segmentsToExport,
@@ -4024,7 +4015,7 @@ function App() {
 
         if (willMerge) {
           setProgress(0);
-          setWorking({ text: i18n.t('Merging'), detailText: withQuickExportLabel(undefined) });
+          setWorking({ text: i18n.t('Joining your clips'), detailText: withQuickExportLabel(undefined) });
 
           const chapterNames = segmentsToChapters && !invertCutSegments
             ? segmentsToExport.map((segment) => segment.name)
@@ -4186,6 +4177,7 @@ function App() {
       }
 
       // throw (() => { const err = new Error('test'); err.code = 'ENOENT'; return err; })();
+      setWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined) });
       const outFiles = await cutMultiple({
         outputDir,
         customOutDir,
@@ -4223,7 +4215,7 @@ function App() {
         );
 
         setProgress(0);
-        setWorking({ text: i18n.t('Merging'), detailText: withQuickExportLabel(undefined) });
+        setWorking({ text: i18n.t('Joining your clips'), detailText: withQuickExportLabel(undefined) });
 
         const chapterNames = segmentsToChapters && !invertCutSegments
           ? segmentsToExport.map((s) => s.name)
@@ -4444,6 +4436,7 @@ function App() {
     fileFormat,
     filePath,
     formatSizeLimitedJobStageText,
+    formatRequestedSizeLimit,
     generateCutFileNames,
     generateCutMergedFileNames,
     generateSizeLimitedCustomCutFileNames,
