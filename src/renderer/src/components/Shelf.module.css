@@ -48,6 +48,7 @@
 }
 
 .order {
+  position: relative;
   flex-shrink: 0;
   display: flex;
   padding: 2px;
@@ -56,8 +57,31 @@
   border: 1px solid var(--cp-line);
 }
 
+/* The chosen order's highlight: light and soft, sliding between the two (placed by Shelf.tsx). */
+.orderThumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gray-12) 11%, transparent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), inset 0 0 0 1px color-mix(in srgb, var(--gray-12) 6%, transparent);
+  pointer-events: none;
+}
+
+.orderThumbAnimate {
+  transition: transform .24s cubic-bezier(.3, .7, .2, 1), width .24s cubic-bezier(.3, .7, .2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orderThumbAnimate {
+    transition: none;
+  }
+}
+
 .orderOption {
   all: unset;
+  position: relative;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -78,7 +102,6 @@
 }
 
 .orderOptionOn {
-  background: var(--cp-raised-strong, var(--gray-5));
   color: var(--cp-text);
 }
 

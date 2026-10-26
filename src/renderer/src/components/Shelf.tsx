@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef } from 'react';
 import { FiArrowUp, FiCheck, FiFilm, FiFolder } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import prettyBytes from 'pretty-bytes';
@@ -106,6 +106,20 @@ function Shelf({ folder, queue, currentPath, nextPath, caseInsensitive, order, o
   const nextKey = nextPath != null ? shelfPathKey(nextPath, caseInsensitive) : undefined;
   const remaining = queue.filter((item) => !item.exported).length;
   const { by, reversed } = parseShelfOrder(order);
+  const hasOrder = queue.length > 0;
+
+  // The highlight behind the chosen order slides across to the other (measured: the two differ in width). Placed
+  // straight on the element; it slides only from the second placement on, so it doesn't fly in when the shelf opens.
+  const orderRef = useRef<HTMLDivElement>(null);
+  const thumbRef = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const on = orderRef.current?.querySelector<HTMLElement>('[aria-checked="true"]');
+    const thumb = thumbRef.current;
+    if (on == null || thumb == null) return;
+    if (thumb.style.width !== '') thumb.classList.add(styles['orderThumbAnimate']!);
+    thumb.style.width = `${on.offsetWidth}px`;
+    thumb.style.transform = `translateX(${on.offsetLeft}px)`;
+  }, [by, reversed, hasOrder, t]);
 
   return (
     <div ref={rootRef} className={styles['shelf']}>
@@ -114,8 +128,9 @@ function Shelf({ folder, queue, currentPath, nextPath, caseInsensitive, order, o
           <FiFolder aria-hidden />
           <span className={styles['folderName']}>{folder != null ? basename(folder) || folder : t('Choose a folder')}</span>
         </button>
-        {queue.length > 0 && (
-          <div className={styles['order']} role="radiogroup" aria-label={t('Order')}>
+        {hasOrder && (
+          <div ref={orderRef} className={styles['order']} role="radiogroup" aria-label={t('Order')}>
+            <span ref={thumbRef} aria-hidden className={styles['orderThumb']} />
             {(['date', 'name'] as const).map((value) => {
               const on = by === value;
               // The one that's on says which way round it is, and that clicking it again turns it round.
