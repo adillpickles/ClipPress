@@ -549,7 +549,7 @@ function Timeline({
     mouseDownRef.current = e.target;
     let scrubbing = false;
     // Every move of one drag is one undo step.
-    const undo = { coalesceKey: `segment-drag:${Date.now()}` };
+    const undo = { coalesceKey: `segment-drag:${Date.now()}`, wholeGesture: true };
 
     function onMouseMove(e2: MouseEvent) {
       if (mouseDownRef.current == null) return;
@@ -603,7 +603,7 @@ function Timeline({
     mouseDownRef.current = e.target;
     let scrubbing = false;
     // The whole drag is one undo step, not one per mouse move.
-    const undo = { coalesceKey: `trim:${edge}:${Date.now()}` };
+    const undo = { coalesceKey: `trim:${edge}:${Date.now()}`, wholeGesture: true };
 
     function onMouseMove(e2: MouseEvent) {
       if (!scrubbing) {

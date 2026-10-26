@@ -167,6 +167,18 @@ describe('EditHistoryOrder', () => {
     expect(undo()).toBeUndefined();
   });
 
+  it('keeps a drag in one step however long it pauses', () => {
+    const { segments, undo, advance } = createEditor();
+    segments.set(1, { coalesceKey: 'drag:1', wholeGesture: true });
+    advance(coalesceWindowMs * 3);
+    segments.set(2, { coalesceKey: 'drag:1', wholeGesture: true });
+    segments.set(3, { coalesceKey: 'drag:2', wholeGesture: true });
+    undo();
+    expect(segments.value).toBe(2);
+    undo();
+    expect(segments.value).toBe(0);
+  });
+
   it('starts a new step after a pause or with a different key', () => {
     const { text, undo, advance } = createEditor();
     text.set('a', { coalesceKey: 'k' });

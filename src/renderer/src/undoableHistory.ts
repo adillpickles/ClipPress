@@ -5,6 +5,8 @@ export type UndoableSetResult = 'unchanged' | 'added' | 'extended';
 export interface UndoableSetOptions {
   /** Updates with this key join the latest step while it is still the latest edit (a drag, a burst of typing). */
   coalesceKey?: string | undefined,
+  /** The key is one gesture's own (a drag): its updates join however long it pauses, not only within the time window. */
+  wholeGesture?: boolean | undefined,
   /** Change the current step in place, without creating an undo step (bookkeeping, not an edit). */
   merge?: boolean | undefined,
 }
@@ -70,11 +72,11 @@ export default class UndoableHistory<T> {
  * Applies one update to a history and reports it to the shared undo order right away, so edits
  * are ordered as they were made. This is what useUndoableState does on every update.
  */
-export function applyUndoableUpdate<T>(history: UndoableHistory<T>, next: T, tracker: EditTracker | undefined, { coalesceKey, merge = false }: UndoableSetOptions = {}) {
+export function applyUndoableUpdate<T>(history: UndoableHistory<T>, next: T, tracker: EditTracker | undefined, { coalesceKey, wholeGesture = false, merge = false }: UndoableSetOptions = {}) {
   if (merge) {
     history.replaceCurrent(next);
     return;
   }
-  const result = history.set(next, { extend: tracker?.continues(coalesceKey) ?? false });
+  const result = history.set(next, { extend: tracker?.continues(coalesceKey, wholeGesture) ?? false });
   if (result !== 'unchanged') tracker?.edited({ newStep: result === 'added', coalesceKey });
 }

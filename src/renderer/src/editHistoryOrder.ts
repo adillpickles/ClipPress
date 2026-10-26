@@ -19,8 +19,8 @@ export const coalesceWindowMs = 1000;
 
 /** How one piece of undoable state reports to the shared order. */
 export interface EditTracker {
-  /** Whether an update with this key may join the latest step instead of adding one. */
-  continues: (coalesceKey: string | undefined) => boolean,
+  /** Whether an update with this key may join the latest step instead of adding one (`wholeGesture`: at any pause). */
+  continues: (coalesceKey: string | undefined, wholeGesture?: boolean) => boolean,
   /** An edit was applied, either as a new undo step or by extending the latest one. */
   edited: (change: { newStep: boolean, coalesceKey: string | undefined }) => void,
   /** Its history was replaced (a file was opened or closed), so nothing of it can be extended. */
@@ -56,7 +56,7 @@ export default class EditHistoryOrder<Domain extends string> {
     let tracker = this.trackers.get(domain);
     if (tracker == null) {
       tracker = {
-        continues: (coalesceKey) => this.continues(domain, coalesceKey),
+        continues: (coalesceKey, wholeGesture = false) => this.continues(domain, coalesceKey, wholeGesture),
         edited: (change) => this.edited(domain, change),
         reset: () => {
           if (this.latest?.domain === domain) this.latest = undefined;
@@ -67,11 +67,11 @@ export default class EditHistoryOrder<Domain extends string> {
     return tracker;
   }
 
-  private continues(domain: Domain, coalesceKey: string | undefined) {
+  private continues(domain: Domain, coalesceKey: string | undefined, wholeGesture: boolean) {
     if (this.grouping != null) return false;
     const { latest } = this;
     return coalesceKey != null && latest != null && latest.domain === domain && latest.coalesceKey === coalesceKey
-      && this.now() - latest.time < coalesceWindowMs;
+      && (wholeGesture || this.now() - latest.time < coalesceWindowMs);
   }
 
   private edited(domain: Domain, { newStep, coalesceKey }: { newStep: boolean, coalesceKey: string | undefined }) {
