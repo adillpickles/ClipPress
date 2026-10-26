@@ -12,6 +12,7 @@ import { moveSettingsOutOfInstallFolder, noteSettingsFoldersForInstaller } from 
 import { getInstallationDir, isWindowsFolderInside } from './installation.js';
 import { isWindows, pathExists } from './util.js';
 import { fallbackLng } from './i18nCommon.js';
+import retrySettingsWrite from './settingsWriteRetry.js';
 import { addQuickExportKeyBindings, defaultQuickExportPresets, migrateQuickExportPresets, normalizeQuickExportPresets, quickExportKeyBindings } from '../common/quickExport.js';
 
 const { app } = electron;
@@ -251,8 +252,10 @@ export function get<T extends keyof Config>(key: T): Config[T] {
 export const getSnapshotJson = () => JSON.stringify(store.store);
 
 export function set<T extends keyof Config>(key: T, val: Config[T]) {
-  if (val === undefined) store.delete(key);
-  else store.set(key, val);
+  retrySettingsWrite(() => {
+    if (val === undefined) store.delete(key);
+    else store.set(key, val);
+  });
   if (key === 'enableUpdateCheck' || key === 'updateMode' || key === 'allowMultipleInstances') updateSettingsEvents.dispatchEvent(new Event('change'));
 }
 
