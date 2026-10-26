@@ -34,13 +34,13 @@ const { join, resolve, dirname, extname } = window.require('path');
 const { writeFile, mkdir, access, rm, constants: { W_OK } } = window.require('fs/promises');
 
 /**
- * Where an export's FFmpeg writes before the finished file is put in place: beside it, keeping the extension (FFmpeg
+ * Where an export's FFmpeg writes before the finished file is put in place: beside it, with the same extension (FFmpeg
  * tells the format from it where none is given). So a cancelled or failed export leaves no half-written file, and
  * doesn't wipe an earlier export of the same name.
  */
 function getPartialPath(outPath: string) {
-  const ext: string = extname(outPath);
-  return `${outPath.slice(0, outPath.length - ext.length)}.partial-${nanoid(6)}${ext}`;
+  // A short name of its own, so a long export name can't grow past the file system's limit.
+  return join(dirname(outPath), `.clippress-partial-${nanoid(8)}${extname(outPath)}`);
 }
 const removePartial = async (path: string) => rm(path, { force: true }).catch((err: unknown) => console.warn('Could not remove a temporary export file', path, err));
 
@@ -640,6 +640,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     encodeAllAudio,
     onProgress: onTotalProgress,
     signal,
+    onClipWritten,
   }: {
     outputDir: string,
     segments: SegmentToExport[],
@@ -666,6 +667,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     onProgress: (progress: number) => void,
     /** Cancel: checked before each clip starts. */
     signal?: AbortSignal | undefined,
+    /** Each clip file this call wrote, as it's put in place (not one it skipped). */
+    onClipWritten?: ((path: string) => void) | undefined,
   }) => {
     invariant(filePath != null);
     invariant(outFormat != null);
@@ -853,6 +856,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
               },
             });
             await moveExportWithRetry(partialPath, finalOutPath, enableOverwriteOutput);
+            onClipWritten?.(finalOutPath);
           } finally {
             await removePartial(partialPath);
           }
@@ -954,7 +958,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   }, [appendFfmpegCommandLog, assertOutPathIsNotSource, filePath]);
 
   const cutMultiple = useCallback(async ({
-    outputDir, customOutDir, segments: segmentsIn, cutFileNames, fileDuration, rotation, detectedFps, onProgress: onTotalProgress, keyframeCut, copyFileStreams, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, customTagsByFile, paramsByStreamId, chapters, encodeAllAudio, signal,
+    outputDir, customOutDir, segments: segmentsIn, cutFileNames, fileDuration, rotation, detectedFps, onProgress: onTotalProgress, keyframeCut, copyFileStreams, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, customTagsByFile, paramsByStreamId, chapters, encodeAllAudio, signal, onClipWritten,
   }: {
     outputDir: string,
     customOutDir: string | undefined,
@@ -983,6 +987,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     encodeAllAudio: boolean,
     /** Cancel: checked before each clip starts. */
     signal?: AbortSignal | undefined,
+    /** Each clip file this call wrote, as it's put in place (not one it skipped). */
+    onClipWritten?: ((path: string) => void) | undefined,
   }) => {
     console.log('customTagsByFile', customTagsByFile);
     console.log('paramsByStreamId', paramsByStreamId);
@@ -1124,7 +1130,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         // need to re-read streams because indexes may have changed. Using main file as source of streams and metadata
         const { streams: streamsAfterCut } = await readFileFfprobeMeta(losslessPartOutPath);
 
-        await concatFiles({ paths: smartCutSegmentsToConcat, outDir: outputDir, outPath: finalOutPath, metadataFromPath: losslessPartOutPath, outFormat, includeAllStreams: true, streams: streamsAfterCut, ffmpegExperimental, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge, videoTimebase, onProgress: onConcatProgress });
+        await concatFiles({ paths: smartCutSegmentsToConcat, outDir: outputDir, outPath: finalOutPath, metadataFromPath: losslessPartOutPath, outFormat, includeAllStreams: true, streams: streamsAfterCut, ffmpegExperimental, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge, videoTimebase, onProgress: onConcatProgress, signal });
         onSingleProgress(i, 1);
         return { path: finalOutPath, created: true };
       } finally {
@@ -1141,7 +1147,9 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       const outcomes = await pMap(segments, async (segment, i): Promise<{ result?: Awaited<ReturnType<typeof cutSegment>>, error?: unknown } | undefined> => {
         if (failed) return undefined;
         try {
-          return { result: await cutSegment(segment, i) };
+          const result = await cutSegment(segment, i);
+          if (result.created) onClipWritten?.(result.path);
+          return { result };
         } catch (error) {
           failed = true;
           return { error };

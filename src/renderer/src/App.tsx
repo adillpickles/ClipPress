@@ -3642,8 +3642,9 @@ function App() {
         throw err;
       }
     };
-    // A merged-only export's clip files, deleted again if it fails or is cancelled (their names were free).
-    let mergePartsToRemoveOnFailure: string[] = [];
+    // The clip files a merged-only export has written, deleted again if it fails or is cancelled before the merge.
+    const mergePartsWritten: string[] = [];
+    const onMergePartWritten = (path: string) => { mergePartsWritten.push(path); };
     // Cancel stops the FFmpeg running then; between steps it's caught here, so the next step doesn't start.
     const exportAbort = new AbortController();
     const setExportWorking = (state: { text: string, detailText?: string | undefined }) => setWorking({ ...state, abortController: exportAbort });
@@ -4034,7 +4035,6 @@ function App() {
           const generated = await generateCutFileNames(defaultCutFileTemplate);
           // Made and deleted again: never on a file already there (an earlier export's clips).
           cutFileNames = await getMergePartNames(generated.fileNames, isOutputNameTaken);
-          mergePartsToRemoveOnFailure = cutFileNames.map((name) => pathJoin(outputDir, name));
           addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
         } else {
           const generated = await generateCutFileNames(
@@ -4073,6 +4073,7 @@ function App() {
           videoHeight: activeVideoStream.height,
           encodeAllAudio: willMerge,
           signal: exportAbort.signal,
+          onClipWritten: willMerge && autoDeleteMergedSegments ? onMergePartWritten : undefined,
           onProgress: setProgress,
         });
 
@@ -4115,7 +4116,7 @@ function App() {
           });
 
           const createdOutFiles = outFiles.flatMap((file) => (file.created ? [file.path] : []));
-          mergePartsToRemoveOnFailure = [];
+          mergePartsWritten.length = 0;
           if (autoDeleteMergedSegments && mergedResult.created) await tryDeleteFiles(createdOutFiles);
         }
 
@@ -4232,7 +4233,6 @@ function App() {
         const generated = await generateCutFileNames(defaultCutFileTemplate);
         // Made and deleted again: never on a file already there (an earlier export's clips).
         cutFileNames = await getMergePartNames(generated.fileNames, isOutputNameTaken);
-        mergePartsToRemoveOnFailure = cutFileNames.map((name) => pathJoin(outputDir, name));
         addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
       } else {
         const generated = await generateCutFileNames(cutFileTemplateOrDefault);
@@ -4277,6 +4277,7 @@ function App() {
         detectedFps,
         encodeAllAudio: willMerge && segmentsToExport.some((segment) => isClipVolumeChanged(segment)),
         signal: exportAbort.signal,
+        onClipWritten: willMerge && autoDeleteMergedSegments ? onMergePartWritten : undefined,
       });
 
       let mergedOutFilePath: string | undefined;
@@ -4329,7 +4330,7 @@ function App() {
 
         // don't delete existing files that were not created by losslesscut now (due to overwrite disabled) https://github.com/mifi/lossless-cut/issues/2436
         const createdOutFiles = outFiles.flatMap((f) => (f.created ? [f.path] : []));
-        mergePartsToRemoveOnFailure = [];
+        mergePartsWritten.length = 0;
         if (autoDeleteMergedSegments && mergedResult.created) await tryDeleteFiles(createdOutFiles);
       }
 
@@ -4444,9 +4445,8 @@ function App() {
     } catch (err) {
       emitEvent({ eventName: 'export-complete' });
 
-      // A merged-only export that stopped part way: its clip files go (only those that were written).
-      const leftParts = (await Promise.all(mergePartsToRemoveOnFailure.map(async (path) => ((await lstat(path).catch(() => undefined)) != null ? path : undefined)))).filter((path) => path != null);
-      if (leftParts.length > 0) await tryDeleteFiles(leftParts);
+      // A merged-only export that stopped part way: the clip files it wrote go.
+      if (mergePartsWritten.length > 0) await tryDeleteFiles(mergePartsWritten);
 
       if (isAbortedError(err)) return;
 
