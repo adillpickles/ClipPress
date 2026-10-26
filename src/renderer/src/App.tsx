@@ -1713,12 +1713,15 @@ function App() {
     [setSimpleMode],
   );
 
+  const canMergeClips = segmentsOrInverse.selected.length >= 2;
   const effectiveExportMode = useMemo(() => {
     if (segmentsToChaptersOnly) return 'segments_to_chapters';
+    // With one clip there's nothing to join: it's one file (the saved choice is kept for when there are more clips).
+    if (!canMergeClips) return 'separate';
     if (autoMerge && autoDeleteMergedSegments) return 'merge';
     if (autoMerge) return 'merge+separate';
     return 'separate';
-  }, [autoDeleteMergedSegments, autoMerge, segmentsToChaptersOnly]);
+  }, [autoDeleteMergedSegments, autoMerge, canMergeClips, segmentsToChaptersOnly]);
 
   const changeOutDir = useCallback(async () => {
     const newOutDir = await askForOutDir(outputDir);
