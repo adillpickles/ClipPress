@@ -861,6 +861,9 @@ function SegmentList({
     if (!canPick || e.button !== 0 || scroller == null || (e.target !== scroller && e.target !== rowsRef.current)) return;
     // Not on the scroll bar.
     if (e.clientX >= scroller.getBoundingClientRect().left + scroller.clientWidth) return;
+    // A click here ends a rename like a click anywhere else (keeping the text from being selected also keeps focus).
+    const { activeElement } = document;
+    if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) activeElement.blur();
     e.preventDefault();
     scroller.setPointerCapture(e.pointerId);
     boxStartRef.current = { ...toListPoint(scroller, e), additive: e.ctrlKey || e.metaKey, before: pickedClipIds, moved: false };
