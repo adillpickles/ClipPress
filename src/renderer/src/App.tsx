@@ -287,6 +287,9 @@ import { getTimelineCacheKey } from './timelineCache';
 import { getVideoDisplayAspect } from './filmstrip';
 import { pruneTimelineCache } from './timelineCacheIo';
 import prefetchTimeline from './timelinePrefetch';
+import TooltipLayer from './components/TooltipLayer';
+import MenuHost from './components/Menu';
+import { pickHintKeyBindings } from './util/keyNames';
 import useAudioPeaks from './hooks/useAudioPeaks';
 import AudioTrackHeader from './components/AudioTrackHeader';
 import ClipVolumePopover from './components/ClipVolumePopover';
@@ -629,13 +632,9 @@ function App() {
     ],
   );
 
-  // Note that each action may be multiple key bindings and this will only be the first binding for each action
-  const keyBindingByAction = useMemo(
-    () => Object.fromEntries(
-      keyBindings.map((binding) => [binding.action, binding]),
-    ),
-    [keyBindings],
-  );
+  // The binding a shortcut hint shows, of each action's: the first, but on a Mac one with Cmd and elsewhere one without
+  // the Windows key, where there's such a one (the defaults pair each Ctrl shortcut with a Cmd/Windows key one).
+  const keyBindingByAction = useMemo(() => pickHintKeyBindings(keyBindings, isMac), [keyBindings]);
 
   const { working, setWorking, workingRef, abortWorking } = useLoading();
   const {
@@ -6018,7 +6017,8 @@ function App() {
       batchPreviousFile: () => batchFileJump(-1, false),
       batchNextFile: () => batchFileJump(1, false),
       batchOpenPreviousFile: () => batchFileJump(-1, true),
-      batchOpenNextFile: () => batchFileJump(1, true),
+      // With no batch list (simple mode never shows one), the shelf's next clip, as the top bar's Next clip.
+      batchOpenNextFile: () => (batchFiles.length === 0 && simpleMode ? openNextClip() : batchFileJump(1, true)),
       batchOpenSelectedFile,
       closeBatch,
       removeCurrentSegment: () => removeSegment(currentSegIndexSafe, true),
@@ -6118,6 +6118,9 @@ function App() {
 
     return ret;
   }, [
+    batchFiles.length,
+    openNextClip,
+    simpleMode,
     editHistories,
     editHistoryOrder,
     togglePlaySelectedSegments,
@@ -6859,7 +6862,7 @@ function App() {
         <SegColorsContext.Provider value={segColorsContext}>
           <UserSettingsContext.Provider value={userSettingsContext}>
             <div ref={appDropRef} className={rootClass} style={rootStyle} id="app-root">
-              <AppChrome />
+              <AppChrome keyBindingByAction={keyBindingByAction} />
 
               {isFileOpened && (
                 <TopMenu
@@ -6875,6 +6878,8 @@ function App() {
                   shelf={shelfProps}
                   nextClipName={simpleMode ? nextClip?.name : undefined}
                   onOpenNextClip={openNextClip}
+                  nextClipKeys={keyBindingByAction['batchOpenNextFile']?.keys}
+                  exportKeys={keyBindingByAction['export']?.keys}
                   clipsPanelShown={showRightBar}
                   onShowClipsPanel={toggleSegmentsList}
                   onExportPress={onExportPress}
@@ -7593,6 +7598,8 @@ function App() {
             </div>
 
             <SwalContainer darkMode={darkMode} style={baseColorStyle} />
+            <TooltipLayer />
+            <MenuHost />
           </UserSettingsContext.Provider>
         </SegColorsContext.Provider>
       </AppContext.Provider>

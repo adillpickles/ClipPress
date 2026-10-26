@@ -1,0 +1,48 @@
+/* The app's tooltip: the Settings ⓘ bubble's look, a size smaller, with any shortcut as key caps. */
+.bubble {
+  position: fixed;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  max-width: 20rem;
+  padding: .35rem .6rem;
+  border-radius: var(--cp-radius-sm);
+  border: 1px solid var(--cp-line-strong);
+  background: var(--cp-raised);
+  box-shadow: var(--cp-shadow-popover);
+  color: var(--cp-text);
+  font-size: .75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: pre-line;
+  pointer-events: none;
+  animation: tooltip-in .12s ease;
+}
+
+.text {
+  min-width: 0;
+}
+
+.keys {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.keys kbd {
+  font-size: 10.5px;
+  padding: 2px 5px;
+}
+
+@keyframes tooltip-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble {
+    animation: none;
+  }
+}

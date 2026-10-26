@@ -8,6 +8,7 @@ import invariant from 'tiny-invariant';
 import TimelineSeg from './TimelineSeg';
 import BetweenSegments from './BetweenSegments';
 import useContextMenu from './hooks/useContextMenu';
+import { openMenu } from './components/Menu';
 import useUserSettings from './hooks/useUserSettings';
 
 import styles from './Timeline.module.css';
@@ -33,9 +34,6 @@ import type { FilmTile } from './filmstrip';
 import type { Filmstrip } from './hooks/useFilmstrip';
 import type { AudioPeaks } from './audioPeaks';
 import AudioLane from './components/AudioLane';
-
-const remote = window.require('@electron/remote');
-const { Menu } = remote;
 
 
 // eslint-disable-next-line react/display-name
@@ -759,14 +757,14 @@ function Timeline({
     event.preventDefault();
     event.stopPropagation();
     onSelectOverlay(overlayClip.overlayId);
-    const menu = Menu.buildFromTemplate([
-      {
+    openMenu({
+      at: { x: event.clientX, y: event.clientY },
+      items: [{
         // In simple mode a "clip" is a part of the recording; the lane just says "Text".
         label: simpleMode ? t('Delete text') : t('Delete text clip'),
         click: () => onDeleteOverlayClip(overlayClip.overlayId),
-      },
-    ]);
-    menu.popup({ window: remote.getCurrentWindow() });
+      }],
+    });
   }, [onDeleteOverlayClip, onSelectOverlay, simpleMode, t]);
 
   const onMouseMove = useCallback<MouseEventHandler<HTMLDivElement>>((e) => {

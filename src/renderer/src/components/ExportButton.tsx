@@ -16,6 +16,8 @@ interface Props {
   style?: CSSProperties,
   label?: string,
   titleOverride?: string,
+  /** The export shortcut, shown in its hint. */
+  exportKeys?: string | undefined,
 }
 
 // eslint-disable-next-line react/display-name
@@ -26,6 +28,7 @@ const ExportButton = forwardRef<HTMLButtonElement, Props>(({
   style,
   label,
   titleOverride,
+  exportKeys,
 }, ref) => {
   const { t } = useTranslation();
 
@@ -56,6 +59,7 @@ const ExportButton = forwardRef<HTMLButtonElement, Props>(({
       style={style}
       onClick={handleClick}
       title={title}
+      data-tip-keys={exportKeys}
     >
       <FiShare aria-hidden style={{ fontSize: '1em', flexShrink: 0 }} />
       {/* Always "Export" here: what it makes depends on the export options, and their own button says it. */}

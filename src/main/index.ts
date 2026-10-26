@@ -22,7 +22,6 @@ import menu from './menu.js';
 import * as configStore from './configStore.js';
 import { isLinux, isWindows, isMac, platform, arch, pathExists } from './util.js';
 import { appName } from './common.js';
-import attachContextMenu from './contextMenu.js';
 import isDev from './isDev.js';
 import isStoreBuild from './isStoreBuild.js';
 import { getAboutPanelOptions } from './aboutPanel.js';
@@ -250,7 +249,6 @@ function createWindow() {
 
   remote.enable(mainWindow.webContents);
 
-  attachContextMenu(mainWindow);
 
   // Incremental hardening: never open a child window, and never navigate the app
   // window away from its own document. Full contextIsolation:true / nodeIntegration:false
@@ -680,9 +678,67 @@ function getMenuBarItems() {
   ));
 }
 
+/** The keys a role's item answers to, which Electron doesn't say (only a user-given accelerator). */
+const roleAccelerators: Partial<Record<string, string>> = {
+  undo: 'CmdOrCtrl+Z',
+  redo: process.platform === 'darwin' ? 'Shift+CmdOrCtrl+Z' : 'Ctrl+Y',
+  cut: 'CmdOrCtrl+X',
+  copy: 'CmdOrCtrl+C',
+  paste: 'CmdOrCtrl+V',
+  selectall: 'CmdOrCtrl+A',
+  togglefullscreen: process.platform === 'darwin' ? 'Ctrl+Cmd+F' : 'F11',
+  resetzoom: 'CmdOrCtrl+0',
+  zoomin: 'CmdOrCtrl+Plus',
+  zoomout: 'CmdOrCtrl+-',
+  toggledevtools: process.platform === 'darwin' ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
+};
+
+export interface AppMenuItem {
+  label: string,
+  type: string,
+  checked: boolean,
+  enabled: boolean,
+  visible: boolean,
+  accelerator: string | undefined,
+  /** The app action the item runs (menu.ts), for its key binding. */
+  id: string | undefined,
+  /** Where it is: indexes from the menu bar down. */
+  path: number[],
+  submenu: AppMenuItem[] | undefined,
+}
+
+const serializeMenu = (source: electron.Menu, path: number[]): AppMenuItem[] => source.items.map((item, index) => ({
+  label: item.label,
+  type: item.type,
+  checked: item.checked,
+  enabled: item.enabled,
+  visible: item.visible,
+  accelerator: (typeof item.accelerator === 'string' ? item.accelerator : undefined) ?? (item.role != null ? roleAccelerators[item.role.toLowerCase()] : undefined),
+  id: item.id || undefined,
+  path: [...path, index],
+  submenu: item.submenu != null ? serializeMenu(item.submenu, [...path, index]) : undefined,
+}));
+
+/** One of the menu bar's menus, as plain data for the title bar to draw in the app's own style. */
+function getMenuBarMenu(index: number) {
+  const submenu = electron.Menu.getApplicationMenu()?.items[index]?.submenu;
+  return submenu != null ? serializeMenu(submenu, [index]) : [];
+}
+
+/** Runs the menu bar's item at `path`, as clicking it in a system menu would. */
+function clickMenuItem(path: number[]) {
+  const [first, ...rest] = path;
+  let item = first != null ? electron.Menu.getApplicationMenu()?.items[first] : undefined;
+  for (const index of rest) item = item?.submenu?.items[index];
+  if (item == null || !item.enabled) return;
+  item.click(undefined, mainWindow ?? undefined, mainWindow?.webContents);
+}
+
 const remoteApi = {
   pathExists,
   getMenuBarItems,
+  getMenuBarMenu,
+  clickMenuItem,
   downloadMediaUrl,
   // Loaded when first used, not at every start.
   fileTypeFromFile: async (path: string) => (await import('file-type/node')).fileTypeFromFile(path),

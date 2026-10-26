@@ -13,6 +13,7 @@ import { getSegmentSpeed } from './segmentSpeed';
 import { fadeInArrivingFrame } from './filmstrip';
 import type { FilmTile } from './filmstrip';
 import styles from './TimelineSeg.module.css';
+import { openMenu } from './components/Menu';
 import { dbToPercent, isClipVolumeChanged } from './util/audioGain';
 import formatClockTime from './util/clockTime';
 import { getSegBadgeStyle, getSegColorVars } from './colors';
@@ -217,17 +218,17 @@ function Segment({
       { type: 'separator' as const },
       { label: t('Remove clip'), click: () => onRemove(segNum, true) },
     ] : [];
-    const remote = window.require('@electron/remote');
-    remote.Menu.buildFromTemplate([
-      ...clipActions,
-      { label: t('Speed controls'), type: 'checkbox', checked: speedControlsVisible, click: () => onToggleSpeedControls(seg.segId) },
-      { label: t('Change speed…'), click: () => onEditSpeed(segNum) },
-      { label: t('Remove speed change'), enabled: speed !== 1 || speedControlsVisible, click: () => onRemoveSpeed(seg.segId) },
-      { type: 'separator' },
-      { label: t('Zoom / Crop…'), click: () => onEditCrop(segNum) },
-      ...(onEditVolume != null ? [{ label: getClipVolumeMenuLabel(), click: () => onEditVolume(segNum, point) }] : []),
-      ...removeAction,
-    ]).popup({ window: remote.getCurrentWindow() });
+    openMenu({ at: point,
+      items: [
+        ...clipActions,
+        { label: t('Speed controls'), type: 'checkbox', checked: speedControlsVisible, click: () => onToggleSpeedControls(seg.segId) },
+        { label: t('Change speed…'), click: () => onEditSpeed(segNum) },
+        { label: t('Remove speed change'), enabled: speed !== 1 || speedControlsVisible, click: () => onRemoveSpeed(seg.segId) },
+        { type: 'separator' },
+        { label: t('Zoom / Crop…'), click: () => onEditCrop(segNum) },
+        ...(onEditVolume != null ? [{ label: getClipVolumeMenuLabel(), click: () => onEditVolume(segNum, point) }] : []),
+        ...removeAction,
+      ] });
   };
 
   if (simpleLook) {

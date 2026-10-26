@@ -10,6 +10,7 @@ import ExportButton from './components/ExportButton';
 import SimpleModeButton from './components/SimpleModeButton';
 import useUserSettings from './hooks/useUserSettings';
 import type { SegmentToExport } from './types';
+import { isMac } from './util';
 import styles from './TopMenu.module.css';
 
 function TopMenu({
@@ -24,6 +25,8 @@ function TopMenu({
   onShelfShown,
   shelf,
   nextClipName,
+  nextClipKeys,
+  exportKeys,
   onOpenNextClip,
   clipsPanelShown,
   onShowClipsPanel,
@@ -43,6 +46,9 @@ function TopMenu({
   shelf: ComponentProps<typeof ShelfButton>['shelf'],
   /** Simple mode: the clip after this one in the shelf, if any. */
   nextClipName: string | undefined,
+  /** Next clip's shortcut (the "open next file" one), for its hint. */
+  nextClipKeys: string | undefined,
+  exportKeys: string | undefined,
   onOpenNextClip: () => void,
   clipsPanelShown: boolean,
   onShowClipsPanel: () => void,
@@ -113,7 +119,7 @@ function TopMenu({
         )}
 
         {nextClipName != null && (
-          <Button variant="ghost" onClick={onOpenNextClip} title={t('Next clip: {{name}}', { name: nextClipName })}>
+          <Button variant="ghost" onClick={onOpenNextClip} title={t('Next clip: {{name}}', { name: nextClipName })} data-tip-keys={nextClipKeys}>
             {t('Next clip')}
             <FiChevronRight aria-hidden />
           </Button>
@@ -140,12 +146,13 @@ function TopMenu({
         {/* Advanced mode is unfinished, so its switch only shows once it's turned on in Settings. */}
         {enableAdvancedMode && <SimpleModeButton />}
 
-        <Button variant="ghost" onClick={toggleSettings} title={t('Settings')}>
+        {/* The menu bar's Settings item answers to Ctrl+, (an accelerator of the menu, not a rebindable shortcut). */}
+        <Button variant="ghost" onClick={toggleSettings} title={t('Settings')} data-tip-keys={isMac ? 'MetaLeft+Comma' : 'ControlLeft+Comma'}>
           <FiSettings aria-hidden />
           {t('Settings')}
         </Button>
 
-        <ExportButton segmentsToExport={segmentsToExport} onClick={onExportPress} onQuickExport={onQuickExportPress} />
+        <ExportButton segmentsToExport={segmentsToExport} onClick={onExportPress} onQuickExport={onQuickExportPress} exportKeys={exportKeys} />
       </div>
     </div>
   );

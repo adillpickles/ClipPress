@@ -37,8 +37,7 @@ import Select from './components/Select';
 import Button from './components/Button';
 import styles from './BottomBar.module.css';
 import formatClockTime from './util/clockTime';
-import { withShortcut } from './util/keyNames';
-import { useAppContext, useSegColors } from './contexts';
+import { useSegColors } from './contexts';
 
 import { withBlur, mirrorTransform } from './util';
 import getSwal from './swal';
@@ -448,8 +447,8 @@ function BottomBar({
 }) {
   const { t } = useTranslation();
   const { getSegColor } = useSegColors();
-  const { keyboardLayoutMap } = useAppContext();
-  const shortcutTitle = useCallback((label: string, action: string) => withShortcut(label, keyBindingByAction[action]?.keys, keyboardLayoutMap), [keyBindingByAction, keyboardLayoutMap]);
+  // An action's real shortcut, shown as key caps by the app's tooltip next to the hint (data-tip-keys, TooltipLayer).
+  const shortcutKeys = useCallback((action: string) => keyBindingByAction[action]?.keys, [keyBindingByAction]);
 
   const playStyle = useMemo<CSSProperties>(
     () => ({
@@ -605,7 +604,8 @@ function BottomBar({
       type="button"
       className={styles['playButton']}
       onClick={() => togglePlay()}
-      title={shortcutTitle(playing ? t('Pause') : t('Play'), 'togglePlayResetSpeed')}
+      title={playing ? t('Pause') : t('Play')}
+      data-tip-keys={shortcutKeys('togglePlayResetSpeed')}
       aria-label={playing ? t('Pause') : t('Play')}
     >
       <PlayPauseIcon style={{ fontSize: '.8rem', marginLeft: playing ? 0 : '.12em' }} />
@@ -620,7 +620,8 @@ function BottomBar({
             type="button"
             className={styles['timeDisplay']}
             onClick={goToTimecode}
-            title={shortcutTitle(t('Go to a time'), 'goToTimecode')}
+            title={t('Go to a time')}
+            data-tip-keys={shortcutKeys('goToTimecode')}
           >
             <span className={styles['timeCurrent']}>{currentTimeLabel}</span>
             {durationLabel != null && <span className={styles['timeDuration']}>{` / ${durationLabel}`}</span>}
@@ -634,7 +635,8 @@ function BottomBar({
                 className={styles['zoomButton']}
                 onClick={() => setZoom((z) => z / 2)}
                 disabled={zoom <= 1}
-                title={shortcutTitle(t('Zoom out on the timeline'), 'timelineZoomOut')}
+                title={t('Zoom out on the timeline')}
+                data-tip-keys={shortcutKeys('timelineZoomOut')}
                 aria-label={t('Zoom out on the timeline')}
               >
                 <FiZoomOut aria-hidden />
@@ -644,7 +646,8 @@ function BottomBar({
                 className={styles['zoomButton']}
                 onClick={() => setZoom((z) => Math.min(z * 2, maxTimelineZoom))}
                 disabled={zoom >= maxTimelineZoom}
-                title={shortcutTitle(t('Zoom in on the timeline'), 'timelineZoomIn')}
+                title={t('Zoom in on the timeline')}
+                data-tip-keys={shortcutKeys('timelineZoomIn')}
                 aria-label={t('Zoom in on the timeline')}
               >
                 <FiZoomIn aria-hidden />
@@ -672,6 +675,7 @@ function BottomBar({
               size={16}
               style={{ flexShrink: 0 }}
               title={t('Jump to start of video')}
+              data-tip-keys={shortcutKeys('jumpTimelineStart')}
               role="button"
               onClick={jumpTimelineStart}
             />
@@ -684,6 +688,7 @@ function BottomBar({
               Icon={FaStepBackward}
               onClick={jumpCutStart}
               title={t("Jump to current segment's start time")}
+              data-tip-keys={shortcutKeys('jumpCutStart')}
               style={{ marginRight: 5 }}
             />
           </>
@@ -694,7 +699,8 @@ function BottomBar({
             currentCutSeg={currentCutSegOrDefault}
             side="start"
             onClick={setCutStart}
-            title={shortcutTitle(t('Start current segment at current time'), 'setCutStart')}
+            title={t('Start current segment at current time')}
+            data-tip-keys={shortcutKeys('setCutStart')}
             style={{ marginRight: 5 }}
           />
           )}
@@ -719,6 +725,7 @@ function BottomBar({
             size={25}
             role="button"
             title={t('Seek previous keyframe')}
+            data-tip-keys={shortcutKeys('seekBackwardsKeyframe')}
             style={{
               flexShrink: 0,
               marginRight: 2,
@@ -735,6 +742,7 @@ function BottomBar({
             size={28}
             role="button"
             title={t('One frame back')}
+            data-tip-keys={shortcutKeys('seekPreviousFrame')}
             onClick={() => shortStep(-1)}
           />
           )}
@@ -747,6 +755,7 @@ function BottomBar({
             size={28}
             role="button"
             title={t('One frame forward')}
+            data-tip-keys={shortcutKeys('seekNextFrame')}
             onClick={() => shortStep(1)}
           />
           )}
@@ -757,6 +766,7 @@ function BottomBar({
             size={25}
             role="button"
             title={t('Seek next keyframe')}
+            data-tip-keys={shortcutKeys('seekForwardsKeyframe')}
             onClick={() => seekClosestKeyframe(1)}
           />
           )}
@@ -780,7 +790,8 @@ function BottomBar({
             currentCutSeg={currentCutSeg}
             side="end"
             onClick={setCutEnd}
-            title={shortcutTitle(t('End current segment at current time'), 'setCutEnd')}
+            title={t('End current segment at current time')}
+            data-tip-keys={shortcutKeys('setCutEnd')}
             style={{ marginLeft: 5 }}
           />
           )}
@@ -793,6 +804,7 @@ function BottomBar({
               Icon={FaStepForward}
               onClick={jumpCutEnd}
               title={t("Jump to current segment's end time")}
+              data-tip-keys={shortcutKeys('jumpCutEnd')}
               style={{ marginLeft: 5 }}
             />
 
@@ -802,6 +814,7 @@ function BottomBar({
               size={16}
               style={{ flexShrink: 0 }}
               title={t('Jump to end of video')}
+              data-tip-keys={shortcutKeys('jumpTimelineEnd')}
               role="button"
               onClick={jumpTimelineEnd}
             />
@@ -816,20 +829,21 @@ function BottomBar({
               size="sm"
               onClick={onSplitClip}
               disabled={!canSplitClip}
-              title={canSplitClip ? shortcutTitle(t('Split the clip at the playhead'), 'splitCurrentSegment') : t('Move the playhead onto the clip you want to split')}
+              title={canSplitClip ? t('Split the clip at the playhead') : t('Move the playhead onto the clip you want to split')}
+              data-tip-keys={canSplitClip ? shortcutKeys('splitCurrentSegment') : undefined}
             >
               <FiScissors aria-hidden />
               {t('Split')}
             </Button>
           )}
           {hasVideo && (
-            <Button size="sm" onClick={onEditSegmentCrop} disabled={!canEditSegmentCrop} title={shortcutTitle(t('Zoom in on part of the picture for this clip'), 'editCurrentSegmentCrop')}>
+            <Button size="sm" onClick={onEditSegmentCrop} disabled={!canEditSegmentCrop} title={t('Zoom in on part of the picture for this clip')} data-tip-keys={shortcutKeys('editCurrentSegmentCrop')}>
               <FiCrop aria-hidden />
               {t('Zoom / Crop')}
             </Button>
           )}
           {hasVideo && (
-            <Button size="sm" onClick={onAddTextOverlay} title={shortcutTitle(t('Add a caption at the current time'), 'addTextOverlay')}>
+            <Button size="sm" onClick={onAddTextOverlay} title={t('Add a caption at the current time')} data-tip-keys={shortcutKeys('addTextOverlay')}>
               <FiType aria-hidden />
               {t('Add Text')}
             </Button>
@@ -963,14 +977,14 @@ function BottomBar({
           <div style={{ flexGrow: 1 }} />
 
           {isFileOpened && (
-            <Button title={t('Close file and clean up')} onClick={cleanupFilesDialog} style={{ ...utilityButtonStyle, color: dangerColor }}>
+            <Button title={t('Close file and clean up')} data-tip-keys={shortcutKeys('cleanupFilesDialog')} onClick={cleanupFilesDialog} style={{ ...utilityButtonStyle, color: dangerColor }}>
               <FaTrashAlt style={{ fontSize: '.95em' }} />
             </Button>
           )}
 
           {hasVideo && (
             <div>
-              <Button title={t('Capture frame')} onClick={captureSnapshot} style={{ ...utilityButtonStyle, marginRight: '.25rem' }}>
+              <Button title={t('Capture frame')} data-tip-keys={shortcutKeys('captureSnapshot')} onClick={captureSnapshot} style={{ ...utilityButtonStyle, marginRight: '.25rem' }}>
                 <IoIosCamera style={{ fontSize: '1.3em', verticalAlign: 'middle' }} />
               </Button>
 

@@ -1,4 +1,4 @@
-import { getMetaKeyName, splitKeyboardKeys } from '../util';
+import { getMetaKeyName } from '../util';
 
 const keyNames: Record<string, string> = {
   Escape: 'Esc',
@@ -96,17 +96,16 @@ export function getKeyDisplayName(code: string, keyboardLayoutMap: Map<string, s
   return keyboardLayoutMap?.get(code) ?? keyNames[code] ?? code;
 }
 
-/** A key binding (`ShiftLeft+Slash`) as plain text for tooltips, e.g. `Shift+/`. */
-export function formatKeyBinding(keys: string | undefined, keyboardLayoutMap: Map<string, string> | undefined) {
-  if (keys == null || keys === '') return undefined;
-  return splitKeyboardKeys(keys).map((code) => {
-    const name = getKeyDisplayName(code, keyboardLayoutMap);
-    return name.length === 1 ? name.toUpperCase() : name;
-  }).join('+');
-}
-
-/** A tooltip with its keyboard shortcut, if it has one: `Play (Space)`. */
-export function withShortcut(label: string, keys: string | undefined, keyboardLayoutMap: Map<string, string> | undefined) {
-  const shortcut = formatKeyBinding(keys, keyboardLayoutMap);
-  return shortcut != null ? `${label} (${shortcut})` : label;
+/**
+ * Each action's binding for shortcut hints: the first one, but on a Mac one using Cmd and elsewhere one without the
+ * Windows key, when the action has such a one (the defaults pair each Ctrl shortcut with a Cmd/Windows key twin).
+ */
+export function pickHintKeyBindings<T extends { keys: string, action: string }>(bindings: readonly T[], isMac: boolean) {
+  const usesMeta = (binding: T) => /Meta/.test(binding.keys);
+  const byAction: Record<string, T> = {};
+  bindings.forEach((binding) => {
+    const current = byAction[binding.action];
+    if (current == null || (usesMeta(current) !== isMac && usesMeta(binding) === isMac)) byAction[binding.action] = binding;
+  });
+  return byAction;
 }

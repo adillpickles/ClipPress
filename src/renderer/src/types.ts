@@ -1,5 +1,5 @@
-import type { MenuItem, MenuItemConstructorOptions } from 'electron';
 import { z } from 'zod';
+import type { MenuEntry } from './components/Menu';
 import type { FFprobeChapter, FFprobeFormat, FFprobeStream } from '../../common/ffprobe';
 import type { FileStream } from './ffmpeg';
 import { minSegmentSpeed, maxSegmentSpeed } from './segmentSpeed';
@@ -231,7 +231,8 @@ export type GetFrameCount = (sec: number) => number | undefined;
 
 export type UpdateSegAtIndex = (index: number, newProps: Partial<StateSegment>, options?: UndoableSetOptions) => void;
 
-export type ContextMenuTemplate = (MenuItemConstructorOptions | MenuItem)[];
+/** A menu for the app's own menu (Menu.tsx): Electron's template shape. */
+export type ContextMenuTemplate = MenuEntry[];
 
 export type ExportMode = 'segments_to_chapters' | 'merge' | 'merge+separate' | 'separate';
 

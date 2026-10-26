@@ -22,22 +22,24 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
   simpleMode: boolean,
 }) => {
   const send = (channel: string) => () => mainWindow.webContents.send(channel);
+  // An item running an app action: its id is the action's name, so the title bar's menu shows the action's real keys.
+  const action = (label: string, channel: string): MenuItemConstructorOptions => ({ id: channel, label: esc(label), click: send(channel) });
 
   // The everyday clip actions, as a menu (simple mode's replacement for the Segments menu).
   const clipsMenu: MenuItemConstructorOptions = {
     label: esc(t('Clips')),
     submenu: [
-      { label: esc(t('New clip')), click: send('addSegment') },
-      { label: esc(t('Split clip at playhead')), click: send('splitCurrentSegment') },
-      { label: esc(t('Duplicate clip')), click: send('duplicateCurrentSegment') },
-      { label: esc(t('Rename clip…')), click: send('labelCurrentSegment') },
-      { label: esc(t('Remove clip')), click: send('removeCurrentSegment') },
+      action(t('New clip'), 'addSegment'),
+      action(t('Split clip at playhead'), 'splitCurrentSegment'),
+      action(t('Duplicate clip'), 'duplicateCurrentSegment'),
+      action(t('Rename clip…'), 'labelCurrentSegment'),
+      action(t('Remove clip'), 'removeCurrentSegment'),
       { type: 'separator' },
-      { label: esc(t('Add text')), click: send('addTextOverlay') },
-      { label: esc(t('Zoom / crop clip…')), click: send('editCurrentSegmentCrop') },
-      { label: esc(t('Speed controls')), click: send('toggleSegmentSpeedControls') },
+      action(t('Add text'), 'addTextOverlay'),
+      action(t('Zoom / crop clip…'), 'editCurrentSegmentCrop'),
+      action(t('Speed controls'), 'toggleSegmentSpeedControls'),
       { type: 'separator' },
-      { label: esc(t('Clear all clips')), click: send('clearSegments') },
+      action(t('Clear all clips'), 'clearSegments'),
     ],
   };
 
@@ -49,6 +51,7 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
       label: esc(t('File')),
       submenu: [
         {
+          id: 'openFilesDialog',
           label: esc(t('Open')),
           accelerator: 'CmdOrCtrl+O',
           async click() {
@@ -69,6 +72,7 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
         },
         { type: 'separator' },
         {
+          id: 'closeCurrentFile',
           label: esc(t('Close')),
           accelerator: 'CmdOrCtrl+W',
           async click() {
@@ -275,8 +279,8 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
         { role: 'copy', label: esc(t('Copy')) },
         { role: 'paste', label: esc(t('Paste')) },
         { role: 'selectAll', label: esc(t('Select All')) },
-        { type: 'separator' },
-        {
+        // The tracks are chosen in the export options in simple mode; extracting them is a power tool.
+        ...(simpleMode ? [] : [{ type: 'separator' as const }, {
           label: esc(t('Tracks')),
           submenu: [
             {
@@ -292,7 +296,7 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
               },
             },
           ],
-        },
+        }] satisfies MenuItemConstructorOptions[]),
       ],
     },
 
@@ -401,7 +405,8 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
     {
       label: esc(t('View')),
       submenu: [
-        ...(process.platform === 'win32' ? [
+        // The title bar has its own buttons for these.
+        ...(process.platform === 'win32' && !simpleMode ? [
           { role: 'minimize' as const, label: esc(t('Minimize')) },
           { role: 'zoom' as const, label: esc(t('Maximize')) },
         ] : []),
@@ -421,12 +426,13 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
       label: esc(t('Tools')),
       submenu: [
         {
-          label: esc(t('Merge/concatenate files')),
+          label: simpleMode ? esc(t('Join files…')) : esc(t('Merge/concatenate files')),
           click() {
             mainWindow.webContents.send('concatBatch');
           },
         },
-        {
+        // Timecodes, scene detection and keyframes are advanced mode's tools.
+        ...(simpleMode ? [] : [{
           label: esc(t('Set custom start offset/timecode')),
           click() {
             mainWindow.webContents.send('setStartTimeOffset');
@@ -461,8 +467,10 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
           click() {
             mainWindow.webContents.send('createSegmentsFromKeyframes');
           },
-        },
+        }] satisfies MenuItemConstructorOptions[]),
+        { type: 'separator' },
         {
+          id: 'toggleLastCommands',
           label: esc(t('Last ffmpeg commands')),
           click() { mainWindow.webContents.send('toggleLastCommands'); },
         },
@@ -488,6 +496,7 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
           click() { electron.shell.openExternal(troubleshootingUrl); },
         },
         {
+          id: 'toggleKeyboardShortcuts',
           label: esc(t('Keyboard & mouse shortcuts')),
           click() {
             mainWindow.webContents.send('toggleKeyboardShortcuts');

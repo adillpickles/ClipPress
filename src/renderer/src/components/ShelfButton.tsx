@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import AnchoredPopover from './AnchoredPopover';
 import Shelf from './Shelf';
 import shelfStyles from './Shelf.module.css';
+import { isMac } from '../util';
 import styles from './ShelfButton.module.css';
 
 /** Long enough that passing over the button on the way elsewhere doesn't open it. */
@@ -89,7 +90,7 @@ function ShelfButton({ onOpenFiles, onShelfShown, shelf }: {
 
   return (
     <div ref={anchorRef} className={styles['split']} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
-      <button type="button" className={styles['main']} onClick={() => { close(); onOpenFiles(); }} title={t('Open another clip')}>
+      <button type="button" className={styles['main']} onClick={() => { close(); onOpenFiles(); }} title={t('Open another clip')} data-tip-keys={isMac ? 'MetaLeft+KeyO' : 'ControlLeft+KeyO'}>
         <FiFolder aria-hidden />
         {t('Open')}
       </button>

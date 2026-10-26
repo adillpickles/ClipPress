@@ -1,0 +1,110 @@
+/* The app's menu (Menu.tsx): the clip volume popover's look, items as soft rounded rows. */
+.layer {
+  position: fixed;
+  inset: 0;
+  z-index: 10002;
+}
+
+.menu {
+  position: fixed;
+  min-width: 13rem;
+  max-width: 22rem;
+  max-height: calc(100vh - 12px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 5px;
+  border-radius: var(--cp-radius-lg);
+  border: 1px solid var(--cp-line-strong);
+  background: var(--cp-raised);
+  box-shadow: var(--cp-shadow-popover);
+  color: var(--cp-text);
+  font-size: .8125rem;
+  outline: none;
+  animation: menu-in .12s ease;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  min-height: 1.95rem;
+  padding: 0 .6rem;
+  border-radius: var(--cp-radius-sm);
+  cursor: default;
+  outline: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.itemActive {
+  background: var(--cp-hover);
+}
+
+.itemDanger.itemActive {
+  color: var(--red-11);
+  background: var(--cp-danger-soft);
+}
+
+.itemDisabled {
+  color: var(--cp-text-subtle);
+  opacity: .6;
+}
+
+.check {
+  display: inline-flex;
+  width: .9rem;
+  flex-shrink: 0;
+  justify-content: center;
+  color: var(--cp-accent-text);
+}
+
+.label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.keys {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 1.25rem;
+  color: var(--cp-text-subtle);
+}
+
+.keys kbd {
+  font-size: 10.5px;
+  padding: 2px 5px;
+  color: var(--cp-text-muted);
+  background: transparent;
+}
+
+.plus {
+  margin: 0 .2rem;
+  font-size: .65rem;
+  opacity: .7;
+}
+
+.chevron {
+  flex-shrink: 0;
+  margin-right: -.2rem;
+  color: var(--cp-text-subtle);
+}
+
+.separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--cp-line);
+}
+
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu {
+    animation: none;
+  }
+}

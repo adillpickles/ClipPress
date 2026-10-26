@@ -7,9 +7,7 @@ import type { FormatTimecode } from '../types';
 import { formatClipLength } from '../util/clockTime';
 import styles from './SegmentSpeed.module.css';
 import LaneDeleteButton from './LaneDeleteButton';
-
-const remote = window.require('@electron/remote');
-const { Menu } = remote;
+import { openMenu } from './Menu';
 
 const baseArrowSpacing = 14;
 
@@ -42,21 +40,23 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
 }) {
   const { t } = useTranslation();
 
-  const openSpeedMenu = () => {
+  /** Under the speed button, or where the strip was right-clicked. */
+  const openSpeedMenu = (at: HTMLElement | { x: number, y: number }) => {
     onSelect();
-    Menu.buildFromTemplate([
-      ...segmentSpeedPresets.map((preset) => ({
-        label: `${Math.round(preset * 100)}%`,
-        type: 'checkbox' as const,
-        checked: preset === committedSpeed,
-        click: () => onChange(preset),
-      })),
-      { type: 'separator' as const },
-      { label: t('Custom speed…'), click: onEdit },
-      { type: 'separator' as const },
-      { label: t('Remove speed change'), click: onRemove },
-      { label: t('Hide speed controls (keep speed)'), click: onHide },
-    ]).popup({ window: remote.getCurrentWindow() });
+    openMenu({ at,
+      items: [
+        ...segmentSpeedPresets.map((preset) => ({
+          label: `${Math.round(preset * 100)}%`,
+          type: 'checkbox' as const,
+          checked: preset === committedSpeed,
+          click: () => onChange(preset),
+        })),
+        { type: 'separator' as const },
+        { label: t('Custom speed…'), click: onEdit },
+        { type: 'separator' as const },
+        { label: t('Remove speed change'), click: onRemove },
+        { label: t('Hide speed controls (keep speed)'), click: onHide },
+      ] });
   };
 
   const arrowsStyle = { '--retime-arrow-spacing': `${Math.min(48, Math.max(5, baseArrowSpacing / speed))}px` } as CSSProperties;
@@ -76,7 +76,7 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
       onContextMenu={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        openSpeedMenu();
+        openSpeedMenu({ x: event.clientX, y: event.clientY });
       }}
     >
       <div className={styles['retimeHeader']}>
@@ -84,7 +84,7 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
       </div>
 
       <div className={styles['retimeBody']}>
-        <button type="button" className={styles['retimeSpeed']} onClick={(event) => { event.stopPropagation(); openSpeedMenu(); }} title={overlay ? t('Change speed') : t('Change segment speed')}>
+        <button type="button" className={styles['retimeSpeed']} onClick={(event) => { event.stopPropagation(); openSpeedMenu(event.currentTarget); }} title={overlay ? t('Change speed') : t('Change segment speed')}>
           {Math.round(speed * 100)}%<FaCaretDown size={9} />
         </button>
         <span className={styles['retimeDuration']}>{overlay ? formatClipLength(outputDuration) : formatTimecode({ seconds: outputDuration, shorten: true })}</span>
