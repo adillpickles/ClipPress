@@ -3004,8 +3004,10 @@ function App() {
    * written and checked, only through the Recycle Bin, and never if the original changed during the export.
    * Returns whether the recording was closed for it.
    */
-  const recycleOriginalAfterExport = useCallback(async ({ wanted, cleanupAfter, sourcePath, sourceIdentity, allPlannedCreated, exportedPaths, notices, warnings, highlights }: {
+  const recycleOriginalAfterExport = useCallback(async ({ wanted, exportSignal, cleanupAfter, sourcePath, sourceIdentity, allPlannedCreated, exportedPaths, notices, warnings, highlights }: {
     wanted: boolean,
+    /** The export's Cancel: pressed at any point, the original stays. */
+    exportSignal: AbortSignal,
     /** The clean-up that runs after this export, if any: its project file box decides whether the edits go too. */
     cleanupAfter: CleanupChoicesType | undefined,
     sourcePath: string,
@@ -3018,6 +3020,10 @@ function App() {
     highlights: Set<string>,
   }) => {
     if (!wanted) return false;
+    if (exportSignal.aborted) {
+      notices.add(i18n.t('The original recording was kept, because this was cancelled.'));
+      return false;
+    }
     if (!allPlannedCreated || exportedPaths.length === 0) {
       notices.add(i18n.t('The original recording was kept, because not every file was exported.'));
       return false;
@@ -3928,6 +3934,7 @@ function App() {
         const closedForRecycling = await recycleOriginalAfterExport({
           highlights,
           wanted: shouldRecycleOriginalAfterExport(trashSourceAfterExport, askedForCleanup, newCleanupChoices),
+          exportSignal: exportAbort.signal,
           cleanupAfter: newCleanupChoices,
           sourcePath: filePath,
           sourceIdentity,
@@ -4146,6 +4153,7 @@ function App() {
         const closedForRecycling = await recycleOriginalAfterExport({
           highlights,
           wanted: shouldRecycleOriginalAfterExport(trashSourceAfterExport, askedForCleanup, newCleanupChoices),
+          exportSignal: exportAbort.signal,
           cleanupAfter: newCleanupChoices,
           sourcePath: filePath,
           sourceIdentity,
@@ -4378,6 +4386,7 @@ function App() {
       const closedForRecycling = await recycleOriginalAfterExport({
         highlights,
         wanted: shouldRecycleOriginalAfterExport(trashSourceAfterExport, askedForCleanup, newCleanupChoices),
+        exportSignal: exportAbort.signal,
         cleanupAfter: newCleanupChoices,
         sourcePath: filePath,
         sourceIdentity,
