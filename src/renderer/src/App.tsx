@@ -704,6 +704,29 @@ function App() {
   const appDropRef = useRef<HTMLDivElement>(null);
   // The video is loading or waiting for data (shows a spinner over the preview after a short delay).
   const [videoBusy, setVideoBusy] = useState(false);
+  // A recording's first frame comes before the work that reads the whole file again (its waveform), so the two don't
+  // fight over the disk as it opens: that work waits for the video to load, 400 ms at most.
+  const videoLoadedRef = useRef<{ path: string | undefined, waiters: { path: string, done: () => void }[] }>({ path: undefined, waiters: [] });
+  const whenVideoLoaded = useCallback((path: string) => new Promise<void>((resolve) => {
+    if (videoLoadedRef.current.path === path) {
+      resolve();
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const waiter = { path, done: () => { clearTimeout(timer); resolve(); } };
+    timer = setTimeout(() => {
+      videoLoadedRef.current.waiters = videoLoadedRef.current.waiters.filter((w) => w !== waiter);
+      resolve();
+    }, 400);
+    videoLoadedRef.current.waiters.push(waiter);
+  }), []);
+  const onVideoLoaded = useCallback((path: string | undefined) => {
+    const loaded = videoLoadedRef.current;
+    loaded.path = path;
+    const ready = loaded.waiters.filter((w) => w.path === path);
+    loaded.waiters = loaded.waiters.filter((w) => w.path !== path);
+    ready.forEach((w) => w.done());
+  }, []);
   // A file is being dragged over the window while a clip is open.
   const [fileDragActive, setFileDragActive] = useState(false);
   const {
@@ -1929,6 +1952,7 @@ function App() {
     duration: openDuration,
     enabled: showAudioLane,
     cacheKey: timelineCacheKey,
+    whenReady: whenVideoLoaded,
   });
   // While the filmstrip and the waveform of a recording that's opening are made, background work waits (keyframes,
   // FFmpeg's self-check, the encoder check).
@@ -7203,6 +7227,7 @@ function App() {
                               onWaiting={() => setVideoBusy(true)}
                               onLoadedData={() => {
                                 setVideoBusy(false);
+                                onVideoLoaded(filePath);
                                 // For measuring how fast a file opens (read by tests; costs nothing).
                                 performance.mark('clippress:video-loaded');
                               }}

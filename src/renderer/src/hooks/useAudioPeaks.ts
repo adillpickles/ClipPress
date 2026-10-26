@@ -10,13 +10,15 @@ import { isAbortedError } from '../util';
  * timeline cache once complete, so the recording shows it at once the next time. `done` once it's complete or
  * couldn't be made.
  */
-export default function useAudioPeaks({ filePath, streamIndex, duration, enabled, cacheKey }: {
+export default function useAudioPeaks({ filePath, streamIndex, duration, enabled, cacheKey, whenReady }: {
   filePath: string | undefined,
   streamIndex: number | undefined,
   duration: number | undefined,
   enabled: boolean,
   /** The recording as it is now (getTimelineCacheKey), once its size and time are known. */
   cacheKey: string | undefined,
+  /** Resolves when FFmpeg may start reading the recording (after its first frame shows). */
+  whenReady?: ((path: string) => Promise<void>) | undefined,
 }) {
   const owner = enabled && filePath != null && duration != null && duration > 0 ? `${filePath}|${streamIndex}|${duration}|${cacheKey}` : undefined;
   // Whose waveform it is: the last recording's isn't shown for the new one.
@@ -43,6 +45,8 @@ export default function useAudioPeaks({ filePath, streamIndex, duration, enabled
         finish(fromDisk);
         return;
       }
+      await whenReady?.(filePath);
+      if (abortController.signal.aborted) return;
       let last: AudioPeaks | undefined;
       const onPeaks = (peaks: AudioPeaks) => {
         last = peaks;
@@ -69,7 +73,7 @@ export default function useAudioPeaks({ filePath, streamIndex, duration, enabled
       setState({ owner, peaks: last, done: true });
     })();
     return () => abortController.abort();
-  }, [cacheKey, duration, filePath, owner, streamIndex]);
+  }, [cacheKey, duration, filePath, owner, streamIndex, whenReady]);
 
   return state.owner === owner && owner != null ? { peaks: state.peaks, done: state.done } : { peaks: undefined, done: false };
 }
