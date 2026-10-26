@@ -7223,7 +7223,11 @@ function App() {
                               onDoubleClick={toggleFullscreenVideo}
                               onFocusCapture={onVideoFocus}
                               onSeeked={onSeeked}
-                              onLoadStart={() => setVideoBusy(true)}
+                              onLoadStart={() => {
+                                setVideoBusy(true);
+                                // A new load, even of the same recording: its first frame is waited for again.
+                                onVideoLoaded(undefined);
+                              }}
                               onWaiting={() => setVideoBusy(true)}
                               onLoadedData={() => {
                                 setVideoBusy(false);
