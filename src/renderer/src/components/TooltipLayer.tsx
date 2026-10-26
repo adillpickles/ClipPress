@@ -20,6 +20,14 @@ const gap = 6;
  * Its text stays readable to screen readers: as the element's name if the title was its only one, else as its
  * description.
  */
+/** Whether the element has a name of its own, so a title only describes it. */
+function hasOwnName(el: HTMLElement | SVGElement) {
+  if (el.hasAttribute('aria-label') || el.hasAttribute('aria-labelledby')) return true;
+  // A form field's text is its value or its options, not its name: a <label> names it.
+  if (el instanceof HTMLSelectElement || el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return el.labels != null && el.labels.length > 0;
+  return (el.textContent ?? '').trim() !== '';
+}
+
 function adopt(el: Element) {
   if (!(el instanceof HTMLElement || el instanceof SVGElement)) return;
   const title = el.getAttribute('title');
@@ -38,7 +46,7 @@ function adopt(el: Element) {
   }
   dataset['tip'] = title;
   dataset['tipAdopted'] = '';
-  if (aria === 'label' || (aria == null && !el.hasAttribute('aria-label') && !el.hasAttribute('aria-labelledby') && (el.textContent ?? '').trim() === '')) {
+  if (aria === 'label' || (aria == null && !hasOwnName(el))) {
     el.setAttribute('aria-label', title);
     dataset['tipAria'] = 'label';
   } else if (aria === 'description' || (aria == null && !el.hasAttribute('aria-description'))) {
