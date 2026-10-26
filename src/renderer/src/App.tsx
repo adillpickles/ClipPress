@@ -3048,6 +3048,8 @@ function App() {
     if (!result.recycled && result.reason === 'cancelled') {
       keptBecauseCancelled();
     } else if (result.recycled) {
+      // Not in Recent as "Missing": ClipPress recycled it on purpose, and the result says so.
+      setRecentFiles((list) => removeRecentFile(list, sourcePath, isWindows || isMac));
       // Settings > Projects > "Recycle edits with the original": every copy of them, so none brings them back (#91).
       const editsRecycled = shouldRecycleEditsWithOriginal(trashProjectWithSource, cleanupAfter) && (await recycleRecordingProjectCopies(sourcePath, customOutDir, deleteProjectFile)) > 0;
       highlights.add(editsRecycled
@@ -3059,7 +3061,7 @@ function App() {
       warnings.add(i18n.t('ClipPress kept the original recording: it could not be moved to the Recycle Bin. It may be too large for the Recycle Bin, on a drive without one, or still in use.'));
     }
     return true;
-  }, [batchListRemoveFile, clearSegments, customOutDir, deleteProjectFile, resetState, setWorking, trashProjectWithSource, whenProjectSaved]);
+  }, [batchListRemoveFile, clearSegments, customOutDir, deleteProjectFile, resetState, setRecentFiles, setWorking, trashProjectWithSource, whenProjectSaved]);
 
   const askForCleanupChoices = useCallback(async ({ saveOnly = false, afterExport = false }: { saveOnly?: boolean, afterExport?: boolean } = {}) => {
     // Asked after an export, its box decides for the original (see shouldRecycleOriginalAfterExport), so with the Export
