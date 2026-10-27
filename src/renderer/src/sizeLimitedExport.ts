@@ -52,8 +52,8 @@ function decodeProcessOutput({ stdout, stderr }: { stdout: Uint8Array, stderr: U
 }
 
 /**
- * Listing an encoder only means FFmpeg was built with it; opening one proves the GPU and driver support it. `sure` is
- * false when the answer may not last: a test that timed out, or a driver out of encoder sessions (other apps using it).
+ * Listing an encoder only means FFmpeg was built with it; opening one proves the GPU and driver support it. A test that
+ * timed out isn't a sure answer.
  */
 async function probeGpuEncoder(encoder: GpuEncoderName) {
   const ffmpegArgs = [
@@ -76,46 +76,72 @@ async function probeGpuEncoder(encoder: GpuEncoderName) {
     // Abort stops the export that's waiting for this, rather than ruling the GPU out.
     if (isAbortedError(error) && !(isExecaError(error) && error.timedOut)) throw error;
     console.info(`${encoder} is not usable on this system`, error);
-    const timedOut = isExecaError(error) && error.timedOut;
-    return { usable: false, sure: !timedOut && !/out of memory|busy/i.test(String(error)) };
+    return { usable: false, sure: !(isExecaError(error) && error.timedOut) };
   }
 }
 
-function isSavedEncoderCheck(value: unknown): value is Omit<SizeLimitedEncoderCapabilities, 'cpuThreads'> {
+type GpuCapability = (typeof gpuEncoders)[number]['capability'];
+/** What's kept between runs: the answer, and the encoders to test again each run all the same. */
+interface SavedEncoderCheck { capabilities: Omit<SizeLimitedEncoderCapabilities, 'cpuThreads'>, retest: GpuCapability[] }
+
+function isSavedEncoderCheck(value: unknown): value is SavedEncoderCheck {
   if (value == null || typeof value !== 'object') return false;
-  const saved = value as Record<string, unknown>;
-  return ['h264Nvenc', 'av1Nvenc', 'libx264', 'libsvtav1', ...gpuEncoders.map(({ capability }) => capability)].every((key) => typeof saved[key] === 'boolean');
+  const { capabilities, retest } = value as Record<string, unknown>;
+  if (capabilities == null || typeof capabilities !== 'object' || !Array.isArray(retest)) return false;
+  const known = gpuEncoders.map(({ capability }) => capability);
+  return ['h264Nvenc', 'av1Nvenc', 'libx264', 'libsvtav1', ...known].every((key) => typeof (capabilities as Record<string, unknown>)[key] === 'boolean')
+    && retest.every((key) => known.includes(key as GpuCapability));
+}
+
+/**
+ * Saves the answer for the next runs. "Usable" holds (an export that fails on it has the next run test again,
+ * markGpuEncoderFailed); "unusable" holds only for a maker with no card in this PC. An encoder of a card that is here
+ * which failed may only have been busy (another app using its sessions, memory short, a waking driver), or unsure (it
+ * timed out): those are tested again each run, the rest is read back.
+ */
+async function saveEncoderCheck(key: string, capabilities: SavedEncoderCheck['capabilities'], listed: (encoder: GpuEncoderName) => boolean, unsure: ReadonlySet<GpuCapability>) {
+  const vendors = await mainApi.getGpuVendors().catch(() => undefined);
+  if (vendors == null) return;
+  const retest = gpuEncoders.filter(({ encoder, vendor, capability }) => listed(encoder) && capabilities[capability] !== true && (unsure.has(capability) || vendors.includes(vendor))).map(({ capability }) => capability);
+  const check: SavedEncoderCheck = { capabilities, retest };
+  await mainApi.saveEncoderCheck(key, check).catch((error: unknown) => console.warn('Could not save the encoder check', error));
 }
 
 // The test runs once per graphics card, driver, FFmpeg and ClipPress version, then is read back from disk (main
-// process, encoderCheck.ts): nothing waits for it on later starts. Kept for the whole run; an export that fails on a
-// GPU falls back to the next encoder and has the next run test again (markGpuEncoderFailed).
+// process, encoderCheck.ts): nothing waits for it on later starts but the few encoders still to test again. Kept for
+// the whole run; an export that fails on a GPU falls back to the next encoder.
 const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimitedEncoderCapabilities> => {
   const cpuThreads = navigator.hardwareConcurrency || undefined;
   const saved = await mainApi.readSavedEncoderCheck(key).catch(() => undefined);
-  if (isSavedEncoderCheck(saved)) return { ...saved, cpuThreads };
+  const unsure = new Set<GpuCapability>();
+  const probe = async (encoder: GpuEncoderName, capability: GpuCapability) => {
+    const result = await probeGpuEncoder(encoder);
+    if (!result.sure) unsure.add(capability);
+    return result.usable;
+  };
+
+  if (isSavedEncoderCheck(saved)) {
+    if (saved.retest.length === 0) return { ...saved.capabilities, cpuThreads };
+    const capabilities = { ...saved.capabilities };
+    const retest = gpuEncoders.filter(({ capability }) => saved.retest.includes(capability));
+    await Promise.all(retest.map(async ({ encoder, capability }) => { capabilities[capability] = await probe(encoder, capability); }));
+    saveEncoderCheck(key, capabilities, (encoder) => retest.some((info) => info.encoder === encoder), unsure).catch(() => undefined);
+    return { ...capabilities, cpuThreads };
+  }
 
   const result = await runFfmpeg(['-hide_banner', '-encoders'], undefined, { logCli: false });
   const encoders = parseFfmpegEncoderNames(decodeProcessOutput(result));
-  const capabilities: SizeLimitedEncoderCapabilities = {
+  const capabilities: SavedEncoderCheck['capabilities'] = {
     h264Nvenc: false,
     av1Nvenc: false,
     libx264: encoders.has('libx264'),
     libsvtav1: encoders.has('libsvtav1'),
   };
-  let sure = true;
   await Promise.all(gpuEncoders.map(async ({ encoder, capability }) => {
-    if (!encoders.has(encoder)) {
-      capabilities[capability] = false;
-      return;
-    }
-    const probe = await probeGpuEncoder(encoder);
-    capabilities[capability] = probe.usable;
-    if (!probe.sure) sure = false;
+    capabilities[capability] = encoders.has(encoder) && await probe(encoder, capability);
   }));
-
-  // An answer that may not last is used for this run only, and tested again next time.
-  if (sure) mainApi.saveEncoderCheck(key, capabilities as unknown as Record<string, boolean>).catch((error: unknown) => console.warn('Could not save the encoder check', error));
+  // Saved in the background: the answer is used now.
+  saveEncoderCheck(key, capabilities, (encoder) => encoders.has(encoder), unsure).catch(() => undefined);
   return { ...capabilities, cpuThreads };
 });
 

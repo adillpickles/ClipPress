@@ -33,7 +33,7 @@ import { isAllowedAppNavigation, isExternallyOpenableUrl } from './navigation.js
 import * as ffmpeg from './ffmpeg.js';
 import * as compatPlayer from './compatPlayer.js';
 import { canCopyFiles, copyFilesToClipboard, startFileDrag, warmCopyHelper } from './fileClipboard.js';
-import { forgetEncoderCheck, readSavedEncoderCheck, saveEncoderCheck } from './encoderCheck.js';
+import { forgetEncoderCheck, getGpuVendors, readSavedEncoderCheck, saveEncoderCheck } from './encoderCheck.js';
 import { downloadMediaUrl } from './ffmpeg.js';
 import type UpdateController from './updateController.js';
 import type { UpdateStatus } from '../common/updates.js';
@@ -757,6 +757,7 @@ const remoteApi = {
   // every open, for the recent files). Ordered with the page's other calls, so a later read sees it.
   setConfig: <T extends keyof Config>(key: T, value: Config[T]) => configStore.set(key, value),
   warmCopyHelper,
+  getGpuVendors,
   readSavedEncoderCheck,
   saveEncoderCheck,
   forgetEncoderCheck,

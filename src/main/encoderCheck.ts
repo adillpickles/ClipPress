@@ -10,6 +10,8 @@ import logger from './logger.js';
 
 interface GpuDevice { vendorId?: number, deviceId?: number, driverVersion?: string }
 
+const vendorIds: Record<number, 'nvidia' | 'amd' | 'intel'> = { 0x10DE: 'nvidia', 0x1002: 'amd', 0x1022: 'amd', 0x8086: 'intel' };
+
 const getFilePath = () => join(app.getPath('userData'), 'encoder-check.json');
 
 async function getGpuDevices() {
@@ -19,27 +21,34 @@ async function getGpuDevices() {
 
 async function getKey(ffmpegKey: string) {
   const devices = await getGpuDevices();
-  if (devices.length === 0) return undefined;
+  // Without every card's driver version, a driver installed later couldn't be told apart: not kept.
+  if (devices.length === 0 || devices.some(({ driverVersion }) => !driverVersion)) return undefined;
   const gpus = devices.map(({ vendorId, deviceId, driverVersion }) => `${vendorId}:${deviceId}:${driverVersion ?? ''}`).sort().join(',');
   return `${app.getVersion()}|${ffmpegKey}|${gpus}`;
+}
+
+/** The graphics card makers in this PC: an encoder of a maker with no card here can't start working by itself. */
+export async function getGpuVendors() {
+  const devices = await getGpuDevices();
+  return [...new Set(devices.flatMap(({ vendorId }) => (vendorId != null && vendorIds[vendorId] != null ? [vendorIds[vendorId]] : [])))];
 }
 
 export async function readSavedEncoderCheck(ffmpegKey: string): Promise<unknown> {
   try {
     const [key, text] = await Promise.all([getKey(ffmpegKey), readFile(getFilePath(), 'utf8')]);
-    const saved = JSON.parse(text) as { key?: unknown, capabilities?: unknown };
-    return key != null && saved.key === key ? saved.capabilities : undefined;
+    const saved = JSON.parse(text) as { key?: unknown, check?: unknown };
+    return key != null && saved.key === key ? saved.check : undefined;
   } catch {
     // None saved yet, or unreadable: tested again.
     return undefined;
   }
 }
 
-export async function saveEncoderCheck(ffmpegKey: string, capabilities: Record<string, boolean>) {
+export async function saveEncoderCheck(ffmpegKey: string, check: unknown) {
   try {
     const key = await getKey(ffmpegKey);
     if (key == null) return;
-    await writeFile(getFilePath(), JSON.stringify({ key, capabilities }));
+    await writeFile(getFilePath(), JSON.stringify({ key, check }));
   } catch (error) {
     logger.warn('Could not save the encoder check', error);
   }
