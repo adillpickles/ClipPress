@@ -674,8 +674,10 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
   // free and the action has none.
   if (store.get('panelDuplicateShortcutsMigrated') !== true) {
     const existingBindings = store.get('keyBindings') as KeyBinding[];
+    // Either Alt (Ctrl…) does the same, in any order: AltRight+KeyP already in use counts.
+    const normalize = (keys: string) => keys.split('+').map((key) => key.replace(/^(Control|Shift|Alt|Meta)Right$/, '$1Left')).sort().join('+');
     const added = defaultKeyBindings.filter((binding) => (binding.action === 'toggleSegmentsList' || binding.action === 'duplicateCurrentSegment')
-      && !existingBindings.some((existing) => existing.keys === binding.keys || existing.action === binding.action));
+      && !existingBindings.some((existing) => normalize(existing.keys) === normalize(binding.keys) || existing.action === binding.action));
     if (added.length > 0) set('keyBindings', [...existingBindings, ...added]);
     setStored('panelDuplicateShortcutsMigrated', true);
   }

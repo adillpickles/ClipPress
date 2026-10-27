@@ -34,6 +34,7 @@ function RevertButton({ keys, onClick }: { keys?: string | undefined, onClick: (
 
 const modifierKeyCodes: Record<ModifierKey, string> = { ctrl: 'ControlLeft', shift: 'ShiftLeft', alt: 'AltLeft', meta: 'MetaLeft' };
 const wheelGestures: readonly MouseGesture[] = ['zoom', 'frameSeek', 'keyframeSeek'];
+const allModifierKeys: readonly ModifierKey[] = ['ctrl', 'shift', 'alt', 'meta'];
 const sameKeys = (a: readonly KeyBinding[], b: readonly KeyBinding[]) => {
   const keysOf = (bindings: readonly KeyBinding[]) => new Set(getShownBindings(bindings).map((binding) => normalizeBindingKeys(binding.keys)));
   const [setA, setB] = [keysOf(a), keysOf(b)];
@@ -242,6 +243,25 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
     ownModifier[gesture][1](own);
     setExtraMouseModifierKeys((previous) => ({ ...previous, [gesture]: extra }));
   };
+  // Back to its own default. A wheel modifier does one gesture's job: another wheel gesture holding it lets go of it
+  // (its own one goes back to its default, or to the first one free).
+  const restoreGesture = (gesture: MouseGesture) => {
+    const own = defaultMouseModifierKeys[gesture];
+    setGestureModifiers(gesture, [own]);
+    if (gesture === 'segment') return;
+    wheelGestures.filter((other) => other !== gesture).forEach((other) => {
+      const modifiers = getGestureModifiers(other);
+      if (!modifiers.includes(own)) return;
+      const kept = modifiers.filter((modifier) => modifier !== own);
+      if (modifiers[0] !== own) {
+        setGestureModifiers(other, kept);
+        return;
+      }
+      const taken = new Set([own, ...kept, ...wheelGestures.filter((third) => third !== other && third !== gesture).flatMap((third) => getGestureModifiers(third))]);
+      const replacement = [defaultMouseModifierKeys[other], ...allModifierKeys].find((modifier) => !taken.has(modifier));
+      if (replacement != null) setGestureModifiers(other, [replacement, ...kept]);
+    });
+  };
   const renderGesture = (gesture: MouseGesture, label: string, input: string) => {
     const modifiers = getGestureModifiers(gesture);
     const names = getModifierKeyNames();
@@ -254,7 +274,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
         <div className={styles['rowText']}>
           <div className={styles['rowLabel']}>
             <SearchHighlight text={label} />
-            {changed && <RevertButton keys={modifierKeyCodes[defaultMouseModifierKeys[gesture]]} onClick={() => setGestureModifiers(gesture, [defaultMouseModifierKeys[gesture]])} />}
+            {changed && <RevertButton keys={modifierKeyCodes[defaultMouseModifierKeys[gesture]]} onClick={() => restoreGesture(gesture)} />}
           </div>
         </div>
         <div className={[styles['rowControl'], styles['rowControlWide']].join(' ')}>
