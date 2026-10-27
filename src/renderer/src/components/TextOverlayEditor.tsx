@@ -45,18 +45,10 @@ function OverlayTextArea({ overlayId, onTextAreaRef, ...props }: { overlayId: st
   return <textarea ref={ref} {...props} />;
 }
 
-/** The word around a caret offset, for a double-click that starts typing. */
-function getWordAt(text: string, offset: number) {
-  let start = offset;
-  let end = offset;
-  while (start > 0 && !/\s/.test(text[start - 1]!)) start -= 1;
-  while (end < text.length && !/\s/.test(text[end]!)) end += 1;
-  return { start, end };
-}
-
 /**
  * The texts on the picture, as a design tool's text boxes (Clipchamp, Canva): a click selects a box and a drag anywhere
- * on it moves it (its centre snaps to the picture's centre lines); double-click, Enter or Add Text starts typing; the
+ * on it moves it (its centre snaps to the picture's centre lines); a click on the selected box (Canva's way), a
+ * double-click, Enter or Add Text starts typing; the
  * corners resize the text and the sides change its width. Each text is laid out at the export's own pixel size and
  * scaled down, so it wraps exactly where the exported image does. Read-only, it just draws the texts (inside the
  * Zoom / Crop frame, where they'll land).
@@ -148,12 +140,9 @@ function TextOverlayEditor({
       if (position?.offsetNode === textArea) caret = position.offset;
     }
     textArea.focus();
-    if (caret == null) {
-      textArea.select();
-    } else {
-      const word = getWordAt(textArea.value, caret);
-      textArea.setSelectionRange(word.start, word.end);
-    }
+    // Where it was clicked, the caret alone (nothing selected); from Enter or Add Text, all of it, to type over.
+    if (caret == null) textArea.select();
+    else textArea.setSelectionRange(caret, caret);
   }, []);
 
   // A text that was just added (Add Text) is ready to type over.
@@ -218,6 +207,8 @@ function TextOverlayEditor({
     const start: TextBoxStart = { box: overlayClip.box, height: fitHeight(fontSize, overlayClip.box.width), fontSize };
     const surface = { ...surfaceSize };
     const pointer = { x: event.clientX, y: event.clientY };
+    // A click (no drag) on a text already selected, not being typed in, types where it was clicked.
+    const typeOnClick = gesture.kind === 'move' && overlayClip.overlayId === selectedOverlayId && typingId !== overlayClip.overlayId;
     // One undo step per drag, however long it pauses.
     const undo = { coalesceKey: `text-box:${overlayId}:${Date.now()}`, wholeGesture: true };
     let moving = gesture.kind !== 'move';
@@ -250,9 +241,12 @@ function TextOverlayEditor({
         : resizeTextBoxWidth(start, gesture.side, delta.x / surface.width, fitHeight);
       onUpdateOverlay(overlayId, (clip) => ({ ...clip, fontSize: resized.fontSize, box: resized.box }), undo);
     }, { signal: listeners.signal });
-    window.addEventListener('mouseup', finish, { signal: listeners.signal });
+    window.addEventListener('mouseup', (upEvent) => {
+      finish();
+      if (typeOnClick && !moving) startTyping(overlayId, { x: upEvent.clientX, y: upEvent.clientY });
+    }, { signal: listeners.signal });
     window.addEventListener('blur', finish, { signal: listeners.signal });
-  }, [measureHeight, onSelectOverlay, onUpdateOverlay, surfaceSize]);
+  }, [measureHeight, onSelectOverlay, onUpdateOverlay, selectedOverlayId, startTyping, surfaceSize, typingId]);
 
   const surfaceStyle = useMemo<CSSProperties>(() => ({
     position: 'relative',
@@ -286,7 +280,7 @@ function TextOverlayEditor({
               tabIndex={editable ? -1 : undefined}
               aria-label={editable ? t('Text: {{text}}', { text: overlayClip.text }) : undefined}
               className={[styles['box'], ...(editable ? [styles['boxEditable']] : []), ...(selected ? [styles['boxSelected']] : []), ...(typing ? [styles['boxTyping']] : [])].join(' ')}
-              title={selected && !typing ? t('Double-click to type') : undefined}
+              title={selected && !typing ? t('Click to type') : undefined}
               onMouseDown={editable ? (event) => beginGesture(event, overlayClip, { kind: 'move' }) : undefined}
               onDoubleClick={editable ? (event) => startTyping(overlayClip.overlayId, { x: event.clientX, y: event.clientY }) : undefined}
               style={{ left: overlayClip.box.x * surfaceSize.width, top: overlayClip.box.y * surfaceSize.height, width: overlayClip.box.width * surfaceSize.width, height }}
