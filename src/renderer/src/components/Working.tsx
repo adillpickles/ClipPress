@@ -55,16 +55,18 @@ function QuietWorking({ text, onAbortClick }: { text: string, onAbortClick: () =
   );
 }
 
-/** A new line every few seconds, each up long enough to read; near the end of the bar, the finishing lines. */
+/**
+ * A new line every few seconds, each up long enough to read; near the end of the bar, the finishing lines. A new step
+ * doesn't bring its line sooner: a short export may only show one or two.
+ */
 const rotateTitleMs = 3500;
-const minTitleMs = 1200;
 const finishingFrom = 0.92;
 
 interface TitleLine { phase: ExportPhase, text: string, at: number }
 
 /**
  * The simple editor's export title: a random line for the phase (exportTitleLines.ts), then another every few
- * seconds, none twice in an export until every one was shown. A new phase waits for the line up to have been read.
+ * seconds, none twice in an export until every one was shown. A new phase only changes where the next line comes from.
  */
 function useExportTitle(phase: ExportPhase | undefined, progress: number | undefined) {
   const { t } = useTranslation();
@@ -90,7 +92,7 @@ function useExportTitle(phase: ExportPhase | undefined, progress: number | undef
     };
     const previous = lineRef.current;
     const sinceShown = previous == null ? Infinity : Date.now() - previous.at;
-    timer = setTimeout(next, Math.max(0, (previous?.phase === shownPhase ? rotateTitleMs : minTitleMs) - sinceShown));
+    timer = setTimeout(next, Math.max(0, rotateTitleMs - sinceShown));
     return () => clearTimeout(timer);
   }, [pick, shownPhase]);
 
