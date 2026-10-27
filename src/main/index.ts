@@ -27,7 +27,7 @@ import isStoreBuild from './isStoreBuild.js';
 import { getAboutPanelOptions } from './aboutPanel.js';
 import * as i18nCommon from './i18nCommon.js';
 import './i18n.js';
-import type { ApiActionRequest } from '../common/types.js';
+import type { ApiActionRequest, Config } from '../common/types.js';
 import { isSafeKey } from './objectKeys.js';
 import { isAllowedAppNavigation, isExternallyOpenableUrl } from './navigation.js';
 import * as ffmpeg from './ffmpeg.js';
@@ -752,6 +752,9 @@ const remoteApi = {
   sendOsNotification,
   canCopyFiles: () => canCopyFiles,
   copyFilesToClipboard,
+  // The page's settings writes: asynchronous, so writing the whole settings file never holds up the page (it did on
+  // every open, for the recent files). Ordered with the page's other calls, so a later read sees it.
+  setConfig: <T extends keyof Config>(key: T, value: Config[T]) => configStore.set(key, value),
   warmCopyHelper,
   startFileDrag: async (paths: string[], iconDataUrl?: string) => {
     if (mainWindow != null) await startFileDrag(mainWindow.webContents, paths, iconDataUrl);

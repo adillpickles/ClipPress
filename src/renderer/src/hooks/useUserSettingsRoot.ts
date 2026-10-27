@@ -7,6 +7,7 @@ import getEffectiveSimpleMode from '../../../common/interfaceMode.js';
 
 import { errorToast } from '../swal';
 import isDev from '../isDev';
+import mainApi from '../mainApi';
 import { mySpring, emitter as animationsEmitter } from '../animations';
 
 const { configStore } = window.require('@electron/remote').require('./index.js');
@@ -27,12 +28,11 @@ export default function useUserSettingsRoot() {
     if (firstUpdateRef.current) return;
 
     if (isDev) console.log('save', key, value);
-    try {
-      configStore.set(key, value);
-    } catch (err) {
+    // Without waiting: a synchronous write held up the page for as long as the settings file took to write.
+    mainApi.setConfig(key, value).catch((err: unknown) => {
       console.error('Failed to set config', key, err);
       errorToast(i18n.t('Unable to save your preferences. Try to disable any anti-virus'));
-    }
+    });
   }
 
   function safeGetConfig<T extends keyof Config>(key: T) {
