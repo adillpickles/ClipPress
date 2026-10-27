@@ -49,6 +49,70 @@
   background: var(--cp-danger-soft);
 }
 
+/* An item that asks first (ConfirmButton's pattern): the question, locked while a soft red fills the row. */
+.itemConfirm {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.itemConfirm::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--cp-danger-soft);
+  transform: scaleX(0);
+  transform-origin: left center;
+  pointer-events: none;
+}
+
+.itemConfirm[data-confirm] {
+  color: var(--red-11);
+}
+
+.itemConfirm[data-confirm='locked'] {
+  cursor: not-allowed;
+}
+
+.itemConfirm[data-confirm='locked']::before {
+  transform: scaleX(1);
+  transition: transform 1s linear;
+}
+
+.itemConfirm[data-confirm='armed']::before {
+  transform: scaleX(1);
+}
+
+.itemConfirm[data-confirm='armed'] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--red-9) 45%, transparent);
+}
+
+/* The asking item keeps its fill, not the plain highlight under it. */
+.itemConfirm[data-confirm].itemActive {
+  background: transparent;
+}
+
+.confirmLabels {
+  display: inline-grid;
+}
+
+.confirmLabels > span {
+  grid-area: 1 / 1;
+}
+
+.itemConfirm:not([data-confirm]) .confirmLabels > span:last-child,
+.itemConfirm[data-confirm] .confirmLabels > span:first-child {
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .itemConfirm[data-confirm='locked']::before {
+    transition: none;
+    transform: scaleX(0);
+  }
+}
+
 .itemDisabled {
   color: var(--cp-text-subtle);
   opacity: .6;

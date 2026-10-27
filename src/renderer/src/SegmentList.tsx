@@ -1027,8 +1027,8 @@ function SegmentList({
                   items: [
                     { label: t('Include all clips'), click: () => onSelectAllSegments() },
                     { type: 'separator' },
-                    // No asking: Ctrl+Z, and a backup copy of the saved edits, bring it all back.
-                    { label: t('Start over'), danger: true, click: onStartOver },
+                    // Asked in place (Ctrl+Z, and a backup copy of the saved edits, still bring it all back).
+                    { label: t('Start over'), confirm: t('Really start over?'), danger: true, click: onStartOver },
                   ],
                 })}
               >

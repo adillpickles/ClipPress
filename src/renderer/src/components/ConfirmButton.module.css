@@ -1,29 +1,92 @@
-/* ConfirmButton: red under the pointer, as an action that can't be taken back. */
-.idle:hover,
-.idle:focus-visible {
+/* ConfirmButton: red under the pointer, as an action that can't be taken back; a click turns it into the question,
+   locked while a soft red fills it (the 1 s lock), then a second click confirms. */
+.button {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.button[data-state='idle']:hover,
+.button[data-state='idle']:focus-visible {
   color: var(--cp-danger);
   background-color: var(--cp-danger-soft);
 }
 
-.asking {
+/* The fill: grows across the button during the lock; full means it can be clicked. */
+.button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--cp-danger-soft);
+  transform: scaleX(0);
+  transform-origin: left center;
+  pointer-events: none;
+}
+
+.button[data-state='locked'],
+.button[data-state='armed'] {
+  color: var(--cp-danger);
+}
+
+.button[data-state='locked'] {
+  cursor: not-allowed;
+}
+
+.button[data-state='locked']::before {
+  transform: scaleX(1);
+  transition: transform 1s linear;
+}
+
+.button[data-state='armed']::before {
+  transform: scaleX(1);
+}
+
+.button[data-state='armed'] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--red-9) 45%, transparent);
+}
+
+/* The two labels in one cell, so the width never jumps; the one not showing keeps its room. */
+.labels {
+  display: inline-grid;
+}
+
+.idleLabel,
+.question {
+  grid-area: 1 / 1;
   display: inline-flex;
   align-items: center;
-  gap: .4rem;
-  animation: asking-in .14s ease-out;
-}
-
-.question {
-  color: var(--cp-text);
-  font-size: .8125rem;
-  font-weight: 600;
+  justify-content: center;
+  gap: inherit;
   white-space: nowrap;
+  transition: opacity .12s ease;
 }
 
-@keyframes asking-in {
-  from { opacity: 0; transform: translateX(-3px); }
-  to { opacity: 1; transform: none; }
+.button[data-state='idle'] .question,
+.button:not([data-state='idle']) .idleLabel {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* An icon button grows into its question instead (ConfirmButton animates the width). */
+.button[data-grow][data-state='idle'] .question,
+.button[data-grow]:not([data-state='idle']) .idleLabel {
+  display: none;
+}
+
+/* The question is readable even while locked; only the fill and the cursor say "not yet". */
+.button[data-state='locked'] .question {
+  opacity: .8;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .asking { animation: none; }
+  .button[data-state='locked']::before {
+    transition: none;
+    transform: scaleX(0);
+  }
+
+  .idleLabel,
+  .question {
+    transition: none;
+  }
 }

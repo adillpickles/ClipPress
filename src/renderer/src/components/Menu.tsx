@@ -5,6 +5,7 @@ import { FiCheck, FiChevronRight } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 
 import renderKeys from './renderKeys';
+import { confirmLockMs } from './ConfirmButton';
 import { splitKeyboardKeys } from '../util';
 import styles from './Menu.module.css';
 
@@ -27,6 +28,11 @@ export interface MenuEntry {
   accelerator?: string | undefined,
   /** Shown in red when highlighted (an action that throws work away). */
   danger?: boolean | undefined,
+  /**
+   * Asked first, in place: a click turns the item into this question, locked for a second (a soft red fills it), and
+   * a second click does it ("Really start over?").
+   */
+  confirm?: string | undefined,
   /** A text field's own action (cut, copy, paste…), done on the field that had focus. */
   role?: string | undefined,
 }
@@ -149,10 +155,12 @@ function getPanelPosition({ width, height }: { width: number, height: number }, 
   };
 }
 
-function MenuPanel({ panel, level, label, takeFocus, onHover, onActivate, panelRef }: {
+function MenuPanel({ panel, level, label, takeFocus, confirming, onHover, onActivate, panelRef }: {
   panel: PanelState,
   level: number,
   label: string | undefined,
+  /** The item asking its question, and whether it can be clicked yet. */
+  confirming: { index: number, armed: boolean } | undefined,
   /** The highlighted item gets focus; not when a text field opened the menu (it would end editing there). */
   takeFocus: boolean,
   onHover: (panelLevel: number, index: number | undefined) => void,
@@ -224,7 +232,9 @@ function MenuPanel({ panel, level, label, takeFocus, onHover, onActivate, panelR
               ...(panel.active === index ? [styles['itemActive']] : []),
               ...(!enabled ? [styles['itemDisabled']] : []),
               ...(item.danger ? [styles['itemDanger']] : []),
+              ...(item.confirm != null ? [styles['itemConfirm']] : []),
             ].join(' ')}
+            data-confirm={confirming?.index === index ? (confirming.armed ? 'armed' : 'locked') : undefined}
             onPointerMove={() => {
               if (panel.active !== index) onHover(level, enabled ? index : undefined);
             }}
@@ -233,7 +243,13 @@ function MenuPanel({ panel, level, label, takeFocus, onHover, onActivate, panelR
             }}
           >
             {anyChecks && <span className={styles['check']}>{checkable && item.checked && <FiCheck aria-hidden />}</span>}
-            <span className={styles['label']}>{cleanLabel(item.label)}</span>
+            {item.confirm != null ? (
+              // Both in one cell, so the menu doesn't change width when the item asks.
+              <span className={[styles['label'], styles['confirmLabels']].join(' ')}>
+                <span aria-hidden={confirming?.index === index || undefined}>{cleanLabel(item.label)}</span>
+                <span aria-hidden={confirming?.index !== index || undefined}>{item.confirm}</span>
+              </span>
+            ) : <span className={styles['label']}>{cleanLabel(item.label)}</span>}
             <Keys item={item} />
             {submenu && <FiChevronRight aria-hidden className={styles['chevron']} />}
           </div>
@@ -270,6 +286,9 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
   const [options, setOptions] = useState<OpenMenuOptions>();
   const [takeFocus, setTakeFocus] = useState(true);
   const [panels, setPanels] = useState<PanelState[]>([]);
+  const [confirming, setConfirming] = useState<{ level: number, index: number, armed: boolean }>();
+  const confirmTimer = useRef<ReturnType<typeof setTimeout>>();
+  const confirmingRef = useRef(confirming);
   const panelEls = useRef<(HTMLDivElement | null)[]>([]);
   const submenuTimer = useRef<ReturnType<typeof setTimeout>>();
   // What had focus before the menu opened: it gets it back (a text field, for its edit actions).
@@ -279,10 +298,13 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
   useLayoutEffect(() => {
     optionsRef.current = options;
     panelsRef.current = panels;
-  }, [options, panels]);
+    confirmingRef.current = confirming;
+  }, [confirming, options, panels]);
 
   const close = useCallback((restoreFocus = true) => {
     clearTimeout(submenuTimer.current);
+    clearTimeout(confirmTimer.current);
+    setConfirming(undefined);
     const { current } = optionsRef;
     if (current == null) return;
     optionsRef.current = undefined;
@@ -308,6 +330,8 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
       if (previous != null) previous.onClose?.();
       else returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       clearTimeout(submenuTimer.current);
+      clearTimeout(confirmTimer.current);
+      setConfirming(undefined);
       const items = visibleItems(next.items);
       const anchor = next.at instanceof HTMLElement ? next.at.getBoundingClientRect() : next.at;
       const first = items.findIndex((item) => isEnabled(item));
@@ -360,6 +384,17 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
     if (hasSubmenu(item)) {
       openSubmenu(level, index, false);
       return;
+    }
+    if (item.confirm != null) {
+      const { current } = confirmingRef;
+      if (current?.level !== level || current.index !== index) {
+        clearTimeout(confirmTimer.current);
+        setConfirming({ level, index, armed: false });
+        confirmTimer.current = setTimeout(() => setConfirming((c) => (c?.level === level && c.index === index ? { ...c, armed: true } : c)), confirmLockMs);
+        return;
+      }
+      // Still locked: a double-click doesn't do it.
+      if (!current.armed) return;
     }
     const field = returnFocus.current;
     close();
@@ -534,6 +569,7 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
               level={level}
               label={level === 0 ? options.label : undefined}
               takeFocus={takeFocus}
+              confirming={confirming?.level === level ? confirming : undefined}
               onHover={onHover}
               onActivate={activate}
               panelRef={(el) => {

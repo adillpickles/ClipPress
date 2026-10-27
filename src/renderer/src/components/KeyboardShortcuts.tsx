@@ -931,7 +931,7 @@ const KeyboardShortcuts = memo(({
                     {bindingsForThisAction.map(({ keys }) => (
                       <div key={keys} className={styles['binding']}>
                         {renderKeys(splitKeyboardKeys(keys))}
-                        <ConfirmButton size="sm" className={styles['bindingRemove']} confirmLabel={t('Remove')} onConfirm={() => onDeleteBindingClick({ action, keys })}><FaTrash aria-label={t('Remove shortcut')} style={{ fontSize: '.75em' }} /></ConfirmButton>
+                        <ConfirmButton size="sm" grow className={styles['bindingRemove']} confirmLabel={t('Remove')} onConfirm={() => onDeleteBindingClick({ action, keys })}><FaTrash aria-label={t('Remove shortcut')} style={{ fontSize: '.75em' }} /></ConfirmButton>
                       </div>
                     ))}
 
