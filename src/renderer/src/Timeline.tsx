@@ -233,6 +233,7 @@ function Timeline({
   onRemoveSegmentSpeed,
   onRemoveSegment,
   removeSegmentKeys,
+  menuKeys,
   pickedClipIds,
   hasVideo,
 } : {
@@ -302,6 +303,8 @@ function Timeline({
   onRemoveSegment?: ((index: number, wholeSegment?: true) => void) | undefined,
   /** The keys that remove the selected clip, shown in the clip menu. */
   removeSegmentKeys?: string | undefined,
+  /** The keys of the timeline menu's items (I, O, G by default). */
+  menuKeys?: { setCutStart?: string | undefined, setCutEnd?: string | undefined, goToTimecode?: string | undefined } | undefined,
   /** Clips picked in the Clips panel for Delete. */
   pickedClipIds?: readonly string[] | undefined,
   /** Media with video can have text: its lane is then always shown, so adding text doesn't resize the preview. */
@@ -796,11 +799,11 @@ function Timeline({
   const onMouseOut = useCallback(() => hoverStore.set(undefined), [hoverStore]);
 
   const contextMenuTemplate = useMemo(() => [
-    { label: simpleMode ? t('Start a clip at the playhead') : t('Start current segment at current time'), click: setCutStart },
-    { label: simpleMode ? t('End the clip at the playhead') : t('End current segment at current time'), click: setCutEnd },
+    { label: simpleMode ? t('Start a clip at the playhead') : t('Start current segment at current time'), click: setCutStart, keys: menuKeys?.setCutStart },
+    { label: simpleMode ? t('End the clip at the playhead') : t('End current segment at current time'), click: setCutEnd, keys: menuKeys?.setCutEnd },
     { type: 'separator' as const },
-    { label: simpleMode ? t('Go to a time…') : t('Seek to timecode'), click: goToTimecode },
-  ], [goToTimecode, setCutEnd, setCutStart, simpleMode, t]);
+    { label: simpleMode ? t('Go to a time…') : t('Seek to timecode'), click: goToTimecode, keys: menuKeys?.goToTimecode },
+  ], [goToTimecode, menuKeys, setCutEnd, setCutStart, simpleMode, t]);
 
   useContextMenu(timelineScrollerRef, contextMenuTemplate);
 

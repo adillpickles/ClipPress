@@ -657,6 +657,12 @@ function App() {
   // The binding a shortcut hint shows, of each action's: the first, but on a Mac one with Cmd and elsewhere one without
   // the Windows key, where there's such a one (the defaults pair each Ctrl shortcut with a Cmd/Windows key one).
   const keyBindingByAction = useMemo(() => pickHintKeyBindings(keyBindings, isMac), [keyBindings]);
+  // The timeline's own right-click menu shows the keys its items have.
+  const timelineMenuKeys = useMemo(() => ({
+    setCutStart: keyBindingByAction['setCutStart']?.keys,
+    setCutEnd: keyBindingByAction['setCutEnd']?.keys,
+    goToTimecode: keyBindingByAction['goToTimecode']?.keys,
+  }), [keyBindingByAction]);
 
   const { working, setWorking, workingRef, abortWorking } = useLoading();
   const {
@@ -7645,6 +7651,7 @@ function App() {
                           onRemoveSegmentSpeed={removeSegmentSpeed}
                           onRemoveSegment={removeSegment}
                           removeSegmentKeys={keyBindingByAction['removeSelectedClips']?.keys}
+                          menuKeys={timelineMenuKeys}
                           pickedClipIds={pickedClips}
                           hasVideo={hasVideo}
                         />
