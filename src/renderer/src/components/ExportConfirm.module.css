@@ -128,6 +128,32 @@
   border: 1px solid var(--cp-line);
 }
 
+/* Simple editor: what sits under the quality choice (notices, then the size options), in one eased region. */
+.qualityDetails {
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+  padding-top: .75rem;
+}
+
+.qualityDetails:empty {
+  padding-top: 0;
+}
+
+/* The size options fade in as the region grows to them. */
+.fieldsAppearing {
+  animation: fields-in .22s ease-out;
+}
+
+@keyframes fields-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fieldsAppearing { animation: none; }
+}
+
 .field {
   display: grid;
   grid-template-columns: 6.5rem minmax(0, 1fr);
