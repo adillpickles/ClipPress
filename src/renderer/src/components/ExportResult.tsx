@@ -187,13 +187,18 @@ export default function ExportResult({ files, copyFiles, warnings, highlight, de
     copying.then((ok) => setOutcomeFor({ key, auto, ok }));
   }, [setOutcomeFor]);
 
-  // A click or Ctrl+C shows its check at once; a copy that then fails swaps it for "Couldn't copy".
+  // A click or Ctrl+C shows its check at once; a copy that then fails swaps it for "Couldn't copy", unless a later
+  // copy has been asked for since (its own outcome stands) or the dialog has gone.
+  const lastCopyRef = useRef(0);
+  useEffect(() => () => { lastCopyRef.current = -1; }, []);
   const copyPaths = useCallback((paths: string[]) => {
     const key = paths.join('\n');
+    lastCopyRef.current += 1;
+    const copy = lastCopyRef.current;
     setOutcomeFor({ key, auto: false, ok: true });
     mainApi.copyFilesToClipboard(paths).catch((err: unknown) => {
       console.warn('Unable to copy the exported file', err);
-      setOutcomeFor({ key, auto: false, ok: false });
+      if (copy === lastCopyRef.current) setOutcomeFor({ key, auto: false, ok: false });
     });
   }, [setOutcomeFor]);
 
