@@ -141,6 +141,13 @@ describe('text overlay layout', () => {
     expect([1, 3]).toContain(emoji);
   });
 
+  it('never splits a letter from its accent when a word is too wide for the box', () => {
+    const ctx = fakeMeasureContext();
+    // 20px: 8 code units fit; the accented e (two code units) stays whole on its line.
+    const { lines } = layoutTextOverlay({ text: 'aaaaaae\u0301bb', widthPx: 100, fontSizePx: 20, ctx });
+    expect(lines).toEqual(['aaaaaae\u0301', 'bb']);
+  });
+
   it('keeps legacy clips at the size their box height implied and pins it when fitted', () => {
     const legacy = { overlayId: 'a', type: 'text' as const, start: 0, end: 1, text: 'one\ntwo', box: { x: 0, y: 0, width: 0.5, height: 0.2 } };
     expect(getOverlayFontSize(legacy)).toBeCloseTo(0.056);

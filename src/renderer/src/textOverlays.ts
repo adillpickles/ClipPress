@@ -186,6 +186,9 @@ export function getTextLaneRows(clips: readonly TextLaneClip[], drag?: { overlay
   return result;
 }
 
+/** Whole characters as seen (an emoji, a letter with its accent), however many code units each takes. */
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
 /** Where a browser may break a line inside a word: after a hyphen with a letter or digit before it and a letter after. */
 const hyphenBreak = /(?<=[\p{L}\p{N}]-)(?=\p{L})/u;
 
@@ -221,9 +224,9 @@ function wrapTextLinesAt({
           if (line.length > 0 || before.length > 0) lines.push({ text: line, start: lineStart });
           line = '';
           lineStart = start;
-          // Split a word wider than the box across lines instead of letting it overflow.
+          // Split a word wider than the box across lines instead of letting it overflow, between whole characters.
           let charStart = start;
-          for (const char of part) {
+          for (const { segment: char } of graphemes.segment(part)) {
             if (line.length > 0 && !fits(line + char)) {
               lines.push({ text: line, start: lineStart });
               line = '';
@@ -310,7 +313,7 @@ export function getTextOverlayOffsetAt({ text, widthPx, fontSizePx, x, y, ctx: m
   const lineHeightPx = fontSizePx * textOverlayLineHeight;
   const line = lines[clamp(Math.floor((y - paddingY) / lineHeightPx), 0, lines.length - 1)]!;
   // Between whole characters as seen (an emoji, a letter with its accent), never inside one.
-  const boundaries = [0, ...[...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(line.text)].map(({ index, segment }) => index + segment.length)];
+  const boundaries = [0, ...[...graphemes.segment(line.text)].map(({ index, segment }) => index + segment.length)];
   let best = 0;
   let bestDistance = Infinity;
   for (const index of boundaries) {
