@@ -630,11 +630,15 @@ function Timeline({
       resizingSegmentRef.current = undefined;
       setSegmentDragging(false);
       releaseCursor();
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('blur', onMouseUp);
       window.removeEventListener('mousemove', onMouseMove);
       if (scrubbing) onScrubbingChange(false);
     }
 
     window.addEventListener('mouseup', onMouseUp, { once: true });
+    // The window losing focus mid-drag (Alt+Tab) may never see the mouse let go: the drag ends there.
+    window.addEventListener('blur', onMouseUp, { once: true });
     window.addEventListener('mousemove', onMouseMove);
   }, [getMouseTimelinePos, onScrubbingChange, seekAbs, setCutTime]);
 
@@ -706,6 +710,7 @@ function Timeline({
       overlayInteractionRef.current = undefined;
       releaseCursor();
       window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('blur', onMouseUp);
       window.removeEventListener('mousemove', onMouseMove);
       if (scrubbing) {
         onScrubbingChange(false);
@@ -714,6 +719,7 @@ function Timeline({
     }
 
     window.addEventListener('mouseup', onMouseUp, { once: true });
+    window.addEventListener('blur', onMouseUp, { once: true });
     window.addEventListener('mousemove', onMouseMove);
   }, [fileDurationNonZero, getMouseTimelinePos, onScrubbingChange, onSelectOverlay, onUpdateOverlayClip, seekAbs]);
 
@@ -768,6 +774,8 @@ function Timeline({
       update();
     }, { signal: listeners.signal });
     window.addEventListener('mouseup', () => finish(true), { signal: listeners.signal });
+    // Alt+Tab mid-drag: the mouse may be let go elsewhere, so the drag ends (as it is) when the window loses focus.
+    window.addEventListener('blur', () => finish(true), { signal: listeners.signal });
     window.addEventListener('keydown', (keyEvent) => {
       if (keyEvent.key !== 'Escape') return;
       keyEvent.stopPropagation();
