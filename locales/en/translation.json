@@ -93,6 +93,7 @@
   "Always": "Always",
   "Always open this dialog when opening multiple files": "Always open this dialog when opening multiple files",
   "An error has occurred.": "An error has occurred.",
+  "Another app may be using that shortcut.": "Another app may be using that shortcut.",
   "Another go": "Another go",
   "API action name: {{action}}": "API action name: {{action}}",
   "App update": "App update",
