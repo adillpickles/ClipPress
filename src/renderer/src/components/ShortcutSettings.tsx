@@ -1,47 +1,43 @@
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FaMouse } from 'react-icons/fa';
-import { FiSearch } from 'react-icons/fi';
+import { FiRotateCcw, FiSearch } from 'react-icons/fi';
 
-import type { KeyBinding, KeyboardAction, ModifierKey } from '../../../common/types';
+import type { KeyBinding, KeyboardAction, ModifierKey, MouseGesture } from '../../../common/types';
+import defaultKeyBindings, { defaultMouseModifierKeys } from '../../../common/defaultKeyBindings';
 import { normalizeQuickExportPresets, quickExportPresetActions } from '../../../common/quickExport';
 import useUserSettings from '../hooks/useUserSettings';
-import { getModifier, getModifierKeyNames } from '../hooks/useTimelineScroll';
+import { getModifierKeyNames } from '../hooks/useTimelineScroll';
 import { getQuickExportPresetLabel } from '../quickExport';
 import { getEventBindingKeys, getShownBindings, normalizeBindingKeys } from '../shortcutKeys';
 import { isMac } from '../util';
 import Button from './Button';
 import ConfirmButton from './ConfirmButton';
-import Select from './Select';
 import SettingRow from './SettingRow';
-import ShortcutField from './ShortcutField';
+import ShortcutField, { FixedShortcut, GestureField } from './ShortcutField';
 import Switch from './Switch';
 import TextInput from './TextInput';
 import type { TunerType } from '../types';
-import renderKeys from './renderKeys';
 import { SettingsSearchContext, matchesSearch, useSettingsSearch } from './settingsSearch';
 import styles from './Settings.module.css';
 
-function ModifierSelect({ value, setValue, label }: { value: ModifierKey, setValue: (v: ModifierKey) => void, label: string }) {
+/** Back to a shortcut's default, for that row alone: shown once it differs from it. */
+function RevertButton({ keys, onClick }: { keys?: string | undefined, onClick: () => void }) {
+  const { t } = useTranslation();
   return (
-    <Select value={value} onChange={(e) => setValue(e.target.value as ModifierKey)} aria-label={label} style={{ width: 'auto' }}>
-      {Object.entries(getModifierKeyNames()).map(([key, name]) => <option key={key} value={key}>{name}</option>)}
-    </Select>
+    <button type="button" className={styles['revert']} title={t('Back to the default')} data-tip-keys={keys} aria-label={t('Back to the default')} onClick={onClick}>
+      <FiRotateCcw aria-hidden />
+    </button>
   );
 }
 
-/** A gesture that isn't a key binding: shown, with its modifier chosen from a list (wheel gestures aren't rebindable). */
-function WheelGesture({ modifier, setModifier, label, gesture }: { modifier: ModifierKey, setModifier: (v: ModifierKey) => void, label: string, gesture: string }) {
-  return (
-    <SettingRow label={label} keywords={`${getModifier(modifier)} ${gesture} wheel scroll mouse`}>
-      <span className={styles['controlGroup']}>
-        <ModifierSelect value={modifier} setValue={setModifier} label={label} />
-        <span className={styles['gesture']}>+ <FaMouse aria-hidden /> {gesture}</span>
-      </span>
-    </SettingRow>
-  );
-}
+const modifierKeyCodes: Record<ModifierKey, string> = { ctrl: 'ControlLeft', shift: 'ShiftLeft', alt: 'AltLeft', meta: 'MetaLeft' };
+const wheelGestures: readonly MouseGesture[] = ['zoom', 'frameSeek', 'keyframeSeek'];
+const sameKeys = (a: readonly KeyBinding[], b: readonly KeyBinding[]) => {
+  const keysOf = (bindings: readonly KeyBinding[]) => new Set(getShownBindings(bindings).map((binding) => normalizeBindingKeys(binding.keys)));
+  const [setA, setB] = [keysOf(a), keysOf(b)];
+  return setA.size === setB.size && [...setA].every((keys) => setB.has(keys));
+};
 
 interface ShortcutItem { action: KeyboardAction, label: string }
 
@@ -172,6 +168,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
     mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey,
     segmentMouseModifierKey, setSegmentMouseModifierKey, invertTimelineScroll, setInvertTimelineScroll, wheelSensitivity, keyboardNormalSeekSpeed,
     mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, keyboardSeekSpeed2, keyboardSeekSpeed3, keyboardSeekAccFactor,
+    extraMouseModifierKeys, setExtraMouseModifierKeys,
   } = useUserSettings();
 
   // Shortcut changes made here can be undone and redone, with the keys Undo and Redo are set to.
@@ -219,6 +216,52 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
   const query = [outerQuery, ownQuery].filter(Boolean).join(' ');
   const keysText = (action: KeyboardAction) => keyBindings.filter((b) => b.action === action).map((b) => b.keys.replaceAll(/Left|Right|Key|Digit/g, '').replaceAll('Control', 'Ctrl')).join(' ');
 
+  // A row back to its default: its own keys as they came; a key of those another action took meanwhile comes back.
+  const revertAction = (action: KeyboardAction) => {
+    const defaults = defaultKeyBindings.filter((binding) => binding.action === action);
+    const taken = new Set(defaults.map((binding) => normalizeBindingKeys(binding.keys)));
+    changeKeyBindings((bindings) => [...bindings.filter((binding) => binding.action !== action && !taken.has(normalizeBindingKeys(binding.keys))), ...defaults]);
+  };
+
+  // The mouse gestures: each one's own modifier (which can be changed, not removed), then any added here.
+  const ownModifier: Record<MouseGesture, [ModifierKey, (modifier: ModifierKey) => void]> = {
+    zoom: [mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey],
+    frameSeek: [mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey],
+    keyframeSeek: [mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey],
+    segment: [segmentMouseModifierKey, setSegmentMouseModifierKey],
+  };
+  const getGestureModifiers = (gesture: MouseGesture) => {
+    const [own] = ownModifier[gesture];
+    return [own, ...(extraMouseModifierKeys?.[gesture] ?? []).filter((modifier) => modifier !== own)];
+  };
+  const setGestureModifiers = (gesture: MouseGesture, modifiers: readonly ModifierKey[]) => {
+    const [own, ...extra] = modifiers;
+    if (own == null) return;
+    ownModifier[gesture][1](own);
+    setExtraMouseModifierKeys((previous) => ({ ...previous, [gesture]: extra }));
+  };
+  const renderGesture = (gesture: MouseGesture, label: string, input: string) => {
+    const modifiers = getGestureModifiers(gesture);
+    const names = getModifierKeyNames();
+    if (!matchesSearch(query, label, `${modifiers.map((modifier) => names[modifier]).join(' ')} ${input} mouse wheel scroll drag`)) return null;
+    // Wheel gestures share the wheel: a modifier another one uses would only do that one's job.
+    const taken = gesture === 'segment' ? [] : wheelGestures.filter((other) => other !== gesture).flatMap((other) => getGestureModifiers(other));
+    const changed = modifiers.length > 1 || modifiers[0] !== defaultMouseModifierKeys[gesture];
+    return (
+      <div key={gesture} className={styles['row']} data-setting-row="">
+        <div className={styles['rowText']}>
+          <div className={styles['rowLabel']}>
+            {label}
+            {changed && <RevertButton keys={modifierKeyCodes[defaultMouseModifierKeys[gesture]]} onClick={() => setGestureModifiers(gesture, [defaultMouseModifierKeys[gesture]])} />}
+          </div>
+        </div>
+        <div className={[styles['rowControl'], styles['rowControlWide']].join(' ')}>
+          <GestureField label={label} gesture={input} modifiers={modifiers} onChange={(next) => setGestureModifiers(gesture, next)} taken={taken} />
+        </div>
+      </div>
+    );
+  };
+
   return (
     <SettingsSearchContext.Provider value={query}>
       <div className={styles['shortcutSearch']}>
@@ -231,7 +274,14 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
           <h3 className={styles['groupTitle']}>{group.title}</h3>
           {group.items.filter((item) => matchesSearch(query, item.label, keysText(item.action))).map(({ action, label }) => (
             <div key={action} className={styles['row']} data-setting-row="">
-              <div className={styles['rowText']}><div className={styles['rowLabel']}>{label}</div></div>
+              <div className={styles['rowText']}>
+                <div className={styles['rowLabel']}>
+                  {label}
+                  {!sameKeys(keyBindings.filter((binding) => binding.action === action), defaultKeyBindings.filter((binding) => binding.action === action)) && (
+                    <RevertButton keys={getShownBindings(defaultKeyBindings.filter((binding) => binding.action === action))[0]?.keys} onClick={() => revertAction(action)} />
+                  )}
+                </div>
+              </div>
               <div className={styles['rowControl']}>
                 <ShortcutField
                   action={action}
@@ -244,12 +294,12 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
               </div>
             </div>
           ))}
+          {/* Mouse gestures aren't key bindings: their modifiers are picked from a list, each beside its keyboard twin. */}
+          {group.id === 'playback' && renderGesture('frameSeek', t('Step frames with the mouse wheel'), t('Scroll'))}
+          {group.id === 'clips' && renderGesture('segment', t('Move or resize a clip with the mouse'), t('Drag'))}
           {group.id === 'timeline' && (
             <>
-              {/* Wheel gestures aren't key bindings: their modifier is chosen here, and the direction can turn round. */}
-              <WheelGesture label={t('Zoom the timeline')} modifier={mouseWheelZoomModifierKey} setModifier={setMouseWheelZoomModifierKey} gesture={t('scroll')} />
-              <WheelGesture label={t('Step frames')} modifier={mouseWheelFrameSeekModifierKey} setModifier={setMouseWheelFrameSeekModifierKey} gesture={t('scroll')} />
-              <WheelGesture label={t('Move or resize a clip')} modifier={segmentMouseModifierKey} setModifier={setSegmentMouseModifierKey} gesture={t('drag')} />
+              {renderGesture('zoom', t('Zoom with the mouse wheel'), t('Scroll'))}
               <SettingRow label={t('Reverse wheel direction')} description={t('For moving along the timeline with the wheel.')}>
                 <Switch checked={invertTimelineScroll ?? false} onCheckedChange={setInvertTimelineScroll} aria-label={t('Reverse wheel direction')} />
               </SettingRow>
@@ -261,7 +311,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
               </SettingRow>
               {showAdvancedSettings && (
                 <>
-                  <WheelGesture label={t('Jump keyframes')} modifier={mouseWheelKeyframeSeekModifierKey} setModifier={setMouseWheelKeyframeSeekModifierKey} gesture={t('scroll')} />
+                  {renderGesture('keyframeSeek', t('Jump keyframes with the mouse wheel'), t('Scroll'))}
                   <SettingRow label={t('Longer seek step')} value={formatSeconds(keyboardSeekSpeed2)}>
                     <Button onClick={() => onTunerRequested('keyboardSeekSpeed2')}>{t('Adjust')}</Button>
                   </SettingRow>
@@ -282,7 +332,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
                 .filter((item) => matchesSearch(query, item.label)).map((item) => (
                   <div key={item.label} className={styles['row']} data-setting-row="">
                     <div className={styles['rowText']}><div className={styles['rowLabel']}>{item.label}</div></div>
-                    <div className={styles['rowControl']}><span className={styles['fixedKeys']} title={t('Set by the menu')}>{renderKeys(item.keys.split('+'))}</span></div>
+                    <div className={styles['rowControl']}><FixedShortcut keys={item.keys} title={t('Set by the menu')} /></div>
                   </div>
                 ))}
             </>

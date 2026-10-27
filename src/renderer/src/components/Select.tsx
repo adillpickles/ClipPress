@@ -5,7 +5,7 @@ import styles from './Select.module.css';
 
 export type SelectProps = SelectHTMLAttributes<HTMLSelectElement>;
 
-function Select({ onWheel, ...props }: SelectProps) {
+function Select({ onWheel, className, ...props }: SelectProps) {
   // An open list scrolls with the wheel. A dialog's scroll lock cancels wheel events that land on nothing scrollable,
   // and the open list doesn't count as scrollable to it, so the event goes no further than this list.
   const handleWheel = (e: WheelEvent<HTMLSelectElement>) => {
@@ -14,7 +14,7 @@ function Select({ onWheel, ...props }: SelectProps) {
   };
   return (
     // eslint-disable-next-line react/jsx-props-no-spreading
-    <select className={styles['select']} onWheel={handleWheel} {...props} />
+    <select className={[styles['select'], ...(className != null ? [className] : [])].join(' ')} onWheel={handleWheel} {...props} />
   );
 }
 

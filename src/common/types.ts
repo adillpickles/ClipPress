@@ -17,6 +17,9 @@ export type AvoidNegativeTs = 'make_zero' | 'auto' | 'make_non_negative' | 'disa
 
 export type ModifierKey = 'ctrl' | 'shift' | 'alt' | 'meta';
 
+export type MouseGesture = 'zoom' | 'frameSeek' | 'keyframeSeek' | 'segment';
+export type ExtraMouseModifierKeys = Partial<Record<MouseGesture, ModifierKey[]>>;
+
 export type PreserveMetadata = 'default' | 'nonglobal' | 'none'
 
 export type WaveformMode = 'big-waveform' | 'waveform';
@@ -158,6 +161,8 @@ export interface Config {
   mouseWheelFrameSeekModifierKey: ModifierKey,
   mouseWheelKeyframeSeekModifierKey: ModifierKey,
   segmentMouseModifierKey: ModifierKey,
+  /** More modifiers for the same mouse gestures, added in Settings > Shortcuts (the ones above can't be removed). */
+  extraMouseModifierKeys: ExtraMouseModifierKeys,
   captureFrameMethod: 'videotag' | 'ffmpeg',
   captureFrameQuality: number,
   captureFrameFileNameFormat: 'timestamp' | 'index',

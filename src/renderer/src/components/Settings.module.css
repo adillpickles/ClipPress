@@ -141,6 +141,11 @@
   max-width: 16rem;
 }
 
+/* A mouse gesture with a second modifier added needs more than half the row. */
+.rowControlWide {
+  max-width: 72%;
+}
+
 .controlGroup {
   display: flex;
   align-items: center;
@@ -230,19 +235,27 @@
   padding: .45rem 0;
 }
 
-.gesture {
-  display: inline-flex;
-  align-items: center;
-  gap: .3rem;
-  color: var(--cp-text-muted);
-  font-size: .8125rem;
+/* Back to a shortcut's default: a quiet arrow beside its name, ClipPress blue on hover. */
+.revert {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: var(--cp-radius-sm);
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+  cursor: pointer;
+  transition: color .12s ease, background-color .12s ease;
 }
 
-.fixedKeys {
-  display: inline-flex;
-  align-items: center;
-  padding: .2rem .4rem;
-  opacity: .75;
+.revert:hover {
+  color: var(--cp-accent-text);
+  background: var(--cp-accent-soft);
+}
+
+.revert:focus-visible {
+  box-shadow: var(--cp-focus-ring);
 }
 
 .shortcutActions {

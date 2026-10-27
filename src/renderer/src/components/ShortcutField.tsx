@@ -1,9 +1,12 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { FaMouse } from 'react-icons/fa';
 import { FiPlus, FiX } from 'react-icons/fi';
 
-import type { KeyBinding, KeyboardAction } from '../../../common/types';
+import type { KeyBinding, KeyboardAction, ModifierKey } from '../../../common/types';
 import Kbd from './Kbd';
+import Select from './Select';
+import { getModifierKeyNames } from '../hooks/useTimelineScroll';
 import { fixKeys, normalizeBindingKeys } from '../shortcutKeys';
 import { allModifiers, splitKeyboardKeys } from '../util';
 import styles from './ShortcutField.module.css';
@@ -241,6 +244,78 @@ export default function ShortcutField({ action, label, shown, keyBindings, setKe
           <button type="button" className={styles['conflictButton']} onClick={() => setConflict(undefined)}>{t('Cancel')}</button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Keys set elsewhere (the menu's own): shown like the others, with the room the "+" takes, so every row lines up. */
+export function FixedShortcut({ keys, title }: { keys: string, title: string }) {
+  return (
+    <div className={styles['field']}>
+      <div className={styles['slots']}>
+        <span className={[styles['slot'], styles['fixedSlot']].join(' ')} title={title}>
+          <Caps keys={splitKeyboardKeys(keys)} />
+        </span>
+        <span className={[styles['slot'], styles['addSlot'], styles['addSlotHidden']].join(' ')} aria-hidden />
+      </div>
+    </div>
+  );
+}
+
+const modifierOrder: readonly ModifierKey[] = ['ctrl', 'shift', 'alt', 'meta'];
+
+/**
+ * A mouse gesture's modifiers (a wheel or a drag can't be recorded like keys): each a key cap that opens a list of key
+ * caps to pick another from, then the gesture. "+" adds one more; the first is the gesture's own and can't be removed.
+ */
+export function GestureField({ label, gesture, modifiers, onChange, taken }: {
+  label: string,
+  gesture: string,
+  /** The gesture's own modifier first, then any added. */
+  modifiers: readonly ModifierKey[],
+  onChange: (next: ModifierKey[]) => void,
+  /** Modifiers another gesture of the same kind uses (it would win): not offered. */
+  taken: readonly ModifierKey[],
+}) {
+  const { t } = useTranslation();
+  const names = getModifierKeyNames();
+  const free = modifierOrder.filter((modifier) => !modifiers.includes(modifier) && !taken.includes(modifier));
+
+  return (
+    <div className={styles['field']}>
+      <div className={styles['slots']}>
+        {modifiers.map((modifier, index) => (
+          <span key={modifier} className={styles['bindingWrap']}>
+            <span className={[styles['slot'], styles['gestureSlot']].join(' ')}>
+              <Select
+                className={styles['capSelect']}
+                value={modifier}
+                onChange={(e) => onChange(modifiers.map((other, i) => (i === index ? e.target.value as ModifierKey : other)))}
+                aria-label={t('Change the key for {{action}}', { action: label })}
+              >
+                {modifierOrder.filter((option) => option === modifier || free.includes(option)).map((option) => <option key={option} value={option}>{names[option]}</option>)}
+              </Select>
+              <span className={styles['plus']}>+</span>
+              <kbd className={styles['gestureCap']}><FaMouse aria-hidden /> {gesture}</kbd>
+            </span>
+            {index > 0 && (
+              <button type="button" className={styles['remove']} onClick={() => onChange(modifiers.filter((other) => other !== modifier))} title={t('Remove shortcut')} aria-label={t('Remove shortcut')}>
+                <FiX aria-hidden />
+              </button>
+            )}
+          </span>
+        ))}
+        <button
+          type="button"
+          className={[styles['slot'], styles['addSlot'], ...(free.length === 0 ? [styles['addSlotHidden']] : [])].join(' ')}
+          onClick={() => { if (free[0] != null) onChange([...modifiers, free[0]]); }}
+          tabIndex={free.length === 0 ? -1 : undefined}
+          title={t('Add another shortcut')}
+          aria-label={t('Add another shortcut for {{action}}', { action: label })}
+        >
+          <FiPlus aria-hidden />
+        </button>
+      </div>
     </div>
   );
 }

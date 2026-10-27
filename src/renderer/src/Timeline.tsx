@@ -19,7 +19,7 @@ import type { Frame } from './ffmpeg';
 import type { FormatTimecode, InverseCutSegment, OverviewWaveform, OverlayClip, RenderableWaveform, WaveformSlice, StateSegment, Thumbnail } from './types';
 import Button from './components/Button';
 import type { UseSegments } from './hooks/useSegments';
-import { keyMap } from './hooks/useTimelineScroll';
+import { isGestureModifierHeld } from './hooks/useTimelineScroll';
 import { getTextLaneRows, minTextOverlayDuration } from './textOverlays';
 import type { TextLaneRow } from './textOverlays';
 import SegmentRetimeBar from './components/SegmentRetimeBar';
@@ -312,7 +312,7 @@ function Timeline({
 }) {
   const { t } = useTranslation();
 
-  const { invertCutSegments, segmentMouseModifierKey, simpleMode } = useUserSettings();
+  const { invertCutSegments, segmentMouseModifierKey, extraMouseModifierKeys, simpleMode } = useUserSettings();
 
   const timelineScrollerRef = useRef<HTMLDivElement>(null);
   const timelineScrollerSkipEventRef = useRef<boolean>(false);
@@ -540,7 +540,7 @@ function Timeline({
     // start/end handles 1.5% of visible timeline
     const threshold = ((0.01 / 2) * fileDurationNonZero) / zoom;
 
-    if (currentCutSeg != null && currentCutSeg.selected && e[keyMap[segmentMouseModifierKey]]) {
+    if (currentCutSeg != null && currentCutSeg.selected && isGestureModifierHeld(e, segmentMouseModifierKey, extraMouseModifierKeys, 'segment')) {
       if (Math.abs(mouseTimelinePos - currentCutSeg.start) < threshold) {
         resizingSegmentRef.current = { operation: currentCutSeg.end == null ? 'move' : 'start' }; // move marker or resize segment
       } else if (currentCutSeg.end != null && Math.abs(mouseTimelinePos - currentCutSeg.end) < threshold) {
@@ -592,7 +592,7 @@ function Timeline({
     // https://stackoverflow.com/questions/6073505/what-is-the-difference-between-screenx-y-clientx-y-and-pagex-y
     window.addEventListener('mouseup', onMouseUp, { once: true });
     window.addEventListener('mousemove', onMouseMove);
-  }, [fileDurationNonZero, getMouseTimelinePos, onScrubbingChange, seekAbs, segmentMouseModifierKey, setCutTime, zoom]);
+  }, [extraMouseModifierKeys, fileDurationNonZero, getMouseTimelinePos, onScrubbingChange, seekAbs, segmentMouseModifierKey, setCutTime, zoom]);
 
   // Simple mode: drag an edge handle of the active clip to trim it (no modifier key needed).
   const onTrimHandleMouseDown = useCallback((edge: 'start' | 'end') => (e: ReactMouseEvent<HTMLElement>) => {
