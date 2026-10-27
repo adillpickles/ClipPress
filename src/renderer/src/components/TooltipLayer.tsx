@@ -10,6 +10,8 @@ const showDelayMs = 450;
 const skipDelayMs = 400;
 const margin = 8;
 const gap = 6;
+/** How long a hint follows its element after showing, for one still sliding in (the Clips panel's slide is 0.28 s). */
+const followMs = 400;
 
 /**
  * The app's own tooltip for every hint, in place of the system's: an element's `title` (or `data-tip`) is shown in a
@@ -178,15 +180,34 @@ export default function TooltipLayer() {
   // element before it's painted.
   useLayoutEffect(() => {
     const bubble = bubbleRef.current;
-    if (tip == null || bubble == null) return;
-    const anchor = tip.el.getBoundingClientRect();
-    const { width, height } = bubble.getBoundingClientRect();
-    let top = anchor.bottom + gap;
-    if (top + height + margin > window.innerHeight) top = Math.max(margin, anchor.top - height - gap);
-    const left = Math.min(Math.max(margin, anchor.left + anchor.width / 2 - width / 2), window.innerWidth - width - margin);
-    bubble.style.top = `${top}px`;
-    bubble.style.left = `${left}px`;
-    bubble.style.visibility = '';
+    if (tip == null || bubble == null) return undefined;
+    let placedAt: DOMRect | undefined;
+    const place = () => {
+      const anchor = tip.el.getBoundingClientRect();
+      if (placedAt != null && anchor.left === placedAt.left && anchor.top === placedAt.top) return;
+      placedAt = anchor;
+      // Measured off screen: one hint replacing another keeps the same bubble, and measured where the last one sat
+      // (near the window's edge, say) its text would be squeezed into a word per line.
+      bubble.style.top = '-9999px';
+      bubble.style.left = '-9999px';
+      const { width, height } = bubble.getBoundingClientRect();
+      let top = anchor.bottom + gap;
+      if (top + height + margin > window.innerHeight) top = Math.max(margin, anchor.top - height - gap);
+      const left = Math.min(Math.max(margin, anchor.left + anchor.width / 2 - width / 2), window.innerWidth - width - margin);
+      bubble.style.top = `${top}px`;
+      bubble.style.left = `${left}px`;
+      bubble.style.visibility = '';
+    };
+    place();
+    // An element still sliding into place (the Clips panel coming back) is followed until it stops.
+    let frame = 0;
+    const until = performance.now() + followMs;
+    const follow = () => {
+      place();
+      if (performance.now() < until) frame = requestAnimationFrame(follow);
+    };
+    frame = requestAnimationFrame(follow);
+    return () => cancelAnimationFrame(frame);
   }, [tip]);
 
   if (tip == null) return null;
