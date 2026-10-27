@@ -1,5 +1,7 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { FiMove } from 'react-icons/fi';
 
 import type { OverlayBox, OverlayClip } from '../types';
 import {
@@ -15,12 +17,9 @@ import {
   minTextOverlayWidth,
   textOverlayLineHeight,
 } from '../textOverlays';
+import styles from './TextOverlayEditor.module.css';
 
-const moveHandleHeight = 20;
-const edgeHandleWidth = 10;
-const cornerHandleSize = 16;
-// Brand teal, fixed rather than themed: it is drawn over the video.
-const accent = 'rgba(79, 195, 204, 0.95)';
+const cornerHandleSize = 18;
 
 type InteractionMode = 'move' | 'width' | 'scale';
 
@@ -38,7 +37,7 @@ const textStyle: CSSProperties = {
 
 /**
  * Text boxes keep a fixed font size and grow to fit their lines, matching the exported image.
- * The right edge sets the wrap width; the corner scales the text; the bar above moves it.
+ * The right edge sets the wrap width; the corner scales the text; the grip above moves it.
  */
 function TextOverlayEditor({
   overlayClips,
@@ -59,6 +58,7 @@ function TextOverlayEditor({
   onSelectOverlay: (overlayId: string | undefined) => void,
   onUpdateOverlay: (overlayId: string, updater: (clip: OverlayClip) => OverlayClip) => void,
 }) {
+  const { t } = useTranslation();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [wrapperSize, setWrapperSize] = useState({ width: 0, height: 0 });
 
@@ -228,7 +228,7 @@ function TextOverlayEditor({
   }), [surfaceSize.height, surfaceSize.width]);
 
   return (
-    <div ref={wrapperRef} style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+    <div ref={wrapperRef} className={styles['wrapper']}>
       <div style={surfaceStyle}>
         {surfaceSize.height > 0 && visibleOverlays.map((overlayClip) => {
           const selected = overlayClip.overlayId === selectedOverlayId;
@@ -249,28 +249,18 @@ function TextOverlayEditor({
               key={overlayClip.overlayId}
               role="button"
               tabIndex={-1}
+              className={[styles['box'], ...(selected ? [styles['boxSelected']] : [])].join(' ')}
               onMouseDown={(event) => {
                 event.stopPropagation();
                 onSelectOverlay(overlayClip.overlayId);
                 focusOverlayText(overlayClip.overlayId);
               }}
-              style={{
-                position: 'absolute',
-                left,
-                top,
-                width,
-                height,
-                pointerEvents: 'auto',
-                boxSizing: 'border-box',
-                border: selected ? `1px solid ${accent}` : '1px dashed rgba(255, 255, 255, 0.45)',
-                background: selected ? 'rgba(8, 13, 19, 0.2)' : 'transparent',
-                borderRadius: 6,
-              }}
+              style={{ left, top, width, height }}
             >
               {selected ? (
                 <textarea
                   ref={(textArea) => setTextAreaRef(overlayClip.overlayId, textArea)}
-                  aria-label="Text"
+                  aria-label={t('Text')}
                   value={overlayClip.text}
                   onChange={(event) => updateFitted(overlayClip.overlayId, (clip) => ({ ...clip, text: event.target.value }))}
                   onMouseDown={(event) => event.stopPropagation()}
@@ -308,40 +298,27 @@ function TextOverlayEditor({
                 <>
                   <button
                     type="button"
+                    className={styles['moveGrip']}
                     onMouseDown={(event) => beginInteraction(event, overlayClip, 'move')}
-                    title="Drag to move"
-                    style={{
-                      position: 'absolute',
-                      left: -1,
-                      bottom: '100%',
-                      height: moveHandleHeight,
-                      padding: '0 8px',
-                      border: 'none',
-                      borderRadius: '6px 6px 0 0',
-                      background: accent,
-                      color: 'rgba(5, 12, 20, 0.9)',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                      cursor: 'move',
-                    }}
+                    title={t('Drag to move')}
                   >
-                    Text
+                    <FiMove aria-hidden />
                   </button>
+                  {/* Kept clear of the corner on a short box. */}
                   <button
                     type="button"
-                    aria-label="Text box width"
-                    title="Drag to change the text width"
+                    className={styles['widthHandle']}
+                    aria-label={t('Text box width')}
+                    title={t('Drag to change the text width')}
                     onMouseDown={(event) => beginInteraction(event, overlayClip, 'width')}
-                    style={{ position: 'absolute', top: '50%', right: -(edgeHandleWidth / 2) - 1, width: edgeHandleWidth, height: Math.min(28, Math.max(14, height - (cornerHandleSize * 2))), transform: 'translateY(-50%)', padding: 0, border: '1px solid rgba(5, 12, 20, 0.6)', borderRadius: 4, background: accent, cursor: 'ew-resize' }}
+                    style={{ height: Math.min(28, Math.max(10, height - (cornerHandleSize * 2) - 4)) }}
                   />
                   <button
                     type="button"
-                    aria-label="Text size"
-                    title="Drag to resize the text"
+                    className={styles['scaleCorner']}
+                    aria-label={t('Text size')}
+                    title={t('Drag to resize the text')}
                     onMouseDown={(event) => beginInteraction(event, overlayClip, 'scale')}
-                    style={{ position: 'absolute', right: -(cornerHandleSize / 2), bottom: -(cornerHandleSize / 2), width: cornerHandleSize, height: cornerHandleSize, padding: 0, border: '2px solid rgba(5, 12, 20, 0.6)', borderRadius: 999, background: accent, cursor: 'nwse-resize' }}
                   />
                 </>
               )}
