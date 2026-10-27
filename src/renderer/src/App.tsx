@@ -3739,6 +3739,8 @@ function App() {
   const onExportConfirm = useCallback(async (quickExport?: QuickExport) => {
     invariant(filePath != null && outputDir != null);
     emitEvent({ eventName: 'export-start', path: filePath });
+    // The result offers to copy the video: the copy helper starts now, so that copy is instant.
+    mainApi.warmCopyHelper().catch((err: unknown) => console.warn('Unable to start the copy helper', err));
     // A name taken in the output folder; an error other than "not there" stops the export instead of risking a file.
     const isOutputNameTaken = async (name: string) => {
       try {

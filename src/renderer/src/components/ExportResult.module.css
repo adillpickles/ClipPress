@@ -11,7 +11,7 @@
   align-items: center;
   text-align: center;
   min-width: 0;
-  margin-top: .35rem;
+  margin-top: .7rem;
 }
 
 /* The picture: a click copies the video, a drag takes the file out. */
@@ -50,20 +50,18 @@
   color: var(--cp-text-subtle);
 }
 
-/* Hover: a light blue tint and the copy icon. */
+/* Hover: a faint blue tint and the copy icon, only while the pointer is on it (not for keyboard focus or a copy). */
 .thumb::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--cp-accent) 30%, transparent);
+  background: color-mix(in srgb, var(--cp-accent) 9%, transparent);
   opacity: 0;
   transition: opacity .15s ease;
   pointer-events: none;
 }
 
-.thumb:not(:disabled):hover::after,
-.thumb:focus-visible::after,
-.thumbCopied::after {
+.thumb:not(:disabled):hover::after {
   opacity: 1;
 }
 
@@ -100,53 +98,61 @@
   transform: none;
 }
 
-/* Copied, for a moment: a short pulse, the check mark, and the word under it. */
-.thumbCopied .copyBadge {
-  background: var(--cp-accent);
-  color: #062126;
-  translate: 0 -.7rem;
-  animation: copied-pulse .45s ease-out;
+/* The copy icon turns into the check: one shrinks and turns away as the other grows in, in one cell. */
+.copyIcon,
+.checkIcon {
+  grid-area: 1 / 1;
+  transition: opacity .2s ease, transform .22s cubic-bezier(.2, .8, .2, 1);
 }
 
-.copiedLabel {
-  position: absolute;
-  z-index: 1;
-  translate: 0 1.5rem;
-  color: white;
-  font-size: .8125rem;
-  font-weight: 700;
-  text-shadow: 0 1px 3px rgb(0 0 0 / 55%);
-  pointer-events: none;
-  animation: label-in .2s ease-out;
+.checkIcon {
+  color: var(--cp-accent);
+  opacity: 0;
+  transform: scale(.5) rotate(-30deg);
 }
 
-@keyframes label-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.thumbCopied .copyIcon {
+  opacity: 0;
+  transform: scale(.5) rotate(30deg);
 }
 
+.thumbCopied .checkIcon {
+  opacity: 1;
+  transform: none;
+}
+
+/* Away from the pointer the badge only fades: a check shows with it (Ctrl+C), and the copy icon comes back only once
+   the badge is gone, so neither the old icon nor the tint flashes. */
+.thumb:not(:hover).thumbCopied .copyIcon,
+.thumb:not(:hover).thumbCopied .checkIcon {
+  transition: none;
+}
+
+.thumb:not(:hover):not(.thumbCopied) .copyIcon,
+.thumb:not(:hover):not(.thumbCopied) .checkIcon {
+  transition-duration: 0s;
+  transition-delay: .2s;
+}
+
+/* One soft pulse on the outline. */
 .thumbCopied {
-  animation: copied-ring .6s ease-out;
-}
-
-@keyframes copied-pulse {
-  0% { transform: scale(.8); }
-  55% { transform: scale(1.12); }
-  100% { transform: none; }
+  animation: copied-ring .7s ease-out;
 }
 
 @keyframes copied-ring {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cp-accent) 55%, transparent); }
-  100% { box-shadow: 0 0 0 10px transparent; }
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cp-accent) 40%, transparent); }
+  100% { box-shadow: 0 0 0 8px transparent; }
 }
 
-/* The name: a click shows the file in its folder. */
+/* The name: a click shows the file in its folder; the small folder after it says so, and lights up with it. */
 .name {
   all: unset;
   display: inline-flex;
+  align-items: center;
+  gap: .5em;
   box-sizing: border-box;
   max-width: 100%;
-  margin-top: .65rem;
+  margin-top: .9rem;
   padding: 0 .2em;
   border-radius: 4px;
   font-weight: 700;
@@ -155,17 +161,31 @@
   transition: color .12s ease;
 }
 
-.name > span {
+.nameText {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.nameIcon {
+  flex-shrink: 0;
+  font-size: .85em;
+  color: var(--cp-text-subtle);
+  transition: color .12s ease;
+}
+
 .name:hover {
   color: var(--cp-accent-text);
+}
+
+.name:hover .nameText {
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+.name:hover .nameIcon {
+  color: var(--cp-accent-text);
 }
 
 .name:focus-visible {
@@ -173,7 +193,7 @@
 }
 
 .facts {
-  margin-top: .15rem;
+  margin-top: .25rem;
   color: var(--cp-text-muted);
   font-size: .8125rem;
   font-variant-numeric: tabular-nums;
@@ -226,6 +246,8 @@
   color: var(--cp-text-muted);
   font-size: .8125rem;
   text-align: center;
+  /* One line per thing to say. */
+  white-space: pre-line;
 }
 
 /* Real problems, shown plainly. */
@@ -326,5 +348,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .thumbCopied, .thumbCopied .copyBadge, .copiedLabel { animation: none; }
+  .thumbCopied { animation: none; }
+  .copyIcon, .checkIcon { transition: none; }
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DragEvent, ReactNode, SyntheticEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FiAlertTriangle, FiCheck, FiChevronDown, FiChevronRight, FiCopy, FiFilm } from 'react-icons/fi';
+import { FiAlertTriangle, FiCheck, FiChevronDown, FiChevronRight, FiCopy, FiFilm, FiFolder } from 'react-icons/fi';
 
 import mainApi from '../mainApi';
 import { getDuration, renderShelfThumbnail } from '../ffmpeg';
@@ -83,7 +83,7 @@ function makeDragIcon(img: HTMLImageElement) {
 
 /**
  * A picture of an exported file: hovering shows it can be copied, a click copies the video file itself (to paste into
- * a chat or a folder) with a check mark for a moment, and it can be dragged out of the window.
+ * a chat or a folder), its copy icon turning into a check mark for a moment, and it can be dragged out of the window.
  */
 function FileCard({ path, thumbnail, copied, onCopy, small = false }: {
   path: string,
@@ -113,18 +113,24 @@ function FileCard({ path, thumbnail, copied, onCopy, small = false }: {
       aria-label={onCopy != null ? t('Copy {{file}}', { file: name }) : name}
     >
       {thumbnail != null ? <img src={thumbnail} alt="" draggable={false} onLoad={onLoad} /> : <FiFilm aria-hidden className={styles['placeholder']} />}
-      {onCopy != null && <span className={styles['copyBadge']} aria-hidden>{copied ? <FiCheck /> : <FiCopy />}</span>}
-      {copied && !small && <span className={styles['copiedLabel']}>{t('Copied')}</span>}
+      {/* Both icons are there, so one turns into the other (and the check stays while the badge fades out). */}
+      {onCopy != null && (
+        <span className={styles['copyBadge']} aria-hidden>
+          <FiCopy className={styles['copyIcon']} />
+          <FiCheck className={styles['checkIcon']} />
+        </span>
+      )}
     </button>
   );
 }
 
-/** The file's name: a click shows it in its folder. */
+/** The file's name: a click shows it in its folder, which the small folder after it says. */
 function FileName({ path }: { path: string }) {
   const { t } = useTranslation();
   return (
     <button type="button" className={styles['name']} onClick={() => showItemInFolder(path)} title={t('Show in folder')}>
-      <span>{getResultFileName(path)}</span>
+      <span className={styles['nameText']}>{getResultFileName(path)}</span>
+      <FiFolder aria-hidden className={styles['nameIcon']} />
     </button>
   );
 }
@@ -171,20 +177,30 @@ export default function ExportResult({ files, copyFiles, warnings, highlight, de
   }, []);
   useEffect(() => () => clearTimeout(outcomeTimer.current), []);
 
-  const showOutcome = useCallback((key: string, auto: boolean, copying: Promise<boolean>) => {
-    copying.then((ok) => {
-      setOutcome({ key, auto, ok, id: Date.now() });
-      clearTimeout(outcomeTimer.current);
-      outcomeTimer.current = setTimeout(() => setOutcome(undefined), getShowMs({ auto, ok }));
-    });
+  const setOutcomeFor = useCallback((next: { key: string, auto: boolean, ok: boolean }) => {
+    setOutcome({ ...next, id: Date.now() });
+    clearTimeout(outcomeTimer.current);
+    outcomeTimer.current = setTimeout(() => setOutcome(undefined), getShowMs(next));
   }, []);
 
+  const showOutcome = useCallback((key: string, auto: boolean, copying: Promise<boolean>) => {
+    copying.then((ok) => setOutcomeFor({ key, auto, ok }));
+  }, [setOutcomeFor]);
+
+  // A click or Ctrl+C shows its check at once; a copy that then fails swaps it for "Couldn't copy".
   const copyPaths = useCallback((paths: string[]) => {
-    showOutcome(paths.join('\n'), false, mainApi.copyFilesToClipboard(paths).then(() => true, (err: unknown) => {
+    const key = paths.join('\n');
+    setOutcomeFor({ key, auto: false, ok: true });
+    mainApi.copyFilesToClipboard(paths).catch((err: unknown) => {
       console.warn('Unable to copy the exported file', err);
-      return false;
-    }));
-  }, [showOutcome]);
+      setOutcomeFor({ key, auto: false, ok: false });
+    });
+  }, [setOutcomeFor]);
+
+  // The copy helper stays ready while the result is up (an export started it).
+  useEffect(() => {
+    if (canCopy) mainApi.warmCopyHelper().catch((err: unknown) => console.warn('Unable to start the copy helper', err));
+  }, [canCopy]);
 
   const mainKey = copyFiles.join('\n');
   useEffect(() => {
