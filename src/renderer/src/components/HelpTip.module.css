@@ -14,7 +14,8 @@
 }
 
 .button:hover,
-.buttonOpen {
+.buttonOpen,
+.buttonLit {
   color: var(--cp-accent-text);
   background: var(--cp-accent-soft);
 }

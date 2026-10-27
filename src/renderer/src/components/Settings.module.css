@@ -235,6 +235,12 @@
   padding: .45rem 0;
 }
 
+/* What the settings search found, in a name or an explanation: ClipPress blue, nothing more. */
+.searchMark {
+  background: none;
+  color: var(--cp-accent-text);
+}
+
 /* Back to a shortcut's default: a quiet arrow beside its name, ClipPress blue on hover. */
 .revert {
   all: unset;

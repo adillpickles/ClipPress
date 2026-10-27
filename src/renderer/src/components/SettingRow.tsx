@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import HelpTip from './HelpTip';
+import SearchHighlight from './SearchHighlight';
 import { matchesSearch, useSettingsSearch } from './settingsSearch';
 import styles from './Settings.module.css';
 
@@ -26,16 +27,19 @@ export default function SettingRow({ label, description, details, value, childre
   const query = useSettingsSearch();
   if (!matchesSearch(query, label, description, details, keywords)) return null;
   const hasHelp = description != null || details != null;
+  // Found by its explanation alone: the "i" lights up, since the name shows nothing found.
+  const foundInHelp = hasHelp && query.trim() !== '' && !matchesSearch(query, label) && matchesSearch(query, label, description, details);
+  const highlight = (node: ReactNode) => (typeof node === 'string' ? <SearchHighlight text={node} /> : node);
 
   return (
     <div className={styles['row']} data-setting-row="">
       <div className={styles['rowText']}>
         <div className={styles['rowLabel']}>
-          {controlId != null ? <label htmlFor={controlId}>{label}</label> : label}
+          {controlId != null ? <label htmlFor={controlId}>{highlight(label)}</label> : highlight(label)}
           {hasHelp && (
-            <HelpTip>
-              {description != null && <p>{description}</p>}
-              {details != null && <p>{details}</p>}
+            <HelpTip lit={foundInHelp}>
+              {description != null && <p>{highlight(description)}</p>}
+              {details != null && <p>{highlight(details)}</p>}
             </HelpTip>
           )}
         </div>

@@ -14,6 +14,7 @@ import { isMac } from '../util';
 import Button from './Button';
 import ConfirmButton from './ConfirmButton';
 import SettingRow from './SettingRow';
+import SearchHighlight from './SearchHighlight';
 import ShortcutField, { FixedShortcut, GestureField } from './ShortcutField';
 import Switch from './Switch';
 import TextInput from './TextInput';
@@ -252,7 +253,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
       <div key={gesture} className={styles['row']} data-setting-row="">
         <div className={styles['rowText']}>
           <div className={styles['rowLabel']}>
-            {label}
+            <SearchHighlight text={label} />
             {changed && <RevertButton keys={modifierKeyCodes[defaultMouseModifierKeys[gesture]]} onClick={() => setGestureModifiers(gesture, [defaultMouseModifierKeys[gesture]])} />}
           </div>
         </div>
@@ -277,7 +278,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
             <div key={action} className={styles['row']} data-setting-row="">
               <div className={styles['rowText']}>
                 <div className={styles['rowLabel']}>
-                  {label}
+                  <SearchHighlight text={label} />
                   {!sameKeys(keyBindings.filter((binding) => binding.action === action), defaultKeyBindings.filter((binding) => binding.action === action)) && (
                     <RevertButton keys={getShownBindings(defaultKeyBindings.filter((binding) => binding.action === action))[0]?.keys} onClick={() => revertAction(action)} />
                   )}
@@ -332,7 +333,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
               {[{ label: t('Open a clip'), keys: isMac ? 'MetaLeft+KeyO' : 'ControlLeft+KeyO' }, { label: t('Close the clip'), keys: isMac ? 'MetaLeft+KeyW' : 'ControlLeft+KeyW' }, { label: t('Settings'), keys: isMac ? 'MetaLeft+Comma' : 'ControlLeft+Comma' }]
                 .filter((item) => matchesSearch(query, item.label)).map((item) => (
                   <div key={item.label} className={styles['row']} data-setting-row="">
-                    <div className={styles['rowText']}><div className={styles['rowLabel']}>{item.label}</div></div>
+                    <div className={styles['rowText']}><div className={styles['rowLabel']}><SearchHighlight text={item.label} /></div></div>
                     <div className={styles['rowControl']}><FixedShortcut keys={item.keys} title={t('Set by the menu')} /></div>
                   </div>
                 ))}

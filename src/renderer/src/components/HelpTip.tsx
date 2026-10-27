@@ -13,7 +13,7 @@ const margin = 8;
  * A small "i" that explains something on hover or keyboard focus, instead of text that is always on screen.
  * The bubble is portalled to the app root so scroll areas and dialogs don't clip it.
  */
-export default function HelpTip({ children, label }: { children: ReactNode, label?: string }) {
+export default function HelpTip({ children, label, lit = false }: { children: ReactNode, label?: string, /** The settings search found its text. */ lit?: boolean }) {
   const { t } = useTranslation();
   const tipId = useId();
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -69,7 +69,7 @@ export default function HelpTip({ children, label }: { children: ReactNode, labe
       <button
         ref={buttonRef}
         type="button"
-        className={[styles['button'], ...(open ? [styles['buttonOpen']] : [])].join(' ')}
+        className={[styles['button'], ...(open ? [styles['buttonOpen']] : []), ...(lit ? [styles['buttonLit']] : [])].join(' ')}
         aria-label={label ?? t('More about this setting')}
         aria-describedby={open ? tipId : undefined}
         onMouseEnter={() => show(false)}
