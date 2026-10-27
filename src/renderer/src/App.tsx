@@ -100,6 +100,7 @@ import {
   isCuttingStart,
   isCuttingEnd,
   readFileFfprobeMeta,
+  readFileFfprobeMetaCached,
   getDefaultOutFormat,
   setCustomFfPath as ffmpegSetCustomFfPath,
   isIphoneHevc,
@@ -5203,9 +5204,10 @@ function App() {
         }
 
         performance.mark('clippress:load-probe-start');
-        const ffprobeMeta = await readFileFfprobeMeta(fp);
-        performance.mark('clippress:load-probed');
+        // Stat first: a recording probed before and unchanged since (Next clip, a reopen) skips ffprobe.
         const fileStats = await readFileStats(fp);
+        const ffprobeMeta = await readFileFfprobeMetaCached(fp, fileStats);
+        performance.mark('clippress:load-probed');
         // console.log('file meta read', fileMeta);
 
         const fileFormatNew = await getDefaultOutFormat({

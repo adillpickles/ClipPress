@@ -1,9 +1,10 @@
-import { readFileFfprobeMeta, renderAudioPeaks, streamFilmstripFrames } from './ffmpeg';
+import { readFileFfprobeMetaCached, renderAudioPeaks, streamFilmstripFrames } from './ffmpeg';
 import { getFilmstripFrameHeight, getVideoDisplayAspect } from './filmstrip';
 import FilmstripSession from './filmstripSession';
 import { isDurationValid } from './segments';
 import { getTimelineCacheDir, getTimelineCacheFileName, peaksMemory, savePeaks, saveStrip, stripMemory } from './timelineCacheIo';
 import { getAudioStreams, getRealVideoStreams } from './util/streams';
+import { readFileStats } from './util';
 
 const { access } = window.require('fs/promises');
 const { join } = window.require('path');
@@ -23,7 +24,8 @@ const isOnDisk = async (key: string, kind: 'strip' | 'peaks') => {
  */
 export default async function prefetchTimeline({ path, cacheKey, signal }: { path: string, cacheKey: string, signal: AbortSignal }) {
   const stripKey = `${cacheKey}|${getFilmstripFrameHeight(window.devicePixelRatio || 1)}`;
-  const meta = await readFileFfprobeMeta(path);
+  // Kept for when it opens (Next clip), which then skips its own probe.
+  const meta = await readFileFfprobeMetaCached(path, await readFileStats(path));
   if (signal.aborted) return;
   const duration = Number.parseFloat(meta.format.duration);
   if (!isDurationValid(duration)) return;

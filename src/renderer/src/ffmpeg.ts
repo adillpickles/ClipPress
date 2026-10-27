@@ -437,6 +437,29 @@ export async function readFileFfprobeMeta(filePath: string) {
 }
 
 export type FileFfprobeMeta = Awaited<ReturnType<typeof readFileFfprobeMeta>>;
+
+// The probes of the last few recordings, by exact path, size and modified time: opening one again (Next clip, which the
+// background preparation already probed, or a reopen) skips ffprobe, most of the wait before its first frame.
+const probedRecordings = new Map<string, Promise<FileFfprobeMeta>>();
+const maxProbedRecordings = 8;
+
+/** readFileFfprobeMeta, kept for a recording that hasn't changed since (`stats` from a stat of it just now). */
+export async function readFileFfprobeMetaCached(filePath: string, stats: { size: number, mtimeMs: number }) {
+  const key = `${filePath}|${stats.size}|${Math.round(stats.mtimeMs)}`;
+  let probing = probedRecordings.get(key);
+  if (probing != null) {
+    // The most recently used last, so the oldest goes first.
+    probedRecordings.delete(key);
+  } else {
+    probing = readFileFfprobeMeta(filePath);
+    // Only a probe that worked is kept.
+    probing.catch(() => { if (probedRecordings.get(key) === probing) probedRecordings.delete(key); });
+  }
+  probedRecordings.set(key, probing);
+  while (probedRecordings.size > maxProbedRecordings) probedRecordings.delete(probedRecordings.keys().next().value!);
+  // A copy each time: nothing that reads it can change what the next open gets.
+  return structuredClone(await probing);
+}
 export type FileStream = FileFfprobeMeta['streams'][number];
 
 async function renderThumbnail(filePath: string, timestamp: number, signal: AbortSignal) {
