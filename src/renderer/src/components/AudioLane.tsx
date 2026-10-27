@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from 'react';
+import { memo, useLayoutEffect, useRef } from 'react';
 import { FiVolumeX } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 
@@ -42,7 +42,8 @@ function AudioLane({ peaks, trackGainDb, height, segments, activeIndex, noneTick
   const canvasWidth = Math.max(0, Math.min(viewportPx, lanePx));
   const canvasLeft = Math.min(Math.max(0, visibleStartPx), Math.max(0, lanePx - canvasWidth));
 
-  useEffect(() => {
+  // Before the browser paints, so the waveform changes in the same frame as the clips above it (an edit, an undo).
+  useLayoutEffect(() => {
     const canvas = canvasRef.current;
     if (canvas == null || viewportPx <= 0) return;
     const dpr = window.devicePixelRatio || 1;

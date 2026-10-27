@@ -252,13 +252,12 @@ function Segment({
           // Until the frames arrive (or for clips without video), the clip is a soft block of its colour.
           backgroundColor: hasFrames ? 'transparent' : backgroundColor,
         }}
-        layout={!prefersReducedMotion && !instant}
-        // Measured only when this clip moves, not on every render of the timeline.
-        layoutDependency={`${seg.start}:${seg.end}`}
-        transition={instant ? { duration: 0 } : springAnimation}
-        initial={{ opacity: 0, scaleX: 0 }}
-        animate={{ opacity: 1, scaleX: 1 }}
-        exit={{ opacity: 0, scaleX: 0 }}
+        // An edit (I, O, undo…) moves the clip's edges at once, in the same frame as its audio and the waveform below:
+        // a spring here trailed them by a quarter of a second. A new or removed clip only fades.
+        transition={{ duration: prefersReducedMotion ? 0 : 0.12, ease: 'easeOut' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
         role="button"
         onClick={onClick}
         data-segment-id={seg.segId}
