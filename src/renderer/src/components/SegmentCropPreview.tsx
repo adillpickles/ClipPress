@@ -20,8 +20,10 @@ const corners: CropCorner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-r
  * (as in the Photos app and phone editors), a faint thirds grid, a small chip with the clip and the size, and one
  * compact toolbar over the video, so the picture keeps its size when editing starts.
  */
-export default function SegmentCropPreview({ children, videoWidth, videoHeight, rotation, crop, editing, clipLabel, onChange, onDone, doneKeys, finishRef }: {
+export default function SegmentCropPreview({ children, frameContent, videoWidth, videoHeight, rotation, crop, editing, clipLabel, onChange, onDone, doneKeys, finishRef }: {
   children: ReactNode,
+  /** Drawn inside the crop frame while editing, under its handles (the texts, which the export puts on the cropped picture). */
+  frameContent?: ReactNode,
   videoWidth: number,
   videoHeight: number,
   rotation: number | undefined,
@@ -239,6 +241,7 @@ export default function SegmentCropPreview({ children, videoWidth, videoHeight, 
             data-dragging={dragging}
             style={frameStyle}
           >
+            {frameContent}
             <button
               type="button"
               className={styles['move']}

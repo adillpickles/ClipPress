@@ -7328,6 +7328,18 @@ function App() {
                             onDone={() => setEditingCropSegmentId(undefined)}
                             doneKeys={keyBindingByAction['editCurrentSegmentCrop']?.keys}
                             finishRef={cropFinishRef}
+                            frameContent={editingCropSegment != null && activeVideoStream?.width != null && activeVideoStream.height != null && (
+                              // The export crops first and then draws the texts, so while cropping they sit in the frame.
+                              <TextOverlayEditor
+                                readOnly
+                                overlayClips={overlayClips}
+                                selectedOverlayId={undefined}
+                                relevantTime={relevantTime}
+                                videoWidth={activeVideoStream.width}
+                                videoHeight={activeVideoStream.height}
+                                rotation={effectiveRotation}
+                              />
+                            )}
                           >
                             {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                             <video
