@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
+import type { CSSProperties, MouseEvent as ReactMouseEvent, TextareaHTMLAttributes } from 'react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -34,6 +34,16 @@ const textStyle: CSSProperties = {
   textShadow: '0 1px 4px rgba(0, 0, 0, 0.9)',
   whiteSpace: 'pre',
 };
+
+/**
+ * One text's text box. Its ref callback stays the same while the box is there (an inline one changes every render, and
+ * React calls the old one with null, which would read as the box going away and stop typing).
+ */
+function OverlayTextArea({ overlayId, onTextAreaRef, ...props }: { overlayId: string, onTextAreaRef: (id: string, textArea: HTMLTextAreaElement | null) => void } & TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const ref = useCallback((textArea: HTMLTextAreaElement | null) => onTextAreaRef(overlayId, textArea), [onTextAreaRef, overlayId]);
+  // eslint-disable-next-line react/jsx-props-no-spreading
+  return <textarea ref={ref} {...props} />;
+}
 
 /** The word around a caret offset, for a double-click that starts typing. */
 function getWordAt(text: string, offset: number) {
@@ -164,6 +174,7 @@ function TextOverlayEditor({
       // Only from the page itself or the picture: a focused control (a button reached with Tab, a field, a dialog)
       // keeps its own Enter and Escape.
       const { target } = event;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable)) return;
       if (target instanceof Element && target !== document.body && target !== document.documentElement && wrapperRef.current?.contains(target) !== true) return;
       event.preventDefault();
       event.stopPropagation();
@@ -283,8 +294,9 @@ function TextOverlayEditor({
               {/* Laid out at the export's pixel size, then scaled to the preview. */}
               <div className={styles['content']} style={{ width: widthPx, height: layout.heightPx, transform: `scale(${previewScale})` }}>
                 {selected ? (
-                  <textarea
-                    ref={(textArea) => setTextAreaRef(overlayClip.overlayId, textArea)}
+                  <OverlayTextArea
+                    overlayId={overlayClip.overlayId}
+                    onTextAreaRef={setTextAreaRef}
                     aria-label={t('Text')}
                     tabIndex={typing ? 0 : -1}
                     value={overlayClip.text}
