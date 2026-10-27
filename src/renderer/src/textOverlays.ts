@@ -296,9 +296,10 @@ export async function renderTextOverlayPng({
 
   lines.forEach((line, index) => ctx.fillText(line, paddingX, paddingY + (index * lineHeightPx)));
 
-  const dataUrl = canvas.toDataURL('image/png');
-  const response = await fetch(dataUrl);
-  return new Uint8Array(await response.arrayBuffer());
+  // Encoded off the main thread (toDataURL blocked it, then went through base64 and back).
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (blob == null) throw new Error('Failed to encode text overlay image');
+  return new Uint8Array(await blob.arrayBuffer());
 }
 
 export function sanitizeOverlayClip(overlayClip: OverlayClip, fileDuration?: number): OverlayClip {

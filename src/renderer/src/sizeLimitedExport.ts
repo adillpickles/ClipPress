@@ -755,12 +755,14 @@ export async function exportSizeLimitedSegment({
     } satisfies SizeLimitedExecutionResult;
   }
 
-  const preparedOverlayAssets = overlayClips != null
-    && overlayClips.length > 0
+  // Only the texts this clip shows are drawn (each clip of an export gets them all).
+  const segmentOverlayClips = overlayClips?.filter((overlayClip) => overlayClip.start < segment.end && overlayClip.end > segment.start);
+  const preparedOverlayAssets = segmentOverlayClips != null
+    && segmentOverlayClips.length > 0
     && overlayVideoWidth != null
     && overlayVideoHeight != null
     ? await prepareTextOverlayAssets({
-      overlayClips,
+      overlayClips: segmentOverlayClips,
       videoWidth: overlayVideoWidth,
       videoHeight: overlayVideoHeight,
       rotation: sourceRotation ?? rotation,
