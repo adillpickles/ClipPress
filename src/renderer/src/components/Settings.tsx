@@ -17,7 +17,7 @@ import { getProjectsDir, getProjectStoreEnv } from '../projectStore';
 import styles from './Settings.module.css';
 import Select from './Select';
 import Button from './Button';
-import type { TunerType } from '../types';
+import NumberSettingRow from './NumberSettingRow';
 import SettingRow from './SettingRow';
 import QuickExportSettings from './QuickExportSettings';
 import ShortcutSettings from './ShortcutSettings';
@@ -33,7 +33,6 @@ type Category = SettingsCategory;
 function Settings({
   category,
   setCategory,
-  onTunerRequested,
   onKeyboardShortcutsDialogRequested,
   askForCleanupChoices,
   onProjectFileLocationChange,
@@ -43,7 +42,6 @@ function Settings({
   /** The tab shown: held by the app, so the shortcuts dialog can open Settings at Shortcuts. */
   category: Category,
   setCategory: (newCategory: Category) => void,
-  onTunerRequested: (type: TunerType) => void,
   onKeyboardShortcutsDialogRequested: () => void,
   askForCleanupChoices: () => Promise<unknown>,
   onProjectFileLocationChange: (location: ProjectFileLocation) => Promise<void>,
@@ -59,7 +57,7 @@ function Settings({
     window.require('electron').shell.openPath(getProjectsDir(getProjectStoreEnv())).catch?.(() => undefined);
   }, []);
 
-  const { customOutDir, setCustomOutDir, changeOutDir, ensureWritableOutDirWithFilePath, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, waveformHeight, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport, enableAdvancedMode, setEnableAdvancedMode, trashProjectWithSource, setTrashProjectWithSource, copyAfterExport, setCopyAfterExport, playOnOpen, setPlayOnOpen } = useUserSettings();
+  const { customOutDir, setCustomOutDir, changeOutDir, ensureWritableOutDirWithFilePath, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, waveformHeight, setWaveformHeight, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport, enableAdvancedMode, setEnableAdvancedMode, trashProjectWithSource, setTrashProjectWithSource, copyAfterExport, setCopyAfterExport, playOnOpen, setPlayOnOpen } = useUserSettings();
 
   const onLangChange = useCallback<ChangeEventHandler<HTMLSelectElement>>((e) => {
     const { value } = e.target;
@@ -107,7 +105,6 @@ function Settings({
     closeAndBinTempAndProject: t('Close the recording and move temporary and project files to the Recycle Bin'),
   }), [t]);
 
-  const formatSeconds = useCallback((seconds: number) => t('{{seconds}} s', { seconds: Number(seconds.toFixed(2)) }), [t]);
 
   const categories = useMemo(() => ([
     { id: 'general', label: t('General') },
@@ -232,9 +229,7 @@ function Settings({
             )}
 
             {showAdvancedSettings && (
-              <SettingRow label={t('Waveform height')} value={t('{{height}} px', { height: Math.round(waveformHeight) })}>
-                <Button onClick={() => onTunerRequested('waveformHeight')}>{t('Adjust')}</Button>
-              </SettingRow>
+              <NumberSettingRow label={t('Waveform height')} value={waveformHeight} setValue={setWaveformHeight} defaultValue={40} min={20} max={1000} step={10} fineStep={1} decimals={0} unit="px" />
             )}
           </>
         );
@@ -458,8 +453,6 @@ function Settings({
         return (
           <ShortcutSettings
             onAllShortcutsRequested={onKeyboardShortcutsDialogRequested}
-            onTunerRequested={onTunerRequested}
-            formatSeconds={formatSeconds}
             showAdvancedSettings={showAdvancedSettings}
           />
         );

@@ -10,8 +10,10 @@ import styles from './Settings.module.css';
  * (hover or focus), so the screen isn't full of explanations; a live value (a folder, a percentage, a status)
  * stays visible under the name.
  */
-export default function SettingRow({ label, description, details, value, children, controlId, keywords }: {
+export default function SettingRow({ label, labelExtra, description, details, value, children, controlId, keywords }: {
   label: ReactNode,
+  /** Beside the name, after its "i" (a ↺ back to the default). */
+  labelExtra?: ReactNode,
   /** What the setting does: shown on hover or focus of the "i". */
   description?: ReactNode,
   /** More about it, shown in the same bubble under the description. */
@@ -42,6 +44,7 @@ export default function SettingRow({ label, description, details, value, childre
               {details != null && <p>{highlight(details)}</p>}
             </HelpTip>
           )}
+          {labelExtra}
         </div>
         {value != null && <div className={styles['rowValue']}>{value}</div>}
       </div>

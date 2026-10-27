@@ -1,38 +1,30 @@
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FiRotateCcw, FiSearch } from 'react-icons/fi';
+import { FiSearch } from 'react-icons/fi';
 
 import type { KeyBinding, KeyboardAction, ModifierKey, MouseGesture } from '../../../common/types';
 import defaultKeyBindings, { defaultMouseModifierKeys } from '../../../common/defaultKeyBindings';
 import { normalizeQuickExportPresets, quickExportPresetActions } from '../../../common/quickExport';
 import useUserSettings from '../hooks/useUserSettings';
 import { getModifierKeyNames } from '../hooks/useTimelineScroll';
+import { useAppContext } from '../contexts';
+import { getKeyDisplayName } from '../util/keyNames';
 import { getQuickExportPresetLabel } from '../quickExport';
 import { getEventBindingKeys, getShownBindings, normalizeBindingKeys } from '../shortcutKeys';
 import { isMac } from '../util';
 import Button from './Button';
+import NumberSettingRow from './NumberSettingRow';
+import RevertButton from './RevertButton';
 import ConfirmButton from './ConfirmButton';
 import SettingRow from './SettingRow';
 import SearchHighlight from './SearchHighlight';
 import ShortcutField, { FixedShortcut, GestureField } from './ShortcutField';
 import Switch from './Switch';
 import TextInput from './TextInput';
-import type { TunerType } from '../types';
 import { SettingsSearchContext, matchesSearch, useSettingsSearch } from './settingsSearch';
 import styles from './Settings.module.css';
 
-/** Back to a shortcut's default, for that row alone: shown once it differs from it. */
-function RevertButton({ keys, onClick }: { keys?: string | undefined, onClick: () => void }) {
-  const { t } = useTranslation();
-  return (
-    <button type="button" className={styles['revert']} title={t('Back to the default')} data-tip-keys={keys} aria-label={t('Back to the default')} onClick={onClick}>
-      <FiRotateCcw aria-hidden />
-    </button>
-  );
-}
-
-const modifierKeyCodes: Record<ModifierKey, string> = { ctrl: 'ControlLeft', shift: 'ShiftLeft', alt: 'AltLeft', meta: 'MetaLeft' };
 const wheelGestures: readonly MouseGesture[] = ['zoom', 'frameSeek', 'keyframeSeek'];
 const allModifierKeys: readonly ModifierKey[] = ['ctrl', 'shift', 'alt', 'meta'];
 const sameKeys = (a: readonly KeyBinding[], b: readonly KeyBinding[]) => {
@@ -156,20 +148,20 @@ export function useShortcutGroups() {
  * and pressing new ones. The mouse and wheel gestures sit with the timeline's. Every action (the advanced ones too) is
  * in the full list of the shortcuts dialog.
  */
-export default function ShortcutSettings({ onAllShortcutsRequested, onTunerRequested, formatSeconds, showAdvancedSettings }: {
+export default function ShortcutSettings({ onAllShortcutsRequested, showAdvancedSettings }: {
   onAllShortcutsRequested: () => void,
-  onTunerRequested: (type: TunerType) => void,
-  formatSeconds: (seconds: number) => string,
   showAdvancedSettings: boolean,
 }) {
   const { t } = useTranslation();
+  const { keyboardLayoutMap } = useAppContext();
   const outerQuery = useSettingsSearch();
   const [ownQuery, setOwnQuery] = useState('');
   const searchId = useId();
   const {
     keyBindings, setKeyBindings, resetKeyBindings,
     mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, setMouseWheelFrameSeekModifierKey,
-    segmentMouseModifierKey, setSegmentMouseModifierKey, invertTimelineScroll, setInvertTimelineScroll, wheelSensitivity, keyboardNormalSeekSpeed,
+    segmentMouseModifierKey, setSegmentMouseModifierKey, invertTimelineScroll, setInvertTimelineScroll, wheelSensitivity, setWheelSensitivity,
+    keyboardNormalSeekSpeed, setKeyboardNormalSeekSpeed, setKeyboardSeekSpeed2, setKeyboardSeekSpeed3, setKeyboardSeekAccFactor,
     mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, keyboardSeekSpeed2, keyboardSeekSpeed3, keyboardSeekAccFactor,
     extraMouseModifierKeys, setExtraMouseModifierKeys,
   } = useUserSettings();
@@ -218,6 +210,9 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
   const { groups, getActionName } = useShortcutGroups();
   const query = [outerQuery, ownQuery].filter(Boolean).join(' ');
   const keysText = (action: KeyboardAction) => keyBindings.filter((b) => b.action === action).map((b) => b.keys.replaceAll(/Left|Right|Key|Digit/g, '').replaceAll('Control', 'Ctrl')).join(' ');
+
+  // The keys a row goes back to, in words ("Ctrl + Shift + Z"; none: "no shortcut").
+  const keysInWords = (keys: string | undefined) => (keys == null ? t('no shortcut') : keys.split('+').map((code) => (keyboardLayoutMap != null ? getKeyDisplayName(code, keyboardLayoutMap) : code)).map((name) => (name.length === 1 ? name.toUpperCase() : name)).join(' + '));
 
   // A row back to its default: its own keys as they came; a key of those another action took meanwhile comes back.
   const revertAction = (action: KeyboardAction) => {
@@ -274,7 +269,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
         <div className={styles['rowText']}>
           <div className={styles['rowLabel']}>
             <SearchHighlight text={label} />
-            {changed && <RevertButton keys={modifierKeyCodes[defaultMouseModifierKeys[gesture]]} onClick={() => restoreGesture(gesture)} />}
+            {changed && <RevertButton title={t('Back to {{value}}', { value: `${names[defaultMouseModifierKeys[gesture]]} + ${input}` })} onClick={() => restoreGesture(gesture)} />}
           </div>
         </div>
         <div className={[styles['rowControl'], styles['rowControlWide']].join(' ')}>
@@ -300,7 +295,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
                 <div className={styles['rowLabel']}>
                   <SearchHighlight text={label} />
                   {!sameKeys(keyBindings.filter((binding) => binding.action === action), defaultKeyBindings.filter((binding) => binding.action === action)) && (
-                    <RevertButton keys={getShownBindings(defaultKeyBindings.filter((binding) => binding.action === action))[0]?.keys} onClick={() => revertAction(action)} />
+                    <RevertButton title={t('Back to {{value}}', { value: keysInWords(getShownBindings(defaultKeyBindings.filter((binding) => binding.action === action))[0]?.keys) })} onClick={() => revertAction(action)} />
                   )}
                 </div>
               </div>
@@ -325,24 +320,15 @@ export default function ShortcutSettings({ onAllShortcutsRequested, onTunerReque
               <SettingRow label={t('Reverse wheel direction')} description={t('For moving along the timeline with the wheel.')}>
                 <Switch checked={invertTimelineScroll ?? false} onCheckedChange={setInvertTimelineScroll} aria-label={t('Reverse wheel direction')} />
               </SettingRow>
-              <SettingRow label={t('Wheel and trackpad sensitivity')} value={wheelSensitivity.toFixed(2)}>
-                <Button onClick={() => onTunerRequested('wheelSensitivity')}>{t('Adjust')}</Button>
-              </SettingRow>
-              <SettingRow label={t('Arrow key seek step')} description={t('How far the arrow keys move.')} value={formatSeconds(keyboardNormalSeekSpeed)}>
-                <Button onClick={() => onTunerRequested('keyboardNormalSeekSpeed')}>{t('Adjust')}</Button>
-              </SettingRow>
+              {/* Defaults as in configStore.ts. */}
+              <NumberSettingRow label={t('Wheel and trackpad sensitivity')} value={wheelSensitivity} setValue={setWheelSensitivity} defaultValue={0.2} min={0.01} max={4} step={0.05} fineStep={0.01} decimals={2} />
+              <NumberSettingRow label={t('Arrow key seek step')} description={t('How far the arrow keys move.')} value={keyboardNormalSeekSpeed} setValue={setKeyboardNormalSeekSpeed} defaultValue={1} min={0.1} max={120} step={0.5} fineStep={0.1} decimals={1} unit="s" />
               {showAdvancedSettings && (
                 <>
                   {renderGesture('keyframeSeek', t('Jump keyframes with the mouse wheel'), t('Scroll'))}
-                  <SettingRow label={t('Longer seek step')} value={formatSeconds(keyboardSeekSpeed2)}>
-                    <Button onClick={() => onTunerRequested('keyboardSeekSpeed2')}>{t('Adjust')}</Button>
-                  </SettingRow>
-                  <SettingRow label={t('Longest seek step')} value={formatSeconds(keyboardSeekSpeed3)}>
-                    <Button onClick={() => onTunerRequested('keyboardSeekSpeed3')}>{t('Adjust')}</Button>
-                  </SettingRow>
-                  <SettingRow label={t('Seek acceleration')} description={t('How quickly holding a seek key speeds up.')} value={`×${keyboardSeekAccFactor.toFixed(2)}`}>
-                    <Button onClick={() => onTunerRequested('keyboardSeekAccFactor')}>{t('Adjust')}</Button>
-                  </SettingRow>
+                  <NumberSettingRow label={t('Longer seek step')} value={keyboardSeekSpeed2} setValue={setKeyboardSeekSpeed2} defaultValue={10} min={0.1} max={600} step={1} fineStep={0.1} decimals={1} unit="s" />
+                  <NumberSettingRow label={t('Longest seek step')} value={keyboardSeekSpeed3} setValue={setKeyboardSeekSpeed3} defaultValue={60} min={1} max={3600} step={5} fineStep={1} decimals={0} unit="s" />
+                  <NumberSettingRow label={t('Seek acceleration')} description={t('How quickly holding a seek key speeds up.')} value={keyboardSeekAccFactor} setValue={setKeyboardSeekAccFactor} defaultValue={1.03} min={1} max={2} step={0.01} fineStep={0.01} decimals={2} unit="×" />
                 </>
               )}
             </>

@@ -13,19 +13,25 @@ const clickSlopPx = 3;
  * down to lower it, in `step`s (`fineStep` with Shift); click without dragging to type. While dragging, the pointer is
  * locked, so the drag never runs out of screen. Arrow keys step too.
  */
-export default function ScrubNumberInput({ id, value, onChange, min, max, step, fineStep = 1, unit, label, title, invalid = false, autoFocus = false, style }: {
+export default function ScrubNumberInput({ id, value, onChange, onBlur, min, max, step, fineStep = 1, unit, label, title, invalid = false, autoFocus = false, compact = false, maxLength, style }: {
   id?: string,
   value: string,
-  onChange: (newValue: string) => void,
+  /** `typed`: from the keyboard, as text (it may not be a whole number yet); otherwise a drag or an arrow key. */
+  onChange: (newValue: string, how: { typed: boolean }) => void,
+  onBlur?: (() => void) | undefined,
   min: number,
   max: number,
   step: number,
   fineStep?: number,
-  unit?: string,
+  unit?: string | undefined,
   label: string,
   title?: string,
   invalid?: boolean,
   autoFocus?: boolean,
+  /** The size of a settings row's control rather than a dialog's main field. */
+  compact?: boolean,
+  /** Longer than the largest value's digits, for decimals. */
+  maxLength?: number | undefined,
   style?: CSSProperties,
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -68,7 +74,7 @@ export default function ScrubNumberInput({ id, value, onChange, min, max, step, 
       }, () => undefined);
     }
     const grid = e.shiftKey ? fineStep : step;
-    onChange(String(onGrid(drag.startValue + (drag.distance / pxPerStep) * fineStep, grid)));
+    onChange(String(onGrid(drag.startValue + (drag.distance / pxPerStep) * fineStep, grid)), { typed: false });
   };
 
   const endDrag = (e: ReactPointerEvent<HTMLInputElement>) => {
@@ -93,11 +99,11 @@ export default function ScrubNumberInput({ id, value, onChange, min, max, step, 
     // From an off-grid value, the first step lands on the grid.
     const current = numeric();
     const next = onGrid(current + direction * grid, grid);
-    onChange(String(next === current ? clamp(current + direction * grid) : next));
+    onChange(String(next === current ? clamp(current + direction * grid) : next), { typed: false });
   };
 
   return (
-    <span className={[styles['field'], ...(scrubbing ? [styles['scrubbing']] : []), ...(invalid ? [styles['invalid']] : [])].join(' ')} style={style}>
+    <span className={[styles['field'], ...(compact ? [styles['compact']] : []), ...(scrubbing ? [styles['scrubbing']] : []), ...(invalid ? [styles['invalid']] : [])].join(' ')} style={style}>
       <input
         ref={inputRef}
         id={id}
@@ -105,7 +111,8 @@ export default function ScrubNumberInput({ id, value, onChange, min, max, step, 
         inputMode="numeric"
         className={styles['input']}
         value={value}
-        onChange={(e) => onChange(e.target.value.replaceAll(/[^\d.]/g, ''))}
+        onChange={(e) => onChange(e.target.value.replaceAll(/[^\d.]/g, ''), { typed: true })}
+        onBlur={onBlur}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
@@ -122,7 +129,7 @@ export default function ScrubNumberInput({ id, value, onChange, min, max, step, 
         aria-valuemax={max}
         aria-valuenow={Number.isFinite(Number(value)) ? Number(value) : undefined}
         title={title}
-        maxLength={String(max).length + 2}
+        maxLength={maxLength ?? String(max).length + 2}
         spellCheck={false}
       />
       {unit != null && <span className={styles['unit']} aria-hidden>{unit}</span>}

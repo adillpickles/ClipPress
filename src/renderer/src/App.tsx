@@ -62,7 +62,6 @@ import { getPreviewSegment, getPreviewSegmentSpeed, getSegmentSpeed, isSegmentSp
 import SegmentCropPreview from './components/SegmentCropPreview';
 import { getSegmentCrop, hasSegmentCrop } from './segmentCrop';
 import type { SegmentCrop } from './segmentCrop';
-import ValueTuners from './components/ValueTuners';
 import VolumeControl from './components/VolumeControl';
 import PlaybackStreamSelector from './components/PlaybackStreamSelector';
 import BatchFilesList from './components/BatchFilesList';
@@ -252,7 +251,6 @@ import type {
   SizeLimitedExecutionResult,
   SizeLimitedProgressMetadata,
   StateSegment,
-  TunerType,
 } from './types';
 import {
   goToTimecodeDirectArgsSchema,
@@ -466,7 +464,6 @@ function App() {
   const [lastCommandsVisible, setLastCommandsVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>('general');
-  const [tunerVisible, setTunerVisible] = useState<TunerType>();
   const [keyboardShortcutsVisible, setKeyboardShortcutsVisible] = useState(false);
   const [keyboardShortcutsView, setKeyboardShortcutsView] = useState<'all'>();
   const [alwaysConcatMultipleFiles, setAlwaysConcatMultipleFiles] = useState(false);
@@ -7092,16 +7089,6 @@ function App() {
     [detectedFileFormat, fileFormat, onOutputFormatUserChange],
   );
 
-  const onTunerRequested = useCallback(
-    (type: TunerType) => {
-      setTunerVisible(type);
-      if (type === 'waveformHeight') {
-        setWaveformMode('waveform');
-      }
-    },
-    [setWaveformMode],
-  );
-
   // Which encoders work is checked in the background once a clip has opened, so an export doesn't wait for it:
   // after its filmstrip and waveform, while the video is paused (or at most 30 s on); advanced mode's lanes aren't
   // tracked, so a while after.
@@ -7900,7 +7887,6 @@ function App() {
                       <Settings
                         category={settingsCategory}
                         setCategory={setSettingsCategory}
-                        onTunerRequested={onTunerRequested}
                         onKeyboardShortcutsDialogRequested={() => {
                           // From Settings: every action, the advanced ones too.
                           setKeyboardShortcutsView('all');
@@ -7912,30 +7898,6 @@ function App() {
                         setShowAdvancedSettings={setShowAdvancedSettings}
                       />
                     </div>
-                    <Dialog.CloseButton />
-                  </Dialog.Content>
-                </Dialog.Portal>
-              </Dialog.Root>
-
-              <Dialog.Root
-                open={tunerVisible != null}
-                onOpenChange={(open) => !open && setTunerVisible(undefined)}
-              >
-                <Dialog.Portal>
-                  <Dialog.Overlay />
-                  <Dialog.Content
-                    style={{
-                      width: '30rem',
-                      maxWidth: 'min(92vw, 30rem)',
-                    }}
-                    aria-describedby={undefined}
-                  >
-                    {tunerVisible != null && (
-                      <ValueTuners
-                        type={tunerVisible}
-                        onFinished={() => setTunerVisible(undefined)}
-                      />
-                    )}
                     <Dialog.CloseButton />
                   </Dialog.Content>
                 </Dialog.Portal>
