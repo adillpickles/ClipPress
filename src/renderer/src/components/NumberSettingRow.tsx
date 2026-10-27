@@ -32,7 +32,8 @@ export default function NumberSettingRow({ label, description, value, setValue, 
 
   const onChange = (text: string, { typed }: { typed: boolean }) => {
     setDraft(typed ? text : undefined);
-    if (isValid(text)) setValue(Number(text));
+    // At the precision it shows, so leaving the field shows what's kept.
+    if (isValid(text)) setValue(Number(Number(text).toFixed(decimals)));
   };
 
   const changed = Math.abs(value - defaultValue) > 1e-9;

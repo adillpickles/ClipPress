@@ -186,6 +186,9 @@ export function getTextLaneRows(clips: readonly TextLaneClip[], drag?: { overlay
   return result;
 }
 
+/** Where a browser may break a line inside a word: after a hyphen with a letter or digit before it and a letter after. */
+const hyphenBreak = /(?<=[\p{L}\p{N}]-)(?=\p{L})/u;
+
 function wrapTextLinesAt({
   ctx,
   text,
@@ -208,23 +211,30 @@ function wrapTextLinesAt({
     for (const match of paragraph.matchAll(/(\s*)(\S+)/g)) {
       const spaces = match[1] ?? '';
       const word = match[2] ?? '';
-      if (fits(line + spaces + word)) {
-        line += spaces + word;
-      } else {
-        if (line.length > 0 || spaces.length > 0) lines.push({ text: line, start: lineStart });
-        line = '';
-        lineStart = paragraphStart + match.index + spaces.length;
-        // Split a word wider than the box across lines instead of letting it overflow.
-        let charStart = lineStart;
-        for (const char of word) {
-          if (line.length > 0 && !fits(line + char)) {
-            lines.push({ text: line, start: lineStart });
-            line = '';
-            lineStart = charStart;
+      // A line can also break after a hyphen between letters ("one-tap"), as the text box breaks it.
+      let start = paragraphStart + match.index + spaces.length;
+      let before = spaces;
+      for (const part of word.split(hyphenBreak)) {
+        if (fits(line + before + part)) {
+          line += before + part;
+        } else {
+          if (line.length > 0 || before.length > 0) lines.push({ text: line, start: lineStart });
+          line = '';
+          lineStart = start;
+          // Split a word wider than the box across lines instead of letting it overflow.
+          let charStart = start;
+          for (const char of part) {
+            if (line.length > 0 && !fits(line + char)) {
+              lines.push({ text: line, start: lineStart });
+              line = '';
+              lineStart = charStart;
+            }
+            line += char;
+            charStart += char.length;
           }
-          line += char;
-          charStart += char.length;
         }
+        start += part.length;
+        before = '';
       }
     }
     lines.push({ text: line, start: lineStart });
@@ -299,9 +309,11 @@ export function getTextOverlayOffsetAt({ text, widthPx, fontSizePx, x, y, ctx: m
   const lines = wrapTextLinesAt({ ctx, text, maxWidth: Math.max(1, widthPx - (paddingX * 2)) });
   const lineHeightPx = fontSizePx * textOverlayLineHeight;
   const line = lines[clamp(Math.floor((y - paddingY) / lineHeightPx), 0, lines.length - 1)]!;
+  // Between whole characters as seen (an emoji, a letter with its accent), never inside one.
+  const boundaries = [0, ...[...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(line.text)].map(({ index, segment }) => index + segment.length)];
   let best = 0;
   let bestDistance = Infinity;
-  for (let index = 0; index <= line.text.length; index += 1) {
+  for (const index of boundaries) {
     const distance = Math.abs(ctx.measureText(line.text.slice(0, index)).width - (x - paddingX));
     if (distance < bestDistance) {
       best = index;

@@ -131,6 +131,16 @@ describe('text overlay layout', () => {
     expect(at(9, 0)).toBe(13);
   });
 
+  it('breaks a line after a hyphen between letters, as the text box does, and never puts the caret inside an emoji', () => {
+    const ctx = fakeMeasureContext();
+    expect(layoutTextOverlay({ text: 'aaaa-bbbb', widthPx: 100, fontSizePx: 20, ctx }).lines).toEqual(['aaaa-', 'bbbb']);
+    expect(layoutTextOverlay({ text: 'aa-1', widthPx: 100, fontSizePx: 20, ctx }).lines).toEqual(['aa-1']);
+    expect(getTextOverlayOffsetAt({ text: 'aaaa-bbbb', widthPx: 100, fontSizePx: 20, x: 7 + 2 * 10, y: 4 + 23 + 5, ctx })).toBe(7);
+    // The fake ctx counts code units: a click halfway into the emoji lands before or after it, not between its halves.
+    const emoji = getTextOverlayOffsetAt({ text: 'a\u{1F525}b', widthPx: 100, fontSizePx: 20, x: 7 + 1.6 * 10, y: 9, ctx });
+    expect([1, 3]).toContain(emoji);
+  });
+
   it('keeps legacy clips at the size their box height implied and pins it when fitted', () => {
     const legacy = { overlayId: 'a', type: 'text' as const, start: 0, end: 1, text: 'one\ntwo', box: { x: 0, y: 0, width: 0.5, height: 0.2 } };
     expect(getOverlayFontSize(legacy)).toBeCloseTo(0.056);
