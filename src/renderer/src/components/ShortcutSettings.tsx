@@ -132,6 +132,7 @@ export function useShortcutGroups() {
       title: t('ClipPress'),
       items: [
         { action: 'toggleKeyboardShortcuts', label: t('Keyboard shortcuts') },
+        { action: 'toggleSegmentsList', label: simpleMode ? t('Show or hide the clips panel') : t('Show sidebar') },
         { action: 'cleanupFilesDialog', label: t('Close and clean up files') },
       ],
     },

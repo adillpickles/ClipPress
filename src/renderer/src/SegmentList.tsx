@@ -46,6 +46,9 @@ const disabledButtonStyle = { color: 'var(--gray-10)', backgroundColor: 'var(--g
 const neutralButtonColor = 'var(--gray-9)';
 
 /** Edits a clip's name in place: Enter or leaving the field saves, Escape cancels. */
+/** The shortcuts of the card menu's items (key strings, as in the key bindings). */
+export interface ClipMenuKeys { rename?: string | undefined, duplicate?: string | undefined, remove?: string | undefined }
+
 function ClipNameInput({ name, placeholder, maxLength, onDone }: {
   name: string,
   placeholder: string,
@@ -139,12 +142,18 @@ const Segment = memo(({
   onDuplicateSegmentClick,
   getSegEstimatedSize,
   onEditSpeed, onEditCrop, noneTicked = false, renaming = false, onStartRename, onFinishRename, maxLabelLength,
+  inPickedGroup = false, onRemovePicked, menuKeys,
 }: {
   seg: StateSegment | InverseCutSegment,
   index: number,
   isActive?: boolean | undefined,
   /** One of the clips picked for Delete (Ctrl or Shift+click, a selection box). */
   picked?: boolean | undefined,
+  /** Picked along with other clips: a right-click keeps them all, and its Remove takes them all, as Delete does. */
+  inPickedGroup?: boolean | undefined,
+  onRemovePicked: () => void,
+  /** The keys the menu's items share with the shortcuts, true once a right-click has selected the card. */
+  menuKeys?: ClipMenuKeys | undefined,
   dragging?: boolean | undefined,
   formatTimecode: FormatTimecode,
   getFrameCount: GetFrameCount,
@@ -201,9 +210,11 @@ const Segment = memo(({
     // Simple mode keeps what belongs to a card in the list: speed and crop are the timeline clip's, and the cards are
     // dragged to reorder.
     if (simpleMode) {
+      // A right-click selects the card (see onContextMenu), so the keys are true: they act on the selected clip. Picked
+      // with others, Remove takes them all (Delete's own action); Rename and Duplicate this one, without a key.
       return [
-        { label: t('Rename clip'), click: startRenaming },
-        { label: t('Duplicate clip'), click: () => onDuplicateSegmentClick(seg) },
+        { label: t('Rename clip'), keys: inPickedGroup ? undefined : menuKeys?.rename, click: startRenaming },
+        { label: t('Duplicate clip'), keys: inPickedGroup ? undefined : menuKeys?.duplicate, click: () => onDuplicateSegmentClick(seg) },
 
         { type: 'separator' },
 
@@ -212,8 +223,10 @@ const Segment = memo(({
 
         { type: 'separator' },
 
-        // The whole clip, as the title bar's Remove clip does; without `true` it only takes off the end and leaves a marker.
-        { label: t('Remove clip'), click: () => onRemovePress(index, true) },
+        inPickedGroup
+          ? { label: t('Remove the selected clips'), keys: menuKeys?.remove, click: onRemovePicked }
+          // The whole clip, as the title bar's Remove clip does; without `true` it only takes off the end and leaves a marker.
+          : { label: t('Remove clip'), keys: menuKeys?.remove, click: () => onRemovePress(index, true) },
       ];
     }
 
@@ -258,7 +271,7 @@ const Segment = memo(({
       { label: t('Segment tags'), click: () => onEditSegmentTags(index) },
       { label: t('Extract frames as image files'), click: () => onExtractSegmentsFramesAsImages([seg]) },
     ];
-  }, [invertCutSegments, simpleMode, startRenaming, selected, onToggleSegmentSelected, t, addSegment, onLabelSelectedSegments, onRemoveSelected, onExtractSelectedSegmentsFramesAsImages, updateSegOrder, index, jumpSegStart, jumpSegEnd, onLabelPress, onRemovePress, onDuplicateSegmentClick, seg, onSelectSingleSegment, onSelectAllSegments, onDeselectAllSegments, onSelectAllMarkers, onSelectSegmentsByLabel, onSelectSegmentsByExpr, onInvertSelectedSegments, onMutateSegmentsByExpr, onReorderPress, onEditSegmentTags, onExtractSegmentsFramesAsImages, onEditSpeed, onEditCrop]);
+  }, [invertCutSegments, simpleMode, startRenaming, inPickedGroup, menuKeys, onRemovePicked, selected, onToggleSegmentSelected, t, addSegment, onLabelSelectedSegments, onRemoveSelected, onExtractSelectedSegmentsFramesAsImages, updateSegOrder, index, jumpSegStart, jumpSegEnd, onLabelPress, onRemovePress, onDuplicateSegmentClick, seg, onSelectSingleSegment, onSelectAllSegments, onDeselectAllSegments, onSelectAllMarkers, onSelectSegmentsByLabel, onSelectSegmentsByExpr, onInvertSelectedSegments, onMutateSegmentsByExpr, onReorderPress, onEditSegmentTags, onExtractSegmentsFramesAsImages, onEditSpeed, onEditCrop]);
 
   useContextMenu(ref, contextMenuTemplate);
 
@@ -406,6 +419,8 @@ const Segment = memo(({
         role="button"
         onClick={handleSegmentClick}
         onDoubleClick={onDoubleClick}
+        // As in Explorer: the clip right-clicked is the one selected (picked along with others, they all stay).
+        onContextMenu={simpleMode && !invertCutSegments && !inPickedGroup ? () => onClick(index) : undefined}
         style={{ ...colorVars, transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition ?? undefined, visibility: sortable.isDragging ? 'hidden' : undefined }}
         className={[styles['clip'], ...(picked && !isActive ? [styles['clipPicked']] : []), ...(isActive ? [styles['clipActive']] : []), ...(!included ? [styles['clipExcluded']] : []), ...(dragging ? [styles['clipDragging']] : [])].join(' ')}
         aria-pressed={picked || isActive}
@@ -577,9 +592,14 @@ function SegmentList({
   getSegEstimatedSize,
   onEditSpeed, onEditCrop, maxLabelLength,
   renamingSegId, setRenamingSegId,
-  pickedClipIds, onPickClipsInBox, onStartOver, animated,
+  pickedClipIds, onPickClipsInBox, onStartOver, animated, onRemovePicked, menuKeys, togglePanelKeys,
 }: {
   width: number,
+  /** Delete's own action: the picked clips, otherwise the selected one. */
+  onRemovePicked: () => void,
+  menuKeys?: ClipMenuKeys | undefined,
+  /** The shortcut that shows and hides this panel, for its hint. */
+  togglePanelKeys?: string | undefined,
   /** Shown or hidden by the user (not by opening a recording): it slides, and the editor widens or narrows with it. */
   animated: boolean,
   fileDuration: number | undefined,
@@ -936,6 +956,9 @@ function SegmentList({
         index={index}
         isActive={isActive}
         picked={pickedClipIds.includes(seg.segId)}
+        inPickedGroup={pickedClipIds.length > 1 && pickedClipIds.includes(seg.segId)}
+        onRemovePicked={onRemovePicked}
+        menuKeys={menuKeys}
         dragging={dragging}
         selected={selected}
         onClick={onSegClick}
@@ -1036,7 +1059,7 @@ function SegmentList({
               </button>
               )}
               {/* It moves off to the right: the tab at the window's edge brings it back. */}
-              <button type="button" className={styles['headerClose']} title={t('Hide the clips panel')} onClick={toggleSegmentsList}>
+              <button type="button" className={styles['headerClose']} title={t('Hide the clips panel')} data-tip-keys={togglePanelKeys} onClick={toggleSegmentsList}>
                 <LuPanelRightClose aria-hidden />
               </button>
             </div>

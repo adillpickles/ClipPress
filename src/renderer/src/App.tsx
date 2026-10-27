@@ -665,6 +665,11 @@ function App() {
     setCutEnd: keyBindingByAction['setCutEnd']?.keys,
     goToTimecode: keyBindingByAction['goToTimecode']?.keys,
   }), [keyBindingByAction]);
+  const clipMenuKeys = useMemo(() => ({
+    rename: keyBindingByAction['labelCurrentSegment']?.keys,
+    duplicate: keyBindingByAction['duplicateCurrentSegment']?.keys,
+    remove: keyBindingByAction['removeSelectedClips']?.keys,
+  }), [keyBindingByAction]);
 
   const { working, setWorking, workingRef, abortWorking } = useLoading();
   const {
@@ -7269,7 +7274,7 @@ function App() {
 
               <div className={styles['mainArea']}>
                 {!showRightBar && clipsPanelGone && isFileOpened && filePath != null && (
-                  <ClipsPanelTab label={simpleMode ? t('Show clips') : t('Show sidebar')} onClick={toggleSegmentsList} />
+                  <ClipsPanelTab label={simpleMode ? t('Show clips') : t('Show sidebar')} keys={keyBindingByAction['toggleSegmentsList']?.keys} onClick={toggleSegmentsList} />
                 )}
                 <AnimatePresence>
                   {showLeftBar && isFileOpened && (
@@ -7685,6 +7690,9 @@ function App() {
                       removeSegment={removeSegment}
                       onRemoveSelected={removeSelectedSegments}
                       toggleSegmentsList={toggleSegmentsList}
+                      togglePanelKeys={keyBindingByAction['toggleSegmentsList']?.keys}
+                      onRemovePicked={removeSelectedClips}
+                      menuKeys={clipMenuKeys}
                       splitCurrentSegment={splitCurrentSegment}
                       selectedSegments={segmentsOrInverse.selected}
                       fileDuration={fileDuration}

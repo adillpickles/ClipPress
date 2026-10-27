@@ -90,6 +90,10 @@ const defaultKeyBindings: KeyBinding[] = [
   { keys: 'AltLeft+ArrowUp', action: 'increaseVolume' },
   { keys: 'AltLeft+ArrowDown', action: 'decreaseVolume' },
   { keys: 'KeyM', action: 'toggleMuted' },
+
+  { keys: 'AltLeft+KeyP', action: 'toggleSegmentsList' },
+  { keys: 'ControlLeft+KeyD', action: 'duplicateCurrentSegment' },
+  { keys: 'MetaLeft+KeyD', action: 'duplicateCurrentSegment' },
 ];
 
 /** The mouse gestures' own modifiers (Ctrl+wheel zooms, and so on). */

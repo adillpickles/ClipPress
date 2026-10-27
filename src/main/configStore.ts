@@ -669,4 +669,14 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     if (withQuickExports !== existingBindings) set('keyBindings', withQuickExports);
     setStored('quickExportShortcutsMigrated', true);
   }
+
+  // Alt+P shows and hides the Clips panel, Ctrl+D duplicates a clip: for existing settings too, where the key is still
+  // free and the action has none.
+  if (store.get('panelDuplicateShortcutsMigrated') !== true) {
+    const existingBindings = store.get('keyBindings') as KeyBinding[];
+    const added = defaultKeyBindings.filter((binding) => (binding.action === 'toggleSegmentsList' || binding.action === 'duplicateCurrentSegment')
+      && !existingBindings.some((existing) => existing.keys === binding.keys || existing.action === binding.action));
+    if (added.length > 0) set('keyBindings', [...existingBindings, ...added]);
+    setStored('panelDuplicateShortcutsMigrated', true);
+  }
 }
