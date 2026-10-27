@@ -143,9 +143,9 @@ describe('text overlay layout', () => {
 
   it('never splits a letter from its accent when a word is too wide for the box', () => {
     const ctx = fakeMeasureContext();
-    // 20px: 8 code units fit; the accented e (two code units) stays whole on its line.
-    const { lines } = layoutTextOverlay({ text: 'aaaaaae\u0301bb', widthPx: 100, fontSizePx: 20, ctx });
-    expect(lines).toEqual(['aaaaaae\u0301', 'bb']);
+    // 20px: 8 code units fit. Seven a's and the e fit, its accent doesn't: the accented e moves down whole.
+    const { lines } = layoutTextOverlay({ text: 'aaaaaaae\u0301bb', widthPx: 100, fontSizePx: 20, ctx });
+    expect(lines).toEqual(['aaaaaaa', 'e\u0301bb']);
   });
 
   it('keeps legacy clips at the size their box height implied and pins it when fitted', () => {
