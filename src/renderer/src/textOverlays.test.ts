@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createDefaultTextOverlayClip, sanitizeOverlayClip, minTextOverlayDuration, getVideoStreamRotation, getRotatedVideoDimensions, fitTextOverlayBox, getOverlayFontSize, layoutTextOverlay, getTextLaneRows } from './textOverlays';
+import { createDefaultTextOverlayClip, sanitizeOverlayClip, minTextOverlayDuration, getVideoStreamRotation, getRotatedVideoDimensions, fitTextOverlayBox, getOverlayFontSize, layoutTextOverlay, getTextLaneRows, getTextOverlayOffsetAt } from './textOverlays';
 
 describe('video rotation', () => {
   it('reads modern display matrices in the same direction as the preview and crop bounds', () => {
@@ -115,6 +115,20 @@ describe('text overlay layout', () => {
     // Spaces at the end of a line don't wrap it.
     expect(layoutTextOverlay({ text: 'aaaaaaaa   ', widthPx: 100, fontSizePx: 20, ctx }).lines).toEqual(['aaaaaaaa']);
     expect(layoutTextOverlay({ text: 'a\n\nb', widthPx: 100, fontSizePx: 20, ctx }).lines).toEqual(['a', '', 'b']);
+  });
+
+  it('finds the place in the text under a point of the box, on any line, empty ones too', () => {
+    const ctx = fakeMeasureContext();
+    // 20px: 10px a character, 7px / 4px padding, lines 23px apart. Lines: 'aaaa', 'bbbb', '', 'A', 'BB'.
+    const text = 'aaaa bbbb\n\nA\nBB';
+    const at = (line: number, chars: number) => getTextOverlayOffsetAt({ text, widthPx: 100, fontSizePx: 20, x: 7 + chars * 10, y: 4 + line * 23 + 5, ctx });
+    expect(at(0, 2.4)).toBe(2);
+    expect(at(1, 4)).toBe(9);
+    expect(at(2, 3)).toBe(10);
+    expect(at(3, 9)).toBe(12);
+    expect(at(4, 1)).toBe(14);
+    // Below the last line: on the last line.
+    expect(at(9, 0)).toBe(13);
   });
 
   it('keeps legacy clips at the size their box height implied and pins it when fitted', () => {

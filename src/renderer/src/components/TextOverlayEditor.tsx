@@ -9,6 +9,7 @@ import {
   fitTextOverlayBox,
   getOverlayFontSize,
   getRotatedVideoDimensions,
+  getTextOverlayOffsetAt,
   isOverlayActiveAtTime,
   layoutTextOverlay,
   textOverlayLineHeight,
@@ -132,12 +133,12 @@ function TextOverlayEditor({
     const textArea = textAreasRef.current.get(overlayId);
     if (textArea == null) return;
     let caret: number | undefined;
-    if (at != null) {
-      // The text box ignores the pointer until typing starts; it has to be hit-testable to find the caret there.
-      textArea.style.pointerEvents = 'auto';
-      const position = document.caretPositionFromPoint?.(at.x, at.y);
-      textArea.style.pointerEvents = '';
-      if (position?.offsetNode === textArea) caret = position.offset;
+    const content = textArea.parentElement;
+    if (at != null && content != null && content.offsetWidth > 0) {
+      // From the text's own layout (the box is laid out at the export's size, then scaled down to the preview).
+      const rect = content.getBoundingClientRect();
+      const scale = rect.width / content.offsetWidth;
+      caret = getTextOverlayOffsetAt({ text: textArea.value, widthPx: content.offsetWidth, fontSizePx: Number.parseFloat(getComputedStyle(textArea).fontSize), x: (at.x - rect.left) / scale, y: (at.y - rect.top) / scale });
     }
     textArea.focus();
     // Where it was clicked, the caret alone (nothing selected); from Enter or Add Text, all of it, to type over.

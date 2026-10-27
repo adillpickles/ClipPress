@@ -186,7 +186,7 @@ export function getTextLaneRows(clips: readonly TextLaneClip[], drag?: { overlay
   return result;
 }
 
-function wrapTextLines({
+function wrapTextLinesAt({
   ctx,
   text,
   maxWidth,
@@ -196,34 +196,54 @@ function wrapTextLines({
   maxWidth: number,
 }) {
   const fits = (line: string) => ctx.measureText(line).width <= maxWidth;
-  const lines: string[] = [];
+  // Each line with where it starts in the text (a space at a wrap belongs to no line).
+  const lines: { text: string, start: number }[] = [];
 
   // Wrapped the way the text box shows it while typing (white-space: pre-wrap): spaces stay as typed, except at a
   // line break, where they hang at the end of the line instead of starting the next one.
+  let paragraphStart = 0;
   for (const paragraph of text.split('\n')) {
     let line = '';
+    let lineStart = paragraphStart;
     for (const match of paragraph.matchAll(/(\s*)(\S+)/g)) {
       const spaces = match[1] ?? '';
       const word = match[2] ?? '';
       if (fits(line + spaces + word)) {
         line += spaces + word;
       } else {
-        if (line.length > 0 || spaces.length > 0) lines.push(line);
+        if (line.length > 0 || spaces.length > 0) lines.push({ text: line, start: lineStart });
         line = '';
+        lineStart = paragraphStart + match.index + spaces.length;
         // Split a word wider than the box across lines instead of letting it overflow.
+        let charStart = lineStart;
         for (const char of word) {
           if (line.length > 0 && !fits(line + char)) {
-            lines.push(line);
+            lines.push({ text: line, start: lineStart });
             line = '';
+            lineStart = charStart;
           }
           line += char;
+          charStart += char.length;
         }
       }
     }
-    lines.push(line);
+    lines.push({ text: line, start: lineStart });
+    paragraphStart += paragraph.length + 1;
   }
 
-  return lines.length > 0 ? lines : [''];
+  return lines.length > 0 ? lines : [{ text: '', start: 0 }];
+}
+
+function wrapTextLines({
+  ctx,
+  text,
+  maxWidth,
+}: {
+  ctx: Pick<CanvasRenderingContext2D, 'measureText'>,
+  text: string,
+  maxWidth: number,
+}) {
+  return wrapTextLinesAt({ ctx, text, maxWidth }).map((line) => line.text);
 }
 
 export function getOverlayFontSize(overlayClip: Pick<TextOverlayClip, 'fontSize' | 'box'>) {
@@ -257,6 +277,38 @@ export function layoutTextOverlay({ text, widthPx, fontSizePx, ctx: measureConte
   const lines = wrapTextLines({ ctx, text, maxWidth: Math.max(1, widthPx - (paddingX * 2)) });
   const lineHeightPx = fontSizePx * textOverlayLineHeight;
   return { lines, lineHeightPx, paddingX, paddingY, heightPx: (lines.length * lineHeightPx) + (paddingY * 2) };
+}
+
+/**
+ * Where in the text a point of its box falls (video pixels from the box's top left), from the same layout the box and
+ * the export use: the line under it, then the letter boundary nearest it. For a click that starts typing: the
+ * browser's own answer for a text box counts within the clicked line only.
+ */
+export function getTextOverlayOffsetAt({ text, widthPx, fontSizePx, x, y, ctx: measureContext }: {
+  text: string,
+  widthPx: number,
+  fontSizePx: number,
+  x: number,
+  y: number,
+  ctx?: MeasureContext | undefined,
+}) {
+  const paddingX = fontSizePx * 0.35;
+  const paddingY = fontSizePx * 0.2;
+  const ctx = measureContext ?? getMeasureContext();
+  ctx.font = `${fontSizePx}px ${defaultTextOverlayFontFamily}`;
+  const lines = wrapTextLinesAt({ ctx, text, maxWidth: Math.max(1, widthPx - (paddingX * 2)) });
+  const lineHeightPx = fontSizePx * textOverlayLineHeight;
+  const line = lines[clamp(Math.floor((y - paddingY) / lineHeightPx), 0, lines.length - 1)]!;
+  let best = 0;
+  let bestDistance = Infinity;
+  for (let index = 0; index <= line.text.length; index += 1) {
+    const distance = Math.abs(ctx.measureText(line.text.slice(0, index)).width - (x - paddingX));
+    if (distance < bestDistance) {
+      best = index;
+      bestDistance = distance;
+    }
+  }
+  return line.start + best;
 }
 
 /** Box height (fraction of video height) that fits the clip's text; also pins the font size. */
