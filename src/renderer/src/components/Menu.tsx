@@ -5,7 +5,7 @@ import { FiCheck, FiChevronRight } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 
 import renderKeys from './renderKeys';
-import { confirmLockMs } from './ConfirmButton';
+import { confirmIdleMs, confirmLockMs } from './ConfirmButton';
 import { splitKeyboardKeys } from '../util';
 import styles from './Menu.module.css';
 
@@ -301,6 +301,14 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
     confirmingRef.current = confirming;
   }, [confirming, options, panels]);
 
+  // Another item highlighted (the pointer or the keyboard moved on): the question goes back to its item.
+  const leaveConfirm = useCallback((level: number, index: number | undefined) => {
+    const { current } = confirmingRef;
+    if (current == null || index == null || current.level !== level || current.index === index) return;
+    clearTimeout(confirmTimer.current);
+    setConfirming(undefined);
+  }, []);
+
   const close = useCallback((restoreFocus = true) => {
     clearTimeout(submenuTimer.current);
     clearTimeout(confirmTimer.current);
@@ -360,6 +368,7 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
 
   const onHover = useCallback((level: number, index: number | undefined) => {
     clearTimeout(submenuTimer.current);
+    leaveConfirm(level, index);
     setPanels((current) => {
       const panel = current[level];
       if (panel == null) return current;
@@ -376,7 +385,7 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
       // On another item: its submenu goes after a moment (time to cross over to it).
       submenuTimer.current = setTimeout(() => setPanels((current) => current.slice(0, level + 1).map((p, i) => (i === level ? { ...p, open: undefined } : p))), submenuDelayMs);
     }
-  }, [openSubmenu]);
+  }, [leaveConfirm, openSubmenu]);
 
   const activate = useCallback((level: number, index: number) => {
     const item = panelsRef.current[level]?.items[index];
@@ -390,7 +399,11 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
       if (current?.level !== level || current.index !== index) {
         clearTimeout(confirmTimer.current);
         setConfirming({ level, index, armed: false });
-        confirmTimer.current = setTimeout(() => setConfirming((c) => (c?.level === level && c.index === index ? { ...c, armed: true } : c)), confirmLockMs);
+        // Locked for a moment, then armed; left alone, it goes back to the item (as ConfirmButton does).
+        confirmTimer.current = setTimeout(() => {
+          setConfirming((c) => (c?.level === level && c.index === index ? { ...c, armed: true } : c));
+          confirmTimer.current = setTimeout(() => setConfirming((c) => (c?.level === level && c.index === index ? undefined : c)), confirmIdleMs);
+        }, confirmLockMs);
         return;
       }
       // Still locked: a double-click doesn't do it.
@@ -456,7 +469,10 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
       }
       return from;
     };
-    const setActive = (level: number, active: number | undefined) => setPanels((current) => current.map((p, i) => (i === level ? { ...p, active } : p)));
+    const setActive = (level: number, active: number | undefined) => {
+      leaveConfirm(level, active);
+      setPanels((current) => current.map((p, i) => (i === level ? { ...p, active } : p)));
+    };
     const onKeyDown = (e: KeyboardEvent) => {
       const { current } = panelsRef;
       const level = current.length - 1;
@@ -534,7 +550,7 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
       window.removeEventListener('blur', onBlur);
       window.removeEventListener('resize', onBlur);
     };
-  }, [activate, close, openSubmenu, options]);
+  }, [activate, close, leaveConfirm, openSubmenu, options]);
 
   return (
     <>

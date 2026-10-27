@@ -8,7 +8,7 @@ import styles from './ConfirmButton.module.css';
 /** How long the question stays locked, so a double-click can't confirm by accident. */
 export const confirmLockMs = 1000;
 /** A question left alone goes back to the button. */
-const confirmIdleMs = 5000;
+export const confirmIdleMs = 5000;
 
 /**
  * A button for a small action that can't be taken back, confirmed in place instead of in a dialog: it turns red under
