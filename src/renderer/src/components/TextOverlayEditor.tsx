@@ -161,9 +161,10 @@ function TextOverlayEditor({
     const overlayId = selectedOverlayId;
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.key !== 'Enter' && event.key !== 'Escape') || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      // Only from the page itself or the picture: a focused control (a button reached with Tab, a field, a dialog)
+      // keeps its own Enter and Escape.
       const { target } = event;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable)) return;
-      if (target instanceof Element && target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], .swal2-container') != null) return;
+      if (target instanceof Element && target !== document.body && target !== document.documentElement && wrapperRef.current?.contains(target) !== true) return;
       event.preventDefault();
       event.stopPropagation();
       if (event.key === 'Enter') startTyping(overlayId);
@@ -174,8 +175,13 @@ function TextOverlayEditor({
   }, [keysBlocked, onSelectOverlay, selectedOverlayId, selectedVisible, startTyping, typingId]);
 
   const setTextAreaRef = useCallback((overlayId: string, textArea: HTMLTextAreaElement | null) => {
-    if (textArea == null) textAreasRef.current.delete(overlayId);
-    else textAreasRef.current.set(overlayId, textArea);
+    if (textArea != null) {
+      textAreasRef.current.set(overlayId, textArea);
+      return;
+    }
+    textAreasRef.current.delete(overlayId);
+    // A text box removed while typing (another text selected, the playhead moved on) gets no blur event.
+    setTypingId((id) => (id === overlayId ? undefined : id));
   }, []);
 
   const measureHeight = useCallback((text: string) => (fontSize: number, width: number) => (
