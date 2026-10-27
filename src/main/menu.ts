@@ -33,7 +33,8 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
       action(t('Split clip at playhead'), 'splitCurrentSegment'),
       action(t('Duplicate clip'), 'duplicateCurrentSegment'),
       action(t('Rename clip…'), 'labelCurrentSegment'),
-      action(t('Remove clip'), 'removeCurrentSegment'),
+      // The same as Delete (the picked clips, else the selected one), so the menu shows that key.
+      action(t('Remove clip'), 'removeSelectedClips'),
       { type: 'separator' },
       action(t('Add text'), 'addTextOverlay'),
       action(t('Zoom / crop clip…'), 'editCurrentSegmentCrop'),
@@ -91,13 +92,14 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
         ] satisfies MenuItemConstructorOptions[]),
         { type: 'separator' },
         {
-          label: esc(t('Import project (LLC)...')),
+          // "LLC" is LosslessCut's name for its project files: the simple editor just says project.
+          label: esc(simpleMode ? t('Import project…') : t('Import project (LLC)...')),
           click() {
             mainWindow.webContents.send('importEdlFile', 'llc');
           },
         },
         {
-          label: esc(t('Export project (LLC)...')),
+          label: esc(simpleMode ? t('Export project…') : t('Export project (LLC)...')),
           click() {
             mainWindow.webContents.send('exportEdlFile', 'llc');
           },
