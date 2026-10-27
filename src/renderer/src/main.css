@@ -131,6 +131,11 @@ button, input, select, textarea {
   font-family: inherit;
 }
 
+/* A drag in progress keeps its cursor wherever the pointer goes (dragCursor.ts). */
+html[data-drag-cursor], html[data-drag-cursor] * {
+  cursor: var(--cp-drag-cursor) !important;
+}
+
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }

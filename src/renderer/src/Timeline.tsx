@@ -34,6 +34,7 @@ import type { FilmTile } from './filmstrip';
 import type { Filmstrip } from './hooks/useFilmstrip';
 import type { AudioPeaks } from './audioPeaks';
 import AudioLane from './components/AudioLane';
+import holdDragCursor from './dragCursor';
 
 
 // eslint-disable-next-line react/display-name
@@ -600,6 +601,7 @@ function Timeline({
     seekAbs(edge === 'start' ? currentCutSeg.start : (currentCutSeg.end ?? currentCutSeg.start));
     resizingSegmentRef.current = { operation: edge };
     setSegmentDragging(true);
+    const releaseCursor = holdDragCursor('ew-resize');
     mouseDownRef.current = e.target;
     let scrubbing = false;
     // The whole drag is one undo step, not one per mouse move.
@@ -623,6 +625,7 @@ function Timeline({
       mouseDownRef.current = undefined;
       resizingSegmentRef.current = undefined;
       setSegmentDragging(false);
+      releaseCursor();
       window.removeEventListener('mousemove', onMouseMove);
       if (scrubbing) onScrubbingChange(false);
     }
@@ -646,6 +649,7 @@ function Timeline({
       start: overlayClip.start,
       end: overlayClip.end,
     };
+    const releaseCursor = holdDragCursor(mode === 'move' ? 'grabbing' : 'ew-resize');
     let scrubbing = false;
 
     function onMouseMove(e2: MouseEvent) {
@@ -694,6 +698,7 @@ function Timeline({
 
     function onMouseUp() {
       overlayInteractionRef.current = undefined;
+      releaseCursor();
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('mousemove', onMouseMove);
       if (scrubbing) {
@@ -729,6 +734,7 @@ function Timeline({
       setRetimeDrag({ segId: seg.segId, speed: nextSpeed, scaleDuration: dragScaleDuration });
     };
     setRetimeDrag({ segId: seg.segId, speed: committedSpeed, scaleDuration: dragScaleDuration });
+    const releaseCursor = holdDragCursor('ew-resize');
 
     // Dragging toward (or past) either edge scrolls the timeline so the drag can continue.
     let frame = requestAnimationFrame(function autoScroll() {
@@ -747,6 +753,7 @@ function Timeline({
     const finish = (commit: boolean) => {
       cancelAnimationFrame(frame);
       listeners.abort();
+      releaseCursor();
       setRetimeDrag(undefined);
       if (commit && nextSpeed !== committedSpeed) onChangeSegmentSpeed(seg.segId, nextSpeed);
     };
