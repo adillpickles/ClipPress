@@ -18,11 +18,14 @@ const corners: CropCorner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-r
 /**
  * Shows each segment's crop in the preview and, while editing, the crop frame: a white frame with corner brackets
  * (as in the Photos app and phone editors), a faint thirds grid, a small chip with the clip and the size, and one
- * compact toolbar over the video, so the picture keeps its size when editing starts.
+ * compact toolbar over the video. The frame is the exported picture and stays where the preview is: zooming scales
+ * the picture under it, dragging moves the picture, a corner crops in from its side, and what's outside shows dimmed
+ * around it. So the texts (drawn on the exported picture) never move while cropping, and the picture keeps its size
+ * when editing starts.
  */
 export default function SegmentCropPreview({ children, frameContent, videoWidth, videoHeight, rotation, crop, editing, clipLabel, onChange, onDone, doneKeys, finishRef }: {
   children: ReactNode,
-  /** Drawn inside the crop frame while editing, under its handles (the texts, which the export puts on the cropped picture). */
+  /** Drawn in the crop frame while editing, under its handles (the texts, which the export puts on the cropped picture). */
   frameContent?: ReactNode,
   videoWidth: number,
   videoHeight: number,
@@ -106,11 +109,14 @@ export default function SegmentCropPreview({ children, frameContent, videoWidth,
       if (interaction == null || surface == null || event.pointerId !== interaction.pointerId) return;
       const rect = surface.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return;
-      const deltaX = (event.clientX - interaction.x) / rect.width;
-      const deltaY = (event.clientY - interaction.y) / rect.height;
+      // The frame shows the crop at the preview's size: a pointer move is that much smaller on the whole picture. A
+      // drag moves the picture with the pointer (the crop the other way); a corner crops in from its side.
+      const { crop: start } = interaction;
+      const deltaX = ((event.clientX - interaction.x) / rect.width) * start.width;
+      const deltaY = ((event.clientY - interaction.y) / rect.height) * start.height;
       const next = interaction.corner != null
-        ? resizeSegmentCrop(interaction.crop, interaction.corner, deltaX, deltaY)
-        : moveSegmentCrop(interaction.crop, deltaX, deltaY);
+        ? resizeSegmentCrop(start, interaction.corner, deltaX, deltaY)
+        : moveSegmentCrop(start, -deltaX, -deltaY);
       draftRef.current = next;
       setDraft(next);
     };
@@ -216,7 +222,8 @@ export default function SegmentCropPreview({ children, frameContent, videoWidth,
   const surfaceWidth = Math.min(size.width, size.height * aspect);
   const surfaceHeight = surfaceWidth / aspect;
   const pixels = getSegmentCropPixels(currentCrop, dimensions.width, dimensions.height);
-  const visibleCrop = editing ? fullFrameCrop : { x: pixels.x / pixels.frameWidth, y: pixels.y / pixels.frameHeight, width: pixels.width / pixels.frameWidth, height: pixels.height / pixels.frameHeight };
+  // Editing or not, the preview shows the cropped picture; editing, it follows the gesture as it goes.
+  const visibleCrop = editing ? currentCrop : { x: pixels.x / pixels.frameWidth, y: pixels.y / pixels.frameHeight, width: pixels.width / pixels.frameWidth, height: pixels.height / pixels.frameHeight };
   const contentStyle: CSSProperties = {
     position: 'absolute',
     left: `${(-visibleCrop.x / visibleCrop.width) * 100}%`,
@@ -224,14 +231,14 @@ export default function SegmentCropPreview({ children, frameContent, videoWidth,
     width: `${100 / visibleCrop.width}%`,
     height: `${100 / visibleCrop.height}%`,
   };
-  const frameStyle: CSSProperties = { left: `${currentCrop.x * 100}%`, top: `${currentCrop.y * 100}%`, width: `${currentCrop.width * 100}%`, height: `${currentCrop.height * 100}%` };
 
   return (
     <div ref={wrapperRef} className={styles['wrapper']}>
       <div ref={surfaceRef} className={styles['surface']} style={{ width: surfaceWidth, height: surfaceHeight }} onWheel={onWheel}>
-        <div className={styles['viewport']} data-crop-preview={!editing ? 'true' : 'false'}>
+        {/* Editing, the picture around the frame shows (dimmed) as far as the preview reaches. */}
+        <div className={[styles['viewport'], ...(editing ? [styles['viewportEditing']] : [])].join(' ')} data-crop-preview={!editing ? 'true' : 'false'}>
           <div style={contentStyle}>{children}</div>
-          {editing && <div className={styles['dim']} style={frameStyle} />}
+          {editing && <div className={styles['dim']} />}
         </div>
         {editing && (
           <div
@@ -239,14 +246,13 @@ export default function SegmentCropPreview({ children, frameContent, videoWidth,
             role="group"
             aria-label={t('Crop frame')}
             data-dragging={dragging}
-            style={frameStyle}
           >
             {frameContent}
             <button
               type="button"
               className={styles['move']}
-              aria-label={t('Move crop frame')}
-              title={t('Drag to reposition')}
+              aria-label={t('Move the picture')}
+              title={t('Drag to move the picture')}
               onPointerDown={(event) => begin(event)}
               onKeyDown={(event) => {
                 if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;

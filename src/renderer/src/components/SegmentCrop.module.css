@@ -4,6 +4,8 @@
   --crop-accent: rgba(79, 195, 204, .95); /* brand teal, fixed: drawn over the video in both themes */
   position: absolute;
   inset: 0;
+  /* The picture around the crop frame shows up to the preview's edges, no further. */
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -12,16 +14,19 @@
 
 .surface { position: relative; flex-shrink: 0; }
 .viewport { position: absolute; inset: 0; overflow: hidden; background: #000; }
+.viewportEditing { overflow: visible; }
 
-/* Dims the picture outside the crop; lives in the clipped viewport so it stays on the video. */
+/* Dims the picture outside the crop frame (the preview's own place), as far as the preview reaches. */
 .dim {
   position: absolute;
+  inset: 0;
   pointer-events: none;
   border-radius: 3px;
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, .6);
 }
 .frame {
   position: absolute;
+  inset: 0;
   box-sizing: border-box;
   /* For the chip, which fits itself to the frame's width (below). */
   container-type: inline-size;
@@ -30,6 +35,7 @@
   box-shadow: 0 0 0 1px rgba(0, 0, 0, .25);
 }
 .frame[data-dragging="true"] .grid { opacity: 1; }
+.frame[data-dragging="true"] .move { cursor: grabbing; }
 
 .move {
   position: absolute;
@@ -39,7 +45,8 @@
   padding: 0;
   border: 0;
   background: transparent;
-  cursor: move;
+  /* The picture under the frame is what's dragged. */
+  cursor: grab;
   touch-action: none;
 }
 .move:focus-visible { outline: 2px solid var(--crop-accent); outline-offset: -5px; }
