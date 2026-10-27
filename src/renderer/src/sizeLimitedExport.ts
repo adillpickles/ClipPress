@@ -51,7 +51,10 @@ function decodeProcessOutput({ stdout, stderr }: { stdout: Uint8Array, stderr: U
   return `${new TextDecoder().decode(stdout)}\n${new TextDecoder().decode(stderr)}`;
 }
 
-/** Listing an encoder only means FFmpeg was built with it; opening one proves the GPU and driver support it. */
+/**
+ * Listing an encoder only means FFmpeg was built with it; opening one proves the GPU and driver support it. `sure` is
+ * false when the answer may not last: a test that timed out, or a driver out of encoder sessions (other apps using it).
+ */
 async function probeGpuEncoder(encoder: GpuEncoderName) {
   const ffmpegArgs = [
     '-hide_banner',
@@ -68,16 +71,30 @@ async function probeGpuEncoder(encoder: GpuEncoderName) {
   try {
     // A driver that hangs while opening the encoder must not hold up every export: it counts as unusable.
     await runFfmpeg(ffmpegArgs, { timeout: gpuProbeTimeoutMs }, { logCli: false });
-    return true;
+    return { usable: true, sure: true };
   } catch (error) {
-    // Abort stops the export that's waiting for this, rather than ruling the GPU out for half an hour.
+    // Abort stops the export that's waiting for this, rather than ruling the GPU out.
     if (isAbortedError(error) && !(isExecaError(error) && error.timedOut)) throw error;
     console.info(`${encoder} is not usable on this system`, error);
-    return false;
+    const timedOut = isExecaError(error) && error.timedOut;
+    return { usable: false, sure: !timedOut && !/out of memory|busy/i.test(String(error)) };
   }
 }
 
-const readEncoderCapabilities = createAsyncCache(async (): Promise<SizeLimitedEncoderCapabilities> => {
+function isSavedEncoderCheck(value: unknown): value is Omit<SizeLimitedEncoderCapabilities, 'cpuThreads'> {
+  if (value == null || typeof value !== 'object') return false;
+  const saved = value as Record<string, unknown>;
+  return ['h264Nvenc', 'av1Nvenc', 'libx264', 'libsvtav1', ...gpuEncoders.map(({ capability }) => capability)].every((key) => typeof saved[key] === 'boolean');
+}
+
+// The test runs once per graphics card, driver, FFmpeg and ClipPress version, then is read back from disk (main
+// process, encoderCheck.ts): nothing waits for it on later starts. Kept for the whole run; an export that fails on a
+// GPU falls back to the next encoder and has the next run test again (markGpuEncoderFailed).
+const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimitedEncoderCapabilities> => {
+  const cpuThreads = navigator.hardwareConcurrency || undefined;
+  const saved = await mainApi.readSavedEncoderCheck(key).catch(() => undefined);
+  if (isSavedEncoderCheck(saved)) return { ...saved, cpuThreads };
+
   const result = await runFfmpeg(['-hide_banner', '-encoders'], undefined, { logCli: false });
   const encoders = parseFfmpegEncoderNames(decodeProcessOutput(result));
   const capabilities: SizeLimitedEncoderCapabilities = {
@@ -85,15 +102,22 @@ const readEncoderCapabilities = createAsyncCache(async (): Promise<SizeLimitedEn
     av1Nvenc: false,
     libx264: encoders.has('libx264'),
     libsvtav1: encoders.has('libsvtav1'),
-    cpuThreads: navigator.hardwareConcurrency || undefined,
   };
+  let sure = true;
   await Promise.all(gpuEncoders.map(async ({ encoder, capability }) => {
-    capabilities[capability] = encoders.has(encoder) && await probeGpuEncoder(encoder);
+    if (!encoders.has(encoder)) {
+      capabilities[capability] = false;
+      return;
+    }
+    const probe = await probeGpuEncoder(encoder);
+    capabilities[capability] = probe.usable;
+    if (!probe.sure) sure = false;
   }));
-  return capabilities;
-  // GPU availability can change without the executable changing; and if a GPU stops working before this runs out,
-  // an export that fails on it falls back to the next encoder (see failedGpuEncoders).
-}, 30 * 60 * 1000);
+
+  // An answer that may not last is used for this run only, and tested again next time.
+  if (sure) mainApi.saveEncoderCheck(key, capabilities as unknown as Record<string, boolean>).catch((error: unknown) => console.warn('Could not save the encoder check', error));
+  return { ...capabilities, cpuThreads };
+});
 
 /**
  * GPU paths that failed during a real export this session. A probe can pass while a driver
@@ -117,8 +141,8 @@ export async function getSizeLimitedEncoderCapabilities(): Promise<SizeLimitedEn
 }
 
 /**
- * Finds the usable encoders in the background (a handful of short test encodes, ~2 s), so an export
- * doesn't wait for it.
+ * Finds the usable encoders in the background (read back from disk, or the first time a handful of short test
+ * encodes, ~2 s), so an export doesn't wait for it.
  */
 export function prefetchEncoderCapabilities() {
   getSizeLimitedEncoderCapabilities().catch((error: unknown) => console.warn('Could not check the encoders', error));
@@ -149,6 +173,7 @@ export function runWithGpuFallbacks<T>(args: Omit<Parameters<typeof runWithGpuFa
 
 export function markGpuEncoderFailed(encoder: GpuEncoderName) {
   failedGpuEncoders.add(encoder);
+  mainApi.forgetEncoderCheck().catch((error: unknown) => console.warn('Could not forget the encoder check', error));
 }
 
 function assertStrategySupported({ strategy, capabilities }: {
