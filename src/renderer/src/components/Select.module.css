@@ -133,4 +133,16 @@
     opacity: .45;
     cursor: not-allowed;
   }
+
+  /* A group's name: a small quiet heading over its options. */
+  .select optgroup {
+    padding-top: .45rem;
+    color: var(--cp-text-subtle);
+    font-size: .75rem;
+    font-weight: 700;
+  }
+
+  .select optgroup:first-of-type {
+    padding-top: .15rem;
+  }
 }
