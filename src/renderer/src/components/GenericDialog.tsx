@@ -325,13 +325,15 @@ export function useDialog() {
     ) : undefined,
   }), [openExportResultDialog, t]);
 
-  const openSizeLimitedFinishedDialog = useCallback(({ filePaths, warnings, notices, summary, highlight, ...extras }: {
+  const openSizeLimitedFinishedDialog = useCallback(({ filePaths, warnings, notices, summary, highlight, showDetails = true, ...extras }: {
     /** Every file the export made. */
     filePaths: string[],
     warnings: string[],
     notices: string[],
     summary: SizeLimitedFinishedSummary,
     highlight?: string | undefined,
+    /** The simple editor's result has none: the size and the name already say what Details would. */
+    showDetails?: boolean | undefined,
   } & ExportResultExtras) => openExportResultDialog({
     title: summary.createdCount > 0 ? t('Exported') : t('Nothing was exported'),
     files: filePaths,
@@ -341,18 +343,19 @@ export function useDialog() {
     autoCopied: extras.autoCopied,
     nextClipName: extras.nextClipName,
     // The limit it was made for, with whatever else is worth knowing, kept out of the way.
-    details: (
+    details: showDetails ? (
       <ul className={styles['detailsList']}>
         <li>{t('Size limit: {{target}}', { target: summary.requestedLimitLabel })}</li>
         {notices.map((notice) => <li key={notice}>{notice}</li>)}
       </ul>
-    ),
+    ) : undefined,
   }), [openExportResultDialog, t]);
 
-  const openConcatFinishedDialog = useCallback(({ filePath, warnings, notices, created = true, showAdvice = true }: {
+  const openConcatFinishedDialog = useCallback(({ filePath, warnings, notices, highlight, created = true, showAdvice = true }: {
     filePath: string,
     warnings: string[],
     notices: string[],
+    highlight?: string | undefined,
     created?: boolean | undefined,
     showAdvice?: boolean | undefined,
   }) => openExportResultDialog({
@@ -360,6 +363,7 @@ export function useDialog() {
     files: created ? [filePath] : [],
     copyFiles: created ? [filePath] : [],
     warnings,
+    highlight,
     details: (notices.length > 0 || showAdvice) ? (
       <ul className={styles['detailsList']}>
         {notices.map((notice) => <li key={notice}>{notice}</li>)}

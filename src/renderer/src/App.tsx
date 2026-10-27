@@ -2919,7 +2919,9 @@ function App() {
           showOsNotification(i18n.t(created ? 'Merge finished' : 'No new files were written'));
           openConcatFinishedDialog({
             filePath: outPath,
-            notices: [...notices],
+            notices: simpleMode ? [] : [...notices],
+            // The simple editor has no Details: what matters there shows plainly.
+            highlight: simpleMode && !includeAllStreams && haveExcludedStreams ? i18n.t('Some extra tracks have been discarded. You can change this option before merging.') : undefined,
             warnings: [...warnings],
             created,
             showAdvice: !simpleMode,
@@ -3112,18 +3114,20 @@ function App() {
     highlights: Set<string>,
   }) => {
     if (!wanted) return false;
+    // The simple editor's result has no Details: that the original was kept shows plainly there.
+    const keptNotices = simpleMode ? highlights : notices;
     if (exportSignal.aborted) {
-      notices.add(i18n.t('The original recording was kept, because this was cancelled.'));
+      keptNotices.add(i18n.t('The original recording was kept, because this was cancelled.'));
       return false;
     }
     if (!allPlannedCreated || exportedPaths.length === 0) {
-      notices.add(i18n.t('The original recording was kept, because not every file was exported.'));
+      keptNotices.add(i18n.t('The original recording was kept, because not every file was exported.'));
       return false;
     }
     // Cancel works throughout: the original is kept unless everything below runs to the end.
     const abortController = new AbortController();
     const cancelled = () => abortController.signal.aborted;
-    const keptBecauseCancelled = () => notices.add(i18n.t('The original recording was kept, because this was cancelled.'));
+    const keptBecauseCancelled = () => keptNotices.add(i18n.t('The original recording was kept, because this was cancelled.'));
     setWorking({ text: i18n.t('Checking the exported files'), abortController });
     const check = await verifyExportedFiles(exportedPaths, { statFile: statOutput, probe: probeOutput, isCancelled: cancelled });
     if (cancelled()) {
@@ -3159,7 +3163,7 @@ function App() {
       warnings.add(i18n.t('ClipPress kept the original recording: it could not be moved to the Recycle Bin. It may be too large for the Recycle Bin, on a drive without one, or still in use.'));
     }
     return true;
-  }, [batchListRemoveFile, clearSegments, customOutDir, deleteProjectFile, resetState, setRecentFiles, setWorking, trashProjectWithSource, whenProjectSaved]);
+  }, [batchListRemoveFile, clearSegments, customOutDir, deleteProjectFile, resetState, setRecentFiles, setWorking, simpleMode, trashProjectWithSource, whenProjectSaved]);
 
   const askForCleanupChoices = useCallback(async ({ saveOnly = false, afterExport = false }: { saveOnly?: boolean, afterExport?: boolean } = {}) => {
     // Asked after an export, its box decides for the original (see shouldRecycleOriginalAfterExport), so with the Export
@@ -4060,6 +4064,7 @@ function App() {
 
         // The original is only ever moved to the Recycle Bin through this checked path, whichever setting asks for it.
         const highlights = new Set<string>();
+        if (simpleMode && resultSummary.skippedCount > 0) highlights.add(i18n.t('A file with that name was already there, so it was kept.'));
         const closedForRecycling = await recycleOriginalAfterExport({
           highlights,
           wanted: shouldRecycleOriginalAfterExport(trashSourceAfterExport, askedForCleanup, newCleanupChoices),
@@ -4089,9 +4094,10 @@ function App() {
           showResult: (extras) => openSizeLimitedFinishedDialog({
             filePaths: exportedPaths,
             warnings: [...warnings],
-            notices: [...notices],
-            highlight: [...highlights][0],
+            notices: simpleMode ? [] : [...notices],
+            highlight: [...highlights].join('\n') || undefined,
             summary: resultSummary,
+            showDetails: !simpleMode,
             ...extras,
           }),
         });
@@ -4284,6 +4290,7 @@ function App() {
 
         // The original is only ever moved to the Recycle Bin through this checked path, whichever setting asks for it.
         const highlights = new Set<string>();
+        if (simpleMode && outFiles.some((file) => !file.created)) highlights.add(i18n.t('A file with that name was already there, so it was kept.'));
         const closedForRecycling = await recycleOriginalAfterExport({
           highlights,
           wanted: shouldRecycleOriginalAfterExport(trashSourceAfterExport, askedForCleanup, newCleanupChoices),
@@ -4312,8 +4319,8 @@ function App() {
           showResult: (extras) => openCutFinishedDialog({
             filePaths: exportedPaths,
             warnings: [...warnings],
-            notices: [...notices],
-            highlight: [...highlights][0],
+            notices: simpleMode ? [] : [...notices],
+            highlight: [...highlights].join('\n') || undefined,
             showAdvice: !simpleMode,
             ...extras,
           }),
@@ -4521,6 +4528,7 @@ function App() {
 
       // The original is only ever moved to the Recycle Bin through this checked path, whichever setting asks for it.
       const highlights = new Set<string>();
+      if (simpleMode && outFiles.some((file) => !file.created)) highlights.add(i18n.t('A file with that name was already there, so it was kept.'));
       const closedForRecycling = await recycleOriginalAfterExport({
         highlights,
         wanted: shouldRecycleOriginalAfterExport(trashSourceAfterExport, askedForCleanup, newCleanupChoices),
@@ -4549,8 +4557,8 @@ function App() {
         showResult: (extras) => openCutFinishedDialog({
           filePaths: exportedPaths,
           warnings: [...warnings],
-          notices: [...notices],
-          highlight: [...highlights][0],
+          notices: simpleMode ? [] : [...notices],
+          highlight: [...highlights].join('\n') || undefined,
           showAdvice: !simpleMode,
           ...extras,
         }),
