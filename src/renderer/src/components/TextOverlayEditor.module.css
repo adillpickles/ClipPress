@@ -1,5 +1,6 @@
-/* A text box on the picture, in the crop frame's look (SegmentCrop.module.css): a white frame, white handles with a
-   soft shadow, the accent on hover. Fixed colours: they're drawn over the video in both themes. */
+/* The texts on the picture as text boxes (TextOverlayEditor.tsx): a thin white frame with round corner handles and
+   side bars, as in Clipchamp and Canva; the accent on hover. Fixed colours: they're drawn over the video in both
+   themes. */
 .wrapper {
   --text-accent: rgba(79, 195, 204, .95);
   position: absolute;
@@ -13,95 +14,154 @@
 .box {
   position: absolute;
   box-sizing: border-box;
-  border: 1px dashed rgba(255, 255, 255, .45);
-  border-radius: 3px;
+}
+
+.boxEditable {
   pointer-events: auto;
-}
-
-.boxSelected {
-  border: 1.5px solid rgba(255, 255, 255, .92);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, .25);
-}
-
-/* Move: a small round grip above the box, on the same dark glass as the crop frame's chip. */
-.moveGrip {
-  all: unset;
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 6px);
-  transform: translateX(-50%);
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: rgba(10, 12, 16, .62);
-  backdrop-filter: blur(6px);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, .4);
-  color: rgba(255, 255, 255, .92);
-  font-size: 13px;
   cursor: move;
-  transition: color 100ms ease;
 }
 
-/* The wrap width: a white bar on the right edge, its target wider than it looks. */
-.widthHandle {
-  all: unset;
-  position: absolute;
-  top: 50%;
-  right: -9px;
-  width: 16px;
-  transform: translateY(-50%);
-  cursor: ew-resize;
-}
-
-.widthHandle::before {
+/* A band just outside the frame that also moves the box, so it can be moved while typing. */
+.boxSelected::before {
   content: '';
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 6px;
-  width: 4px;
-  border-radius: 2px;
-  background: white;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6));
-  transition: background-color 100ms ease;
+  inset: -6px;
+  border-radius: 7px;
 }
 
-/* The text size: an L over the bottom-right corner, like the crop frame's corners. */
-.scaleCorner {
-  all: unset;
-  position: absolute;
-  right: -1.5px;
-  bottom: -1.5px;
-  width: min(18px, 45%);
-  height: min(18px, 45%);
-  cursor: nwse-resize;
-}
-
-.scaleCorner::before {
+/* The frame: drawn over the text without taking room from it, so selecting doesn't shift a line. */
+.box::after {
   content: '';
   position: absolute;
-  inset: 0;
-  border: 0 solid white;
-  border-right-width: 4px;
-  border-bottom-width: 4px;
-  border-bottom-right-radius: 8px;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6));
+  inset: -1px;
+  border-radius: 4px;
+  pointer-events: none;
   transition: border-color 100ms ease;
 }
 
-.moveGrip:hover,
-.moveGrip:focus-visible {
-  color: var(--text-accent);
+.boxEditable:hover::after {
+  border: 1px solid rgba(255, 255, 255, .5);
 }
 
-.widthHandle:hover::before,
-.widthHandle:focus-visible::before {
+.boxSelected::after,
+.boxSelected:hover::after {
+  border: 1.5px solid rgba(255, 255, 255, .92);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .25), inset 0 0 0 1px rgba(0, 0, 0, .12);
+}
+
+.content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+.textArea {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  overflow-wrap: anywhere;
+  caret-color: white;
+  /* Selected but not typing: the box takes the pointer (a drag moves it). */
+  pointer-events: none;
+}
+
+.boxTyping .textArea {
+  pointer-events: auto;
+  cursor: text;
+}
+
+.textArea::selection {
+  background: rgba(79, 195, 204, .45);
+}
+
+/* Handles: a target bigger than the dot or bar it shows. */
+.corner,
+.side {
+  all: unset;
+  position: absolute;
+  z-index: 1;
+  transform: translate(-50%, -50%);
+}
+
+.corner {
+  width: 18px;
+  height: 18px;
+}
+
+.corner[data-corner='top-left'] { left: 0; top: 0; cursor: nwse-resize; }
+.corner[data-corner='top-right'] { left: 100%; top: 0; cursor: nesw-resize; }
+.corner[data-corner='bottom-left'] { left: 0; top: 100%; cursor: nesw-resize; }
+.corner[data-corner='bottom-right'] { left: 100%; top: 100%; cursor: nwse-resize; }
+
+.corner::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .22), 0 1px 3px rgba(0, 0, 0, .5);
+  transition: background-color 100ms ease;
+}
+
+.side {
+  top: 50%;
+  width: 16px;
+  height: calc(var(--side-height) + 6px);
+  cursor: ew-resize;
+}
+
+.side[data-side='left'] { left: 0; }
+.side[data-side='right'] { left: 100%; }
+
+.side::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 50%;
+  width: 5px;
+  transform: translateX(-50%);
+  border-radius: 3px;
+  background: white;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .22), 0 1px 3px rgba(0, 0, 0, .5);
+  transition: background-color 100ms ease;
+}
+
+.corner:hover::before,
+.side:hover::before {
   background: var(--text-accent);
 }
 
-.scaleCorner:hover::before,
-.scaleCorner:focus-visible::before {
-  border-color: var(--text-accent);
+/* The picture's centre lines, while a moved box is snapped onto them. */
+.guideVertical,
+.guideHorizontal {
+  position: absolute;
+  background: var(--text-accent);
+  box-shadow: 0 0 2px rgba(0, 0, 0, .5);
+  pointer-events: none;
+}
+
+.guideVertical {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  margin-left: -.5px;
+}
+
+.guideHorizontal {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  margin-top: -.5px;
 }

@@ -35,6 +35,7 @@ import type { Filmstrip } from './hooks/useFilmstrip';
 import type { AudioPeaks } from './audioPeaks';
 import AudioLane from './components/AudioLane';
 import holdDragCursor from './dragCursor';
+import type { UndoableSetOptions } from './undoableHistory';
 
 
 // eslint-disable-next-line react/display-name
@@ -289,7 +290,7 @@ function Timeline({
   overlayClips: OverlayClip[],
   selectedOverlayId: string | undefined,
   onSelectOverlay: (overlayId: string | undefined) => void,
-  onUpdateOverlayClip: (overlayId: string, updater: (clip: OverlayClip) => OverlayClip) => void,
+  onUpdateOverlayClip: (overlayId: string, updater: (clip: OverlayClip) => OverlayClip, undo?: UndoableSetOptions) => void,
   onDeleteOverlayClip: (overlayId: string) => void,
   speedControlsSegmentIds: ReadonlySet<string>,
   onChangeSegmentSpeed: (segmentId: string, speed: number) => void,
@@ -650,6 +651,8 @@ function Timeline({
       end: overlayClip.end,
     };
     const releaseCursor = holdDragCursor(mode === 'move' ? 'grabbing' : 'ew-resize');
+    // One undo step per drag, however long it pauses.
+    const undo = { coalesceKey: `text-clip:${overlayClip.overlayId}:${Date.now()}`, wholeGesture: true };
     let scrubbing = false;
 
     function onMouseMove(e2: MouseEvent) {
@@ -693,7 +696,7 @@ function Timeline({
           ...clip,
           end: Math.min(fileDurationNonZero, Math.max(overlayInteraction.end + delta, overlayInteraction.start + minTextOverlayDuration)),
         };
-      });
+      }, undo);
     }
 
     function onMouseUp() {

@@ -339,8 +339,10 @@ import type { AppEvent } from '../../main/index.js';
 import {
   createDefaultTextOverlayClip,
   getVideoStreamRotation,
+  isOverlayActiveAtTime,
   sanitizeOverlayClip,
 } from './textOverlays';
+import type { UndoableSetOptions } from './undoableHistory';
 
 const electron = window.require('electron');
 const { lstat } = window.require('fs/promises');
@@ -1050,11 +1052,11 @@ function App() {
   const hasOverlayClips = overlayClips.length > 0;
 
   const updateOverlayClip = useCallback(
-    (overlayId: string, updater: (clip: OverlayClip) => OverlayClip) => {
-      // A drag or a burst of typing on one text box is one undo step.
+    (overlayId: string, updater: (clip: OverlayClip) => OverlayClip, undo?: UndoableSetOptions) => {
+      // A burst of typing on one text box is one undo step; a drag passes its own gesture's key.
       setOverlayClips((existingClips) => existingClips.map((overlayClip) => (overlayClip.overlayId === overlayId
         ? sanitizeOverlayClip(updater(overlayClip), fileDuration)
-        : overlayClip)), { coalesceKey: `overlay:${overlayId}` });
+        : overlayClip)), undo ?? { coalesceKey: `overlay:${overlayId}` });
     },
     [fileDuration, setOverlayClips],
   );
@@ -6770,7 +6772,15 @@ function App() {
     e.target.blur();
   }, []);
 
-  const onVideoClick = useCallback(() => togglePlay(), [togglePlay]);
+  // A click on the picture lets go of a selected text there, as on a design tool's canvas, instead of playing.
+  const onVideoClick = useCallback(() => {
+    const time = getRelevantTime();
+    if (selectedOverlayId != null && overlayClips.some((overlayClip) => overlayClip.overlayId === selectedOverlayId && isOverlayActiveAtTime(overlayClip, time))) {
+      setSelectedOverlayId(undefined);
+      return;
+    }
+    togglePlay();
+  }, [getRelevantTime, overlayClips, selectedOverlayId, togglePlay]);
 
   const tryExportEdlFile = useCallback(
     async (type: EdlExportType) => {
@@ -7387,6 +7397,7 @@ function App() {
                             videoWidth={activeVideoStream.width}
                             videoHeight={activeVideoStream.height}
                             rotation={effectiveRotation}
+                            keysBlocked={exportConfirmOpen || streamsSelectorShown || settingsVisible || keyboardShortcutsVisible}
                             onSelectOverlay={setSelectedOverlayId}
                             onUpdateOverlay={updateOverlayClip}
                           />

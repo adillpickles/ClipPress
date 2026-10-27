@@ -107,6 +107,16 @@ describe('text overlay layout', () => {
     expect(layoutTextOverlay({ text: 'abcdefghijkl', widthPx: 100, fontSizePx: 20, ctx }).lines).toEqual(['abcdefgh', 'ijkl']);
   });
 
+  it('keeps spaces as typed, like the text box, except where a line wraps', () => {
+    const ctx = fakeMeasureContext();
+    expect(layoutTextOverlay({ text: '  a  b', widthPx: 100, fontSizePx: 20, ctx }).lines).toEqual(['  a  b']);
+    // The spaces before a wrapped word stay at the end of the line, out of sight.
+    expect(layoutTextOverlay({ text: 'aaaa   bbbb', widthPx: 100, fontSizePx: 20, ctx }).lines).toEqual(['aaaa', 'bbbb']);
+    // Spaces at the end of a line don't wrap it.
+    expect(layoutTextOverlay({ text: 'aaaaaaaa   ', widthPx: 100, fontSizePx: 20, ctx }).lines).toEqual(['aaaaaaaa']);
+    expect(layoutTextOverlay({ text: 'a\n\nb', widthPx: 100, fontSizePx: 20, ctx }).lines).toEqual(['a', '', 'b']);
+  });
+
   it('keeps legacy clips at the size their box height implied and pins it when fitted', () => {
     const legacy = { overlayId: 'a', type: 'text' as const, start: 0, end: 1, text: 'one\ntwo', box: { x: 0, y: 0, width: 0.5, height: 0.2 } };
     expect(getOverlayFontSize(legacy)).toBeCloseTo(0.056);

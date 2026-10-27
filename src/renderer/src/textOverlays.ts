@@ -32,7 +32,8 @@ function clampOverlayNumber(value: number) {
 
 export function clampOverlayBox(box: OverlayBox): OverlayBox {
   const width = clamp(box.width, 0.05, 1);
-  const height = clamp(box.height, 0.08, 1);
+  // The height comes from the text (fitTextOverlayBox); a small text can be lower than a line of the default size.
+  const height = clamp(box.height, 0.01, 1);
   const x = clamp(box.x, 0, 1 - width);
   const y = clamp(box.y, 0, 1 - height);
   return { x, y, width, height };
@@ -194,37 +195,32 @@ function wrapTextLines({
   text: string,
   maxWidth: number,
 }) {
-  const paragraphs = text.split('\n');
+  const fits = (line: string) => ctx.measureText(line).width <= maxWidth;
   const lines: string[] = [];
 
-  for (const paragraph of paragraphs) {
-    const trimmedParagraph = paragraph.trim();
-    if (trimmedParagraph.length === 0) {
-      lines.push('');
-    } else {
-      const words = trimmedParagraph.split(/\s+/);
-      let currentLine = '';
-
-      for (const word of words) {
-        const proposedLine = currentLine.length > 0 ? `${currentLine} ${word}` : word;
-        if (ctx.measureText(proposedLine).width <= maxWidth) {
-          currentLine = proposedLine;
-        } else {
-          if (currentLine.length > 0) lines.push(currentLine);
-          currentLine = '';
-          // Split a word wider than the box across lines instead of letting it overflow.
-          for (const char of word) {
-            if (currentLine.length > 0 && ctx.measureText(currentLine + char).width > maxWidth) {
-              lines.push(currentLine);
-              currentLine = '';
-            }
-            currentLine += char;
+  // Wrapped the way the text box shows it while typing (white-space: pre-wrap): spaces stay as typed, except at a
+  // line break, where they hang at the end of the line instead of starting the next one.
+  for (const paragraph of text.split('\n')) {
+    let line = '';
+    for (const match of paragraph.matchAll(/(\s*)(\S+)/g)) {
+      const spaces = match[1] ?? '';
+      const word = match[2] ?? '';
+      if (fits(line + spaces + word)) {
+        line += spaces + word;
+      } else {
+        if (line.length > 0 || spaces.length > 0) lines.push(line);
+        line = '';
+        // Split a word wider than the box across lines instead of letting it overflow.
+        for (const char of word) {
+          if (line.length > 0 && !fits(line + char)) {
+            lines.push(line);
+            line = '';
           }
+          line += char;
         }
       }
-
-      if (currentLine.length > 0) lines.push(currentLine);
     }
+    lines.push(line);
   }
 
   return lines.length > 0 ? lines : [''];
