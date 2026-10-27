@@ -20,6 +20,7 @@ import type { FormatTimecode, InverseCutSegment, OverviewWaveform, OverlayClip, 
 import Button from './components/Button';
 import type { UseSegments } from './hooks/useSegments';
 import { isGestureModifierHeld } from './hooks/useTimelineScroll';
+import useGlidingSegments from './hooks/useGlidingSegments';
 import { getTextLaneRows, minTextOverlayDuration } from './textOverlays';
 import type { TextLaneRow } from './textOverlays';
 import SegmentRetimeBar from './components/SegmentRetimeBar';
@@ -365,6 +366,9 @@ function Timeline({
   const laneWidthPercent = laneZoom * 100 * (laneDuration / scaleDuration);
 
   const retimeDragging = retimeDrag != null;
+  // What the lanes draw: in the simple editor an edit's new edges glide in, on every lane together (advanced mode keeps
+  // its spring).
+  const drawnSegments = useGlidingSegments(cutSegments, !simpleMode || retimeDragging || segmentDragging);
   const timelineMapRef = useRef(timelineMap);
   useEffect(() => {
     timelineMapRef.current = timelineMap;
@@ -1003,14 +1007,15 @@ function Timeline({
             {showRetimeLane && (
               <div className={styles['lane']} style={{ height: retimeLaneHeight, isolation: 'isolate', overflow: 'hidden' }}>
                 {retimeSegments.map(({ seg, index }) => {
-                  const left = toLanePercent(seg.start);
+                  const drawn = drawnSegments[index] ?? seg;
+                  const left = toLanePercent(drawn.start);
                   const dragging = retimeDrag?.segId === seg.segId;
                   const speed = dragging ? retimeDrag.speed : getSegmentSpeed(seg);
                   return (
                     <SegmentRetimeBar
                       key={seg.segId}
                       left={`${left}%`}
-                      width={`${toLanePercent(seg.end) - left}%`}
+                      width={`${toLanePercent(drawn.end ?? seg.end) - left}%`}
                       speed={speed}
                       committedSpeed={getSegmentSpeed(seg)}
                       outputDuration={getSegmentOutputDuration({ ...seg, speed })}
@@ -1053,7 +1058,7 @@ function Timeline({
                 return (
                   <TimelineSeg
                     key={seg.segId}
-                    seg={seg}
+                    seg={drawnSegments[i] ?? seg}
                     segNum={i}
                     onSegClick={setCurrentSegIndex}
                     isActive={i === currentSegIndexSafe}
@@ -1080,7 +1085,8 @@ function Timeline({
               })}
 
               {retimeOverlay && retimeSegments.map(({ seg, index }) => {
-                const left = toLanePercent(seg.start);
+                const drawn = drawnSegments[index] ?? seg;
+                const left = toLanePercent(drawn.start);
                 const dragging = retimeDrag?.segId === seg.segId;
                 const speed = dragging ? retimeDrag.speed : getSegmentSpeed(seg);
                 return (
@@ -1089,7 +1095,7 @@ function Timeline({
                     overlay
                     left={`calc(${left}% + ${retimeOverlayInset}px)`}
                     // max(): a clip narrower than the insets gets no band rather than a negative width.
-                    width={`max(0px, calc(${toLanePercent(seg.end) - left}% - ${retimeOverlayInset * 2}px))`}
+                    width={`max(0px, calc(${toLanePercent(drawn.end ?? seg.end) - left}% - ${retimeOverlayInset * 2}px))`}
                     speed={speed}
                     committedSpeed={getSegmentSpeed(seg)}
                     outputDuration={getSegmentOutputDuration({ ...seg, speed })}
@@ -1116,7 +1122,7 @@ function Timeline({
                 peaks={audioPeaks}
                 trackGainDb={audioTrackGainDb}
                 height={audioLaneHeight}
-                segments={cutSegments}
+                segments={drawnSegments}
                 activeIndex={currentSegIndexSafe}
                 noneTicked={noneTicked}
                 invertCutSegments={invertCutSegments}

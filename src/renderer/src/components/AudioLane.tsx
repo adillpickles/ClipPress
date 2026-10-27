@@ -20,7 +20,7 @@ function AudioLane({ peaks, trackGainDb, height, segments, activeIndex, noneTick
   /** The volume of the drawn track, under every clip's. */
   trackGainDb: number | undefined,
   height: number,
-  segments: StateSegment[],
+  segments: readonly StateSegment[],
   activeIndex: number,
   /** With no clip ticked, the export takes all of them. */
   noneTicked: boolean,
