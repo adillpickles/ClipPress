@@ -867,3 +867,21 @@ export const runFfmpeg = (args: readonly string[], customExecaOptions?: ExecaOpt
     return runFfmpegProcess(args, { ...customExecaOptions, ...(cancelSignal != null && { cancelSignal }) }, additionalOptions);
   })
 );
+
+const callbackRunners = { runFfmpeg, runFfprobe, runFfmpegStreaming, renderWaveformPng };
+type CallbackRunners = typeof callbackRunners;
+
+/**
+ * For the page: runs one of these and answers through `resolve` / `reject`. A promise handed to the page costs
+ * @electron/remote a second synchronous round trip to pass its `then` over, and that one waits for whatever the main
+ * process is busy with (~5 ms each, several times while a recording opens). Otherwise the same as the promise.
+ */
+export function runWithCallbacks<K extends keyof CallbackRunners>(
+  name: K,
+  args: Parameters<CallbackRunners[K]>,
+  resolve: (value: Awaited<ReturnType<CallbackRunners[K]>>) => void,
+  reject: (error: unknown) => void,
+) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (callbackRunners[name] as (...runArgs: any[]) => Promise<Awaited<ReturnType<CallbackRunners[K]>>>)(...args).then(resolve, reject);
+}

@@ -24,7 +24,19 @@ import runCancellable from './util/ffmpegCancel';
 
 const { ffmpeg } = window.require('@electron/remote').require('./index.js');
 
-const { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, runFfprobe, getFfmpegPath, setCustomFfPath } = ffmpeg;
+const { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, getFfmpegPath, setCustomFfPath } = ffmpeg;
+
+type Runners = typeof ffmpeg.runWithCallbacks;
+type RunnerName = Parameters<Runners>[0];
+type MainRunner<K extends RunnerName> = (typeof ffmpeg)[K] extends (...args: infer A) => infer R ? (...args: A) => R : never;
+
+// Called with its answer's callbacks: a promise from the main process costs one more synchronous round trip (see
+// runWithCallbacks), which holds up the page.
+function viaCallbacks<K extends RunnerName>(name: K, ...args: Parameters<MainRunner<K>>) {
+  return new Promise<Awaited<ReturnType<MainRunner<K>>>>((resolve, reject) => ffmpeg.runWithCallbacks(name, args as never, resolve as never, reject));
+}
+
+const runFfprobe = (...args: Parameters<typeof ffmpeg.runFfprobe>) => viaCallbacks('runFfprobe', ...args);
 
 
 export { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, getFfmpegPath, setCustomFfPath };
@@ -32,15 +44,15 @@ export { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFi
 // The ones below stop when their signal aborts (runCancellable: a signal can't cross to the main process).
 
 export function runFfmpeg(args: readonly string[], { cancelSignal, ...options }: NonNullable<Parameters<typeof ffmpeg.runFfmpeg>[1]> = {}, additionalOptions: { logCli?: boolean } = {}) {
-  return runCancellable(cancelSignal, ffmpeg.abortFfmpeg, (cancelId) => ffmpeg.runFfmpeg(args, options, { ...additionalOptions, cancelId }));
+  return runCancellable(cancelSignal, ffmpeg.abortFfmpeg, (cancelId) => viaCallbacks('runFfmpeg', args, options, { ...additionalOptions, cancelId }));
 }
 
 export function renderWaveformPng({ signal, ...options }: Omit<Parameters<typeof ffmpeg.renderWaveformPng>[0], 'cancelId'> & { signal?: AbortSignal }) {
-  return runCancellable(signal, ffmpeg.abortFfmpeg, (cancelId) => ffmpeg.renderWaveformPng({ ...options, cancelId }));
+  return runCancellable(signal, ffmpeg.abortFfmpeg, (cancelId) => viaCallbacks('renderWaveformPng', { ...options, cancelId }));
 }
 
 function runFfmpegStreaming(args: readonly string[], { signal, ...options }: Omit<Parameters<typeof ffmpeg.runFfmpegStreaming>[1], 'cancelId'> & { signal: AbortSignal }) {
-  return runCancellable(signal, ffmpeg.abortFfmpeg, (cancelId) => ffmpeg.runFfmpegStreaming(args, { ...options, cancelId }));
+  return runCancellable(signal, ffmpeg.abortFfmpeg, (cancelId) => viaCallbacks('runFfmpegStreaming', args, { ...options, cancelId }));
 }
 
 
