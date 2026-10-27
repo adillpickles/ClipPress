@@ -3880,7 +3880,7 @@ function App() {
           ) return;
           currentWorkingText = text;
           currentWorkingDetailText = detailText;
-          setExportWorking({ text, detailText: withQuickExportLabel(detailText), phase: metadata?.retryReason != null ? 'retry' : 'encoding' });
+          setExportWorking({ text, detailText: withQuickExportLabel(detailText), phase: metadata?.retryReason ?? 'encoding' });
         };
         // A job's last tick (done) comes without its stage: keep the stage it was at.
         let lastStage: { jobIndex: number, metadata: SizeLimitedProgressMetadata } | undefined;

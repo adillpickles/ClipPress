@@ -56,19 +56,27 @@ function QuietWorking({ text, onAbortClick }: { text: string, onAbortClick: () =
 }
 
 /**
- * A new line every few seconds, each up long enough to read; near the end of the bar, the finishing lines. A new step
- * doesn't bring its line sooner: a short export may only show one or two.
+ * How long each line stays: about a third of the export's expected length (from how fast the bar fills), so a quick
+ * export rolls through a few lines and a long one changes now and then. Near the end of the bar, the finishing lines.
  */
-const rotateTitleMs = 3500;
+const minLineMs = 600;
+const maxLineMs = 5000;
+const firstLineMs = 3500;
 const finishingFrom = 0.92;
+
+function getLineMs(elapsedMs: number, progress: number | undefined) {
+  if (progress == null || progress < 0.05 || elapsedMs < 300) return undefined;
+  return Math.min(maxLineMs, Math.max(minLineMs, elapsedMs / progress / 3));
+}
 
 interface TitleLine { phase: ExportPhase, text: string, at: number }
 
 /**
- * The simple editor's export title: a random line for the phase (exportTitleLines.ts), then another every few
- * seconds, none twice in an export until every one was shown. A new phase only changes where the next line comes from.
+ * The simple editor's export title: a random line for the phase (exportTitleLines.ts), then another as each has been
+ * up long enough, none twice in an export until every one was shown. A new phase only changes where the next line
+ * comes from. Never holds up the result: the export ends when it ends.
  */
-function useExportTitle(phase: ExportPhase | undefined, progress: number | undefined) {
+function useExportTitle(phase: ExportPhase | undefined, progress: number | undefined, elapsedMs: number) {
   const { t } = useTranslation();
   // The lines this export has shown (kept for the card's life, changed in place).
   const [shown] = useState(() => new Set<string>());
@@ -80,21 +88,18 @@ function useExportTitle(phase: ExportPhase | undefined, progress: number | undef
   }), [shown, t]);
   // Picked as the card first renders, so the plain step's words never show first.
   const [line, setLine] = useState(() => (shownPhase != null ? pick(shownPhase, undefined) : undefined));
-  const lineRef = useRef(line);
-  useEffect(() => { lineRef.current = line; }, [line]);
+  // While the bar can't say (a second encode, a step without progress), the pace it last had.
+  const lineMsRef = useRef<number>();
 
+  // Rescheduled on the card's own clock (it ticks for the time shown anyway); the state changes only with the line.
   useEffect(() => {
     if (shownPhase == null) return undefined;
-    let timer: ReturnType<typeof setTimeout>;
-    const next = () => {
-      setLine((previous) => pick(shownPhase, previous?.text));
-      timer = setTimeout(next, rotateTitleMs);
-    };
-    const previous = lineRef.current;
-    const sinceShown = previous == null ? Infinity : Date.now() - previous.at;
-    timer = setTimeout(next, Math.max(0, rotateTitleMs - sinceShown));
+    const known = getLineMs(elapsedMs, progress);
+    if (known != null) lineMsRef.current = known;
+    const lineMs = known ?? lineMsRef.current ?? firstLineMs;
+    const timer = setTimeout(() => setLine((previous) => pick(shownPhase, previous?.text)), Math.max(0, (line?.at ?? 0) + lineMs - Date.now()));
     return () => clearTimeout(timer);
-  }, [pick, shownPhase]);
+  }, [elapsedMs, line, pick, progress, shownPhase]);
 
   // Steps without lines of their own (e.g. moving the original to the Recycle Bin) say what they do.
   return shownPhase != null ? line?.text : undefined;
@@ -110,13 +115,14 @@ function WorkingCard({ text, detailText, phase, progress, onAbortClick }: {
   const { t } = useTranslation();
   // The app's own Reduce motion setting as well as Windows': the bar's shimmer stops.
   const reduceMotion = useReducedMotionConfig() === true;
-  const title = useExportTitle(phase, progress) ?? text;
-
   const [startedAt] = useState(() => new Date());
   const [elapsedMs, setElapsedMs] = useState(0);
+  const title = useExportTitle(phase, progress, elapsedMs) ?? text;
+  // A second encode starts its own progress from 0: the bar sweeps instead of jumping back, and the line says why.
+  const shownProgress = phase === 'sharper' || phase === 'smaller' ? undefined : progress;
   // Whole percents: a decimal changing several times a second only flickers. Rounded down, so it never reads
   // 100% before it's done.
-  const progressPercent = progress != null ? `${Math.floor(progress * 100)}%` : undefined;
+  const progressPercent = shownProgress != null ? `${Math.floor(shownProgress * 100)}%` : undefined;
 
   // Reassure the user that the app is not frozen
   // This is because some ffmpeg operations can take a long time without giving any progress updates, which might make the user think that the app is frozen
@@ -135,16 +141,16 @@ function WorkingCard({ text, detailText, phase, progress, onAbortClick }: {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 8 }}
       >
-        {/* What it's doing now, in plain words; the new line fades in over the old. No spinner: the bar below
-            always moves. */}
+        {/* What it's doing now, in plain words; each new line rolls up in as the old one rolls away. No spinner: the
+            bar below always moves. */}
         <div className={styles['title']} role="status">
           <AnimatePresence initial={false} mode="popLayout">
             <motion.span
               key={title}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.2 }}
+              initial={{ opacity: 0, y: '100%' }}
+              animate={{ opacity: 1, y: '0%' }}
+              exit={{ opacity: 0, y: '-100%' }}
+              transition={{ duration: 0.26, ease: [0.2, 0, 0, 1] }}
             >
               {title}
             </motion.span>
@@ -170,9 +176,9 @@ function WorkingCard({ text, detailText, phase, progress, onAbortClick }: {
 
         {/* A soft shimmer runs along the bar, so it's clear work goes on while the percent moves slowly; with no
             percent yet, a sweep. */}
-        {progress != null ? (
+        {shownProgress != null ? (
           <div className={styles['progressTrack']}>
-            <div className={[styles['progressFill'], ...(reduceMotion ? [styles['still']] : [])].join(' ')} style={{ width: `${Math.max(progress * 100, 4)}%` }} />
+            <div className={[styles['progressFill'], ...(reduceMotion ? [styles['still']] : [])].join(' ')} style={{ width: `${Math.max(shownProgress * 100, 4)}%` }} />
           </div>
         ) : (
           <div className={[styles['indeterminate'], styles['indeterminateTall'], ...(reduceMotion ? [styles['still']] : [])].join(' ')} aria-hidden />
