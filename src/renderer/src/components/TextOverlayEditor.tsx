@@ -154,7 +154,8 @@ function TextOverlayEditor({
   // Zoom / Crop, or move the playhead, first. Asked for by the app, as this editor may only just have opened.
   useEffect(() => {
     if (typeIntoOverlayId == null) return;
-    if (selectedOverlayId !== typeIntoOverlayId) {
+    // Something else took the keys first (Export opened before the text showed): it keeps them.
+    if (selectedOverlayId !== typeIntoOverlayId || keysBlocked) {
       onTypeIntoDone?.();
       return;
     }
@@ -162,7 +163,7 @@ function TextOverlayEditor({
     startTyping(typeIntoOverlayId);
     onTypeIntoDone?.();
     // The boxes are drawn once the editor has measured itself (surfaceSize) and when the text is at the playhead.
-  }, [editable, onTypeIntoDone, selectedOverlayId, startTyping, surfaceSize, typeIntoOverlayId, visibleOverlays]);
+  }, [editable, keysBlocked, onTypeIntoDone, selectedOverlayId, startTyping, surfaceSize, typeIntoOverlayId, visibleOverlays]);
 
   // Enter types into the selected text; Escape lets go of it. Ahead of the editor's own shortcuts (Enter renames
   // the clip), but only while the selected text is on the picture and nothing else has the keys.
