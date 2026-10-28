@@ -1912,7 +1912,9 @@ function ExportConfirm({
                 <div className={styles['metaRow']}>
                   <div className={styles['metaLabel']}>{t('Tracks')}</div>
                   <div className={styles['metaValue']}>
-                    {isSizeLimited ? t('Video and one audio track') : t('{{count}} tracks', { count: numStreamsToCopy })}
+                    {isSizeLimited
+                      ? (sizeLimitedHasAudio ? t('Video and one audio track') : t('Video only'))
+                      : t('{{count}} tracks', { count: numStreamsToCopy })}
                   </div>
                   <Button size="sm" onClick={onShowStreamsSelectorClick}>{t('Change')}</Button>
                 </div>
