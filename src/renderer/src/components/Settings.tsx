@@ -361,7 +361,7 @@ function Settings({
               <SettingRow
                 label={t('Tracks that cannot be cut')}
                 description={t('Data tracks such as GoPro GPS or telemetry.')}
-                details={t('(data tracks such as GoPro GPS, telemetry etc. are not copied over by default because ffmpeg cannot cut them, thus they will cause the media duration to stay the same after cutting video/audio)')}
+                details={t("They can't be cut, so an export can't copy them. Extract saves them to their own files; Discard leaves them out.")}
               >
                 <AutoExportToggler />
               </SettingRow>
@@ -437,7 +437,7 @@ function Settings({
             {showAdvancedSettings && (
               <SettingRow
                 label={t('Names of extracted frames')}
-                details={t('Note that this only applies when extracting multiple frames. When "Frame number" is selected, frame numbers are relative to the start of the segment (starting from 1).')}
+                details={t('Note that this only applies when extracting multiple frames. When "Frame number" is selected, frame numbers are relative to the start of the clip (starting from 1).')}
               >
                 <Select value={captureFrameFileNameFormat} onChange={(e) => setCaptureFrameFileNameFormat(e.target.value as typeof captureFrameFileNameFormat)} aria-label={t('Names of extracted frames')}>
                   <option value="timestamp">{t('Frame timestamp')}</option>
@@ -559,7 +559,7 @@ function Settings({
 
             <SettingRow
               label={t('FFmpeg hardware acceleration')}
-              description={t('-hwaccel auto, for detection and assisted playback.')}
+              description={t('Lets FFmpeg use the graphics card to read recordings, for detection and the assisted player.')}
             >
               <Switch checked={ffmpegHwaccel === 'auto'} onCheckedChange={(v) => setFfmpegHwaccel(v ? 'auto' : 'none')} aria-label={t('FFmpeg hardware acceleration')} />
             </SettingRow>
