@@ -376,6 +376,17 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     set('cleanupChoices', { ...legacyCleanupChoices, trashSourceFile: false } as Config['cleanupChoices']);
   }
 
+  // Beta 5's "Store next to media file" (storeProjectInWorkingDir false) was a deliberate choice, as conf stored the
+  // default true for everyone else: keep those edits beside the recordings rather than moving them into ClipPress's folder.
+  const storeProjectInWorkingDir = store.get('storeProjectInWorkingDir') as boolean | undefined; // todo remove after a while
+  if (storeProjectInWorkingDir != null) {
+    if (storeProjectInWorkingDir === false && !storedKeys.has('projectFileLocation')) {
+      logger.info('Migrating storeProjectInWorkingDir to projectFileLocation');
+      set('projectFileLocation', 'recording');
+    }
+    deleteStored('storeProjectInWorkingDir');
+  }
+
   const customOutDir = store.get('customOutDir'); // todo remove after a while
   if (customOutDir != null) {
     logger.info('Migrating customOutDir to recentCustomOutDirs');
