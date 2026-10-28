@@ -197,9 +197,11 @@ function FileNameTemplateEditor(opts: {
   useEffect(() => {
     if (!simpleMode) return;
     const shown = savedBaseNameRef.current != null ? `${savedBaseNameRef.current}${parsePath(previewFileName).ext}` : previewFileName;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSimpleDraft(shown);
+    const previous = savedSimpleDraftRef.current;
     savedSimpleDraftRef.current = shown;
+    // A name being typed stays; only a field showing the last name follows the preview.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSimpleDraft((draft) => (draft === previous ? shown : draft));
   }, [previewFileName, simpleMode]);
 
   const commitSimpleRename = useCallback(() => {
