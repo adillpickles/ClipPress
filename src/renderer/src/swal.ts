@@ -38,7 +38,8 @@ function initSwal(reducedMotion = false) {
   toast = Swal.mixin({
     ...commonSwalOptions,
     toast: true,
-    width: '20rem',
+    // Sized to the text, up to the stylesheet's max-width (two or three lines for most messages).
+    width: 'auto',
     position: 'bottom-end',
     showConfirmButton: false,
     showCloseButton: true,

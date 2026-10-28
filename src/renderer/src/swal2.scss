@@ -61,44 +61,95 @@ $swal2-button-focus-box-shadow: 0 0 0 1px $swal2-background, 0 0 0 3px $swal2-ou
   padding: 1rem !important;
 }
 
+// The corner messages look like the app's popovers: sized to their text, the app's own icon in a soft circle
+// (SweetAlert's drawn icons don't survive being this small), a small close button.
 .clippress-toast {
+  max-width: 20rem !important;
   border-radius: var(--cp-radius-lg) !important;
-  border: 1px solid var(--cp-line) !important;
+  border: 1px solid var(--cp-line-strong) !important;
   background: var(--cp-raised) !important;
   box-shadow: var(--cp-shadow-popover) !important;
-  padding: .7rem .85rem !important;
+  padding: .6rem .7rem .6rem .65rem !important;
+  align-items: center !important;
   pointer-events: auto !important;
 }
 
 .clippress-toast .swal2-title,
 .clippress-toast .swal2-html-container {
-  font-size: .88rem !important;
-  line-height: 1.4 !important;
+  font-size: .8125rem !important;
+  line-height: 1.45 !important;
+  color: var(--cp-text) !important;
+  text-wrap: pretty;
   margin: 0 !important;
-  // Clear of the close button, which sits in the top right corner of the text's column
-  padding-right: 1.6rem !important;
+  // Clear of the close button at the right
+  padding-right: 1.4rem !important;
 }
 
+$toast-icon-start: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E";
+$toast-icons: (
+  error: "%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='12' y1='8' x2='12' y2='12'/%3E%3Cline x1='12' y1='16' x2='12.01' y2='16'/%3E",
+  warning: "%3Cpath d='M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z'/%3E%3Cline x1='12' y1='9' x2='12' y2='13'/%3E%3Cline x1='12' y1='17' x2='12.01' y2='17'/%3E",
+  info: "%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='12' y1='16' x2='12' y2='12'/%3E%3Cline x1='12' y1='8' x2='12.01' y2='8'/%3E",
+  success: "%3Cpolyline points='20 6 9 17 4 12'/%3E",
+  question: "%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3'/%3E%3Cline x1='12' y1='17' x2='12.01' y2='17'/%3E",
+);
+$toast-tones: (
+  error: (var(--cp-danger), var(--cp-danger-soft)),
+  warning: (var(--cp-warning), var(--cp-warning-soft)),
+  info: (var(--cp-accent-text), var(--cp-accent-soft)),
+  success: (var(--cp-accent-text), var(--cp-accent-soft)),
+  question: (var(--cp-accent-text), var(--cp-accent-soft)),
+);
+
 .clippress-toast .swal2-icon {
-  margin: 0 .55rem 0 0 !important;
-  width: 1.15rem !important;
-  min-width: 1.15rem !important;
-  height: 1.15rem !important;
-  border-width: 0 !important;
-  transform: scale(.82);
+  position: relative !important;
+  margin: 0 .6rem 0 0 !important;
+  width: 1.6rem !important;
+  min-width: 1.6rem !important;
+  height: 1.6rem !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  transform: none !important;
+  animation: none !important;
+}
+
+.clippress-toast .swal2-icon > * {
+  display: none !important;
+}
+
+.clippress-toast .swal2-icon::after {
+  content: '';
+  position: absolute;
+  inset: .32rem;
+}
+
+@each $type, $icon in $toast-icons {
+  .clippress-toast .swal2-icon.swal2-#{$type} {
+    background: nth(map-get($toast-tones, $type), 2) !important;
+  }
+
+  .clippress-toast .swal2-icon.swal2-#{$type}::after {
+    background: nth(map-get($toast-tones, $type), 1);
+    mask: url("#{$toast-icon-start}#{$icon}%3C/svg%3E") center / contain no-repeat;
+  }
 }
 
 .clippress-toast .swal2-close {
   position: absolute !important;
-  top: .18rem !important;
-  right: .22rem !important;
-  width: 1.4rem !important;
-  height: 1.4rem !important;
-  color: var(--gray-10) !important;
+  top: 50% !important;
+  right: .35rem !important;
+  transform: translateY(-50%);
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  border-radius: 50% !important;
+  font-size: 1.05rem !important;
+  color: var(--cp-text-subtle) !important;
+  transition: color .15s ease, background-color .15s ease !important;
 }
 
-.clippress-toast .swal2-close {
-  transition: opacity .15s ease !important;
+.clippress-toast .swal2-close:hover {
+  color: var(--cp-text) !important;
+  background: var(--cp-hover) !important;
 }
 
 .clippress-toast-show {
