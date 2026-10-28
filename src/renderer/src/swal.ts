@@ -91,9 +91,11 @@ export default function getSwal() {
   };
 }
 
+// Long enough to read what went wrong: about 60 ms a letter, 2 to 8 s.
 export const errorToast = (text: string) => toast.fire({
   icon: 'error',
   text,
+  timer: Math.min(8000, Math.max(2000, text.length * 60)),
 });
 
 export const showPlaybackFailedMessage = () => errorToast(i18n.t('Unable to playback this file. Try to convert to supported format from the menu'));

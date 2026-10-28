@@ -1,3 +1,5 @@
+import i18n from 'i18next';
+
 import { UserFacingError } from '../errors';
 import type { SizeLimitedExecutionResult, SizeLimitedResolvedStrategy } from './types';
 
@@ -15,15 +17,15 @@ export function shouldWarnAboutTightAdvancedH264Target({
 
 function createSizeLimitedTargetFailure(bestResult: SizeLimitedExecutionResult) {
   if (bestResult.strategy.effectiveCodec === 'h264') {
-    return new UserFacingError(`H.264 could not reach the requested file-size limit for this clip after ${bestResult.attemptCount} attempt(s). Try AV1, lower resolution/FPS, or increase the target size.`);
+    return new UserFacingError(i18n.t("H.264 couldn't get this clip that small. Try AV1, a lower resolution or frame rate, or a bigger size."));
   }
 
-  return new UserFacingError('Unable to create a size-limited export under the requested file-size limit');
+  return new UserFacingError(i18n.t("This clip can't be made that small. Try a bigger size or a shorter clip."));
 }
 
 export function finalizeSizeLimitedExecutionResult(bestResult: SizeLimitedExecutionResult | undefined) {
   if (bestResult == null) {
-    throw new UserFacingError('Unable to create a size-limited export');
+    throw new UserFacingError(i18n.t('Unable to create a size-limited export'));
   }
 
   if (!bestResult.metTarget) {
