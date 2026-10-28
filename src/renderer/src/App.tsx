@@ -3782,6 +3782,15 @@ function App() {
     // The clip files a merged-only export has written, deleted again if it fails or is cancelled before the merge.
     const mergePartsWritten: string[] = [];
     const onMergePartWritten = (path: string) => { mergePartsWritten.push(path); };
+    // With Overwrite off, a clip file already there is kept rather than written, but it may be an earlier export with
+    // other edits: the merge gets a fresh cut of that clip instead, on a free name, deleted again after the merge.
+    const getMergeInputs = async (outFiles: ExportedFile[], cutFileNames: string[], cutAgain: (segments: typeof segmentsToExport, fileNames: string[]) => Promise<ExportedFile[]>) => {
+      const skipped = outFiles.flatMap((file, index) => (file.created ? [] : [index]));
+      if (skipped.length === 0) return { segmentPaths: outFiles.map((file) => file.path), freshParts: [] };
+      const partNames = await getMergePartNames(skipped.map((index) => cutFileNames[index]!), isOutputNameTaken);
+      const freshParts = await cutAgain(skipped.map((index) => segmentsToExport[index]!), partNames);
+      return { segmentPaths: outFiles.map((file, index) => freshParts[skipped.indexOf(index)]?.path ?? file.path), freshParts };
+    };
     // Cancel stops the FFmpeg running then; between steps it's caught here, so the next step doesn't start.
     const exportAbort = new AbortController();
     // The simple editor's card titles the phase with a playful line (Working.tsx); advanced mode keeps the plain step.
@@ -4191,10 +4200,12 @@ function App() {
 
         exportAbort.signal.throwIfAborted();
         setExportWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined), phase: 'cutting' });
-        const outFiles = await cutMultipleWithTextOverlays({
+        // Read here, where they're known to be set: the closure below can't see that.
+        const { index: videoStreamIndex, width: videoWidth, height: videoHeight } = activeVideoStream;
+        const cutWithTexts = (segments: typeof segmentsToExport, names: string[], onClipWritten: ((path: string) => void) | undefined) => cutMultipleWithTextOverlays({
           outputDir,
-          segments: segmentsToExport,
-          cutFileNames,
+          segments,
+          cutFileNames: names,
           fileDuration,
           rotation: effectiveRotation,
           copyFileStreams,
@@ -4209,14 +4220,15 @@ function App() {
           paramsByStreamId,
           chapters: chaptersToAdd,
           overlayClips,
-          videoStreamIndex: activeVideoStream.index,
-          videoWidth: activeVideoStream.width,
-          videoHeight: activeVideoStream.height,
+          videoStreamIndex,
+          videoWidth,
+          videoHeight,
           encodeAllAudio: willMerge,
           signal: exportAbort.signal,
-          onClipWritten: willMerge && autoDeleteMergedSegments ? onMergePartWritten : undefined,
+          onClipWritten,
           onProgress: setProgress,
         });
+        const outFiles = await cutWithTexts(segmentsToExport, cutFileNames, willMerge && autoDeleteMergedSegments ? onMergePartWritten : undefined);
 
         let mergedOutFilePath: string | undefined;
         let mergedResult: ExportedFile | undefined;
@@ -4242,10 +4254,11 @@ function App() {
           invariant(fileName != null);
           mergedOutFilePath = getOutPath({ customOutDir, filePath, fileName });
 
+          const { segmentPaths, freshParts } = await getMergeInputs(outFiles, cutFileNames, (segments, names) => cutWithTexts(segments, names, onMergePartWritten));
           mergedResult = await concatCutSegments({
             customOutDir,
             outFormat: fileFormat,
-            segmentPaths: outFiles.map((file) => file.path),
+            segmentPaths,
             ffmpegExperimental,
             preserveMovData,
             movFastStart,
@@ -4257,6 +4270,7 @@ function App() {
           });
 
           const createdOutFiles = outFiles.flatMap((file) => (file.created ? [file.path] : []));
+          await tryDeleteFiles(freshParts.flatMap((file) => (file.created ? [file.path] : [])));
           mergePartsWritten.length = 0;
           if (autoDeleteMergedSegments && mergedResult.created) await tryDeleteFiles(createdOutFiles);
         }
@@ -4393,7 +4407,7 @@ function App() {
       // throw (() => { const err = new Error('test'); err.code = 'ENOENT'; return err; })();
       exportAbort.signal.throwIfAborted();
       setExportWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined), phase: 'cutting' });
-      const outFiles = await cutMultiple({
+      const cutClips = (segments: typeof segmentsToExport, names: string[], onClipWritten: ((path: string) => void) | undefined) => cutMultiple({
         outputDir,
         customOutDir,
         outFormat: fileFormat,
@@ -4402,8 +4416,8 @@ function App() {
         copyFileStreams,
         allFilesMeta,
         keyframeCut,
-        segments: segmentsToExport,
-        cutFileNames,
+        segments,
+        cutFileNames: names,
         onProgress: setProgress,
         shortestFlag,
         ffmpegExperimental,
@@ -4417,10 +4431,12 @@ function App() {
         paramsByStreamId,
         chapters: chaptersToAdd,
         detectedFps,
+        // From all the clips, so a fresh cut for the merge gets the same audio as the others.
         encodeAllAudio: willMerge && segmentsToExport.some((segment) => isClipVolumeChanged(segment)),
         signal: exportAbort.signal,
-        onClipWritten: willMerge && autoDeleteMergedSegments ? onMergePartWritten : undefined,
+        onClipWritten,
       });
+      const outFiles = await cutClips(segmentsToExport, cutFileNames, willMerge && autoDeleteMergedSegments ? onMergePartWritten : undefined);
 
       let mergedOutFilePath: string | undefined;
       let mergedResult: ExportedFile | undefined;
@@ -4456,10 +4472,11 @@ function App() {
         invariant(fileName != null);
         mergedOutFilePath = getOutPath({ customOutDir, filePath, fileName });
 
+        const { segmentPaths, freshParts } = await getMergeInputs(outFiles, cutFileNames, (segments, names) => cutClips(segments, names, onMergePartWritten));
         mergedResult = await concatCutSegments({
           customOutDir,
           outFormat: fileFormat,
-          segmentPaths: outFiles.map((f) => f.path),
+          segmentPaths,
           ffmpegExperimental,
           preserveMovData,
           movFastStart,
@@ -4472,6 +4489,7 @@ function App() {
 
         // don't delete existing files that were not created by losslesscut now (due to overwrite disabled) https://github.com/mifi/lossless-cut/issues/2436
         const createdOutFiles = outFiles.flatMap((f) => (f.created ? [f.path] : []));
+        await tryDeleteFiles(freshParts.flatMap((file) => (file.created ? [file.path] : [])));
         mergePartsWritten.length = 0;
         if (autoDeleteMergedSegments && mergedResult.created) await tryDeleteFiles(createdOutFiles);
       }
