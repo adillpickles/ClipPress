@@ -231,12 +231,13 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
             mainWindow.webContents.send('html5ify');
           },
         },
-        {
+        // A repair that writes a full copy of the recording at once: with the other repair tools, in advanced mode.
+        ...(simpleMode ? [] : [{
           label: esc(t('Fix incorrect duration')),
           click() {
             mainWindow.webContents.send('fixInvalidDuration');
           },
-        },
+        }] satisfies MenuItemConstructorOptions[]),
         { type: 'separator' },
 
         { type: 'separator' },
