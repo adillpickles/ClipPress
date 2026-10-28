@@ -77,9 +77,9 @@ function FileNameTemplateEditor(opts: {
   // `text` keeps the template the editor opened with, so previewFileName doesn't follow a saved name; Escape and the
   // "no real change" check use this instead, so the field never shows a name that won't be used.
   const savedSimpleDraftRef = useRef('');
-  // Once a name is saved here the field keeps it: the preview, made from the template the editor opened with, would
-  // otherwise put the old name back as soon as saving changes what generates it.
-  const nameSavedHereRef = useRef(false);
+  // Once a name is saved here the field keeps it, with the extension the export will use (the format can still
+  // change): the preview, made from the template the editor opened with, would otherwise put the old name back.
+  const savedBaseNameRef = useRef<string>();
   const autoFocusDoneRef = useRef(false);
   const simpleInputId = useId();
 
@@ -195,10 +195,11 @@ function FileNameTemplateEditor(opts: {
   );
 
   useEffect(() => {
-    if (!simpleMode || nameSavedHereRef.current) return;
+    if (!simpleMode) return;
+    const shown = savedBaseNameRef.current != null ? `${savedBaseNameRef.current}${parsePath(previewFileName).ext}` : previewFileName;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSimpleDraft(previewFileName);
-    savedSimpleDraftRef.current = previewFileName;
+    setSimpleDraft(shown);
+    savedSimpleDraftRef.current = shown;
   }, [previewFileName, simpleMode]);
 
   const commitSimpleRename = useCallback(() => {
@@ -230,7 +231,7 @@ function FileNameTemplateEditor(opts: {
       : '';
 
     const nextTemplate = `${baseName}${suffixTemplate}${formatVariable(extVariable)}`;
-    nameSavedHereRef.current = true;
+    savedBaseNameRef.current = baseName;
     savedSimpleDraftRef.current = trimmed;
     setSimpleDraft(trimmed);
     setTemplate(nextTemplate);
