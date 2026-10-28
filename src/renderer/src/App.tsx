@@ -3784,10 +3784,12 @@ function App() {
     const onMergePartWritten = (path: string) => { mergePartsWritten.push(path); };
     // With Overwrite off, a clip file already there is kept rather than written, but it may be an earlier export with
     // other edits: the merge gets a fresh cut of that clip instead, on a free name, deleted again after the merge.
-    const getMergeInputs = async (outFiles: ExportedFile[], cutFileNames: string[], cutAgain: (segments: typeof segmentsToExport, fileNames: string[]) => Promise<ExportedFile[]>) => {
+    // That name is never the merged file's own.
+    const getMergeInputs = async (outFiles: ExportedFile[], cutFileNames: string[], mergedOutFilePath: string, cutAgain: (segments: typeof segmentsToExport, fileNames: string[]) => Promise<ExportedFile[]>) => {
       const skipped = outFiles.flatMap((file, index) => (file.created ? [] : [index]));
       if (skipped.length === 0) return { segmentPaths: outFiles.map((file) => file.path), freshParts: [] };
-      const partNames = await getMergePartNames(skipped.map((index) => cutFileNames[index]!), isOutputNameTaken);
+      const isMergedName = (name: string) => pathJoin(outputDir, name).toLowerCase() === pathJoin(mergedOutFilePath).toLowerCase();
+      const partNames = await getMergePartNames(skipped.map((index) => cutFileNames[index]!), async (name) => isMergedName(name) || isOutputNameTaken(name));
       const freshParts = await cutAgain(skipped.map((index) => segmentsToExport[index]!), partNames);
       return { segmentPaths: outFiles.map((file, index) => freshParts[skipped.indexOf(index)]?.path ?? file.path), freshParts };
     };
@@ -4254,7 +4256,7 @@ function App() {
           invariant(fileName != null);
           mergedOutFilePath = getOutPath({ customOutDir, filePath, fileName });
 
-          const { segmentPaths, freshParts } = await getMergeInputs(outFiles, cutFileNames, (segments, names) => cutWithTexts(segments, names, onMergePartWritten));
+          const { segmentPaths, freshParts } = await getMergeInputs(outFiles, cutFileNames, mergedOutFilePath, (segments, names) => cutWithTexts(segments, names, onMergePartWritten));
           mergedResult = await concatCutSegments({
             customOutDir,
             outFormat: fileFormat,
@@ -4472,7 +4474,7 @@ function App() {
         invariant(fileName != null);
         mergedOutFilePath = getOutPath({ customOutDir, filePath, fileName });
 
-        const { segmentPaths, freshParts } = await getMergeInputs(outFiles, cutFileNames, (segments, names) => cutClips(segments, names, onMergePartWritten));
+        const { segmentPaths, freshParts } = await getMergeInputs(outFiles, cutFileNames, mergedOutFilePath, (segments, names) => cutClips(segments, names, onMergePartWritten));
         mergedResult = await concatCutSegments({
           customOutDir,
           outFormat: fileFormat,
