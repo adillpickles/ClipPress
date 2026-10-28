@@ -413,6 +413,8 @@ const Segment = memo(({
     ].join('\n');
     const ticked = selected !== false;
     const included = ticked || noneTicked;
+    // Which clip a button belongs to, for screen readers: its name, or its number as on the badge.
+    const spokenName = name || t('Clip {{number}}', { number: index + 1 });
     return (
       <div
         ref={setRef}
@@ -455,7 +457,7 @@ const Segment = memo(({
                   type="button"
                   className={styles['renameButton']}
                   title={t('Rename clip')}
-                  aria-label={t('Rename clip')}
+                  aria-label={t('Rename {{clip}}', { clip: spokenName })}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => { e.stopPropagation(); startRenaming(); }}
                   onDoubleClick={(e) => e.stopPropagation()}
@@ -477,7 +479,7 @@ const Segment = memo(({
             title={noneTicked
               ? t('All clips are exported while none is ticked')
               : (ticked ? t('Included in the export') : t('Left out of the export'))}
-            aria-label={t('Include in export')}
+            aria-label={t('Include {{clip}} in the export', { clip: spokenName })}
             onClick={onToggleSegmentSelectedClick}
           >
             {ticked && <FiCheck aria-hidden />}
