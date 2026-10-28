@@ -63,6 +63,8 @@ function TextOverlayEditor({
   rotation,
   readOnly = false,
   keysBlocked = false,
+  typeIntoOverlayId,
+  onTypeIntoDone,
   onSelectOverlay,
   onUpdateOverlay,
 }: {
@@ -75,6 +77,9 @@ function TextOverlayEditor({
   readOnly?: boolean,
   /** A dialog or panel has the keys: Enter and Escape aren't the text box's. */
   keysBlocked?: boolean,
+  /** The text Add Text just made: start typing in it as soon as it shows. */
+  typeIntoOverlayId?: string | undefined,
+  onTypeIntoDone?: (() => void) | undefined,
   onSelectOverlay?: ((overlayId: string | undefined) => void) | undefined,
   onUpdateOverlay?: ((overlayId: string, updater: (clip: OverlayClip) => OverlayClip, undo?: UndoableSetOptions) => void) | undefined,
 }) {
@@ -127,7 +132,6 @@ function TextOverlayEditor({
   // The text box only takes keyboard focus when the user asks to type: a text just added, a double-click or Enter.
   // Not when a box is selected or playback reaches it, which would take the keys from playback (Space, #67).
   const textAreasRef = useRef(new Map<string, HTMLTextAreaElement>());
-  const knownOverlayIdsRef = useRef<Set<string>>(new Set(overlayClips.map((overlayClip) => overlayClip.overlayId)));
 
   const startTyping = useCallback((overlayId: string, at?: { x: number, y: number }) => {
     const textArea = textAreasRef.current.get(overlayId);
@@ -146,13 +150,19 @@ function TextOverlayEditor({
     else textArea.setSelectionRange(caret, caret);
   }, []);
 
-  // A text that was just added (Add Text) is ready to type over.
+  // A text that was just added (Add Text) is ready to type over, once its box is on the picture: Add Text can close
+  // Zoom / Crop, or move the playhead, first. Asked for by the app, as this editor may only just have opened.
   useEffect(() => {
-    const known = knownOverlayIdsRef.current;
-    const added = overlayClips.filter((overlayClip) => !known.has(overlayClip.overlayId));
-    added.forEach((overlayClip) => known.add(overlayClip.overlayId));
-    if (editable && selectedOverlayId != null && added.some((overlayClip) => overlayClip.overlayId === selectedOverlayId)) startTyping(selectedOverlayId);
-  }, [editable, overlayClips, selectedOverlayId, startTyping]);
+    if (typeIntoOverlayId == null) return;
+    if (selectedOverlayId !== typeIntoOverlayId) {
+      onTypeIntoDone?.();
+      return;
+    }
+    if (!editable || !textAreasRef.current.has(typeIntoOverlayId)) return;
+    startTyping(typeIntoOverlayId);
+    onTypeIntoDone?.();
+    // The boxes are drawn once the editor has measured itself (surfaceSize) and when the text is at the playhead.
+  }, [editable, onTypeIntoDone, selectedOverlayId, startTyping, surfaceSize, typeIntoOverlayId, visibleOverlays]);
 
   // Enter types into the selected text; Escape lets go of it. Ahead of the editor's own shortcuts (Enter renames
   // the clip), but only while the selected text is on the picture and nothing else has the keys.

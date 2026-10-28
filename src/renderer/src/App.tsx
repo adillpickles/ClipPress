@@ -425,6 +425,9 @@ function App() {
     tracker: editHistoryOrder.tracker('overlays'),
   });
   const [selectedOverlayId, setSelectedOverlayId] = useState<string>();
+  // The text Add Text just made, typed into once its box shows (after Zoom / Crop closes, too).
+  const [typeIntoOverlayId, setTypeIntoOverlayId] = useState<string>();
+  const clearTypeIntoOverlay = useCallback(() => setTypeIntoOverlayId(undefined), []);
   const [detectedFps, setDetectedFps] = useState<number>();
   const [mainFileMeta, setMainFileMeta] = useState<{
     ffprobeMeta: FileFfprobeMeta;
@@ -1087,6 +1090,7 @@ function App() {
     });
     setOverlayClips((existingClips) => [...existingClips, overlayClip]);
     setSelectedOverlayId(overlayClip.overlayId);
+    setTypeIntoOverlayId(overlayClip.overlayId);
     // Moved past a text already under the playhead: go to the new one, so it shows in the preview ready to edit.
     if (overlayClip.start !== currentTime) seekAbs(overlayClip.start);
   }, [fileDuration, getRelevantTime, mainVideoStream, overlayClips, seekAbs, setOverlayClips]);
@@ -7422,6 +7426,8 @@ function App() {
                             videoHeight={activeVideoStream.height}
                             rotation={effectiveRotation}
                             keysBlocked={exportConfirmOpen || streamsSelectorShown || settingsVisible || keyboardShortcutsVisible}
+                            typeIntoOverlayId={typeIntoOverlayId}
+                            onTypeIntoDone={clearTypeIntoOverlay}
                             onSelectOverlay={setSelectedOverlayId}
                             onUpdateOverlay={updateOverlayClip}
                           />
