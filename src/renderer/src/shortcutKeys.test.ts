@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { fixKeys, normalizeBindingKeys } from './shortcutKeys';
+import { fixKeys, getHiddenTwinKeys, normalizeBindingKeys } from './shortcutKeys';
 
 // util.ts needs Electron's window; only its modifier key sets are used here.
 vi.mock('./util', () => {
@@ -8,7 +8,7 @@ vi.mock('./util', () => {
   const controlModifiers = new Set(['ControlLeft', 'ControlRight']);
   const altModifiers = new Set(['AltLeft', 'AltRight']);
   const metaModifiers = new Set(['MetaLeft', 'MetaRight']);
-  return { shiftModifiers, controlModifiers, altModifiers, metaModifiers, allModifiers: new Set([...shiftModifiers, ...controlModifiers, ...altModifiers, ...metaModifiers]) };
+  return { isMac: false, shiftModifiers, controlModifiers, altModifiers, metaModifiers, allModifiers: new Set([...shiftModifiers, ...controlModifiers, ...altModifiers, ...metaModifiers]) };
 });
 
 describe('fixKeys', () => {
@@ -31,5 +31,17 @@ describe('normalizeBindingKeys', () => {
 
   it('keeps different combinations apart', () => {
     expect(normalizeBindingKeys('ShiftLeft+KeyR')).not.toBe(normalizeBindingKeys('ControlLeft+KeyR'));
+  });
+});
+
+describe('getHiddenTwinKeys', () => {
+  it('is the Windows-key twin of a Ctrl shortcut, which goes with it', () => {
+    expect(getHiddenTwinKeys('ControlLeft+KeyD')).toBe('MetaLeft+KeyD');
+    expect(getHiddenTwinKeys('ControlLeft+ShiftLeft+KeyZ')).toBe('MetaLeft+ShiftLeft+KeyZ');
+  });
+
+  it('is nothing for a shortcut without Ctrl', () => {
+    expect(getHiddenTwinKeys('AltLeft+KeyJ')).toBeUndefined();
+    expect(getHiddenTwinKeys('')).toBeUndefined();
   });
 });

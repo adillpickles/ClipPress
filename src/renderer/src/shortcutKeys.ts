@@ -24,6 +24,12 @@ export function getEventBindingKeys(e: { code: string, ctrlKey: boolean, shiftKe
 /** Left and right modifier keys do the same (useKeyboard), so a binding's keys compare with both as the left one. */
 export const normalizeBindingKeys = (keys: string) => uniq(keys.split('+').map((key) => key.replace(/^(Control|Shift|Alt|Meta)Right$/, '$1Left'))).sort().join('+');
 
+/**
+ * The twin getShownBindings hides beside these keys (Win+D beside Ctrl+D on Windows): it goes when they're replaced or
+ * removed, or it would show up on its own as a shortcut Windows itself takes.
+ */
+export const getHiddenTwinKeys = (keys: string) => (keys.includes(isMac ? 'Meta' : 'Control') ? keys.replaceAll(isMac ? 'Meta' : 'Control', isMac ? 'Control' : 'Meta') : undefined);
+
 /** On Windows a Windows-key twin of a Ctrl shortcut (and on a Mac a Ctrl twin of a Cmd one) isn't listed apart. */
 export function getShownBindings(bindings: readonly KeyBinding[]) {
   const twinOf = (keys: string) => keys.replaceAll(isMac ? 'Control' : 'Meta', isMac ? 'Meta' : 'Control');

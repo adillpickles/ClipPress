@@ -7,7 +7,7 @@ import type { KeyBinding, KeyboardAction, ModifierKey } from '../../../common/ty
 import Kbd from './Kbd';
 import Select from './Select';
 import { getModifierKeyNames } from '../hooks/useTimelineScroll';
-import { fixKeys, normalizeBindingKeys } from '../shortcutKeys';
+import { fixKeys, getHiddenTwinKeys, normalizeBindingKeys } from '../shortcutKeys';
 import { allModifiers, splitKeyboardKeys } from '../util';
 import styles from './ShortcutField.module.css';
 
@@ -110,8 +110,9 @@ export default function ShortcutField({ action, label, shown, keyBindings, setKe
   }, [missed]);
 
   const save = useCallback((keys: string, replacing: string, takeFrom?: KeyBinding) => {
+    const isGoing = (binding: KeyBinding, gone: KeyBinding) => binding.action === gone.action && (binding.keys === gone.keys || binding.keys === getHiddenTwinKeys(gone.keys));
     setKeyBindings((bindings) => [
-      ...bindings.filter((binding) => !(binding.action === action && binding.keys === replacing) && binding !== takeFrom && !(takeFrom != null && binding.keys === takeFrom.keys && binding.action === takeFrom.action)),
+      ...bindings.filter((binding) => !(replacing !== '' && isGoing(binding, { action, keys: replacing })) && !(takeFrom != null && isGoing(binding, takeFrom))),
       { action, keys },
     ]);
   }, [action, setKeyBindings]);
@@ -210,7 +211,7 @@ export default function ShortcutField({ action, label, shown, keyBindings, setKe
             <button type="button" className={styles['slot']} onClick={() => start(keys)} aria-label={t('Change the shortcut for {{action}}', { action: label })}>
               <Caps keys={splitKeyboardKeys(keys)} />
             </button>
-            <button type="button" className={styles['remove']} onClick={() => setKeyBindings((bindings) => bindings.filter((binding) => !(binding.action === action && binding.keys === keys)))} title={t('Remove shortcut')} aria-label={t('Remove shortcut')}>
+            <button type="button" className={styles['remove']} onClick={() => setKeyBindings((bindings) => bindings.filter((binding) => !(binding.action === action && (binding.keys === keys || binding.keys === getHiddenTwinKeys(keys)))))} title={t('Remove shortcut')} aria-label={t('Remove shortcut')}>
               <FiX aria-hidden />
             </button>
           </span>
