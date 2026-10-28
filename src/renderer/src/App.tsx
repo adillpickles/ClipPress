@@ -5176,9 +5176,10 @@ function App() {
         } catch (err) {
           if (err instanceof DirectoryAccessDeclinedError) throw err;
           console.error('EDL load failed, but continuing', err);
-          errorToast(
-            `${i18n.t('Failed to load segments')} (${err instanceof Error && err.message})`,
-          );
+          // The unreadable file is set aside as a .replaced- backup, so the edits can still be recovered.
+          errorToast(simpleMode
+            ? i18n.t("This recording's edits couldn't be read, so it opened without them. Their file is kept.")
+            : `${i18n.t('Failed to load segments')} (${err instanceof Error && err.message})`);
         }
       }
 
@@ -5435,6 +5436,7 @@ function App() {
       applyProjectState,
       whenProjectSaved,
       setRecentFiles,
+      simpleMode,
     ],
   );
 
