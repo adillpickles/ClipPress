@@ -8,6 +8,10 @@
     "highlightsMd": "- **Faster exports:** ClipPress can use your graphics card to export much faster.\n- **Speed and crop:** speed up or slow down any part of a clip (Ctrl+R), and zoom or crop it.\n- **Ready for Discord:** size-limited exports now aim for 20 MB by default.\n- **Safer projects:** edits save automatically, including one made right before you close ClipPress.\n- **Automatic updates:** install ClipPress with the new installer to get future versions automatically.\n"
   },
   {
+    "version": "0.1.0-beta.6",
+    "highlightsMd": "- **A new editor:** a timeline with picture strips and sound waves. Drag a clip's edges, and back-to-back clips snap together.\n- **Text on your clips:** add text (T) and type right on the picture.\n- **Share faster:** Ctrl+E exports with your last settings, Ctrl+1/2/3 in one tap (Discord is Ctrl+2), and the video is copied, ready to paste.\n- **Clips panel:** rename clips, tick them in or out, drag to reorder, or duplicate one (Ctrl+D). Alt+P shows or hides it.\n- **Safer edits:** kept in ClipPress's own folder, and when a recording moves, you can point ClipPress to it.\n"
+  },
+  {
     "version": "3.64.0"
   },
   {
