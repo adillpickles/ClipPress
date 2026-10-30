@@ -1,4 +1,4 @@
-﻿import { RELEASES_URL, previewAssetUrl, previewDownloadHref, releaseMetaLine } from './site.config';
+﻿import { INSTALLER_ASSET_NAME, RELEASES_API_URL, RELEASES_URL, previewAssetUrl, previewDownloadHref, releaseMetaLine } from './site.config';
 
 // Every download link ships pointing at the Releases page so the no-JS path can
 // never 404. When a preview asset is published we swap in the direct asset URL.
@@ -19,6 +19,34 @@ function applyRelease(): void {
   document.querySelectorAll('[data-release-meta]').forEach((el) => {
     el.textContent = releaseMetaLine();
   });
+}
+
+interface GitHubRelease {
+  draft?: boolean;
+  published_at?: string | null;
+  assets?: { name: string; browser_download_url: string }[];
+}
+
+// Each release publishes an installer, so the links move to the newest one without a site change. Until GitHub
+// answers, and when it can't (offline, rate-limited), they stay on the config's release.
+async function applyLatestRelease(): Promise<void> {
+  try {
+    const response = await fetch(RELEASES_API_URL, { headers: { Accept: 'application/vnd.github+json' } });
+    if (!response.ok) return;
+    const releases = (await response.json()) as GitHubRelease[];
+    const installer = releases
+      .filter((release) => !release.draft && release.published_at)
+      .sort((a, b) => Date.parse(b.published_at!) - Date.parse(a.published_at!))
+      .flatMap((release) => release.assets ?? [])
+      .find((asset) => INSTALLER_ASSET_NAME.test(asset.name) && asset.browser_download_url.startsWith(`${RELEASES_URL}/download/`));
+    if (!installer) return;
+    document.querySelectorAll<HTMLAnchorElement>('a[data-download]').forEach((a) => {
+      a.href = installer.browser_download_url;
+      a.removeAttribute('data-coming-soon');
+    });
+  } catch {
+    // Keep the config's release.
+  }
 }
 
 function applyYear(): void {
@@ -1180,6 +1208,7 @@ function initTargetStory(): FigStory | null {
 }
 
 applyRelease();
+void applyLatestRelease();
 applyYear();
 initFloatParallax();
 initAppMock();
