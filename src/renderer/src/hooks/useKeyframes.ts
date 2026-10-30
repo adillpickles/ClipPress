@@ -44,7 +44,12 @@ function useKeyframes({ keyframesEnabled, filePath, commandedTime, videoStream, 
 
   const findNearestKeyFrameTime = useCallback(({ time, direction }: { time: number, direction: number }) => ffmpegFindNearestKeyFrameTime({ frames: neighbouringKeyFrames, time, direction, fps: detectedFps }), [neighbouringKeyFrames, detectedFps]);
 
-  useEffect(() => setNeighbouringKeyFrames({}), [filePath, videoStream]);
+  // Stretches already read: seeking around inside them needs no new ffprobe run (each one takes ~150 ms).
+  const coveredRef = useRef<{ from: number, to: number }[]>([]);
+  useEffect(() => {
+    coveredRef.current = [];
+    setNeighbouringKeyFrames({});
+  }, [filePath, videoStream]);
 
   useDebounceOld(() => {
     let aborted = false;
@@ -54,6 +59,10 @@ function useKeyframes({ keyframesEnabled, filePath, commandedTime, videoStream, 
       // We still want to calculate keyframes even if not shouldShowKeyframes because maybe we want to be able to step to the closest keyframe
       const shouldRun = keyframesEnabled && filePath != null && videoStream && commandedTime != null && !readingKeyframesPromise.current;
       if (!shouldRun) return;
+      // Most of the window already read: skip (keyframes are at most a few seconds apart).
+      const wantFrom = Math.max(commandedTime - ffmpegExtractWindow / 4, 0);
+      const wantTo = commandedTime + ffmpegExtractWindow / 4;
+      if (coveredRef.current.some(({ from, to }) => from <= wantFrom && to >= wantTo)) return;
 
       try {
         const promise = readFramesAroundTime({ filePath, aroundTime: commandedTime, streamIndex: videoStream.index, window: ffmpegExtractWindow });
@@ -61,11 +70,17 @@ function useKeyframes({ keyframesEnabled, filePath, commandedTime, videoStream, 
         const newFrames = await promise;
         if (aborted) return;
         const newKeyFrames = newFrames.filter((frame) => frame.keyframe);
+        const interval = { from: Math.max(commandedTime - ffmpegExtractWindow / 2, 0), to: commandedTime + ffmpegExtractWindow / 2 };
+        coveredRef.current.push(interval);
         // console.log(newFrames);
         setNeighbouringKeyFrames((existingKeyFramesMap) => {
+          // Nothing new: keep the same object, so nothing that uses it re-renders.
+          if (newKeyFrames.every((frame) => existingKeyFramesMap[frame.time] != null)) return existingKeyFramesMap;
           let existingFrames = Object.values(existingKeyFramesMap);
           if (existingFrames.length >= maxKeyframes) {
             existingFrames = sortBy(existingFrames, 'createdAt').slice(newKeyFrames.length);
+            // Older keyframes were dropped, so only this stretch is known to be complete now.
+            coveredRef.current = [interval];
           }
           return {
             ...toObj(existingFrames),
@@ -93,6 +108,8 @@ function useKeyframes({ keyframesEnabled, filePath, commandedTime, videoStream, 
       setWorking({ text: t('Reading all keyframes') });
       const newFrames = await readFrames({ filePath, from: start, to: end, streamIndex: videoStream.index });
       const newKeyFrames = newFrames.filter((frame) => frame.keyframe);
+      // These replace what was read before, so only this stretch is known to be read now.
+      coveredRef.current = [{ from: start, to: end }];
       setNeighbouringKeyFrames(toObj(newKeyFrames));
       setMaxKeyframes(newKeyFrames.length);
     } catch (err) {

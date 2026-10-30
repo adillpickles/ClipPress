@@ -2,9 +2,10 @@
 <!--
   ClipPress application mark.
 
-  An original ClipPress design: a play glyph held between two press bars, for
-  "clip" and "press". Drawn as flat geometry with generous weight so it still
-  reads at 16x16 in the Windows taskbar and tray.
+  An original ClipPress design: a play glyph held between two trim brackets.
+  The brackets are the start and end of a clip, as on the timeline, and they
+  close in on the play glyph ("press"). Drawn as flat geometry with heavy
+  strokes so it still reads at 16x16 in the Windows taskbar and tray.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
@@ -17,13 +18,12 @@
   <rect x="36" y="36" width="440" height="440" rx="100" fill="url(#clippressTile)"/>
 
   <!--
-    The gaps around the play glyph are deliberately generous. With the bars any
-    closer the three shapes merge into one block once the icon is scaled down to
-    32px or 16px.
+    The gaps between the brackets and the play glyph are deliberately generous:
+    any closer and the shapes merge into one block at 24px and below.
   -->
-  <g fill="#0b1417">
-    <rect x="146" y="112" width="220" height="34" rx="17"/>
-    <rect x="146" y="366" width="220" height="34" rx="17"/>
-    <path d="M202 200 L324 256 L202 312 Z" stroke="#0b1417" stroke-width="12" stroke-linejoin="round"/>
+  <g fill="none" stroke="#0b1417" stroke-width="48" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M190 124 H138 V388 H190"/>
+    <path d="M322 124 H374 V388 H322"/>
   </g>
+  <path d="M222 196 L306 256 L222 316 Z" fill="#0b1417" stroke="#0b1417" stroke-width="26" stroke-linejoin="round"/>
 </svg>

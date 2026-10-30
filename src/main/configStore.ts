@@ -12,95 +12,11 @@ import { moveSettingsOutOfInstallFolder, noteSettingsFoldersForInstaller } from 
 import { getInstallationDir, isWindowsFolderInside } from './installation.js';
 import { isWindows, pathExists } from './util.js';
 import { fallbackLng } from './i18nCommon.js';
+import retrySettingsWrite from './settingsWriteRetry.js';
+import { addQuickExportKeyBindings, defaultQuickExportPresets, migrateQuickExportPresets, normalizeQuickExportPresets } from '../common/quickExport.js';
+import defaultKeyBindings, { defaultMouseModifierKeys } from '../common/defaultKeyBindings.js';
 
 const { app } = electron;
-
-
-const defaultKeyBindings: KeyBinding[] = [
-  { keys: 'ShiftLeft+Equal', action: 'addSegment' },
-  { keys: 'Space', action: 'togglePlayResetSpeed' },
-  { keys: 'KeyK', action: 'togglePlayNoResetSpeed' },
-  { keys: 'KeyJ', action: 'reducePlaybackRate' },
-  { keys: 'ShiftLeft+KeyJ', action: 'reducePlaybackRateMore' },
-  { keys: 'KeyL', action: 'increasePlaybackRate' },
-  { keys: 'ShiftLeft+KeyL', action: 'increasePlaybackRateMore' },
-  { keys: 'KeyZ', action: 'timelineToggleComfortZoom' },
-  { keys: 'ShiftLeft+KeyZ', action: 'makeCursorTimeZero' },
-  { keys: 'Comma', action: 'seekPreviousFrame' },
-  { keys: 'Period', action: 'seekNextFrame' },
-  { keys: 'KeyC', action: 'captureSnapshot' },
-  { keys: 'ControlLeft+KeyC', action: 'copySegmentsToClipboard' },
-  { keys: 'MetaLeft+KeyC', action: 'copySegmentsToClipboard' },
-  { keys: 'ShiftLeft+KeyC', action: 'captureSnapshotToClipboard' },
-
-  { keys: 'KeyI', action: 'setCutStart' },
-  { keys: 'KeyO', action: 'setCutEnd' },
-  { keys: 'Backspace', action: 'removeCurrentCutpoint' },
-  { keys: 'KeyD', action: 'cleanupFilesDialog' },
-  { keys: 'KeyB', action: 'splitCurrentSegment' },
-  { keys: 'KeyR', action: 'increaseRotation' },
-  { keys: 'ControlLeft+KeyR', action: 'toggleSegmentSpeedControls' },
-  { keys: 'MetaLeft+KeyR', action: 'toggleSegmentSpeedControls' },
-  { keys: 'KeyG', action: 'goToTimecode' },
-  { keys: 'KeyT', action: 'toggleStripAll' },
-  { keys: 'ShiftLeft+KeyT', action: 'toggleStripCurrentFilter' },
-
-  { keys: 'ArrowLeft', action: 'seekBackwards' },
-  { keys: 'ControlLeft+ShiftLeft+ArrowLeft', action: 'seekBackwards2' },
-  { keys: 'ControlLeft+ArrowLeft', action: 'seekBackwardsPercent' },
-  { keys: 'MetaLeft+ArrowLeft', action: 'seekBackwardsPercent' },
-  { keys: 'AltLeft+ArrowLeft', action: 'seekBackwardsKeyframe' },
-  { keys: 'ShiftLeft+ArrowLeft', action: 'jumpCutStart' },
-
-  { keys: 'ArrowRight', action: 'seekForwards' },
-  { keys: 'ControlLeft+ShiftLeft+ArrowRight', action: 'seekForwards2' },
-  { keys: 'ControlLeft+ArrowRight', action: 'seekForwardsPercent' },
-  { keys: 'MetaLeft+ArrowRight', action: 'seekForwardsPercent' },
-  { keys: 'AltLeft+ArrowRight', action: 'seekForwardsKeyframe' },
-  { keys: 'ShiftLeft+ArrowRight', action: 'jumpCutEnd' },
-
-  { keys: 'ControlLeft+Home', action: 'jumpTimelineStart' },
-  { keys: 'ControlLeft+End', action: 'jumpTimelineEnd' },
-
-  { keys: 'PageUp', action: 'jumpFirstSegment' },
-  { keys: 'ArrowUp', action: 'jumpPrevSegment' },
-  { keys: 'ShiftLeft+AltLeft+PageUp', action: 'jumpSeekFirstSegment' },
-  { keys: 'ShiftLeft+AltLeft+ArrowUp', action: 'jumpSeekPrevSegment' },
-  { keys: 'ControlLeft+ArrowUp', action: 'timelineZoomIn' },
-  { keys: 'MetaLeft+ArrowUp', action: 'timelineZoomIn' },
-  { keys: 'ShiftLeft+ArrowUp', action: 'batchPreviousFile' },
-  { keys: 'ControlLeft+ShiftLeft+ArrowUp', action: 'batchOpenPreviousFile' },
-
-  { keys: 'PageDown', action: 'jumpLastSegment' },
-  { keys: 'ArrowDown', action: 'jumpNextSegment' },
-  { keys: 'ShiftLeft+AltLeft+PageDown', action: 'jumpSeekLastSegment' },
-  { keys: 'ShiftLeft+AltLeft+ArrowDown', action: 'jumpSeekNextSegment' },
-  { keys: 'ControlLeft+ArrowDown', action: 'timelineZoomOut' },
-  { keys: 'MetaLeft+ArrowDown', action: 'timelineZoomOut' },
-  { keys: 'ShiftLeft+ArrowDown', action: 'batchNextFile' },
-  { keys: 'ControlLeft+ShiftLeft+ArrowDown', action: 'batchOpenNextFile' },
-
-  { keys: 'ShiftLeft+Enter', action: 'batchOpenSelectedFile' },
-
-  // https://github.com/mifi/lossless-cut/issues/610
-  { keys: 'ControlLeft+KeyZ', action: 'undo' },
-  { keys: 'MetaLeft+KeyZ', action: 'undo' },
-  { keys: 'ControlLeft+ShiftLeft+KeyZ', action: 'redo' },
-  { keys: 'MetaLeft+ShiftLeft+KeyZ', action: 'redo' },
-  // The usual Windows redo, as in Edit > Redo.
-  { keys: 'ControlLeft+KeyY', action: 'redo' },
-
-  { keys: 'KeyF', action: 'toggleFullscreenVideo' },
-
-  { keys: 'Enter', action: 'labelCurrentSegment' },
-
-  { keys: 'KeyE', action: 'export' },
-  { keys: 'ShiftLeft+Slash', action: 'toggleKeyboardShortcuts' },
-
-  { keys: 'AltLeft+ArrowUp', action: 'increaseVolume' },
-  { keys: 'AltLeft+ArrowDown', action: 'decreaseVolume' },
-  { keys: 'KeyM', action: 'toggleMuted' },
-];
 
 const defaults: Config = {
   version: 2,
@@ -108,6 +24,9 @@ const defaults: Config = {
   captureFormat: 'jpeg',
   enableCustomOutDir: false,
   recentCustomOutDirs: [],
+  recentFiles: [],
+  shelfOrder: 'date',
+  shelfExports: [],
   keyframeCut: true,
   autoMerge: false,
   autoDeleteMergedSegments: true,
@@ -117,6 +36,10 @@ const defaults: Config = {
   invertCutSegments: false,
   autoExportExtraStreams: true,
   exportConfirmEnabled: true,
+  trashSourceAfterExport: false,
+  trashProjectWithSource: true,
+  copyAfterExport: true,
+  playOnOpen: false,
   askBeforeClose: false,
   enableImportChapters: 'ask',
   enableAskForFileOpenAction: true,
@@ -137,6 +60,7 @@ const defaults: Config = {
   autoLoadTimecode: false,
   segmentsToChapters: false,
   simpleMode: true,
+  enableAdvancedMode: false,
   outSegTemplate: undefined,
   mergedFileTemplate: undefined,
   mergedFilesTemplate: undefined,
@@ -152,12 +76,13 @@ const defaults: Config = {
   enableAutoHtml5ify: true,
   keyBindings: defaultKeyBindings,
   customFfPath: undefined,
-  storeProjectInWorkingDir: true,
+  projectFileLocation: 'app',
   enableOverwriteOutput: true,
-  mouseWheelZoomModifierKey: 'ctrl',
-  mouseWheelFrameSeekModifierKey: 'alt',
-  mouseWheelKeyframeSeekModifierKey: 'shift',
-  segmentMouseModifierKey: 'shift',
+  mouseWheelZoomModifierKey: defaultMouseModifierKeys.zoom,
+  mouseWheelFrameSeekModifierKey: defaultMouseModifierKeys.frameSeek,
+  mouseWheelKeyframeSeekModifierKey: defaultMouseModifierKeys.keyframeSeek,
+  segmentMouseModifierKey: defaultMouseModifierKeys.segment,
+  extraMouseModifierKeys: {},
   captureFrameMethod: 'videotag', // we don't default to ffmpeg because ffmpeg might choose a frame slightly off
   captureFrameQuality: 0.95,
   captureFrameFileNameFormat: 'timestamp',
@@ -203,6 +128,7 @@ const defaults: Config = {
   sizeLimitMergedNamingMode: 'auto',
   sizeLimitCutFileTemplate: undefined,
   sizeLimitCutMergedFileTemplate: undefined,
+  quickExportPresets: defaultQuickExportPresets,
 };
 
 const configFileName = 'config.json'; // note: this is also hard-coded inside electron-store
@@ -238,9 +164,19 @@ export function get<T extends keyof Config>(key: T): Config[T] {
 /** One disk read and one bridge response, with no remote object proxies in the renderer. */
 export const getSnapshotJson = () => JSON.stringify(store.store);
 
+// Migration markers and retired settings: written straight to the store, with the same retries.
+function setStored(key: string, val: unknown) {
+  retrySettingsWrite(() => store.set(key, val));
+}
+function deleteStored(key: string) {
+  retrySettingsWrite(() => store.delete(key));
+}
+
 export function set<T extends keyof Config>(key: T, val: Config[T]) {
-  if (val === undefined) store.delete(key);
-  else store.set(key, val);
+  retrySettingsWrite(() => {
+    if (val === undefined) store.delete(key);
+    else store.set(key, val);
+  });
   if (key === 'enableUpdateCheck' || key === 'updateMode' || key === 'allowMultipleInstances') updateSettingsEvents.dispatchEvent(new Event('change'));
 }
 
@@ -279,6 +215,9 @@ let customStoragePath: string | undefined;
  * "show config file" menu item.
  */
 export const getConfigPath = () => join(customStoragePath ?? app.getPath('userData'), configFileName);
+
+/** The folder ClipPress keeps its own files in: the portable settings folder if there is one, else app data. */
+export const getDataDir = () => customStoragePath ?? app.getPath('userData');
 
 async function tryBackupConfigFile(oldConfigVersion: number, appVersion: string) {
   try {
@@ -409,12 +348,14 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
   await tryCreateStore({ customStoragePath });
 
   if (!['automatic', 'ask'].includes(store.get('updateMode'))) set('updateMode', defaults.updateMode);
+  // 'date' and 'name' from before the shelf could be turned round still mean oldest first and A to Z.
+  if (!['date', 'date-desc', 'name', 'name-desc'].includes(store.get('shelfOrder'))) set('shelfOrder', defaults.shelfOrder);
 
   // migrate old configs:
   const enableTransferTimestamps = store.get('enableTransferTimestamps'); // todo remove after a while
   if (enableTransferTimestamps != null) {
     logger.info('Migrating enableTransferTimestamps');
-    store.delete('enableTransferTimestamps');
+    deleteStored('enableTransferTimestamps');
     set('treatOutputFileModifiedTimeAsStart', enableTransferTimestamps ? true : undefined);
   }
 
@@ -424,10 +365,32 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     set('cleanupChoices', { ...cleanupChoices, closeFile: true });
   }
 
+  // "Move the original to the trash" + "Do this automatically after each export" in the clean-up dialog is now the
+  // Export setting "Move the original to the Recycle Bin after export", which never deletes permanently.
+  // Only an unattended setup (no "Ask me each time") becomes the switch, and the old automatic trigger is
+  // retired so that turning the switch off really stops it. Asked-each-time setups keep asking.
+  const legacyCleanupChoices = store.get('cleanupChoices') as (Config['cleanupChoices'] & { trashSourceFile?: boolean }) | undefined;
+  if (!storedKeys.has('trashSourceAfterExport') && legacyCleanupChoices?.cleanupAfterExport && legacyCleanupChoices.trashSourceFile && !legacyCleanupChoices.askForCleanup) {
+    logger.info('Migrating cleanupChoices.trashSourceFile to trashSourceAfterExport');
+    set('trashSourceAfterExport', true);
+    set('cleanupChoices', { ...legacyCleanupChoices, trashSourceFile: false } as Config['cleanupChoices']);
+  }
+
+  // Beta 5's "Store next to media file" (storeProjectInWorkingDir false) was a deliberate choice, as conf stored the
+  // default true for everyone else: keep those edits beside the recordings rather than moving them into ClipPress's folder.
+  const storeProjectInWorkingDir = store.get('storeProjectInWorkingDir') as boolean | undefined; // todo remove after a while
+  if (storeProjectInWorkingDir != null) {
+    if (storeProjectInWorkingDir === false && !storedKeys.has('projectFileLocation')) {
+      logger.info('Migrating storeProjectInWorkingDir to projectFileLocation');
+      set('projectFileLocation', 'recording');
+    }
+    deleteStored('storeProjectInWorkingDir');
+  }
+
   const customOutDir = store.get('customOutDir'); // todo remove after a while
   if (customOutDir != null) {
     logger.info('Migrating customOutDir to recentCustomOutDirs');
-    store.delete('customOutDir');
+    deleteStored('customOutDir');
     set('recentCustomOutDirs', [customOutDir]);
     set('enableCustomOutDir', customOutDir != null);
   }
@@ -657,7 +620,20 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     const addedBindings = defaultKeyBindings.filter((binding) => binding.action === 'toggleSegmentSpeedControls'
       && !existingBindings.some((existing) => existing.keys === binding.keys || existing.action === binding.action));
     if (addedBindings.length > 0) set('keyBindings', [...existingBindings, ...addedBindings]);
-    store.set('segmentSpeedShortcutsMigrated', true);
+    setStored('segmentSpeedShortcutsMigrated', true);
+  }
+
+  // T used to toggle "strip all tracks", which silently left every track out of the next export
+  // when pressed by accident. It now adds text. Settings still holding that old default get the new
+  // one; a T the user bound to something else is left alone, and strip-all stays bindable.
+  if (store.get('textShortcutMigrated') !== true) {
+    const existingBindings = store.get('keyBindings') as KeyBinding[];
+    const withoutOldDefault = existingBindings.filter((existing) => !(existing.keys === 'KeyT' && existing.action === 'toggleStripAll'));
+    const tIsFree = !withoutOldDefault.some((existing) => existing.keys === 'KeyT');
+    const hasTextBinding = withoutOldDefault.some((existing) => existing.action === 'addTextOverlay');
+    const migrated = tIsFree && !hasTextBinding ? [...withoutOldDefault, { keys: 'KeyT', action: 'addTextOverlay' as const }] : withoutOldDefault;
+    if (migrated.length !== existingBindings.length || migrated.some((binding, i) => binding !== existingBindings[i])) set('keyBindings', migrated);
+    setStored('textShortcutMigrated', true);
   }
 
   // Ctrl+Y redo for existing settings too, unless Ctrl+Y (either Ctrl key) already does something.
@@ -665,6 +641,55 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     const existingBindings = store.get('keyBindings') as KeyBinding[];
     const isCtrlY = (keys: string) => { const parts = keys.split('+'); return parts.length === 2 && parts.includes('KeyY') && (parts.includes('ControlLeft') || parts.includes('ControlRight')); };
     if (!existingBindings.some((existing) => isCtrlY(existing.keys))) set('keyBindings', [...existingBindings, { keys: 'ControlLeft+KeyY', action: 'redo' }]);
-    store.set('redoCtrlYShortcutMigrated', true);
+    setStored('redoCtrlYShortcutMigrated', true);
+  }
+
+  // Quick export presets still at their first defaults: Discord 20 MB, Email 17 MB, and a real name for the first.
+  if (store.get('quickExportPresetsMigrated') !== true) {
+    const existingPresets = normalizeQuickExportPresets(store.get('quickExportPresets'));
+    const migratedPresets = migrateQuickExportPresets(existingPresets);
+    if (migratedPresets.some((preset, i) => preset !== existingPresets[i])) set('quickExportPresets', migratedPresets);
+    setStored('quickExportPresetsMigrated', true);
+  }
+
+  // Single keys that did something hard to notice by accident: D opened the clean-up dialog, R rotated the export.
+  // Settings still holding those defaults lose D, and R zooms / crops instead (if that has no key of its own).
+  if (store.get('riskyLetterShortcutsMigrated') !== true) {
+    const existingBindings = store.get('keyBindings') as KeyBinding[];
+    const cropBound = existingBindings.some((existing) => existing.action === 'editCurrentSegmentCrop');
+    const migrated = existingBindings.flatMap((existing): KeyBinding[] => {
+      if (existing.keys === 'KeyD' && existing.action === 'cleanupFilesDialog') return [];
+      if (existing.keys === 'KeyR' && existing.action === 'increaseRotation') return cropBound ? [] : [{ keys: 'KeyR', action: 'editCurrentSegmentCrop' }];
+      return [existing];
+    });
+    if (migrated.length !== existingBindings.length || migrated.some((binding, i) => binding !== existingBindings[i])) set('keyBindings', migrated);
+    setStored('riskyLetterShortcutsMigrated', true);
+  }
+
+  // Delete removes the selected clips, for existing settings too, unless Delete already does something.
+  if (store.get('deleteClipsShortcutMigrated') !== true) {
+    const existingBindings = store.get('keyBindings') as KeyBinding[];
+    if (!existingBindings.some((existing) => existing.keys === 'Delete' || existing.action === 'removeSelectedClips')) set('keyBindings', [...existingBindings, { keys: 'Delete', action: 'removeSelectedClips' as const }]);
+    setStored('deleteClipsShortcutMigrated', true);
+  }
+
+  // Ctrl+E and Ctrl+1/2/3 (quick exports) for existing settings too, where those keys are still free.
+  if (store.get('quickExportShortcutsMigrated') !== true) {
+    const existingBindings = store.get('keyBindings') as KeyBinding[];
+    const withQuickExports = addQuickExportKeyBindings(existingBindings);
+    if (withQuickExports !== existingBindings) set('keyBindings', withQuickExports);
+    setStored('quickExportShortcutsMigrated', true);
+  }
+
+  // Alt+P shows and hides the Clips panel, Ctrl+D duplicates a clip: for existing settings too, where the key is still
+  // free and the action has none.
+  if (store.get('panelDuplicateShortcutsMigrated') !== true) {
+    const existingBindings = store.get('keyBindings') as KeyBinding[];
+    // Either Alt (Ctrl…) does the same, in any order: AltRight+KeyP already in use counts.
+    const normalize = (keys: string) => keys.split('+').map((key) => key.replace(/^(Control|Shift|Alt|Meta)Right$/, '$1Left')).sort().join('+');
+    const added = defaultKeyBindings.filter((binding) => (binding.action === 'toggleSegmentsList' || binding.action === 'duplicateCurrentSegment')
+      && !existingBindings.some((existing) => normalize(existing.keys) === normalize(binding.keys) || existing.action === binding.action));
+    if (added.length > 0) set('keyBindings', [...existingBindings, ...added]);
+    setStored('panelDuplicateShortcutsMigrated', true);
   }
 }

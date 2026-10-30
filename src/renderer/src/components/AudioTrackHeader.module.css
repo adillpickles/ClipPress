@@ -1,0 +1,176 @@
+.header {
+  flex: 1;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 4px;
+  border-top: 1px solid var(--cp-line);
+}
+
+.iconButton {
+  all: unset;
+  cursor: pointer;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--cp-text-muted);
+  font-size: 14px;
+  transition: background-color .12s ease, color .12s ease;
+}
+
+.iconButton:hover {
+  background: var(--cp-hover);
+  color: var(--cp-text);
+}
+
+/* The track isn't at 100%: the export sounds different from the recording. */
+.iconButtonChanged {
+  color: var(--cp-accent-text);
+  background: var(--cp-accent-soft);
+}
+
+.iconButtonChanged:hover {
+  color: var(--cp-accent-text);
+  background: color-mix(in srgb, var(--accent-9) 26%, transparent);
+}
+
+/* The preview is muted: easy to forget, so it stands out, over the track's tint too. */
+.iconButtonActive,
+.iconButtonActive:hover {
+  color: var(--cp-warning);
+}
+
+.iconButton:focus-visible,
+.muteButton:focus-visible,
+.resetButton:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+/* The title with its "i" beside it (the help that used to be a line of text under it). */
+.popoverTitle {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+  font-size: .875rem;
+  font-weight: 650;
+}
+
+/* One track: its volume and reset sit on the title's line. */
+.popoverTitle .gainValue {
+  margin-left: auto;
+  font-size: .8125rem;
+}
+
+.gainItem {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+}
+
+.gainHeader {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .8125rem;
+}
+
+.gainLabel {
+  flex: 1;
+  min-width: 0;
+  color: var(--cp-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gainValue {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.resetButton {
+  all: unset;
+  cursor: pointer;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: var(--cp-text-subtle);
+}
+
+.resetButton:hover:not(:disabled) {
+  background: var(--cp-hover);
+  color: var(--cp-text);
+}
+
+/* Already at 100%. */
+.resetButton:disabled {
+  cursor: default;
+  opacity: .35;
+}
+
+.slider {
+  width: 100%;
+  accent-color: var(--cp-accent);
+}
+
+.divider {
+  height: 1px;
+  margin: .1rem -.85rem;
+  background: var(--cp-line);
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+}
+
+.previewTitle {
+  flex: 1;
+  font-weight: 600;
+  color: var(--cp-text-muted);
+}
+
+.previewValue {
+  font-variant-numeric: tabular-nums;
+  color: var(--cp-text-muted);
+}
+
+.previewNote {
+  font-size: .75rem;
+  color: var(--cp-text-subtle);
+}
+
+.previewRow {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  margin-top: .1rem;
+}
+
+.muteButton {
+  all: unset;
+  cursor: pointer;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--cp-text-muted);
+  font-size: 14px;
+}
+
+.muteButton:hover {
+  background: var(--cp-hover);
+}
+
+.muteButtonOn {
+  color: var(--cp-warning);
+}

@@ -1,27 +1,275 @@
-.settings td {
-  vertical-align: top;
+.layout {
+  display: grid;
+  grid-template-columns: 12rem minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
 }
 
-.settings td:first-child, .settings th:first-child {
-  padding: 1em 1em 1em 0;
-}
-.settings td:nth-child(2), .settings th:nth-child(2) {
-  padding: 1em 0 1em 0;
-  width: 15em;
-}
-
-.settings th {
-  text-align: left;
-}
-
-.settings tr.header {
-  border-bottom: .1em solid var(--black-a3);
+.nav {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .75rem;
+  border-right: 1px solid var(--cp-line);
+  background: var(--cp-bg);
+  overflow-y: auto;
 }
 
-:global(.dark-theme) .settings tr.header {
-  border-bottom: .1em solid var(--white-a4);
+.navList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.settings {
-  border-collapse: collapse;
+.navItem {
+  all: unset;
+  cursor: pointer;
+  padding: .45rem .65rem;
+  border-radius: var(--cp-radius);
+  color: var(--cp-text-muted);
+  font-size: .875rem;
+  font-weight: 500;
+  transition: background-color .12s ease, color .12s ease;
+}
+
+/* Hover is a step lighter than the selected tab, so the tab you point at never looks more selected than the
+   one you are on. */
+.navItem:hover {
+  background: var(--cp-raised);
+  color: var(--cp-text);
+}
+
+.navItem:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.navItemActive,
+.navItemActive:hover {
+  background: var(--cp-active);
+  color: var(--cp-text);
+  font-weight: 600;
+}
+
+/* Kept small and quiet at the bottom of the list: most people never need it. */
+.advancedToggle {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  padding: .35rem .4rem;
+  color: var(--cp-text-muted);
+  font-size: .75rem;
+  cursor: pointer;
+}
+
+.advancedToggle > button {
+  transform: scale(.8);
+  transform-origin: left center;
+  margin-right: -.3rem;
+}
+
+/* Light uses the muted grey above: the subtle one is too faint on the pale panels. Dark keeps its look. */
+:global(.dark-theme) .advancedToggle,
+:global(.dark-theme) .rowValue {
+  color: var(--cp-text-subtle);
+}
+
+/* The scrollbar's 10px gutter (.consistent-scrollbar) is always kept, so controls don't shift sideways between
+   tabs that scroll and tabs that don't; the right padding gives those 10px back. */
+.content {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: .25rem calc(1.5rem - 10px) 1.5rem 1.5rem;
+}
+
+.contentTitle {
+  margin: .9rem 0 .25rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--cp-text);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: .85rem 0;
+  border-bottom: 1px solid var(--cp-line);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.rowText {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.rowLabel {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  color: var(--cp-text);
+  font-size: .875rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.rowLabel label {
+  cursor: pointer;
+}
+
+.rowValue {
+  margin-top: .15rem;
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.rowControl {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  max-width: 50%;
+}
+
+.rowControl select {
+  max-width: 16rem;
+}
+
+/* A mouse gesture with a second modifier added needs more than half the row. */
+.rowControlWide {
+  max-width: 72%;
+}
+
+.controlGroup {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+}
+
+.range {
+  width: 12rem;
+  accent-color: var(--accent-9);
+}
+
+.inlineControls {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+/* The search over all of Settings, above the tabs. */
+.navTop {
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+}
+
+.settingsSearch,
+.shortcutSearch {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.settingsSearch > svg,
+.shortcutSearch > svg {
+  position: absolute;
+  left: .6rem;
+  color: var(--cp-text-subtle);
+  font-size: .85rem;
+  pointer-events: none;
+}
+
+.settingsSearch input,
+.shortcutSearch input {
+  width: 100%;
+  padding-left: 1.85rem;
+}
+
+.shortcutSearch {
+  margin: .5rem 0 .25rem;
+}
+
+/* Searching: a tab with no matching setting hides, and the message shows only when nothing matches at all. */
+.searchSection:not(:has([data-setting-row])) {
+  display: none;
+}
+
+.noResults {
+  display: none;
+  margin-top: 1.5rem;
+  color: var(--cp-text-muted);
+  font-size: .875rem;
+}
+
+.searchResults:not(:has([data-setting-row])) .noResults {
+  display: block;
+}
+
+/* Shortcuts: groups with a small heading; a group with no shortcut matching the search hides. */
+.group {
+  margin-top: .9rem;
+}
+
+.group:not(:has([data-setting-row])) {
+  display: none;
+}
+
+.groupTitle {
+  margin: 0;
+  padding-bottom: .2rem;
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.group .row {
+  padding: .45rem 0;
+}
+
+/* What the settings search found, in a name or an explanation: ClipPress blue, nothing more. */
+.searchMark {
+  background: none;
+  color: var(--cp-accent-text);
+}
+
+/* Back to a shortcut's default: a quiet arrow beside its name, ClipPress blue on hover. */
+.revert {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: var(--cp-radius-sm);
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+  cursor: pointer;
+  transition: color .12s ease, background-color .12s ease;
+}
+
+.revert:hover {
+  color: var(--cp-accent-text);
+  background: var(--cp-accent-soft);
+}
+
+.revert:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.shortcutActions {
+  display: flex;
+  gap: .5rem;
+  margin-top: 1.25rem;
+}
+
+.moreShortcuts {
+  margin-top: .35rem;
 }

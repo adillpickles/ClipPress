@@ -12,32 +12,32 @@ import remote from '@electron/remote/main/index.js';
 import { stat } from 'node:fs/promises';
 import assert from 'node:assert';
 import timers from 'node:timers/promises';
-import { z } from 'zod';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import electronUnhandled from 'electron-unhandled';
-import { fileTypeFromFile } from 'file-type/node';
 import type { Asyncify } from 'type-fest';
 import mitt from 'mitt';
 
-import logger from './logger.js';
+import logger, { flushFileLogger, loadFileLogger } from './logger.js';
 import menu from './menu.js';
 import * as configStore from './configStore.js';
 import { isLinux, isWindows, isMac, platform, arch, pathExists } from './util.js';
 import { appName } from './common.js';
-import attachContextMenu from './contextMenu.js';
 import isDev from './isDev.js';
 import isStoreBuild from './isStoreBuild.js';
 import { getAboutPanelOptions } from './aboutPanel.js';
 import * as i18nCommon from './i18nCommon.js';
 import './i18n.js';
-import type { ApiActionRequest } from '../common/types.js';
+import type { ApiActionRequest, Config } from '../common/types.js';
 import { isSafeKey } from './objectKeys.js';
 import { isAllowedAppNavigation, isExternallyOpenableUrl } from './navigation.js';
 import * as ffmpeg from './ffmpeg.js';
 import * as compatPlayer from './compatPlayer.js';
+import { canCopyFiles, copyFilesToClipboard, startFileDrag, warmCopyHelper } from './fileClipboard.js';
+import { forgetEncoderCheck, getGpuVendors, readSavedEncoderCheck, saveEncoderCheck } from './encoderCheck.js';
 import { downloadMediaUrl } from './ffmpeg.js';
 import type UpdateController from './updateController.js';
 import type { UpdateStatus } from '../common/updates.js';
+import getEffectiveSimpleMode from '../common/interfaceMode.js';
 import CloseGuard from './closeGuard.js';
 import type { CloseDecision } from './closeGuard.js';
 
@@ -48,6 +48,9 @@ electronUnhandled({ showDialog: true, logger: (err) => logger.error('electron-un
 // https://peter.sh/experiments/chromium-command-line-switches/
 // https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/platform/runtime_enabled_features.json5
 app.commandLine.appendSwitch('enable-blink-features', 'AudioVideoTracks');
+// Windows 11's thin scroll bars, shown while scrolling and without arrows, wherever the app doesn't draw its own (the
+// open list of a dropdown, which can't be styled).
+if (isWindows) app.commandLine.appendSwitch('enable-features', 'FluentOverlayScrollbar');
 
 remote.initialize();
 
@@ -251,7 +254,6 @@ function createWindow() {
 
   remote.enable(mainWindow.webContents);
 
-  attachContextMenu(mainWindow);
 
   // Incremental hardening: never open a child window, and never navigate the app
   // window away from its own document. Full contextIsolation:true / nodeIntegration:false
@@ -388,9 +390,12 @@ function createWindow() {
   mainWindow.on('move', debouncedSaveWindowState);
 }
 
+// The renderer reports the interface mode (setSimpleMode); until then, the one the saved settings give.
+let menuSimpleMode: boolean | undefined;
+
 function updateMenu() {
   assert(mainWindow);
-  menu({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates: () => { checkForUpdates().catch((error: unknown) => logger.warn('Update check failed', error)); } });
+  menu({ app, mainWindow, newVersion, isStoreBuild, simpleMode: menuSimpleMode ?? getEffectiveSimpleMode({ enableAdvancedMode: configStore.get('enableAdvancedMode'), simpleMode: configStore.get('simpleMode') }), onCheckForUpdates: () => { checkForUpdates().catch((error: unknown) => logger.warn('Update check failed', error)); } });
 }
 
 async function changeLanguage(language: string | null) {
@@ -427,11 +432,17 @@ function parseCliArgs(rawArgv = process.argv) {
 
 const argv = parseCliArgs();
 
-const lossyModeSchema = z.object({ videoEncoder: z.union([z.literal('libx264'), z.literal('libx265'), z.literal('libsvtav1')]) });
+// Checked by hand: zod would add about 40 ms to every start for this one option.
+const lossyVideoEncoders = ['libx264', 'libx265', 'libsvtav1'] as const;
+export interface LossyMode { videoEncoder: typeof lossyVideoEncoders[number] }
+function parseLossyMode(value: unknown): LossyMode {
+  const videoEncoder = typeof value === 'object' && value != null ? (value as { videoEncoder?: unknown }).videoEncoder : undefined;
+  if (!lossyVideoEncoders.includes(videoEncoder as LossyMode['videoEncoder'])) throw new Error(`--lossy-mode needs videoEncoder: ${lossyVideoEncoders.join(', ')}`);
+  return { videoEncoder: videoEncoder as LossyMode['videoEncoder'] };
+}
 // eslint-disable-next-line prefer-destructuring
-const lossyMode = argv['lossyMode'] ? lossyModeSchema.parse(JSON5.parse(argv['lossyMode'])) : undefined;
+const lossyMode = argv['lossyMode'] ? parseLossyMode(JSON5.parse(argv['lossyMode'])) : undefined;
 
-export type LossyMode = z.infer<typeof lossyModeSchema>;
 
 if (argv['localesPath'] != null) i18nCommon.setCustomLocalesPath(argv['localesPath']);
 
@@ -487,6 +498,7 @@ async function init() {
 
     if (!allowMultipleInstances && !safeRequestSingleInstanceLock({ argv: process.argv })) {
       logger.info('Found running instance, quitting');
+      await flushFileLogger().catch(() => undefined);
       app.quit();
       return;
     }
@@ -555,6 +567,11 @@ async function init() {
     });
 
     ipcMain.on('setLanguage', (_e, newLanguage) => changeLanguage(newLanguage));
+    ipcMain.on('setSimpleMode', (_e, simpleMode: unknown) => {
+      if (typeof simpleMode !== 'boolean' || simpleMode === menuSimpleMode) return;
+      menuSimpleMode = simpleMode;
+      updateMenu();
+    });
 
     ipcMain.handle('tryTrashItem', async (_e, path) => {
       try {
@@ -614,6 +631,9 @@ async function init() {
     }
 
     createWindow();
+    // Needed for the first FFmpeg run, but not to show the window.
+    ffmpeg.loadExeca().catch((err: unknown) => logger.error('Failed to load execa', err));
+    loadFileLogger().catch((err: unknown) => logger.error('Failed to load the file log', err));
     // will also updateMenu and set about panel options
     await changeLanguage(language);
 
@@ -621,6 +641,8 @@ async function init() {
     reportPreservedCorruptConfig();
   } catch (err) {
     logger.error('Failed to initialize', err);
+    // The file log may not be loaded yet this early: load and flush it, so the failure is in app.log.
+    await flushFileLogger().catch(() => undefined);
     electron.dialog.showErrorBox('ClipPress could not start', err instanceof Error ? err.message : String(err));
     app.quit();
   }
@@ -650,19 +672,105 @@ function sendOsNotification(options: NotificationConstructorOptions) {
   notification.show();
 }
 
+/** The title bar's menu buttons, as plain data in one call (reading a remote menu item costs a call per property). */
+function getMenuBarItems() {
+  const applicationMenu = electron.Menu.getApplicationMenu();
+  if (applicationMenu == null) return [];
+  return applicationMenu.items.flatMap((item, index) => (
+    item.visible !== false && item.submenu != null && item.role !== 'appMenu'
+      ? [{ index, key: String(item.id || item.label || index), label: item.label }]
+      : []
+  ));
+}
+
+/** The keys a role's item answers to, which Electron doesn't say (only a user-given accelerator). */
+const roleAccelerators: Partial<Record<string, string>> = {
+  undo: 'CmdOrCtrl+Z',
+  redo: process.platform === 'darwin' ? 'Shift+CmdOrCtrl+Z' : 'Ctrl+Y',
+  cut: 'CmdOrCtrl+X',
+  copy: 'CmdOrCtrl+C',
+  paste: 'CmdOrCtrl+V',
+  selectall: 'CmdOrCtrl+A',
+  togglefullscreen: process.platform === 'darwin' ? 'Ctrl+Cmd+F' : 'F11',
+  resetzoom: 'CmdOrCtrl+0',
+  zoomin: 'CmdOrCtrl+Plus',
+  zoomout: 'CmdOrCtrl+-',
+  toggledevtools: process.platform === 'darwin' ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
+};
+
+export interface AppMenuItem {
+  label: string,
+  type: string,
+  checked: boolean,
+  enabled: boolean,
+  visible: boolean,
+  accelerator: string | undefined,
+  /** The app action the item runs (menu.ts), for its key binding. */
+  id: string | undefined,
+  /** Where it is: indexes from the menu bar down. */
+  path: number[],
+  submenu: AppMenuItem[] | undefined,
+}
+
+const serializeMenu = (source: electron.Menu, path: number[]): AppMenuItem[] => source.items.map((item, index) => ({
+  label: item.label,
+  type: item.type,
+  checked: item.checked,
+  enabled: item.enabled,
+  visible: item.visible,
+  accelerator: (typeof item.accelerator === 'string' ? item.accelerator : undefined) ?? (item.role != null ? roleAccelerators[item.role.toLowerCase()] : undefined),
+  id: item.id || undefined,
+  path: [...path, index],
+  submenu: item.submenu != null ? serializeMenu(item.submenu, [...path, index]) : undefined,
+}));
+
+/** One of the menu bar's menus, as plain data for the title bar to draw in the app's own style. */
+function getMenuBarMenu(index: number) {
+  const submenu = electron.Menu.getApplicationMenu()?.items[index]?.submenu;
+  return submenu != null ? serializeMenu(submenu, [index]) : [];
+}
+
+/** Runs the menu bar's item at `path`, as clicking it in a system menu would. */
+function clickMenuItem(path: number[]) {
+  const [first, ...rest] = path;
+  let item = first != null ? electron.Menu.getApplicationMenu()?.items[first] : undefined;
+  for (const index of rest) item = item?.submenu?.items[index];
+  if (item == null || !item.enabled) return;
+  item.click(undefined, mainWindow ?? undefined, mainWindow?.webContents);
+}
+
 const remoteApi = {
   pathExists,
+  getMenuBarItems,
+  getMenuBarMenu,
+  clickMenuItem,
   downloadMediaUrl,
-  fileTypeFromFile,
+  // Loaded when first used, not at every start.
+  fileTypeFromFile: async (path: string) => (await import('file-type/node')).fileTypeFromFile(path),
   focusWindow,
   quitApp,
   setProgressBar,
   sendOsNotification,
+  canCopyFiles: () => canCopyFiles,
+  copyFilesToClipboard,
+  // The page's settings writes: asynchronous, so writing the whole settings file never holds up the page (it did on
+  // every open, for the recent files). Ordered with the page's other calls, so a later read sees it.
+  setConfig: <T extends keyof Config>(key: T, value: Config[T]) => configStore.set(key, value),
+  warmCopyHelper,
+  getGpuVendors,
+  readSavedEncoderCheck,
+  saveEncoderCheck,
+  forgetEncoderCheck,
+  startFileDrag: async (paths: string[], iconDataUrl?: string) => {
+    if (mainWindow != null) await startFileDrag(mainWindow.webContents, paths, iconDataUrl);
+  },
   getUpdateStatus,
   checkForUpdates,
   downloadUpdate,
   approveUpdateInstall,
   acknowledgeAppVersion,
+  /** For what the window does in the background and should be in the file log (its own console isn't kept). */
+  log: (level: 'info' | 'warn', message: string) => (level === 'warn' ? logger.warn(message) : logger.info(message)),
 };
 
 export type RemoteApi = typeof remoteApi;

@@ -1,26 +1,24 @@
 .close-button {
   all: unset;
   position: absolute;
-  padding: .5em;
-  margin: .2em;
+  width: 2rem;
+  height: 2rem;
+  margin: .65rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  border-radius: 100%;
-  font-size: 1.3em;
-
-  border: .1em solid transparent;
-  color: var(--gray-12);
-  background-color: none;
-  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+  border-radius: var(--cp-radius);
+  font-size: 1rem;
+  color: var(--cp-text-muted);
+  transition: background-color .14s ease, color .14s ease, box-shadow .14s ease;
 }
 
 .close-button:hover {
-  background-color: var(--gray-4);
-  color: var(--gray-12);
+  background-color: var(--cp-hover);
+  color: var(--cp-text);
 }
 
-.close-button:focus {
-  border: .1em solid var(--gray-4);
+.close-button:focus-visible {
+  box-shadow: var(--cp-focus-ring);
 }

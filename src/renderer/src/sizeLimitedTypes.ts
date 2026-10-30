@@ -137,11 +137,15 @@ export interface SizeLimitedRetryStep {
   qualityCapOffset?: number | undefined,
 }
 
+/** Why an attempt after the first runs: the last came out over the limit, or well under it (the top-up). */
+export type SizeLimitedRetryReason = 'smaller' | 'sharper';
+
 export interface SizeLimitedProgressMetadata {
   attemptNumber: number,
   maxAttempts: number,
   phaseNumber: number,
   phaseCount: number,
+  retryReason?: SizeLimitedRetryReason | undefined,
 }
 
 export interface SizeLimitedPlan {

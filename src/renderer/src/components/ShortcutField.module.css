@@ -1,0 +1,287 @@
+/* A shortcut's key caps, changed by pressing new keys (ShortcutField.tsx). */
+.field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: .35rem;
+}
+
+.slots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: .3rem;
+}
+
+.bindingWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.slot {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.85rem;
+  padding: .2rem .4rem;
+  border-radius: var(--cp-radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: border-color .12s ease, background-color .12s ease;
+}
+
+.slot:hover {
+  border-color: var(--cp-line-strong);
+  background: var(--cp-hover);
+}
+
+.slot:focus-visible,
+.remove:focus-visible,
+.conflictButton:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+/* Listening for keys: a soft blue outline, and the keys held drawn pressed down in ClipPress blue. */
+.recordingSlot {
+  cursor: default;
+  min-width: 6rem;
+  justify-content: center;
+  border-color: var(--accent-8);
+  background: color-mix(in srgb, var(--accent-9) 10%, transparent);
+  animation: shortcut-listening 1.4s ease-in-out infinite;
+}
+
+.recordingSlot kbd {
+  color: var(--accent-12);
+  background: color-mix(in srgb, var(--accent-9) 26%, var(--gray-2));
+  border-color: var(--accent-8);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 30%);
+  transform: translateY(1px);
+}
+
+@keyframes shortcut-listening {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-9) 0%, transparent); }
+  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-9) 22%, transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recordingSlot {
+    animation: none;
+  }
+}
+
+.prompt {
+  color: var(--cp-accent-text);
+  font-size: .78rem;
+  font-weight: 600;
+}
+
+.caps {
+  display: inline-flex;
+  align-items: center;
+}
+
+.plus {
+  margin: 0 .2rem;
+  color: var(--cp-text-subtle);
+  font-size: .7rem;
+}
+
+.emptySlot {
+  justify-content: center;
+  min-width: 2.2rem;
+  color: var(--cp-text-subtle);
+}
+
+/* An unbound action: an empty key cap, dashed, to fill. */
+.emptyCap {
+  display: inline-block;
+  width: 2.4rem;
+  height: 1.25rem;
+  border-radius: 5px;
+  border: 1px dashed var(--cp-line-strong);
+}
+
+.slot:hover .emptyCap {
+  border-color: var(--accent-8);
+}
+
+.addSlot {
+  min-width: 1.85rem;
+  padding: .2rem;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity .12s ease;
+}
+
+.field:hover .addSlot,
+.addSlot:focus-visible {
+  opacity: 1;
+}
+
+/* While recording: gone, but its room kept so the row doesn't shift. */
+.addSlot.addSlotHidden {
+  visibility: hidden;
+}
+
+.remove {
+  all: unset;
+  position: absolute;
+  top: -.4rem;
+  right: -.4rem;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--cp-raised);
+  border: 1px solid var(--cp-line-strong);
+  color: var(--cp-text-muted);
+  font-size: .6rem;
+  cursor: pointer;
+}
+
+/* Shown on hover, and while its key cap has keyboard focus, so Tab can reach it. */
+.bindingWrap:hover .remove,
+.bindingWrap:focus-within .remove {
+  display: inline-flex;
+}
+
+.remove:hover {
+  color: var(--red-11);
+  border-color: color-mix(in srgb, var(--red-9) 50%, transparent);
+}
+
+/* About to remove it: the key cap's highlight turns red too (the pointer covers the ✕ itself). */
+.bindingWrap:has(.remove:hover) .slot {
+  border-color: color-mix(in srgb, var(--red-9) 55%, transparent);
+  background: color-mix(in srgb, var(--red-9) 12%, transparent);
+}
+
+/* Only modifiers arrived: a quiet line, no box. */
+.missed {
+  color: var(--cp-text-muted);
+  font-size: .75rem;
+  text-align: right;
+  animation: missed-in .15s ease-out;
+}
+
+@keyframes missed-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.conflict {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .35rem;
+  color: var(--cp-warning);
+  font-size: .75rem;
+  font-weight: 600;
+}
+
+.conflictButton {
+  all: unset;
+  padding: .1rem .45rem;
+  border-radius: var(--cp-radius-sm);
+  border: 1px solid var(--cp-line-strong);
+  color: var(--cp-text);
+  font-size: .75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.conflictButton:hover {
+  background: var(--cp-hover);
+}
+
+/* Keys set elsewhere: no hover box, nothing to click. */
+.fixedSlot {
+  cursor: default;
+}
+
+.fixedSlot:hover {
+  border-color: transparent;
+  background: none;
+}
+
+.gestureSlot {
+  cursor: default;
+  gap: 0;
+}
+
+/* A modifier of a mouse gesture: a key cap that opens a list (the shared dropdown), its options key caps too. */
+.capSelect {
+  min-height: 0;
+  padding: 3px 16px 3px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 12px;
+  color: var(--gray-12);
+  background-color: var(--gray-3);
+  border: 1px solid var(--gray-7);
+  border-radius: 5px;
+  box-shadow: inset 0 -1px 0 var(--gray-7);
+  background-position-x: calc(100% - 2px);
+  background-size: .8rem;
+}
+
+.capSelect:hover {
+  background-color: var(--gray-4);
+  border-color: var(--accent-8);
+}
+
+@supports (appearance: base-select) {
+  .capSelect::picker(select) {
+    min-inline-size: anchor-size(width);
+    padding: .25rem;
+  }
+
+  .capSelect option {
+    justify-content: center;
+    margin: .15rem;
+    padding: 3px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 12px;
+    text-align: center;
+    color: var(--gray-12);
+    background: var(--gray-3);
+    border: 1px solid var(--gray-7);
+    border-radius: 5px;
+    box-shadow: inset 0 -1px 0 var(--gray-7);
+  }
+
+  .capSelect option:hover,
+  .capSelect option:focus-visible {
+    background: var(--gray-4);
+    border-color: var(--accent-8);
+  }
+
+  .capSelect option:checked {
+    color: var(--cp-accent-text);
+    background: color-mix(in srgb, var(--accent-9) 18%, var(--gray-3));
+    border-color: var(--accent-8);
+  }
+}
+
+/* The gesture itself: a quiet cap, since it isn't a key. */
+.gestureCap {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  color: var(--cp-text-muted);
+  background: none;
+  border-style: dashed;
+  box-shadow: none;
+  font-weight: 500;
+}
+
+.gestureCap svg {
+  font-size: .65rem;
+}

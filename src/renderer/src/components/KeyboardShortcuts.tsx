@@ -3,8 +3,6 @@ import { memo, Fragment, useEffect, useMemo, useCallback, useState, useRef } fro
 import { useTranslation } from 'react-i18next';
 import { FaMouse, FaPlus, FaStepForward, FaStepBackward, FaUndo, FaTrash, FaSave, FaHammer } from 'react-icons/fa';
 import groupBy from 'lodash/groupBy';
-import orderBy from 'lodash/orderBy';
-import uniq from 'lodash/uniq';
 import { AnimatePresence, motion } from 'motion/react';
 
 import useUserSettings from '../hooks/useUserSettings';
@@ -13,37 +11,26 @@ import SegmentCutpointButton from './SegmentCutpointButton';
 import { getModifier } from '../hooks/useTimelineScroll';
 import type { KeyBinding, KeyboardAction, ModifierKey } from '../../../common/types';
 import type { StateSegment } from '../types';
-import { allModifiers, altModifiers, controlModifiers, metaModifiers, shiftModifiers, splitKeyboardKeys } from '../util';
+import { splitKeyboardKeys } from '../util';
+import { fixKeys } from '../shortcutKeys';
 import * as Dialog from './Dialog';
 import Warning from './Warning';
 import Button, { DialogButton } from './Button';
+import ConfirmButton from './ConfirmButton';
 import Action from './Action';
 import TextInput from './TextInput';
-import Kbd from './Kbd';
+import renderKeys from './renderKeys';
+import SegmentedControl from './SegmentedControl';
 import { useAppContext } from '../contexts';
+import { normalizeQuickExportPresets, quickExportPresetActions } from '../../../common/quickExport';
+import { getQuickExportPresetLabel } from '../quickExport';
+import styles from './KeyboardShortcuts.module.css';
 
 
 type Category = string;
 
 type ActionsMap = Record<KeyboardAction, { name: string, category?: Category, before?: ReactNode }>;
 
-
-const renderKeys = (keys: string[]) => keys.map((key, i) => (
-  <Fragment key={key}>
-    {i > 0 && <FaPlus style={{ verticalAlign: 'middle', fontSize: '.4em', opacity: 0.8, marginLeft: '.4em', marginRight: '.4em' }} />}
-    <Kbd code={key} />
-  </Fragment>
-));
-
-// For modifier keys you can use shift, ctrl, alt, or meta.
-// You can substitute option for alt and command for meta.
-function fixKeys(keys: string[]) {
-  const uniqed = uniq(keys);
-  const nonModifierKeys = keys.filter((key) => !allModifiers.has(key));
-  if (nonModifierKeys.length === 0) return []; // only modifiers is invalid
-  if (nonModifierKeys.length > 1) return []; // can only have one non-modifier
-  return orderBy(uniqed, [(key) => !shiftModifiers.has(key), (key) => !controlModifiers.has(key), (key) => !altModifiers.has(key), (key) => !metaModifiers.has(key), (key) => key]);
-}
 
 // eslint-disable-next-line react/display-name
 const CreateBinding = memo(({
@@ -140,7 +127,14 @@ const CreateBinding = memo(({
   );
 });
 
-const rowStyle = { display: 'flex', alignItems: 'center', borderBottom: '1px solid rgba(0,0,0,0.1)', paddingBottom: '.2em' };
+const rowStyle = { display: 'flex', alignItems: 'center', gap: '.5em', padding: '.4em 0', borderBottom: '1px solid var(--cp-line)', fontSize: '.875rem' };
+
+/** What each quick export preset (Ctrl+1/2/3) makes, as set in Settings: "Discord · 10 MB". */
+function useQuickExportLabels() {
+  const { t } = useTranslation();
+  const { quickExportPresets } = useUserSettings();
+  return useMemo(() => normalizeQuickExportPresets(quickExportPresets).map((preset) => getQuickExportPresetLabel(preset, (key, options) => t(key, options))), [quickExportPresets, t]);
+}
 
 function WheelModifier({ text, wheelText, modifier }: { text: string, wheelText: string, modifier: ModifierKey }) {
   return (
@@ -167,7 +161,8 @@ const KeyboardShortcuts = memo(({
   const { t } = useTranslation();
   const { updateKeyboardLayout, confirmDialog } = useAppContext();
 
-  const { mouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey } = useUserSettings();
+  const { mouseWheelZoomModifierKey, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, segmentMouseModifierKey, simpleMode } = useUserSettings();
+  const quickExportLabels = useQuickExportLabels();
 
   const { actionsMap, extraLinesPerCategory } = useMemo(() => {
     const playbackCategory = t('Playback');
@@ -302,20 +297,21 @@ const KeyboardShortcuts = memo(({
         name: t('Forward seek (longest)'),
         category: seekingCategory,
       },
+      // What these do in the simple editor (see App): Alt+← / → go to clip edges, Ctrl+← / → step a frame.
       seekBackwardsKeyframe: {
-        name: t('Seek previous keyframe'),
+        name: simpleMode ? t('Go to the clip edge before') : t('Seek previous keyframe'),
         category: seekingCategory,
       },
       seekForwardsKeyframe: {
-        name: t('Seek next keyframe'),
+        name: simpleMode ? t('Go to the clip edge after') : t('Seek next keyframe'),
         category: seekingCategory,
       },
       seekBackwardsPercent: {
-        name: t('Seek backward 1% of timeline at current zoom'),
+        name: simpleMode ? t('Step backward 1 frame') : t('Seek backward 1% of timeline at current zoom'),
         category: seekingCategory,
       },
       seekForwardsPercent: {
-        name: t('Seek forward 1% of timeline at current zoom'),
+        name: simpleMode ? t('Step forward 1 frame') : t('Seek forward 1% of timeline at current zoom'),
         category: seekingCategory,
       },
       jumpCutStart: {
@@ -354,6 +350,14 @@ const KeyboardShortcuts = memo(({
         name: t('Remove current segment'),
         category: segmentsAndCutpointsCategory,
       },
+      removeSelectedClips: {
+        name: t('Remove the selected clips'),
+        category: segmentsAndCutpointsCategory,
+      },
+      startOver: {
+        name: t('Start over (back to the whole recording)'),
+        category: segmentsAndCutpointsCategory,
+      },
       setCutStart: {
         name: t('Start current segment at current time'),
         category: segmentsAndCutpointsCategory,
@@ -390,6 +394,14 @@ const KeyboardShortcuts = memo(({
       },
       toggleSegmentSpeedControls: {
         name: t('Toggle segment speed controls'),
+        category: segmentsAndCutpointsCategory,
+      },
+      addTextOverlay: {
+        name: t('Add text'),
+        category: segmentsAndCutpointsCategory,
+      },
+      editCurrentSegmentCrop: {
+        name: t('Zoom / crop the current clip'),
         category: segmentsAndCutpointsCategory,
       },
       jumpPrevSegment: {
@@ -492,7 +504,7 @@ const KeyboardShortcuts = memo(({
         category: segmentsAndCutpointsCategory,
       },
       toggleSegmentsList: {
-        name: t('Show sidebar'),
+        name: simpleMode ? t('Show or hide the clips panel') : t('Show sidebar'),
         category: segmentsAndCutpointsCategory,
       },
       selectOnlyCurrentSegment: {
@@ -577,6 +589,29 @@ const KeyboardShortcuts = memo(({
         name: t('Export segment(s)'),
         category: outputCategory,
       },
+      quickExport: {
+        name: t('Export right away with the last settings'),
+        category: outputCategory,
+      },
+      quickExportPreset1: {
+        name: t('Quick export {{number}}: {{preset}}', { number: 1, preset: quickExportLabels[0] }),
+        category: outputCategory,
+      },
+      quickExportPreset2: {
+        name: t('Quick export {{number}}: {{preset}}', { number: 2, preset: quickExportLabels[1] }),
+        category: outputCategory,
+      },
+      quickExportPreset3: {
+        name: t('Quick export {{number}}: {{preset}}', { number: 3, preset: quickExportLabels[2] }),
+        category: outputCategory,
+      },
+      // The ones added in Settings > Export (or not, yet).
+      quickExportPreset4: { name: t('Quick export {{number}}: {{preset}}', { number: 4, preset: quickExportLabels[3] ?? '' }), category: outputCategory },
+      quickExportPreset5: { name: t('Quick export {{number}}: {{preset}}', { number: 5, preset: quickExportLabels[4] ?? '' }), category: outputCategory },
+      quickExportPreset6: { name: t('Quick export {{number}}: {{preset}}', { number: 6, preset: quickExportLabels[5] ?? '' }), category: outputCategory },
+      quickExportPreset7: { name: t('Quick export {{number}}: {{preset}}', { number: 7, preset: quickExportLabels[6] ?? '' }), category: outputCategory },
+      quickExportPreset8: { name: t('Quick export {{number}}: {{preset}}', { number: 8, preset: quickExportLabels[7] ?? '' }), category: outputCategory },
+      quickExportPreset9: { name: t('Quick export {{number}}: {{preset}}', { number: 9, preset: quickExportLabels[8] ?? '' }), category: outputCategory },
       captureSnapshot: {
         name: t('Capture snapshot'),
         category: outputCategory,
@@ -786,7 +821,7 @@ const KeyboardShortcuts = memo(({
       extraLinesPerCategory,
       actionsMap,
     };
-  }, [currentCutSeg, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, mouseWheelZoomModifierKey, segmentMouseModifierKey, t]);
+  }, [currentCutSeg, mouseWheelFrameSeekModifierKey, mouseWheelKeyframeSeekModifierKey, mouseWheelZoomModifierKey, quickExportLabels, segmentMouseModifierKey, simpleMode, t]);
 
   useEffect(() => {
     updateKeyboardLayout();
@@ -814,30 +849,25 @@ const KeyboardShortcuts = memo(({
   const searchQueryTrimmed = searchQuery.toLowerCase().trim();
   const isSearching = !!searchQueryTrimmed;
 
+  // Quick exports that haven't been added (Settings > Export) aren't listed.
+  const isUnusedQuickExport = useCallback((action: KeyboardAction) => (quickExportPresetActions as readonly KeyboardAction[]).indexOf(action) >= quickExportLabels.length, [quickExportLabels.length]);
   const actionEntries = useMemo(() => (Object.entries(actionsMap) as unknown as [keyof typeof actionsMap, typeof actionsMap[keyof typeof actionsMap]][]).filter(([key, { name, category }]) => (
-    !isSearching
-    || key.toLocaleLowerCase().includes(searchQueryTrimmed)
-    || name.toLowerCase().includes(searchQueryTrimmed)
-    || (category != null && category.toLowerCase().includes(searchQueryTrimmed))
-  )), [actionsMap, isSearching, searchQueryTrimmed]);
+    !isUnusedQuickExport(key) && (
+      !isSearching
+      || key.toLocaleLowerCase().includes(searchQueryTrimmed)
+      || name.toLowerCase().includes(searchQueryTrimmed)
+      || (category != null && category.toLowerCase().includes(searchQueryTrimmed))
+    )
+  )), [actionsMap, isSearching, isUnusedQuickExport, searchQueryTrimmed]);
 
   const categoriesWithActions = useMemo(() => Object.entries(groupBy(actionEntries, ([, { category }]) => category)), [actionEntries]);
 
-  const onDeleteBindingClick = useCallback(async ({ action, keys }: { action: KeyboardAction, keys: string }) => {
-    if (!(await confirmDialog({ description: t('Are you sure?') }))) return;
-
+  // Confirmed in place (ConfirmButton).
+  const onDeleteBindingClick = useCallback(({ action, keys }: { action: KeyboardAction, keys: string }) => {
     console.log('Delete key binding', action, keys);
     setKeyBindings((existingBindings) => existingBindings.filter((existingBinding) => !(existingBinding.keys === keys && existingBinding.action === action)));
-  }, [confirmDialog, setKeyBindings, t]);
+  }, [setKeyBindings]);
 
-
-  const onResetClick = useCallback(async () => {
-    // Double confirmation!
-    if (!(await confirmDialog({ description: t('Are you sure you want to reset all keyboard bindings?') }))) return;
-    if (!(await confirmDialog({ description: t('Are you sure you want to reset all keyboard bindings?') }))) return;
-
-    resetKeyBindings();
-  }, [confirmDialog, resetKeyBindings, t]);
 
   const onAddBindingClick = useCallback((action: KeyboardAction) => {
     setCreatingBinding(action);
@@ -852,7 +882,7 @@ const KeyboardShortcuts = memo(({
     const duplicate = keyBindings.find((existingBinding) => existingBinding.keys === keysStr);
     let shouldReplaceDuplicate: KeyBinding | undefined;
     if (duplicate) {
-      const isConfirmed = await confirmDialog({ confirmButtonText: t('Replace'), description: t('Combination is already bound to "{{alreadyBoundKey}}". Do you want to replace the existing binding?', { alreadyBoundKey: actionsMap[duplicate.action]?.name }) });
+      const isConfirmed = await confirmDialog({ confirmButtonText: t('Replace'), description: t('These keys already run "{{alreadyBoundKey}}". Use them for this instead?', { alreadyBoundKey: actionsMap[duplicate.action]?.name }) });
 
       if (isConfirmed) {
         shouldReplaceDuplicate = duplicate;
@@ -872,13 +902,14 @@ const KeyboardShortcuts = memo(({
   return (
     <>
       <div style={{ marginBottom: '1em' }}>
-        <div style={{ marginBottom: '1em' }}>
-          <TextInput ref={searchInputRef} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search" style={{ width: '100%', padding: '.4em .8em', boxSizing: 'border-box' }} />
+        {/* Sticks to the top of the scrolling list, so searching never means scrolling back up. */}
+        <div className={styles['search']}>
+          <TextInput ref={searchInputRef} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder={t('Search shortcuts')} aria-label={t('Search shortcuts')} style={{ width: '100%' }} />
         </div>
 
         {categoriesWithActions.map(([category, actionsInCategory]) => (
-          <div key={category}>
-            {category !== 'undefined' && <div style={{ marginTop: '2em', marginBottom: '.7em', fontSize: '1.4em' }}>{category}</div>}
+          <div key={category} className={styles['category']}>
+            {category !== 'undefined' && <div className={styles['categoryTitle']}>{category}</div>}
 
             {actionsInCategory.map(([action, actionObj]) => {
               const actionName = (actionObj && actionObj.name) || action;
@@ -887,46 +918,169 @@ const KeyboardShortcuts = memo(({
               const bindingsForThisAction = keyBindings.filter((keyBinding) => keyBinding.action === action);
 
               return (
-                <div key={action} style={rowStyle}>
-                  <div>
+                <div key={action} className={styles['row']}>
+                  <div className={styles['rowName']} title={simpleMode ? undefined : t('API action name: {{action}}', { action })}>
                     {beforeContent}
-                    <span title={action} style={{ marginRight: '.5em', opacity: 0.9 }}>{actionName}</span>
-                    <div style={{ fontSize: '.8em', opacity: 0.3 }} title={t('API action name: {{action}}', { action })}>{action} <Button onClick={() => onTriggerActionClick(action)}><FaHammer /></Button></div>
+                    <span>{actionName}</span>
+                    {!simpleMode && (
+                      <Button size="sm" variant="ghost" title={t('Run this action now')} aria-label={t('Run this action now')} onClick={() => onTriggerActionClick(action)}><FaHammer aria-hidden /></Button>
+                    )}
                   </div>
 
-                  <div style={{ flexGrow: 1 }} />
-
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                  <div className={styles['rowKeys']}>
                     {bindingsForThisAction.map(({ keys }) => (
-                      <div key={keys} style={{ display: 'flex', alignItems: 'center' }}>
+                      <div key={keys} className={styles['binding']}>
                         {renderKeys(splitKeyboardKeys(keys))}
-
-                        <Button title={t('Remove key binding')} onClick={() => onDeleteBindingClick({ action, keys })} style={{ marginLeft: '.9em' }}><FaTrash style={{ fontSize: '.8em', verticalAlign: 'middle' }} /></Button>
+                        <ConfirmButton size="sm" grow className={styles['bindingRemove']} confirmLabel={t('Remove')} onConfirm={() => onDeleteBindingClick({ action, keys })}><FaTrash aria-label={t('Remove shortcut')} style={{ fontSize: '.75em' }} /></ConfirmButton>
                       </div>
                     ))}
 
-                    {bindingsForThisAction.length === 0 && <span style={{ opacity: 0.8, fontSize: '.8em' }}>{t('No binding')}</span>}
+                    {bindingsForThisAction.length === 0 && <span className={styles['noBinding']}>{t('None')}</span>}
                   </div>
 
-                  <Button title={t('Bind new key to action')} onClick={() => onAddBindingClick(action)} style={{ marginLeft: '.5em' }}><FaPlus style={{ fontSize: '.8em', verticalAlign: 'middle' }} /></Button>
+                  <Button size="sm" variant="ghost" title={t('Add a shortcut')} aria-label={t('Add a shortcut')} onClick={() => onAddBindingClick(action)}><FaPlus aria-hidden style={{ fontSize: '.75em' }} /></Button>
                 </div>
               );
             })}
 
-            {extraLinesPerCategory[category] && <div style={{ marginTop: '.8em' }}>{extraLinesPerCategory[category]}</div>}
+            {extraLinesPerCategory[category] && <div style={{ marginTop: '.5em' }}>{extraLinesPerCategory[category]}</div>}
           </div>
         ))}
       </div>
 
-      {!isSearching && <Button onClick={onResetClick} style={{ marginBottom: '1em' }}><FaUndo style={{ marginRight: '.3em', verticalAlign: 'middle', padding: '.5em' }} />{t('Reset')}</Button>}
+      {!isSearching && (
+        <div style={{ marginBottom: '1em' }}>
+          <ConfirmButton question={t('Reset every shortcut?')} confirmLabel={t('Reset')} onConfirm={resetKeyBindings}><FaUndo aria-hidden />{t('Reset all shortcuts')}</ConfirmButton>
+        </div>
+      )}
 
       <CreateBinding actionsMap={actionsMap} action={creatingBinding} setCreatingBinding={setCreatingBinding} onNewKeyBindingConfirmed={onNewKeyBindingConfirmed} />
     </>
   );
 });
 
+/** The clip workflow's shortcuts at a glance (#20), read from the current bindings. */
+function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
+  const { t } = useTranslation();
+  const { segmentMouseModifierKey, simpleMode } = useUserSettings();
+  const quickExportLabels = useQuickExportLabels();
+
+  const groups = useMemo(() => [
+    {
+      id: 'playback',
+      title: t('Playback'),
+      items: [
+        { label: t('Play / pause'), actions: ['togglePlayResetSpeed'] },
+        { label: t('Back / forward'), actions: ['seekBackwards', 'seekForwards'] },
+        // Ctrl+← / → in the simple editor (see App).
+        { label: t('Previous / next frame'), actions: simpleMode ? ['seekBackwardsPercent', 'seekForwardsPercent'] : ['seekPreviousFrame', 'seekNextFrame'] },
+        { label: t('Slower / faster'), actions: ['reducePlaybackRate', 'increasePlaybackRate'] },
+        { label: t('Mute'), actions: ['toggleMuted'] },
+      ],
+    },
+    {
+      id: 'clips',
+      title: t('Clips'),
+      items: [
+        { label: t('Start the clip here'), actions: ['setCutStart'] },
+        { label: t('End the clip here'), actions: ['setCutEnd'] },
+        { label: t('New clip'), actions: ['addSegment'] },
+        { label: t('Split the clip'), actions: ['splitCurrentSegment'] },
+        { label: t('Previous / next clip'), actions: ['jumpPrevSegment', 'jumpNextSegment'] },
+        { label: t('Go to clip start / end'), actions: ['jumpCutStart', 'jumpCutEnd'] },
+        ...(simpleMode ? [{ label: t('Clip edge before / after'), actions: ['seekBackwardsKeyframe', 'seekForwardsKeyframe'] satisfies KeyboardAction[] }] : []),
+        { label: t('Rename the clip'), actions: ['labelCurrentSegment'] },
+      ],
+    },
+    {
+      id: 'editing',
+      title: t('Editing'),
+      items: [
+        { label: t('Add text'), actions: ['addTextOverlay'] },
+        { label: t('Speed controls'), actions: ['toggleSegmentSpeedControls'] },
+        { label: t('Undo / redo'), actions: ['undo', 'redo'] },
+        { label: t('Zoom the timeline in / out'), actions: ['timelineZoomIn', 'timelineZoomOut'] },
+      ],
+    },
+    {
+      id: 'export',
+      title: t('Export and more'),
+      items: [
+        { label: t('Export'), actions: ['export'] },
+        { label: t('Save a still frame'), actions: ['captureSnapshot'] },
+        { label: t('Go to a time'), actions: ['goToTimecode'] },
+        { label: t('Full screen video'), actions: ['toggleFullscreenVideo'] },
+        { label: t('Keyboard shortcuts'), actions: ['toggleKeyboardShortcuts'] },
+      ],
+    },
+    {
+      // Without the export options. The presets share a row, with what each makes in its tooltip (they're set in
+      // Settings > Export), so this column stays shorter than the other.
+      id: 'quickExport',
+      title: t('Quick export'),
+      items: [
+        { label: t('Last settings'), actions: ['quickExport'] },
+        {
+          label: t('Presets'),
+          actions: quickExportPresetActions.slice(0, quickExportLabels.length),
+          title: quickExportLabels.map((preset, index) => t('Quick export {{number}}: {{preset}}', { number: index + 1, preset })).join('\n'),
+        },
+      ],
+    },
+  ] satisfies { id: string, title: string, items: { label: string, actions: KeyboardAction[], title?: string }[] }[], [quickExportLabels, simpleMode, t]);
+
+  // The first binding of each action (most have one); unbound actions show a dash.
+  const keysFor = (action: KeyboardAction) => keyBindings.find((binding) => binding.action === action)?.keys;
+
+  // Two columns that each stack their own groups (Playback over Editing and Quick export, Clips over Export and
+  // more), so a short group doesn't leave a gap beside a long one. The second one is the taller, so it sets the
+  // dialog's height as before the quick exports.
+  const columns = [['playback', 'editing', 'quickExport'], ['clips', 'export']].map((ids) => groups.filter((group) => ids.includes(group.id)));
+
+  return (
+    <div className={styles['essentials']}>
+      {columns.map((column) => (
+        <div key={column.map((group) => group.id).join(',')} className={styles['essentialsColumn']}>
+          {column.map((group) => (
+            <section key={group.id} className={styles['essentialsGroup']}>
+              <div className={styles['categoryTitle']}>{group.title}</div>
+              {group.items.map((item) => (
+                <div key={item.actions.join(',')} className={styles['essentialsRow']} title={'title' in item ? item.title : undefined}>
+                  <span>{item.label}</span>
+                  <span className={styles['essentialsKeys']}>
+                    {item.actions.map((action, i) => {
+                      const keys = keysFor(action);
+                      return (
+                        <Fragment key={action}>
+                          {i > 0 && <span className={styles['slash']}>/</span>}
+                          {keys != null ? renderKeys(splitKeyboardKeys(keys)) : <span className={styles['noBinding']}>–</span>}
+                        </Fragment>
+                      );
+                    })}
+                  </span>
+                </div>
+              ))}
+              {group.id === 'clips' && (
+                <div className={styles['essentialsRow']}>
+                  <span>{t('Move or resize a clip')}</span>
+                  <span className={styles['essentialsKeys']}>
+                    <kbd>{getModifier(segmentMouseModifierKey)}</kbd>
+                    <span className={styles['slash']}>+</span>
+                    <FaMouse aria-hidden />
+                    <span className={styles['noBinding']} style={{ marginLeft: '.3em' }}>{t('drag')}</span>
+                  </span>
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function KeyboardShortcutsDialog({
-  isShown, onHide, keyBindings, setKeyBindings, resetKeyBindings, currentCutSeg, getKeyboardAction,
+  isShown, onHide, keyBindings, setKeyBindings, resetKeyBindings, currentCutSeg, getKeyboardAction, onChangeShortcutsRequested, initialView,
 }: {
   isShown: boolean,
   onHide: () => void,
@@ -935,23 +1089,59 @@ function KeyboardShortcutsDialog({
   resetKeyBindings: () => void,
   currentCutSeg: StateSegment | undefined,
   getKeyboardAction: (action: KeyboardAction) => () => void,
+  /** Settings > Shortcuts, where they're changed: this dialog is the quick reference. */
+  onChangeShortcutsRequested: () => void,
+  initialView?: 'essentials' | 'all' | undefined,
 }) {
   const { t } = useTranslation();
+  const { simpleMode } = useUserSettings();
+  const [view, setView] = useState<'essentials' | 'all' | undefined>(initialView);
+  const effectiveView = view ?? (simpleMode ? 'essentials' : 'all');
 
   const handleTriggerActionClick = useCallback((action: KeyboardAction) => {
     onHide();
     getKeyboardAction(action)();
   }, [getKeyboardAction, onHide]);
 
-
   return (
     <Dialog.Root open={isShown} onOpenChange={(v) => v === false && onHide()}>
       <Dialog.Portal>
         <Dialog.Overlay />
-        <Dialog.Content style={{ width: '40em' }} aria-describedby={undefined}>
-          <Dialog.Title>{t('Keyboard & mouse shortcuts')}</Dialog.Title>
+        <Dialog.Content
+          // Only the list scrolls: the title, the close button and the view switch stay put.
+          style={{ width: '44rem', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+          aria-describedby={undefined}
+          // Focus the dialog itself, so it opens without a focus ring on "Essentials". The "All shortcuts" view
+          // has already focused its search box as it mounted: leave that.
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            const content = e.currentTarget as HTMLElement | null;
+            if (content != null && !content.contains(document.activeElement)) content.focus({ preventScroll: true });
+          }}
+        >
+          <Dialog.Title>{t('Keyboard shortcuts')}</Dialog.Title>
 
-          <KeyboardShortcuts keyBindings={keyBindings} setKeyBindings={setKeyBindings} currentCutSeg={currentCutSeg} resetKeyBindings={resetKeyBindings} onTriggerActionClick={handleTriggerActionClick} />
+          <div className={styles['viewSwitch']}>
+            <SegmentedControl<'essentials' | 'all'>
+              ariaLabel={t('Shortcuts to show')}
+              fullWidth={false}
+              value={effectiveView}
+              onChange={setView}
+              options={[
+                { value: 'essentials', label: t('Essentials') },
+                { value: 'all', label: t('All shortcuts') },
+              ]}
+            />
+            <Button variant="ghost" size="sm" onClick={onChangeShortcutsRequested}>{t('Change shortcuts…')}</Button>
+          </div>
+
+          <div className={styles['body']}>
+            {effectiveView === 'essentials' ? (
+              <Essentials keyBindings={keyBindings} />
+            ) : (
+              <KeyboardShortcuts keyBindings={keyBindings} setKeyBindings={setKeyBindings} currentCutSeg={currentCutSeg} resetKeyBindings={resetKeyBindings} onTriggerActionClick={handleTriggerActionClick} />
+            )}
+          </div>
 
           <Dialog.CloseButton />
         </Dialog.Content>

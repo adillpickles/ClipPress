@@ -90,6 +90,15 @@ export function getWarpedImageSpans(map: TimelineMap, from: number, to: number, 
   });
 }
 
+/**
+ * The most display seconds per source second between two source times: where the timeline is most stretched (a
+ * slowed segment), so a pixel spans the least of the file.
+ */
+export function getMaxScale(map: TimelineMap, from: number, to: number) {
+  const scales = map.pieces.filter((piece) => piece.sourceEnd > from && piece.sourceStart < to).map((piece) => piece.scale);
+  return scales.length > 0 ? Math.max(...scales) : 1;
+}
+
 const retimeAutoScrollEdge = 40;
 /** How far past the starting point the pointer must travel before a drag that began in an edge zone scrolls. */
 const retimeAutoScrollArmDistance = 8;

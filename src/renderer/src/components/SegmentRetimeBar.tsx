@@ -4,11 +4,10 @@ import { FaCaretDown } from 'react-icons/fa';
 
 import { segmentSpeedPresets } from '../segmentSpeed';
 import type { FormatTimecode } from '../types';
+import { formatClipLength } from '../util/clockTime';
 import styles from './SegmentSpeed.module.css';
 import LaneDeleteButton from './LaneDeleteButton';
-
-const remote = window.require('@electron/remote');
-const { Menu } = remote;
+import { openMenu } from './Menu';
 
 const baseArrowSpacing = 14;
 
@@ -16,7 +15,7 @@ const baseArrowSpacing = 14;
  * Resolve-style retime header drawn over a segment's timeline span. The timeline owns the
  * drag because a speed change ripples every lane; this only renders the bar and its menus.
  */
-export default function SegmentRetimeBar({ left, width, speed, committedSpeed, outputDuration, isActive, dragging, formatTimecode, onHandleMouseDown, onSelect, onChange, onEdit, onRemove, onHide }: {
+export default function SegmentRetimeBar({ left, width, speed, committedSpeed, outputDuration, isActive, dragging, overlay = false, formatTimecode, onHandleMouseDown, onSelect, onChange, onEdit, onRemove, onHide }: {
   left: string,
   width: string,
   speed: number,
@@ -24,6 +23,11 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
   outputDuration: number,
   isActive: boolean,
   dragging: boolean,
+  /**
+   * Drawn as a slim band along the bottom of the clip block (simple mode), so showing it doesn't add a lane.
+   * Only simple mode draws it, so it also gets simple mode's words and length style.
+   */
+  overlay?: boolean,
   formatTimecode: FormatTimecode,
   onHandleMouseDown: (event: ReactMouseEvent<HTMLButtonElement>) => void,
   onSelect: () => void,
@@ -36,21 +40,23 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
 }) {
   const { t } = useTranslation();
 
-  const openSpeedMenu = () => {
+  /** Under the speed button, or where the strip was right-clicked. */
+  const openSpeedMenu = (at: HTMLElement | { x: number, y: number }) => {
     onSelect();
-    Menu.buildFromTemplate([
-      ...segmentSpeedPresets.map((preset) => ({
-        label: `${Math.round(preset * 100)}%`,
-        type: 'checkbox' as const,
-        checked: preset === committedSpeed,
-        click: () => onChange(preset),
-      })),
-      { type: 'separator' as const },
-      { label: t('Custom speed…'), click: onEdit },
-      { type: 'separator' as const },
-      { label: t('Remove speed change'), click: onRemove },
-      { label: t('Hide speed controls (keep speed)'), click: onHide },
-    ]).popup({ window: remote.getCurrentWindow() });
+    openMenu({ at,
+      items: [
+        ...segmentSpeedPresets.map((preset) => ({
+          label: `${Math.round(preset * 100)}%`,
+          type: 'checkbox' as const,
+          checked: preset === committedSpeed,
+          click: () => onChange(preset),
+        })),
+        { type: 'separator' as const },
+        { label: t('Custom speed…'), click: onEdit },
+        { type: 'separator' as const },
+        { label: t('Remove speed change'), click: onRemove },
+        { label: t('Hide speed controls (keep speed)'), click: onHide },
+      ] });
   };
 
   const arrowsStyle = { '--retime-arrow-spacing': `${Math.min(48, Math.max(5, baseArrowSpacing / speed))}px` } as CSSProperties;
@@ -63,13 +69,19 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
       data-tone={speed < 1 ? 'slow' : 'normal'}
       data-active={isActive}
       data-dragging={dragging}
+      data-overlay={overlay}
       style={{ left, width }}
       onMouseDown={(event) => event.stopPropagation()}
       onClick={onSelect}
+      // Simple mode's strip: double-click anywhere on it for the exact speed (resetting is in there, and in its menu).
+      onDoubleClick={overlay ? (event) => {
+        event.stopPropagation();
+        onEdit();
+      } : undefined}
       onContextMenu={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        openSpeedMenu();
+        openSpeedMenu({ x: event.clientX, y: event.clientY });
       }}
     >
       <div className={styles['retimeHeader']}>
@@ -77,13 +89,13 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
       </div>
 
       <div className={styles['retimeBody']}>
-        <button type="button" className={styles['retimeSpeed']} onClick={(event) => { event.stopPropagation(); openSpeedMenu(); }} title={t('Change segment speed')}>
+        <button type="button" className={styles['retimeSpeed']} onClick={(event) => { event.stopPropagation(); openSpeedMenu(event.currentTarget); }} title={overlay ? t('Change speed') : t('Change segment speed')}>
           {Math.round(speed * 100)}%<FaCaretDown size={9} />
         </button>
-        <span className={styles['retimeDuration']}>{formatTimecode({ seconds: outputDuration, shorten: true })}</span>
+        <span className={styles['retimeDuration']}>{overlay ? formatClipLength(outputDuration) : formatTimecode({ seconds: outputDuration, shorten: true })}</span>
       </div>
 
-      {isActive && !dragging && (
+      {isActive && !dragging && !overlay && (
         <LaneDeleteButton title={t('Remove speed change (back to 100%)')} onDelete={onRemove} style={{ right: 12 }} />
       )}
 
@@ -91,12 +103,12 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
         type="button"
         className={styles['retimeHandle']}
         onMouseDown={onHandleMouseDown}
-        onDoubleClick={(event) => {
+        onDoubleClick={overlay ? undefined : (event) => {
           event.stopPropagation();
           if (committedSpeed !== 1) onChange(1);
         }}
-        title={t('Drag right to slow down, left to speed up. Double-click to reset.')}
-        aria-label={`${t('Segment speed')} ${Math.round(speed * 100)}%`}
+        title={overlay ? t('Drag to change the speed') : t('Drag right to slow down, left to speed up. Double-click to reset.')}
+        aria-label={`${overlay ? t('Clip speed') : t('Segment speed')} ${Math.round(speed * 100)}%`}
       />
     </div>
   );

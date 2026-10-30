@@ -4,7 +4,7 @@ import type {
   FocusEventHandler,
   DragEventHandler,
 } from 'react';
-import { memo, useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { lazy, memo, Suspense, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { FaRegTimesCircle } from 'react-icons/fa';
 import { MdRotate90DegreesCcw } from 'react-icons/md';
 import { AnimatePresence, MotionConfig } from 'motion/react';
@@ -13,9 +13,10 @@ import { useTranslation } from 'react-i18next';
 import { produce } from 'immer';
 import screenfull from 'screenfull';
 import type { IpcRendererEvent } from 'electron';
-import { IoMdMenu } from 'react-icons/io';
+import { FiDownload } from 'react-icons/fi';
 import fromPairs from 'lodash/fromPairs';
 import sum from 'lodash/sum';
+import omit from 'lodash/omit';
 import invariant from 'tiny-invariant';
 import type { SweetAlertOptions } from 'sweetalert2';
 import { nanoid } from 'nanoid';
@@ -42,13 +43,16 @@ import type {
 import { UserSettingsContext, SegColorsContext, AppContext } from './contexts';
 
 import NoFileLoaded from './NoFileLoaded';
+import RecentFiles from './components/RecentFiles';
 import AppChrome from './AppChrome';
 import MediaSourcePlayer from './MediaSourcePlayer';
+import PreviewFailedCard from './components/PreviewFailedCard';
 import TopMenu from './TopMenu';
 import LastCommands from './LastCommands';
 import StreamsSelector from './StreamsSelector';
 import SegmentList from './SegmentList';
 import Settings from './components/Settings';
+import type { SettingsCategory } from './components/Settings';
 import Timeline from './Timeline';
 import BottomBar from './BottomBar';
 import ExportConfirm from './components/ExportConfirm';
@@ -58,12 +62,10 @@ import { getPreviewSegment, getPreviewSegmentSpeed, getSegmentSpeed, isSegmentSp
 import SegmentCropPreview from './components/SegmentCropPreview';
 import { getSegmentCrop, hasSegmentCrop } from './segmentCrop';
 import type { SegmentCrop } from './segmentCrop';
-import ValueTuners from './components/ValueTuners';
 import VolumeControl from './components/VolumeControl';
 import PlaybackStreamSelector from './components/PlaybackStreamSelector';
 import BatchFilesList from './components/BatchFilesList';
 import ConcatDialog from './components/ConcatDialog';
-import KeyboardShortcuts from './components/KeyboardShortcuts';
 import Working from './components/Working';
 import OutputFormatSelect from './components/OutputFormatSelect';
 import * as Dialog from './components/Dialog';
@@ -74,11 +76,13 @@ import {
   exportSizeLimitedMerge,
   exportSizeLimitedSegment,
   pickSizeLimitedStreams,
+  prefetchEncoderCapabilities,
 } from './sizeLimitedExport';
 import { bytesPerMb } from './sizeLimitedPlanner';
 import { gpuEncoderLabels } from './gpuEncoders';
 import {
   buildSizeLimitedAutoFileNames as buildSizeLimitedAutoFileNamesRaw,
+  createReservedFileNames,
   findAvailableSizeLimitedAutoFileName,
   getSizeLimitedMergedSuffixLabel,
   getSizeLimitedSeparateSuffixLabel,
@@ -87,12 +91,15 @@ import {
 } from './sizeLimitedNaming';
 import { resolveEffectiveSizeLimitedTransformSettings } from './sizeLimitedResolution';
 import { getSegColor } from './util/colors';
+import formatClockTime from './util/clockTime';
+import { parseDuration } from './util/duration';
 import type { FileFfprobeMeta } from './ffmpeg';
 import {
   getStreamFps,
   isCuttingStart,
   isCuttingEnd,
   readFileFfprobeMeta,
+  readFileFfprobeMetaCached,
   getDefaultOutFormat,
   setCustomFfPath as ffmpegSetCustomFfPath,
   isIphoneHevc,
@@ -155,10 +162,14 @@ import {
   moveExportWithRetry,
   shootConfetti,
   isMasBuild,
+  isMac,
+  isWindows,
   readFileStats,
   makeSourceFileAccessError,
+  trashFile,
 } from './util';
 import getSwal, { errorToast, showPlaybackFailedMessage } from './swal';
+import { addRecentFile, removeRecentFile } from './util/recentFiles';
 import { assertOutPathsNotSource, getMergeProtectedPaths, isSourcePath, makeSafeOutFileNames } from './util/sourceProtection';
 import type { SourceSafeFileNameAdjustment } from './util/sourceProtection';
 import { adjustRate } from './util/rate-calculator';
@@ -170,6 +181,7 @@ import {
   askForOutDir,
   askForImportChapters,
   askForFileOpenAction,
+  askForFileOpenChoice,
   showDiskFull,
   showExportFailedDialog,
   showConcatFailedDialog,
@@ -239,7 +251,6 @@ import type {
   SizeLimitedExecutionResult,
   SizeLimitedProgressMetadata,
   StateSegment,
-  TunerType,
 } from './types';
 import {
   goToTimecodeDirectArgsSchema,
@@ -249,13 +260,16 @@ import type {
   CaptureFormat,
   KeyboardAction,
   ApiActionRequest,
+  SizeLimitControlMode,
+  SizeLimitPreset,
 } from '../../common/types.js';
 import type { FFprobeChapter, FFprobeStream } from '../../common/ffprobe.js';
 import { parseFfprobeDuration } from '../../common/util.js';
 
 import useLoading from './hooks/useLoading';
 import useVideo from './hooks/useVideo';
-import usePreviewAudioGain from './hooks/usePreviewAudioGain';
+import usePreviewAudioGain, { getPreviewGainFactor } from './hooks/usePreviewAudioGain';
+import type { PreviewClipVolume } from './hooks/usePreviewAudioGain';
 import useUndoableState from './hooks/useUndoableState';
 import EditHistoryOrder from './editHistoryOrder';
 import type { EditDomainHistory } from './editHistoryOrder';
@@ -269,8 +283,48 @@ import useThumbnails from './hooks/useThumbnails';
 import useSubtitles from './hooks/useSubtitles';
 import useStreamsMeta from './hooks/useStreamsMeta';
 import { bottomStyle, videoStyle } from './styles';
+import PreviewSpinner from './components/PreviewSpinner';
+import useFilmstrip from './hooks/useFilmstrip';
+import { getTimelineCacheKey } from './timelineCache';
+import { getVideoDisplayAspect } from './filmstrip';
+import { schedulePruneTimelineCache } from './timelineCacheIo';
+import prefetchTimeline from './timelinePrefetch';
+import TooltipLayer from './components/TooltipLayer';
+import ClipsPanelTab from './components/ClipsPanelTab';
+import MenuHost from './components/Menu';
+import { pickHintKeyBindings } from './util/keyNames';
+import useAudioPeaks from './hooks/useAudioPeaks';
+import AudioTrackHeader from './components/AudioTrackHeader';
+import ClipVolumePopover from './components/ClipVolumePopover';
+import { ShelfUpNext } from './components/Shelf';
+import useShelf, { listShelfFolder } from './hooks/useShelf';
+import { buildShelfQueue, pickNextClip, rememberShelfExport, shelfThumbnailKey } from './shelf';
+import formatSizeLimitedProgressText, { getSizeLimitedStageTitle } from './sizeLimitedProgressText';
+import { findClipEdge, getEdgeSnapDistance } from './clipEdgeSnap';
+import { isSelfFileDrag } from './selfFileDrag';
+import type { ExportPhase } from './exportTitleLines';
+import { findFreeFileName } from './util/clipFileNames';
+import getMergePartNames from './mergePartNames';
+import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, resolveExportQuality } from './quickExport';
+import type { QuickExport } from './quickExport';
+import { normalizeQuickExportPresets } from '../../common/quickExport';
+import { getProjectCopiesToRetire, getProjectLookupPaths, getProjectSavePaths, getProjectStoreEnv, isSameProjectPath } from './projectStore';
+import { filterOwnProjectFiles, findProjectFiles, keepBackupCopies, keepCopiesAboutToBeReplaced, keepCopiesNotOpened, logProjectFiles, readNewestProjectCopy, recycleRecordingProjectCopies } from './projectFilesIo';
+import { getClipsToRemove, pickClip, pickInBox } from './clipPicking';
+import type { PickHow } from './clipPicking';
+import { getProjectMediaCandidates, getProjectMediaOldPath } from './missingRecording';
+import useProjectCleanup from './hooks/useProjectCleanup';
+import useRelocateRecording from './hooks/useRelocateRecording';
+import type { RelocatedRecording } from './hooks/useRelocateRecording';
+import type { ProjectFileLocation } from '../../common/types';
+import type { ClipVolumeChange } from './components/ClipVolumePopover';
+import { combineAudioGain, isClipVolumeChanged, sanitizeClipGainDb } from './util/audioGain';
+import { recycleOriginal, verifyExportedFiles } from './originalRecycling';
+import type { FileIdentity } from './originalRecycling';
+import { shouldRecycleEditsWithOriginal, shouldRecycleOriginalAfterExport } from './afterExportAction';
+import { fileExists, identifyFile, probeOutput, statOutput } from './originalRecyclingIo';
 import styles from './App.module.css';
-import { DirectoryAccessDeclinedError, UserFacingError } from '../errors';
+import { DirectoryAccessDeclinedError, UnsupportedFileError, UserFacingError } from '../errors';
 import SwalContainer from './components/SwalContainer';
 import ErrorDialog from './components/ErrorDialog';
 import useErrorHandling from './hooks/useErrorHandling';
@@ -280,11 +334,14 @@ import WhatsNew from './components/WhatsNew';
 import UpdateNotice from './components/UpdateNotice';
 import mainApi from './mainApi.js';
 import type { AppEvent } from '../../main/index.js';
+
 import {
   createDefaultTextOverlayClip,
   getVideoStreamRotation,
+  isOverlayActiveAtTime,
   sanitizeOverlayClip,
 } from './textOverlays';
+import type { UndoableSetOptions } from './undoableHistory';
 
 const electron = window.require('electron');
 const { lstat } = window.require('fs/promises');
@@ -329,7 +386,17 @@ function addSourceSafetyNotice(
 
 type EditDomain = 'segments' | 'overlays' | 'streamParams' | 'speedControls';
 
+// Loaded the first time the shortcuts open, not at every start.
+const KeyboardShortcuts = lazy(() => import('./components/KeyboardShortcuts'));
+
+// The export card's title while the clips are cut from the recording.
+const getCuttingText = (clipCount: number) => (clipCount > 1 ? i18n.t('Cutting your clips') : i18n.t('Cutting your clip'));
+
 function App() {
+  // For measuring startup (read by tests; costs nothing).
+  useEffect(() => {
+    performance.mark('clippress:app-mounted');
+  }, []);
   const { t } = useTranslation();
 
   // Per project state
@@ -358,6 +425,9 @@ function App() {
     tracker: editHistoryOrder.tracker('overlays'),
   });
   const [selectedOverlayId, setSelectedOverlayId] = useState<string>();
+  // The text Add Text just made, typed into once its box shows (after Zoom / Crop closes, too).
+  const [typeIntoOverlayId, setTypeIntoOverlayId] = useState<string>();
+  const clearTypeIntoOverlay = useCallback(() => setTypeIntoOverlayId(undefined), []);
   const [detectedFps, setDetectedFps] = useState<number>();
   const [mainFileMeta, setMainFileMeta] = useState<{
     ffprobeMeta: FileFfprobeMeta;
@@ -374,6 +444,7 @@ function App() {
   >(new Set());
   const [activeSubtitleStreamIndex, setActiveSubtitleStreamIndex] = useState<number>();
   const [hideCompatPlayer, setHideCompatPlayer] = useState(false);
+  const [compatPlayerFailed, setCompatPlayerFailed] = useState(false);
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
   const [cacheBuster, setCacheBuster] = useState(0);
   const [currentFileExportCount, setCurrentFileExportCount] = useState(0);
@@ -391,10 +462,13 @@ function App() {
   const lastOpenedPathRef = useRef<string>();
   const loadGenerationRef = useRef(0);
   const [showRightBar, setShowRightBar] = useState(true);
+  // The clip being renamed in place in the Clips panel; here so "Rename clip…" in the menu can start it too.
+  const [renamingSegId, setRenamingSegId] = useState<string>();
   const [lastCommandsVisible, setLastCommandsVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
-  const [tunerVisible, setTunerVisible] = useState<TunerType>();
+  const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>('general');
   const [keyboardShortcutsVisible, setKeyboardShortcutsVisible] = useState(false);
+  const [keyboardShortcutsView, setKeyboardShortcutsView] = useState<'all'>();
   const [alwaysConcatMultipleFiles, setAlwaysConcatMultipleFiles] = useState(false);
   const [editingSegmentTagsSegmentIndex, setEditingSegmentTagsSegmentIndex] = useState<number>();
   const [editingSegmentTags, setEditingSegmentTags] = useState<SegmentTags>();
@@ -410,6 +484,13 @@ function App() {
 
   // Batch state / concat files
   const [batchFiles, setBatchFiles] = useState<BatchFile[]>([]);
+  // The shelf's folder: the open clip's, kept after it closes so the next clip is one click away.
+  const [shelfFolder, setShelfFolder] = useState<string>();
+  // The clip the shelf counts on from: the open one, and after it closes still that one, so "Up next" on the
+  // welcome screen is the clip after it and never the one just closed.
+  const [shelfAnchorPath, setShelfAnchorPath] = useState<string>();
+  // Recordings from the shelf that couldn't be opened this session (`shelfThumbnailKey`), so they aren't offered again.
+  const [unopenableShelfKeys, setUnopenableShelfKeys] = useState<ReadonlySet<string>>(new Set());
   const [selectedBatchFiles, setSelectedBatchFiles] = useState<string[]>([]);
 
   const allUserSettings = useUserSettingsRoot();
@@ -441,6 +522,10 @@ function App() {
     autoLoadTimecode,
     autoDeleteMergedSegments,
     exportConfirmEnabled,
+    trashSourceAfterExport,
+    trashProjectWithSource,
+    copyAfterExport,
+    playOnOpen,
     segmentsToChapters,
     simpleMode,
     cutFileTemplate,
@@ -459,11 +544,12 @@ function App() {
     keyBindings,
     enableSmartCut,
     customFfPath,
-    storeProjectInWorkingDir,
+    projectFileLocation,
     enableOverwriteOutput,
     mouseWheelZoomModifierKey,
     mouseWheelFrameSeekModifierKey,
     mouseWheelKeyframeSeekModifierKey,
+    extraMouseModifierKeys,
     captureFrameMethod,
     captureFrameQuality,
     captureFrameFileNameFormat,
@@ -500,6 +586,7 @@ function App() {
     sizeLimitMergedNamingMode,
     sizeLimitCutFileTemplate,
     sizeLimitCutMergedFileTemplate,
+    quickExportPresets,
   } = allUserSettings.settings;
   const {
     setCaptureFormat,
@@ -512,14 +599,21 @@ function App() {
     setSafeOutputFileName,
     setKeyBindings,
     resetKeyBindings,
-    setStoreProjectInWorkingDir,
+    setProjectFileLocation,
     setCleanupChoices,
+    setTrashSourceAfterExport,
     toggleDarkMode,
     setWaveformMode,
     setThumbnailsEnabled,
     setKeyframesEnabled,
     prefersReducedMotion,
     customOutDir,
+    recentFiles,
+    setRecentFiles,
+    shelfExports,
+    setShelfExports,
+    shelfOrder,
+    setShelfOrder,
   } = allUserSettings;
 
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(!simpleMode);
@@ -562,13 +656,20 @@ function App() {
     ],
   );
 
-  // Note that each action may be multiple key bindings and this will only be the first binding for each action
-  const keyBindingByAction = useMemo(
-    () => Object.fromEntries(
-      keyBindings.map((binding) => [binding.action, binding]),
-    ),
-    [keyBindings],
-  );
+  // The binding a shortcut hint shows, of each action's: the first, but on a Mac one with Cmd and elsewhere one without
+  // the Windows key, where there's such a one (the defaults pair each Ctrl shortcut with a Cmd/Windows key one).
+  const keyBindingByAction = useMemo(() => pickHintKeyBindings(keyBindings, isMac), [keyBindings]);
+  // The timeline's own right-click menu shows the keys its items have.
+  const timelineMenuKeys = useMemo(() => ({
+    setCutStart: keyBindingByAction['setCutStart']?.keys,
+    setCutEnd: keyBindingByAction['setCutEnd']?.keys,
+    goToTimecode: keyBindingByAction['goToTimecode']?.keys,
+  }), [keyBindingByAction]);
+  const clipMenuKeys = useMemo(() => ({
+    rename: keyBindingByAction['labelCurrentSegment']?.keys,
+    duplicate: keyBindingByAction['duplicateCurrentSegment']?.keys,
+    remove: keyBindingByAction['removeSelectedClips']?.keys,
+  }), [keyBindingByAction]);
 
   const { working, setWorking, workingRef, abortWorking } = useLoading();
   const {
@@ -602,7 +703,57 @@ function App() {
     pause,
     seekRel,
   } = useVideo({ filePath });
+
+  // Dragging along the timeline pauses playback while it lasts and resumes it afterwards; a paused video stays paused.
+  const resumeAfterScrubRef = useRef(false);
+  const onTimelineScrubbingChange = useCallback((scrubbing: boolean) => {
+    if (scrubbing) {
+      resumeAfterScrubRef.current = playingRef.current;
+      if (playingRef.current) pause();
+      return;
+    }
+    if (resumeAfterScrubRef.current) {
+      resumeAfterScrubRef.current = false;
+      // The pause event may not have arrived yet on a very quick drag, so play() would think it's still playing.
+      const video = videoRef.current;
+      if (!playingRef.current) play();
+      else if (video?.paused) video.play().catch((err) => console.error('Resuming after a scrub failed', err));
+    }
+  }, [pause, play, playingRef, videoRef]);
+
   const appDropRef = useRef<HTMLDivElement>(null);
+  // The video is loading or waiting for data (shows a spinner over the preview after a short delay).
+  const [videoBusy, setVideoBusy] = useState(false);
+  // A recording's first frame comes before the work that reads the whole file again (its waveform), so the two don't
+  // fight over the disk as it opens: that work waits for the video to load, 400 ms at most.
+  const videoLoadedRef = useRef<{ path: string | undefined, waiters: { path: string, done: () => void }[] }>({ path: undefined, waiters: [] });
+  const whenVideoLoaded = useCallback((path: string) => new Promise<void>((resolve) => {
+    if (videoLoadedRef.current.path === path) {
+      resolve();
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const waiter = { path, done: () => { clearTimeout(timer); resolve(); } };
+    timer = setTimeout(() => {
+      videoLoadedRef.current.waiters = videoLoadedRef.current.waiters.filter((w) => w !== waiter);
+      resolve();
+    }, 400);
+    videoLoadedRef.current.waiters.push(waiter);
+  }), []);
+  // Settings > Editing > Start playing when a clip opens: the file it last started, so a reload doesn't start it again.
+  const autoPlayedPathRef = useRef<string>();
+  useEffect(() => {
+    if (filePath == null) autoPlayedPathRef.current = undefined;
+  }, [filePath]);
+  const onVideoLoaded = useCallback((path: string | undefined) => {
+    const loaded = videoLoadedRef.current;
+    loaded.path = path;
+    const ready = loaded.waiters.filter((w) => w.path === path);
+    loaded.waiters = loaded.waiters.filter((w) => w.path !== path);
+    ready.forEach((w) => w.done());
+  }, []);
+  // A file is being dragged over the window while a clip is open.
+  const [fileDragActive, setFileDragActive] = useState(false);
   const {
     timecodePlaceholder,
     formatTimecode,
@@ -622,6 +773,24 @@ function App() {
     () => (zoomedDuration != null ? zoomWindowStartTime + zoomedDuration : undefined),
     [zoomedDuration, zoomWindowStartTime],
   );
+
+  // The simple editor: I and O lock onto a clip edge the playhead is just next to, so clips sit back to back. The
+  // playhead goes to the edge (unless playing), and a short blue line on the timeline shows where.
+  const getEdgeSnapDistanceNow = useCallback(() => (
+    simpleMode && isDurationValid(fileDuration)
+      ? getEdgeSnapDistance({ duration: fileDuration, zoom: zoomUnrounded, fps: detectedFps, laneWidthPx: document.querySelector('[data-timeline-scroller]')?.clientWidth })
+      : undefined
+  ), [detectedFps, fileDuration, simpleMode, zoomUnrounded]);
+  const [edgeSnapCue, setEdgeSnapCue] = useState<{ time: number, id: number }>();
+  const onEdgeSnap = useCallback((time: number) => {
+    setEdgeSnapCue((previous) => ({ time, id: (previous?.id ?? 0) + 1 }));
+    if (!playingRef.current) seekAbs(time);
+  }, [playingRef, seekAbs]);
+  useEffect(() => {
+    if (edgeSnapCue == null) return undefined;
+    const timer = setTimeout(() => setEdgeSnapCue(undefined), 900);
+    return () => clearTimeout(timer);
+  }, [edgeSnapCue]);
 
   useEffect(
     () => setDocumentTitle({ filePath, working: working?.text, progress }),
@@ -648,6 +817,11 @@ function App() {
     i18n.changeLanguage(language ?? undefined).catch(console.error);
     electron.ipcRenderer.send('setLanguage', language);
   }, [language]);
+
+  // The menus differ between simple and advanced mode.
+  useEffect(() => {
+    electron.ipcRenderer.send('setSimpleMode', simpleMode);
+  }, [simpleMode]);
 
   const isFileOpened = !!filePath;
 
@@ -692,7 +866,9 @@ function App() {
 
   const showOsNotification = useCallback(
     (text: string) => {
-      if (hideOsNotifications == null) {
+      // Only when ClipPress isn't in front: otherwise the app shows it already, and Windows can take a moment to
+      // show one, holding up the main process right when the result appears.
+      if (hideOsNotifications == null && !document.hasFocus()) {
         // on Linux app name is not shown in notification, see https://github.com/mifi/lossless-cut/issues/2794
         if (isLinux) mainApi.sendOsNotification({ title: 'ClipPress', body: text });
         else mainApi.sendOsNotification({ title: text });
@@ -736,7 +912,24 @@ function App() {
     [appendLastCommandsLog],
   );
 
-  const toggleSegmentsList = useCallback(() => setShowRightBar((v) => !v), []);
+  // The Clips panel slides only when the user hides or shows it (not as a recording opens or closes); the tab that brings
+  // it back shows once it has gone.
+  const [clipsPanelAnimated, setClipsPanelAnimated] = useState(false);
+  const [clipsPanelGone, setClipsPanelGone] = useState(false);
+  useEffect(() => {
+    if (!clipsPanelAnimated) return undefined;
+    const timer = setTimeout(() => setClipsPanelAnimated(false), 600);
+    return () => clearTimeout(timer);
+  }, [clipsPanelAnimated, showRightBar]);
+  const toggleSegmentsList = useCallback(() => {
+    setClipsPanelAnimated(true);
+    setShowRightBar((v) => !v);
+    // A rename left open when the panel closed would otherwise start again when it reopens.
+    setRenamingSegId(undefined);
+  }, []);
+  useEffect(() => {
+    if (showRightBar) setClipsPanelGone(false);
+  }, [showRightBar]);
 
   const toggleSafeOutputFileName = useCallback(
     () => setSafeOutputFileName((v) => {
@@ -753,9 +946,10 @@ function App() {
     [setSafeOutputFileName, showNotification],
   );
 
+  // Also when a recording opens: the <video> is only there once one is.
   useEffect(() => {
     if (videoRef.current) videoRef.current.volume = playbackVolume;
-  }, [playbackVolume, videoRef]);
+  }, [playbackVolume, videoRef, filePath]);
 
   const mainStreams = useMemo(
     () => mainFileMeta?.ffprobeMeta.streams ?? [],
@@ -786,8 +980,9 @@ function App() {
   const mainVideoStream = useMemo(() => videoStreams[0], [videoStreams]);
   const mainAudioStream = useMemo(() => audioStreams[0], [audioStreams]);
 
+  // Without the extension: this names the exports, and "clip.mp4" looked like renaming the recording itself.
   useEffect(() => {
-    setCurrentClipName(filePath != null ? basename(filePath) : undefined);
+    setCurrentClipName(filePath != null ? parsePath(filePath).name : undefined);
   }, [filePath]);
 
   const exportBaseName = useMemo(() => {
@@ -854,7 +1049,6 @@ function App() {
     [activeAudioStreams, filePath, paramsByStreamId],
   );
   // The native player plays one audio track; with more, the FFmpeg-assisted player applies gain itself.
-  usePreviewAudioGain(videoRef, activeAudioStreams.length === 1 ? activeAudioGainByStreamId[activeAudioStreams[0]!.index] : undefined, filePath);
   const previewAudioGainControls = useMemo(
     () => activeAudioStreams.map((stream, index) => ({
       streamIndex: stream.index,
@@ -865,14 +1059,17 @@ function App() {
     })),
     [activeAudioStreams, filePath, paramsByStreamId, t],
   );
+  // The audio track's waveform is the first track's; a clip's popover says what it plays at when all tracks agree.
+  const audioTrackGainDb = previewAudioGainControls[0]?.audioGainDb;
+  const sharedTrackGainDb = previewAudioGainControls.every((control) => control.audioGainDb === audioTrackGainDb) ? audioTrackGainDb : undefined;
   const hasOverlayClips = overlayClips.length > 0;
 
   const updateOverlayClip = useCallback(
-    (overlayId: string, updater: (clip: OverlayClip) => OverlayClip) => {
-      // A drag or a burst of typing on one text box is one undo step.
+    (overlayId: string, updater: (clip: OverlayClip) => OverlayClip, undo?: UndoableSetOptions) => {
+      // A burst of typing on one text box is one undo step; a drag passes its own gesture's key.
       setOverlayClips((existingClips) => existingClips.map((overlayClip) => (overlayClip.overlayId === overlayId
         ? sanitizeOverlayClip(updater(overlayClip), fileDuration)
-        : overlayClip)), { coalesceKey: `overlay:${overlayId}` });
+        : overlayClip)), undo ?? { coalesceKey: `overlay:${overlayId}` });
     },
     [fileDuration, setOverlayClips],
   );
@@ -884,14 +1081,19 @@ function App() {
 
   const addTextOverlay = useCallback(() => {
     if (mainVideoStream == null) return;
+    const currentTime = getRelevantTime();
     const overlayClip = createDefaultTextOverlayClip({
-      currentTime: getRelevantTime(),
+      currentTime,
       fileDuration,
       overlayId: nanoid(),
+      existingClips: overlayClips,
     });
     setOverlayClips((existingClips) => [...existingClips, overlayClip]);
     setSelectedOverlayId(overlayClip.overlayId);
-  }, [fileDuration, getRelevantTime, mainVideoStream, setOverlayClips]);
+    setTypeIntoOverlayId(overlayClip.overlayId);
+    // Moved past a text already under the playhead: go to the new one, so it shows in the preview ready to edit.
+    if (overlayClip.start !== currentTime) seekAbs(overlayClip.start);
+  }, [fileDuration, getRelevantTime, mainVideoStream, overlayClips, seekAbs, setOverlayClips]);
 
   useEffect(() => {
     if (selectedOverlayId == null) return;
@@ -921,14 +1123,18 @@ function App() {
       ) {
         return;
       }
+      // Keys pressed in a dialog or menu (e.g. on a sweetalert2 dialog's buttons) are theirs.
+      if (target instanceof Element && target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], .swal2-container') != null) return;
 
       event.preventDefault();
       event.stopPropagation();
       removeOverlayClip(overlayId);
     }
 
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    // Capture on window, ahead of the editor's shortcuts (a bubbling listener on document), so the
+    // key deletes the selected text and doesn't also remove a cut point (Backspace is bound to that).
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
   }, [exportConfirmOpen, keyboardShortcutsVisible, removeOverlayClip, selectedOverlayId, settingsVisible, streamsSelectorShown]);
 
   // 360 means we don't modify rotation gtrgt
@@ -981,6 +1187,8 @@ function App() {
     detectSilentScenes,
     detectSceneChanges,
     removeSegment,
+    removeSegments,
+    resetToWholeRecording,
     invertAllSegments,
     fillSegmentsGaps,
     combineOverlappingSegments,
@@ -1035,6 +1243,8 @@ function App() {
     currentCutSegOrWholeTimeline,
     segColorCounter,
   } = useSegments({
+    getEdgeSnapDistance: getEdgeSnapDistanceNow,
+    onEdgeSnap,
     filePath,
     workingRef,
     setWorking,
@@ -1071,6 +1281,74 @@ function App() {
     streamParams: streamParamsHistory,
     speedControls: speedControlsHistory,
   }), [cutSegmentsHistory, overlayClipsHistory, speedControlsHistory, streamParamsHistory]);
+  // Clips picked in the Clips panel (Ctrl or Shift+click, a selection box), for Delete; with none picked, Delete takes
+  // the selected clip. Apart from a segment's own `selected`, which is whether it goes in the export.
+  const [pickedClipIds, setPickedClipIds] = useState<readonly string[]>([]);
+  const clipIds = useMemo(() => cutSegments.map((segment) => segment.segId), [cutSegments]);
+  const pickedClips = useMemo(() => clipIds.filter((id) => pickedClipIds.includes(id)), [clipIds, pickedClipIds]);
+  const onClipClick = useCallback((index: number, how: PickHow = 'one') => {
+    const clicked = cutSegments[index];
+    if (clicked == null) return;
+    setSelectedOverlayId(undefined);
+    // Advanced mode has its own selection (the export ticks).
+    const next = pickClip({ ids: clipIds, picked: pickedClips, currentId: cutSegments[currentSegIndexSafe]?.segId, clickedId: clicked.segId, how: simpleMode ? how : 'one' });
+    setPickedClipIds(next.picked);
+    setCurrentSegIndex(Math.max(0, clipIds.indexOf(next.currentId)));
+  }, [clipIds, currentSegIndexSafe, cutSegments, pickedClips, setCurrentSegIndex, simpleMode]);
+  const onPickClipsInBox = useCallback((touched: readonly string[], additive: boolean, before: readonly string[]) => {
+    setPickedClipIds(pickInBox({ ids: clipIds, before, touched, additive }));
+  }, [clipIds]);
+  const removeSelectedClips = useCallback(() => {
+    if (invertCutSegments || workingRef.current) return;
+    // The untouched whole recording is what's left with nothing to remove.
+    if (cutSegments.length === 1 && cutSegments[0]!.initial) return;
+    const ids = getClipsToRemove({ ids: clipIds, picked: pickedClips, currentId: cutSegments[currentSegIndexSafe]?.segId });
+    if (ids.length === 0) return;
+    removeSegments(ids);
+    setPickedClipIds([]);
+  }, [clipIds, currentSegIndexSafe, cutSegments, invertCutSegments, pickedClips, removeSegments, workingRef]);
+
+  /**
+   * Back to the recording as it opened: one clip of the whole recording, no text, the track volume as it was. App
+   * settings and the recording stay. One Ctrl+Z brings it all back, and the saved edits are kept as a backup copy first
+   * (`.replaced-<time>`, retired by the daily clean-up after 30 days); then the fresh state autosaves like any edit.
+   */
+  const startOver = useCallback(async () => {
+    if (filePath == null || workingRef.current) return;
+    const savePaths = getProjectSavePaths(filePath, projectFileLocation, customOutDir, getProjectStoreEnv());
+    // Busy (quietly) while the saved edits are copied: nothing else opens meanwhile. Cancel (shown if it takes a
+    // while) leaves the clips as they are.
+    const abortController = new AbortController();
+    setWorking({ text: i18n.t('Starting over'), quiet: true, abortController });
+    let kept: boolean;
+    try {
+      kept = await keepBackupCopies([...savePaths, ...(projectSession?.loadedProjectPath != null ? [projectSession.loadedProjectPath] : [])]);
+    } finally {
+      setWorking(undefined);
+    }
+    if (abortController.signal.aborted) return;
+    // Without a copy, the edits autosave replaces could only come back by undo, and not after the recording closes.
+    if (!kept) {
+      errorToast(i18n.t('Could not keep a copy of your edits, so nothing was changed.'));
+      return;
+    }
+    editHistoryOrder.group(() => {
+      resetToWholeRecording();
+      setOverlayClips([]);
+      setParamsByStreamId((existing) => {
+        const params = existing.get(filePath);
+        if (params == null || ![...params.values()].some((streamParams) => streamParams.audioGainDb != null)) return existing;
+        const next = new Map(existing);
+        next.set(filePath, new Map([...params].map(([streamIndex, streamParams]) => [streamIndex, omit(streamParams, 'audioGainDb')])));
+        return next;
+      });
+      setSpeedControlsBySegment({});
+    });
+    setPickedClipIds([]);
+    setSelectedOverlayId(undefined);
+    setCurrentSegIndex(0);
+  }, [customOutDir, editHistoryOrder, filePath, projectFileLocation, projectSession?.loadedProjectPath, resetToWholeRecording, setCurrentSegIndex, setOverlayClips, setParamsByStreamId, setSpeedControlsBySegment, setWorking, workingRef]);
+
   const [editingSpeedSegmentId, setEditingSpeedSegmentId] = useState<string>();
   const editingSpeedSegment = cutSegments.find((segment) => segment.segId === editingSpeedSegmentId);
   // Retimed segments show their speed bar until hidden; Ctrl+R toggles it like Resolve's retime controls.
@@ -1079,7 +1357,21 @@ function App() {
     .map((segment) => segment.segId)), [cutSegments, invertCutSegments, speedControlsBySegment]);
   const hasSegmentSpeedChanges = segmentsOrInverse.selected.some((segment) => getSegmentSpeed(segment) !== 1);
   const hasSegmentCropChanges = segmentsOrInverse.selected.some((segment) => hasSegmentCrop(segment));
+  const hasSegmentVolumeChanges = segmentsOrInverse.selected.some((segment) => isClipVolumeChanged(segment));
+  // Clip volumes play through the native player too (with the FFmpeg-assisted player they're only in the export).
+  const previewClipVolumes = useMemo<PreviewClipVolume[]>(() => {
+    if (invertCutSegments || !cutSegments.some((segment) => segment.end != null && isClipVolumeChanged(segment))) return [];
+    // Where clips overlap, the same one wins as for the speed preview: the selected clip, then the first one.
+    const active = cutSegments[currentSegIndexSafe];
+    const ordered = active != null ? [active, ...cutSegments.filter((segment) => segment !== active)] : cutSegments;
+    return ordered.flatMap((segment) => (segment.end != null
+      ? [{ start: segment.start, end: segment.end, factor: getPreviewGainFactor(combineAudioGain(undefined, segment)) }]
+      : []));
+  }, [currentSegIndexSafe, cutSegments, invertCutSegments]);
+  usePreviewAudioGain(videoRef, activeAudioStreams.length === 1 ? activeAudioGainByStreamId[activeAudioStreams[0]!.index] : undefined, filePath, previewClipVolumes);
   const [editingCropSegmentId, setEditingCropSegmentId] = useState<string>();
+  // Finishes crop editing like its Done button (set by the crop editor while it's open).
+  const cropFinishRef = useRef<() => void>();
   const editingCropSegment = !invertCutSegments && currentCutSeg?.segId === editingCropSegmentId ? currentCutSeg : undefined;
   const previewSegment = invertCutSegments ? undefined : getPreviewSegment(cutSegments, currentSegIndexSafe, relevantTime, fileDuration);
   const previewCrop = useMemo(() => getSegmentCrop(editingCropSegment ?? previewSegment ?? {}), [editingCropSegment, previewSegment]);
@@ -1088,12 +1380,24 @@ function App() {
     const segment = cutSegments[index];
     if (segment?.end == null || activeVideoStream?.width == null || activeVideoStream.height == null || invertCutSegments || workingRef.current) return;
     pause();
-    setWaveformMode(undefined);
+    // The full-size waveform takes the preview's place, which cropping needs; the small waveform lane can stay.
+    if (waveformModePreference === 'big-waveform') setWaveformMode(undefined);
     setCurrentSegIndex(index);
-    seekAbs(segment.start);
+    // Stay where the playhead is when it's in this clip (on a text just added, say); otherwise show the clip's start.
+    const time = getRelevantTime();
+    if (!(time >= segment.start && time <= segment.end)) seekAbs(segment.start);
     setSelectedOverlayId(undefined);
     setEditingCropSegmentId(segment.segId);
-  }, [activeVideoStream, cutSegments, invertCutSegments, pause, seekAbs, setCurrentSegIndex, setWaveformMode, workingRef]);
+  }, [activeVideoStream, cutSegments, getRelevantTime, invertCutSegments, pause, seekAbs, setCurrentSegIndex, setWaveformMode, waveformModePreference, workingRef]);
+
+  // Add Text while zooming / cropping finishes that first (like Done), so the new text shows and can be edited.
+  const addTextOverlayNow = useCallback(() => {
+    if (editingCropSegmentId != null) {
+      if (cropFinishRef.current != null) cropFinishRef.current();
+      else setEditingCropSegmentId(undefined);
+    }
+    addTextOverlay();
+  }, [addTextOverlay, editingCropSegmentId]);
 
   const changeSegmentCrop = useCallback((crop: SegmentCrop) => {
     if (editingCropSegmentId == null || workingRef.current) return;
@@ -1139,6 +1443,32 @@ function App() {
     setSpeedControlsBySegment((existing) => ({ ...existing, [segmentId]: !speedControlsSegmentIds.has(segmentId) }));
   }, [cutSegments, invertCutSegments, setSpeedControlsBySegment, speedControlsSegmentIds, workingRef]);
 
+  /** A clip's own volume, from its popover on the audio track. One slider drag is one undo step. */
+  const changeSegmentVolume = useCallback((segmentId: string, { audioGainDb: requestedDb, audioMuted: requestedMuted }: ClipVolumeChange, dragId: number | undefined) => {
+    if (workingRef.current || invertCutSegments) return;
+    const index = cutSegments.findIndex((segment) => segment.segId === segmentId);
+    const segment = cutSegments[index];
+    if (segment?.end == null) return;
+    const audioGainDb = sanitizeClipGainDb(requestedDb);
+    const audioMuted = requestedMuted ? true : undefined;
+    if (sanitizeClipGainDb(segment.audioGainDb) === audioGainDb && (segment.audioMuted === true) === requestedMuted) return;
+    updateSegAtIndex(index, { audioGainDb, audioMuted }, dragId != null ? { coalesceKey: `clip-volume:${segmentId}:${dragId}` } : undefined);
+  }, [cutSegments, invertCutSegments, updateSegAtIndex, workingRef]);
+
+  const [clipVolumeEditor, setClipVolumeEditor] = useState<{ segId: string, anchor: { x: number, y: number } }>();
+  const editClipVolume = useCallback((index: number, point: { x: number, y: number }) => {
+    const segment = cutSegments[index];
+    if (segment?.end == null || invertCutSegments || workingRef.current) return;
+    setCurrentSegIndex(index);
+    setClipVolumeEditor({ segId: segment.segId, anchor: point });
+  }, [cutSegments, invertCutSegments, setCurrentSegIndex, workingRef]);
+  const clipVolumeEditorIndex = clipVolumeEditor != null ? cutSegments.findIndex((segment) => segment.segId === clipVolumeEditor.segId) : -1;
+  const clipVolumeEditorSegment = cutSegments[clipVolumeEditorIndex];
+  const closeClipVolumeEditor = useCallback(() => setClipVolumeEditor(undefined), []);
+  const onClipVolumeChange = useCallback((volume: ClipVolumeChange, dragId: number | undefined) => {
+    if (clipVolumeEditor != null) changeSegmentVolume(clipVolumeEditor.segId, volume, dragId);
+  }, [changeSegmentVolume, clipVolumeEditor]);
+
   const toggleSegmentSpeedControls = useCallback(() => {
     if (currentCutSeg != null) toggleSpeedControlsForSegment(currentCutSeg.segId);
   }, [currentCutSeg, toggleSpeedControlsForSegment]);
@@ -1151,9 +1481,9 @@ function App() {
     setEditingCropSegmentId(undefined);
   }, [filePath, speedControlsHistory]);
 
-  const { getEdlFilePath, projectFileSavePath, getProjectFileSavePath, endProjectSession, whenProjectSaved, saveProjectNow, flushProject, hasUnsavedProjectChanges, deleteProjectFile } = useSegmentsAutoSave({
+  const { projectFileSavePaths, getProjectFileSavePaths, endProjectSession, whenProjectSaved, saveProjectNow, flushProject, hasUnsavedProjectChanges, hasSavedProject, deleteProjectFile } = useSegmentsAutoSave({
     autoSaveProjectFile,
-    storeProjectInWorkingDir,
+    projectFileLocation,
     filePath,
     projectSession,
     customOutDir,
@@ -1163,6 +1493,38 @@ function App() {
     paramsByStreamId,
     overlayClips,
   });
+
+  // Old backups, and the edits of recordings gone for 30 days, go to the Recycle Bin while ClipPress is idle (#91): not
+  // while it opens a clip or exports, nor while a dialog waits for an answer (such as where a recording went).
+  useProjectCleanup({ isBusy: () => workingRef.current || genericDialog != null, deleteProjectFile, recentFiles, customOutDir });
+  // The timeline cache on disk is kept within its limits: shortly after starting, and after it grows.
+  useEffect(() => schedulePruneTimelineCache(5000), []);
+  // "Can't find the recording": opening edits whose recording was moved or renamed (#16).
+  const relocateRecording = useRelocateRecording({ showGenericDialog, confirmDialog, customOutDir });
+
+  // Edits found next to the recording or in the export folder (where older versions saved them) move to ClipPress's
+  // folder, as do the edits of a recording found in a new place (#16): once autosave has the project everywhere it saves
+  // it, the old files go to the Recycle Bin. If that save can't happen, they stay, and the next open tries again.
+  const sidecarRetirementRef = useRef<{ sessionId: number, paths: string[] }>();
+  useEffect(() => {
+    const pending = sidecarRetirementRef.current;
+    if (pending == null || projectSession?.id !== pending.sessionId || projectFileSavePaths == null) return;
+    sidecarRetirementRef.current = undefined;
+    const oldPaths = pending.paths.filter((oldPath) => !projectFileSavePaths.some((savePath) => isSameProjectPath(savePath, oldPath, isWindows || isMac)));
+    // Autosave off: nothing is saved in ClipPress's folder, so the old files stay where they are.
+    if (oldPaths.length === 0 || !autoSaveProjectFile) return;
+    (async () => {
+      saveProjectNow();
+      await whenProjectSaved();
+      // Only once this session has the project there: it wrote it (a failed save doesn't count), or loaded it from there.
+      if (!projectFileSavePaths.every((savePath) => hasSavedProject(pending.sessionId, savePath))) return;
+      for (const oldPath of oldPaths) {
+        // eslint-disable-next-line no-await-in-loop
+        await trashFile(oldPath);
+        logProjectFiles('info', `Moved an old copy of the edits to the Recycle Bin, now kept in ${projectFileSavePaths.join(' and ')}: ${oldPath}`);
+      }
+    })().catch((err) => console.warn('Could not move an old project file to the Recycle Bin', err));
+  }, [autoSaveProjectFile, hasSavedProject, projectFileSavePaths, projectSession, saveProjectNow, whenProjectSaved]);
 
   // The window (and with it the app, and a downloaded update's installation) only closes once
   // the project is saved, or the user has chosen to close without saving.
@@ -1250,6 +1612,25 @@ function App() {
   useEffect(() => {
     segmentAtCursorRef.current = firstSegmentAtCursor;
   }, [firstSegmentAtCursor]);
+
+  // Simple mode's Split button: the playhead has to be inside a clip, not on its edge, where splitting does nothing.
+  // Uses the same time and clip as splitCurrentSegment.
+  const canSplitAtPlayhead = useMemo(() => {
+    if (!simpleMode) return false;
+    const segment = cutSegments[findSegmentsAtCursor(relevantTime)[0] ?? -1];
+    return segment?.end != null && relevantTime > segment.start && relevantTime < segment.end;
+  }, [cutSegments, findSegmentsAtCursor, relevantTime, simpleMode]);
+
+  // Simple mode renames a clip in place in the Clips panel, as its pencil does, opening the panel if it's hidden.
+  const labelCurrentSegment = useCallback(() => {
+    const segment = cutSegments[currentSegIndexSafe];
+    if (simpleMode && !invertCutSegments && segment != null) {
+      setShowRightBar(true);
+      setRenamingSegId(segment.segId);
+      return;
+    }
+    labelSegment(currentSegIndexSafe);
+  }, [currentSegIndexSafe, cutSegments, invertCutSegments, labelSegment, simpleMode]);
 
   const seekRelPercent = useCallback(
     (val: number) => {
@@ -1373,12 +1754,15 @@ function App() {
     [setSimpleMode],
   );
 
+  const canMergeClips = segmentsOrInverse.selected.length >= 2;
   const effectiveExportMode = useMemo(() => {
     if (segmentsToChaptersOnly) return 'segments_to_chapters';
+    // With one clip there's nothing to join: it's one file (the saved choice is kept for when there are more clips).
+    if (!canMergeClips) return 'separate';
     if (autoMerge && autoDeleteMergedSegments) return 'merge';
     if (autoMerge) return 'merge+separate';
     return 'separate';
-  }, [autoDeleteMergedSegments, autoMerge, segmentsToChaptersOnly]);
+  }, [autoDeleteMergedSegments, autoMerge, canMergeClips, segmentsToChaptersOnly]);
 
   const changeOutDir = useCallback(async () => {
     const newOutDir = await askForOutDir(outputDir);
@@ -1390,11 +1774,11 @@ function App() {
     [ensureWritableOutDir, filePath],
   );
 
-  const toggleStoreProjectInWorkingDir = useCallback(async () => {
-    const newValue = !storeProjectInWorkingDir;
-    const path = getProjectFileSavePath(newValue);
-    if (path) {
-      // path will be falsy if no file loaded
+  const changeProjectFileLocation = useCallback(async (location: ProjectFileLocation) => {
+    // The place outside ClipPress's folder is the last one saved to ("Both" saves there second).
+    const path = getProjectFileSavePaths(location)?.at(-1);
+    // Next to a recording (path is undefined with no file open), the folder may need permission first.
+    if (path != null && location !== 'app') {
       try {
         await ensureAccessToSourceDir(path);
       } catch (err) {
@@ -1402,12 +1786,11 @@ function App() {
         console.error(err);
       }
     }
-    setStoreProjectInWorkingDir(newValue);
+    setProjectFileLocation(location);
   }, [
     ensureAccessToSourceDir,
-    getProjectFileSavePath,
-    setStoreProjectInWorkingDir,
-    storeProjectInWorkingDir,
+    getProjectFileSavePaths,
+    setProjectFileLocation,
   ]);
 
   const userSettingsContext = useMemo<UserSettingsContextType>(() => {
@@ -1437,19 +1820,21 @@ function App() {
     toggleSimpleMode,
   ]);
 
+  // A boolean, not the segments: the context (read by every clip and list row) shouldn't change on every edit.
+  const onlyInitialSegment = isInitialSegment(cutSegments);
   const segColorsContext = useMemo<SegColorsContextType>(
     () => ({
       getSegColor: (seg: SegmentColorIndex | undefined) => {
         const color = getSegColor(seg);
         return preferStrongColors
-          ? color.desaturate(0.2)
-          : color.desaturate(0.6);
+          ? color
+          : color.desaturate(0.25);
       },
-      nextSegColorIndex: isInitialSegment(cutSegments)
+      nextSegColorIndex: onlyInitialSegment
         ? segColorCounter
         : segColorCounter + 1,
     }),
-    [cutSegments, preferStrongColors, segColorCounter],
+    [onlyInitialSegment, preferStrongColors, segColorCounter],
   );
 
   const onActiveSubtitleChange = useCallback(
@@ -1572,7 +1957,82 @@ function App() {
 
   const waveformEnabled = hasAudio && waveformMode != null;
   const bigWaveformEnabled = waveformEnabled && waveformMode === 'big-waveform';
-  const showThumbnails = thumbnailsEnabled && hasVideo;
+  // The thumbnail row is an advanced-mode tool; simple mode will get its own filmstrip in the clips lane.
+  const showThumbnails = thumbnailsEnabled && hasVideo && !simpleMode;
+
+  // Simple mode's clips lane shows the recording as a filmstrip (made once per open recording, freed on close).
+  const filmstripTimeOffset = useMemo(() => {
+    const start = Number.parseFloat(mainFileFormat?.start_time ?? '0');
+    return Number.isFinite(start) ? start : 0;
+  }, [mainFileFormat?.start_time]);
+  // The filmstrip and the waveform start as soon as the file has been read, not once the player has loaded it.
+  const probedDuration = useMemo(() => {
+    const duration = Number.parseFloat(mainFileFormat?.duration ?? '');
+    return isDurationValid(duration) ? duration : undefined;
+  }, [mainFileFormat?.duration]);
+  const openDuration = probedDuration ?? fileDuration;
+  // The timeline has the recording's length from then on too, rather than a placeholder of a second until the player
+  // has it: the filmstrip showed that second's frames all along the lane, and made denser frames of it.
+  const timelineDuration = isDurationValid(fileDuration) ? fileDuration : (probedDuration ?? fileDurationNonZero);
+  // The timeline cache knows a recording by its path, size and modified time (a changed file is made again).
+  const timelineCacheKey = useMemo(() => (filePath != null && mainFileMeta != null
+    ? getTimelineCacheKey({ path: filePath, size: Number(mainFileMeta.stats.size), mtimeMs: Number(mainFileMeta.stats.mtime), caseInsensitive: isWindows || isMac })
+    : undefined), [filePath, mainFileMeta]);
+  const filmstripAspect = useMemo(() => (mainVideoStream != null ? getVideoDisplayAspect(mainVideoStream) : undefined), [mainVideoStream]);
+  const filmstrip = useFilmstrip({
+    filePath,
+    duration: openDuration,
+    enabled: simpleMode && hasVideo,
+    timeOffset: filmstripTimeOffset,
+    cacheKey: timelineCacheKey,
+    aspect: filmstripAspect,
+  });
+
+  // Simple mode's audio track under the clips: its waveform, made once per open recording.
+  const showAudioLane = simpleMode && hasAudio;
+  const { peaks: audioPeaks, done: audioPeaksDone } = useAudioPeaks({
+    filePath,
+    streamIndex: activeAudioStreams[0]?.index ?? mainAudioStream?.index,
+    duration: openDuration,
+    enabled: showAudioLane,
+    cacheKey: timelineCacheKey,
+    whenReady: whenVideoLoaded,
+  });
+  // While the filmstrip and the waveform of a recording that's opening are made, background work waits (keyframes,
+  // FFmpeg's self-check, the encoder check).
+  const openWorkPending = filePath != null && isDurationValid(openDuration)
+    && ((simpleMode && hasVideo && !filmstrip.done) || (showAudioLane && !audioPeaksDone));
+
+  // The shelf makes the rest of its thumbnails once the open clip's own filmstrip and waveform are made (every
+  // stretch of a long recording), or a while after it opened. Advanced mode's lanes load as they show, so there it's a
+  // while.
+  const openVisualsIn = (filmstrip.done || !hasVideo) && (audioPeaksDone || !showAudioLane);
+  const [openSettled, setOpenSettled] = useState(false);
+  useEffect(() => {
+    setOpenSettled(false);
+    if (filePath == null) return undefined;
+    const timer = setTimeout(() => setOpenSettled(true), simpleMode ? 20_000 : 3000);
+    return () => clearTimeout(timer);
+  }, [filePath, simpleMode]);
+  const shelfPrefetch = !working && (filePath == null || openSettled || (simpleMode && openVisualsIn));
+  const shelf = useShelf({ folder: shelfFolder, order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac, currentPath: filePath ?? shelfAnchorPath, prefetch: shelfPrefetch, unopenable: unopenableShelfKeys });
+  const { refresh: refreshShelf, nextClip } = shelf;
+  // The shelf's next clip gets its filmstrip and waveform made in the background once the open one's are (and the
+  // shelf's own thumbnails may be made), so Next clip opens it with them showing at once.
+  const nextClipPath = nextClip?.path;
+  const nextClipCacheKey = nextClip != null ? getTimelineCacheKey({ path: nextClip.path, size: nextClip.size, mtimeMs: nextClip.modifiedAt, caseInsensitive: isWindows || isMac }) : undefined;
+  useEffect(() => {
+    if (!simpleMode || !shelfPrefetch || nextClipPath == null || nextClipCacheKey == null) return undefined;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      prefetchTimeline({ path: nextClipPath, cacheKey: nextClipCacheKey, signal: controller.signal })
+        .catch((err) => console.warn('Could not prepare the next clip', err));
+    }, 1000);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [nextClipCacheKey, nextClipPath, shelfPrefetch, simpleMode]);
 
   const { thumbnailsSorted, setThumbnails } = useThumbnails({
     filePath,
@@ -1587,7 +2047,8 @@ function App() {
     keyframeByNumber,
     readAllKeyframes,
   } = useKeyframes({
-    keyframesEnabled,
+    // Simple mode doesn't show keyframes, so they're read once the recording has opened.
+    keyframesEnabled: keyframesEnabled && !openWorkPending,
     filePath,
     commandedTime,
     videoStream: activeVideoStream,
@@ -1628,7 +2089,8 @@ function App() {
     }
   }, [renderOverviewWaveform, setWorking, t, working]);
 
-  const shouldShowKeyframes = keyframesEnabled && hasVideo && calcShouldShowKeyframes(zoomedDuration);
+  // Keyframe lines only matter for lossless cuts, an advanced-mode concern (#59).
+  const shouldShowKeyframes = !simpleMode && keyframesEnabled && hasVideo && calcShouldShowKeyframes(zoomedDuration);
   const shouldShowWaveform = calcShouldShowWaveform(zoomedDuration) || overviewWaveform != null;
 
   const areWeCutting = useMemo(
@@ -1765,6 +2227,7 @@ function App() {
     setFilePath(undefined);
     setProjectSession(undefined);
     setCurrentClipName(undefined);
+    setRenamingSegId(undefined);
     setExternalFilesMeta({});
     setCustomTagsByFile({});
     streamParamsHistory.reset(new Map());
@@ -1787,6 +2250,7 @@ function App() {
     setExportConfirmOpen(false);
     setOutputPlaybackRateState(1);
     setCurrentFileExportCount(0);
+    setPickedClipIds([]);
   }, [
     editHistoryOrder,
     endProjectSession,
@@ -1834,6 +2298,16 @@ function App() {
     setPreviewFilePath(undefined);
     setUsingDummyVideo(false);
   }, [setHideCompatPlayer, setPreviewFilePath, setUsingDummyVideo]);
+
+  const makeSmoothPreviewCopy = useCallback(() => userHtml5ifyCurrentFile({ speed: hasAudio || !hasVideo ? 'slow-audio' : 'slow' }), [hasAudio, hasVideo, userHtml5ifyCurrentFile]);
+
+  // Only offer a way out that would replace the assisted player: a preview copy stands in for a file the normal player
+  // can't play, but rotation previews and some track choices keep using the original file.
+  const compatPlayerFailedCard = useMemo(() => {
+    if (compatPlayerRequired) return { hint: t('Try moving the playhead further in.') };
+    if (usingDummyVideo) return { hint: t('Try moving the playhead further in, or make a preview copy instead.'), action: { label: t('Make a preview copy'), onClick: makeSmoothPreviewCopy } };
+    return { hint: t('Try moving the playhead further in, or turn off the rotation preview.'), action: { label: t('Turn off rotation preview'), onClick: handleHideCompatPlayerClick } };
+  }, [compatPlayerRequired, handleHideCompatPlayerClick, makeSmoothPreviewCopy, t, usingDummyVideo]);
 
   const {
     captureFrameFromTag,
@@ -1938,6 +2412,9 @@ function App() {
   const onTimeUpdate = useCallback<ReactEventHandler<HTMLVideoElement>>(
     (e) => {
       const { currentTime } = e.currentTarget;
+      // Paused, the commanded time is what's shown (relevantTime ignores the player's); a landed seek's
+      // timeupdate shouldn't re-render the whole editor a second time.
+      if (!playingRef.current) return;
       if (playerTime === currentTime) return;
       setPlayerTime(currentTime);
 
@@ -2142,8 +2619,22 @@ function App() {
     [fileFormat, openSendConcatReportDialogWithState],
   );
 
+  /** The shelf moves an exported clip to the bottom and doesn't offer its exports as clips. */
+  const rememberExportedClip = useCallback((source: string, sourceIdentity: FileIdentity | undefined, outputs: string[]) => {
+    if (outputs.length === 0) return;
+    setShelfExports((list) => rememberShelfExport(list, {
+      source,
+      sourceSize: sourceIdentity?.size,
+      sourceModifiedAt: sourceIdentity?.mtimeMs,
+      outputs,
+      exportedAt: Date.now(),
+    }, isWindows || isMac));
+  }, [setShelfExports]);
+
+  // The selected clips (segmentsToExport without chapters-only), as a size-limited export never keeps the
+  // recording whole: see isChaptersOnlyExport.
   const sizeLimitedSegmentsForExport = useMemo<SegmentToExport[]>(() => {
-    if (segmentsToExport.length > 0) return segmentsToExport;
+    if (segmentsOrInverse.selected.length > 0) return segmentsOrInverse.selected;
     if (!isDurationValid(fileDuration)) return [];
 
     const { start, end } = currentCutSegOrWholeTimeline;
@@ -2158,6 +2649,8 @@ function App() {
         tags: currentCutSeg?.tags,
         speed: currentCutSeg?.speed,
         crop: currentCutSeg?.crop,
+        audioGainDb: currentCutSeg?.audioGainDb,
+        audioMuted: currentCutSeg?.audioMuted,
       },
     ];
   }, [
@@ -2165,7 +2658,7 @@ function App() {
     currentCutSegOrWholeTimeline,
     currentSegIndexSafe,
     fileDuration,
-    segmentsToExport,
+    segmentsOrInverse.selected,
   ]);
 
   const generateCutFileNamesForFormat = useCallback(
@@ -2196,10 +2689,13 @@ function App() {
         maxLabelLength,
         outputFileNameMinZeroPadding,
         fallbackTemplate,
+        // The simple editor without a file name of the user's own: a named clip's file is its name.
+        nameAfterClips: simpleMode && cutFileTemplate == null && template === defaultCutFileTemplate,
       });
     },
     [
       currentFileExportCount,
+      cutFileTemplate,
       exportCount,
       exportNamingSourcePath,
       fileDuration,
@@ -2213,6 +2709,7 @@ function App() {
       outputFileNameMinZeroPadding,
       safeOutputFileName,
       segmentsToExport,
+      simpleMode,
     ],
   );
 
@@ -2436,10 +2933,12 @@ function App() {
           showOsNotification(i18n.t(created ? 'Merge finished' : 'No new files were written'));
           openConcatFinishedDialog({
             filePath: outPath,
-            notices: [...notices],
+            notices: simpleMode ? [] : [...notices],
+            // The simple editor has no Details: what matters there shows plainly.
+            highlight: simpleMode && !includeAllStreams && haveExcludedStreams ? i18n.t('Some extra tracks have been discarded. You can change this option before merging.') : undefined,
             warnings: [...warnings],
-            sourceCount: paths.length,
             created,
+            showAdvice: !simpleMode,
           });
         }
       } catch (err) {
@@ -2484,6 +2983,7 @@ function App() {
       }
     },
     [
+      simpleMode,
       workingRef,
       ensureWritableOutDir,
       customOutDir,
@@ -2510,7 +3010,8 @@ function App() {
       const savedPaths = {
         previewFilePath,
         sourceFilePath: filePath,
-        projectFilePath: projectFileSavePath,
+        // Every copy ("Both" keeps two): one left behind would bring the edits back.
+        projectFilePaths: projectFileSavePaths ?? [],
       };
 
       if (cleanupChoices2.closeFile) {
@@ -2531,29 +3032,34 @@ function App() {
 
         const pathsToDelete: string[] = [];
         if (cleanupChoices2.trashTmpFiles && savedPaths.previewFilePath) pathsToDelete.push(savedPaths.previewFilePath);
-        const { projectFilePath } = savedPaths;
-        if (cleanupChoices2.trashProjectFile && projectFilePath != null) pathsToDelete.push(projectFilePath);
+        const { projectFilePaths } = savedPaths;
+        if (cleanupChoices2.trashProjectFile) pathsToDelete.push(...projectFilePaths);
         if (cleanupChoices2.trashSourceFile && savedPaths.sourceFilePath) pathsToDelete.push(savedPaths.sourceFilePath);
 
         await deleteFiles({
           paths: pathsToDelete,
           deleteIfTrashFails: cleanupChoices2.deleteIfTrashFails,
+          // The original recording is only ever moved to the Recycle Bin, never deleted permanently.
+          protectedPaths: savedPaths.sourceFilePath != null ? [savedPaths.sourceFilePath] : [],
           signal: abortController.signal,
           // The project file is deleted between its saves, so that no save from before (one that
           // failed and is tried again when the app closes, say) brings it back once it is gone.
           // While it is still there (deleting it failed or was cancelled), it holds an older
           // state, and a failed save of it is kept and tried again.
-          runDeletion: (deletePath, deletion) => (deletePath === projectFilePath ? deleteProjectFile(deletePath, deletion) : deletion()),
+          runDeletion: (deletePath, deletion) => (projectFilePaths.includes(deletePath) ? deleteProjectFile(deletePath, deletion) : deletion()),
         });
       }, i18n.t('Unable to delete file'));
+      // The clip may have gone to the Recycle Bin: don't offer it as the next one.
+      refreshShelf();
     },
     [
+      refreshShelf,
       batchListRemoveFile,
       clearSegments,
       deleteProjectFile,
       filePath,
       previewFilePath,
-      projectFileSavePath,
+      projectFileSavePaths,
       resetState,
       setWorking,
       whenProjectSaved,
@@ -2568,11 +3074,134 @@ function App() {
     clearSegments();
   }, [batchListRemoveFile, clearSegments, filePath, resetState]);
 
-  const askForCleanupChoices = useCallback(async () => {
-    const trashResponse = await openCleanupFilesDialog(cleanupChoices);
-    if (trashResponse != null) setCleanupChoices(trashResponse); // Store for next time, if not canceled
+  // Set once openShelfClip exists (further down), for the result's Next clip.
+  const openShelfClipRef = useRef<(path: string) => void>();
+
+  /**
+   * The end of every export: copies the video (Settings > Export > Copy the video after exporting), shows the result,
+   * and closes the recording when "After exporting" says so. With another clip to do on the shelf, the result offers it
+   * and the recording only closes once the result is dismissed, so the next clip is one click away.
+   */
+  const finishExport = useCallback(({ exportedPaths, mergedPath, closeAfter, showResult }: {
+    exportedPaths: string[],
+    mergedPath?: string | undefined,
+    closeAfter: boolean,
+    showResult: (extras: { autoCopied?: Promise<boolean> | undefined, nextClipName?: string | undefined, mergedPath?: string | undefined }) => Promise<'next' | undefined>,
+  }) => {
+    const copyPaths = mergedPath != null ? [mergedPath] : exportedPaths;
+    const autoCopied = copyAfterExport && isWindows && copyPaths.length > 0
+      ? mainApi.copyFilesToClipboard(copyPaths).then(() => true, (err: unknown) => {
+        console.warn('Unable to copy the exported video', err);
+        return false;
+      })
+      : undefined;
+    const next = simpleMode && exportedPaths.length > 0 ? nextClip : undefined;
+    const result = hideAllNotifications ? undefined : showResult({ autoCopied, nextClipName: next?.name, mergedPath });
+    if (result == null || next == null) {
+      if (closeAfter) closeCurrentFileAfterExport();
+      return;
+    }
+    result.then((choice) => {
+      if (choice === 'next') openShelfClipRef.current?.(next.path);
+      else if (closeAfter) closeCurrentFileAfterExport();
+    });
+  }, [closeCurrentFileAfterExport, copyAfterExport, hideAllNotifications, nextClip, simpleMode]);
+
+  /**
+   * Settings > Export > "Move the original to the Recycle Bin after export". Only after every planned file was
+   * written and checked, only through the Recycle Bin, and never if the original changed during the export.
+   * Returns whether the recording was closed for it.
+   */
+  const recycleOriginalAfterExport = useCallback(async ({ wanted, exportSignal, cleanupAfter, sourcePath, sourceIdentity, allPlannedCreated, exportedPaths, notices, warnings, highlights }: {
+    wanted: boolean,
+    /** The export's Cancel: pressed at any point, the original stays. */
+    exportSignal: AbortSignal,
+    /** The clean-up that runs after this export, if any: its project file box decides whether the edits go too. */
+    cleanupAfter: CleanupChoicesType | undefined,
+    sourcePath: string,
+    sourceIdentity: FileIdentity | undefined,
+    allPlannedCreated: boolean,
+    exportedPaths: string[],
+    notices: Set<string>,
+    warnings: Set<string>,
+    /** Shown in the result dialog without opening Details. */
+    highlights: Set<string>,
+  }) => {
+    if (!wanted) return false;
+    // The simple editor's result has no Details: that the original was kept shows plainly there.
+    const keptNotices = simpleMode ? highlights : notices;
+    if (exportSignal.aborted) {
+      keptNotices.add(i18n.t('The original recording was kept, because this was cancelled.'));
+      return false;
+    }
+    if (!allPlannedCreated || exportedPaths.length === 0) {
+      keptNotices.add(i18n.t('The original recording was kept, because not every file was exported.'));
+      return false;
+    }
+    // Cancel works throughout: the original is kept unless everything below runs to the end.
+    const abortController = new AbortController();
+    const cancelled = () => abortController.signal.aborted;
+    const keptBecauseCancelled = () => keptNotices.add(i18n.t('The original recording was kept, because this was cancelled.'));
+    setWorking({ text: i18n.t('Checking the exported files'), abortController });
+    const check = await verifyExportedFiles(exportedPaths, { statFile: statOutput, probe: probeOutput, isCancelled: cancelled });
+    if (cancelled()) {
+      keptBecauseCancelled();
+      return false;
+    }
+    if (!check.ok) {
+      warnings.add(i18n.t('The original recording was kept, because this exported file could not be checked: {{file}}', { file: parsePath(check.path).base }));
+      return false;
+    }
+
+    // The preview holds the recording open, so close it (and let its project save) before recycling it.
+    batchListRemoveFile(sourcePath);
+    resetState();
+    clearSegments();
+    await whenProjectSaved();
+
+    setWorking({ text: i18n.t('Moving the original to the Recycle Bin'), abortController });
+    const result = await recycleOriginal(sourcePath, sourceIdentity, { identify: identifyFile, trash: trashFile, exists: fileExists, isCancelled: cancelled });
+    if (!result.recycled && result.reason === 'cancelled') {
+      keptBecauseCancelled();
+    } else if (result.recycled) {
+      // Not in Recent as "Missing": ClipPress recycled it on purpose, and the result says so.
+      setRecentFiles((list) => removeRecentFile(list, sourcePath, isWindows || isMac));
+      // Settings > Projects > "Recycle edits with the original": every copy of them, so none brings them back (#91).
+      const editsRecycled = shouldRecycleEditsWithOriginal(trashProjectWithSource, cleanupAfter) && (await recycleRecordingProjectCopies(sourcePath, customOutDir, deleteProjectFile)) > 0;
+      highlights.add(editsRecycled
+        ? i18n.t('The original recording and its edits were moved to the Recycle Bin.')
+        : i18n.t('The original recording was moved to the Recycle Bin.'));
+    } else if (result.reason === 'changed') {
+      warnings.add(i18n.t('The original recording was kept, because it changed during the export.'));
+    } else if (result.reason === 'refused') {
+      warnings.add(i18n.t('ClipPress kept the original recording: it could not be moved to the Recycle Bin. It may be too large for the Recycle Bin, on a drive without one, or still in use.'));
+    }
+    return true;
+  }, [batchListRemoveFile, clearSegments, customOutDir, deleteProjectFile, resetState, setRecentFiles, setWorking, simpleMode, trashProjectWithSource, whenProjectSaved]);
+
+  const askForCleanupChoices = useCallback(async ({ saveOnly = false, afterExport = false }: { saveOnly?: boolean, afterExport?: boolean } = {}) => {
+    // Asked after an export, its box decides for the original (see shouldRecycleOriginalAfterExport), so with the Export
+    // switch on it starts ticked.
+    const tickedForSwitch = afterExport && trashSourceAfterExport;
+    const trashResponse = await openCleanupFilesDialog({
+      ...cleanupChoices,
+      // An unattended "move the original after each export" is the Export switch; show it as such.
+      ...(cleanupChoices.cleanupAfterExport && !cleanupChoices.askForCleanup ? { trashSourceFile: trashSourceAfterExport } : {}),
+      ...(tickedForSwitch ? { trashSourceFile: true } : {}),
+    }, { saveOnly });
+    if (trashResponse != null) {
+      const unattended = trashResponse.cleanupAfterExport && !trashResponse.askForCleanup;
+      const stored: CleanupChoicesType = cleanupChoices;
+      // Store for next time, if not canceled (a tick that was only the switch's isn't kept as a choice of its own)...
+      setCleanupChoices(tickedForSwitch && !unattended && trashResponse.trashSourceFile ? { ...trashResponse, trashSourceFile: stored.trashSourceFile === true } : trashResponse);
+      // ...and choosing it there (unattended) turns the switch on or off, so both always agree.
+      if (unattended) setTrashSourceAfterExport(trashResponse.trashSourceFile === true);
+    }
     return trashResponse;
-  }, [cleanupChoices, openCleanupFilesDialog, setCleanupChoices]);
+  }, [cleanupChoices, openCleanupFilesDialog, setCleanupChoices, setTrashSourceAfterExport, trashSourceAfterExport]);
+
+  // Settings > After exporting > "Choose…" only picks what happens later, so its dialog saves instead of cleaning up.
+  const changeCleanupChoices = useCallback(() => askForCleanupChoices({ saveOnly: true }), [askForCleanupChoices]);
 
   const cleanupFilesDialog = useCallback(async () => {
     if (!isFileOpened || workingRef.current) return;
@@ -2631,52 +3260,23 @@ function App() {
     [formatSizeLimitedMbValue],
   );
 
-  const formatSizeLimitedStageText = useCallback(
-    (metadata: SizeLimitedProgressMetadata | undefined) => {
-      if (metadata == null) return undefined;
-
-      const parts: string[] = [];
-      if (metadata.attemptNumber > 1) {
-        parts.push(i18n.t('Attempt {{attempt}}/{{maxAttempts}}', { attempt: metadata.attemptNumber, maxAttempts: metadata.maxAttempts }));
-      }
-      if (metadata.phaseCount > 1) {
-        parts.push(
-          i18n.t('Pass {{phase}}/{{phaseCount}}', {
-            phase: metadata.phaseNumber,
-            phaseCount: metadata.phaseCount,
-          }),
-        );
-      }
-      return parts.length > 0 ? parts.join(' - ') : undefined;
-    },
-    [],
-  );
-
   const formatSizeLimitedJobStageText = useCallback(
-    ({
-      jobIndex,
-      totalJobs,
-      metadata,
-    }: {
+    ({ jobIndex, totalJobs, clipCount, joinedClipCount, metadata }: {
       jobIndex: number;
       totalJobs: number;
+      clipCount: number;
+      joinedClipCount: number;
       metadata: SizeLimitedProgressMetadata | undefined;
-    }) => {
-      const stageText = formatSizeLimitedStageText(metadata);
-      if (totalJobs <= 1) return stageText;
-      if (stageText == null) {
-        return i18n.t('File {{current}}/{{total}}', {
-          current: jobIndex + 1,
-          total: totalJobs,
-        });
-      }
-      return i18n.t('File {{current}}/{{total}} - {{stage}}', {
-        current: jobIndex + 1,
-        total: totalJobs,
-        stage: stageText,
-      });
-    },
-    [formatSizeLimitedStageText],
+    }) => formatSizeLimitedProgressText({
+      jobIndex,
+      totalJobs,
+      clipCount,
+      joinedClipCount,
+      metadata,
+      simpleMode,
+      t: (key, options) => i18n.t(key, options),
+    }),
+    [simpleMode],
   );
 
   const sanitizeSizeLimitedNamePart = useCallback(
@@ -2740,7 +3340,7 @@ function App() {
     (items: SizeLimitedInternalNameItem[]) => {
       if (sizeLimitedSourceBaseName == null) return [];
 
-      const reservedFileNames = new Set<string>();
+      const reservedFileNames = createReservedFileNames();
       const sourceBaseName = sanitizeSizeLimitedNamePart(
         sizeLimitedSourceBaseName,
       );
@@ -2775,6 +3375,7 @@ function App() {
           segment,
           index,
         ),
+        clipName: simpleMode ? segment.name : undefined,
       })),
     );
 
@@ -2783,6 +3384,7 @@ function App() {
       problems: getSizeLimitedAutoNameProblems(fileNames),
     } satisfies GeneratedOutFileNames;
   }, [
+    simpleMode,
     buildSizeLimitedAutoFileNames,
     getSizeLimitedAutoNameProblems,
     getSizeLimitedSeparateSuffixLabelForSegment,
@@ -2814,22 +3416,28 @@ function App() {
       results,
       shouldDecorateSeparateOutputs,
       shouldDecorateMergedOutput,
+      controlMode,
+      preset,
     }: {
       results: SizeLimitedExecutionResult[];
       shouldDecorateSeparateOutputs: boolean;
       shouldDecorateMergedOutput: boolean;
+      // The export's own, which a quick export preset sets instead of the sheet's.
+      controlMode: SizeLimitControlMode;
+      preset: SizeLimitPreset;
     }) => {
       if (filePath == null || sizeLimitedSourceBaseName == null) return { results, warnings: [] as string[] };
 
       const updatedResults = [...results];
       const renameWarnings = new Set<string>();
-      const reservedFileNames = new Set<string>();
+      const reservedFileNames = createReservedFileNames();
 
       interface RenameCandidate {
         resultIndex: number;
         currentPath: string;
         sizeLabel: number;
         suffixLabel: string;
+        clipName?: string | undefined;
       }
 
       const candidates: RenameCandidate[] = [];
@@ -2846,6 +3454,8 @@ function App() {
                 segment,
                 index,
               ),
+              // The simple editor names a clip's file after it ("Adil.mp4").
+              clipName: simpleMode ? segment.name : undefined,
             });
           }
         }
@@ -2867,15 +3477,19 @@ function App() {
       }
 
       for (const candidate of candidates) {
+        // A file named after its clip ("Intro.mp4") never replaces one already there, whatever the overwrite setting:
+        // that name may well be another file of the user's. It gets a number instead.
+        const keepExisting = !enableOverwriteOutput || (candidate.clipName ?? '').trim() !== '';
         try {
           let targetFileName = findAvailableSizeLimitedAutoFileName({
             sourceBaseName: sizeLimitedSourceBaseName,
-            controlMode: sizeLimitControlMode,
-            preset: sizeLimitPreset,
+            controlMode,
+            preset,
             safeOutputFileName,
             item: {
               sizeLabel: candidate.sizeLabel,
               suffixLabel: candidate.suffixLabel,
+              clipName: candidate.clipName,
             },
             isReserved: (fileName) => reservedFileNames.has(fileName),
           });
@@ -2888,18 +3502,19 @@ function App() {
           while (
             targetPath != null
           && targetPath !== candidate.currentPath
-          && !enableOverwriteOutput
+          && keepExisting
           && (await mainApi.pathExists(targetPath))
           ) {
             reservedFileNames.add(targetFileName);
             targetFileName = findAvailableSizeLimitedAutoFileName({
               sourceBaseName: sizeLimitedSourceBaseName,
-              controlMode: sizeLimitControlMode,
-              preset: sizeLimitPreset,
+              controlMode,
+              preset,
               safeOutputFileName,
               item: {
                 sizeLabel: candidate.sizeLabel,
                 suffixLabel: candidate.suffixLabel,
+                clipName: candidate.clipName,
               },
               isReserved: (fileName) => reservedFileNames.has(fileName),
             });
@@ -2919,8 +3534,8 @@ function App() {
           }
           if (!targetIsSourceFile && targetPath != null && targetPath !== candidate.currentPath) {
             await assertOutPathsNotSource({ outPaths: [targetPath], protectedPaths: exportProtectedPaths, message: i18n.t('Output name would replace a source file') });
-            if (!enableOverwriteOutput && await mainApi.pathExists(targetPath)) throw new Error('Output file already exists');
-            await moveExportWithRetry(candidate.currentPath, targetPath, enableOverwriteOutput);
+            if (keepExisting && await mainApi.pathExists(targetPath)) throw new Error('Output file already exists');
+            await moveExportWithRetry(candidate.currentPath, targetPath, !keepExisting);
             const result = updatedResults[candidate.resultIndex];
             if (result != null) {
               updatedResults[candidate.resultIndex] = {
@@ -2946,14 +3561,13 @@ function App() {
       return { results: updatedResults, warnings: [...renameWarnings] };
     },
     [
+      simpleMode,
       customOutDir,
       enableOverwriteOutput,
       exportProtectedPaths,
       filePath,
       getSizeLimitedSeparateSuffixLabelForSegment,
       safeOutputFileName,
-      sizeLimitControlMode,
-      sizeLimitPreset,
       sizeLimitedSegmentsForExport,
       sizeLimitedSourceBaseName,
       willMerge,
@@ -3028,11 +3642,11 @@ function App() {
             ? i18n.t('2-pass')
             : i18n.t('1-pass');
           if (strategy.fallbackReason === 'nvidia_unavailable') {
-            notices.add(i18n.t('No NVIDIA GPU was found, so Advanced mode used {{encoder}} instead.', { encoder }));
+            notices.add(i18n.t('No NVIDIA GPU was found, so Custom settings used {{encoder}} instead.', { encoder }));
           }
           notices.add(
             i18n.t(
-              'Advanced mode used {{encoder}} {{passLabel}} with preset {{preset}}.',
+              'Custom settings used {{encoder}} {{passLabel}} with preset {{preset}}.',
               {
                 encoder,
                 passLabel,
@@ -3135,11 +3749,70 @@ function App() {
     [customOutDir, exportProtectedPaths, filePath, outputDir],
   );
 
-  const onExportConfirm = useCallback(async () => {
+  /** Exports with the sheet's settings, or a quick export preset's quality (see quickExport). */
+  const onExportConfirm = useCallback(async (quickExport?: QuickExport) => {
     invariant(filePath != null && outputDir != null);
     emitEvent({ eventName: 'export-start', path: filePath });
+    // The result offers to copy the video: the copy helper starts now, so that copy is instant.
+    mainApi.warmCopyHelper().catch((err: unknown) => console.warn('Unable to start the copy helper', err));
+    // A name taken in the output folder; an error other than "not there" stops the export instead of risking a file.
+    const isOutputNameTaken = async (name: string) => {
+      try {
+        await lstat(pathJoin(outputDir, name));
+        return true;
+      } catch (err) {
+        if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return false;
+        throw err;
+      }
+    };
+    // A file named after its clip (the simple editor) never replaces one already in the folder: it gets a number.
+    const keepClipNamesFree = async (fileNames: string[]) => {
+      if (!simpleMode || cutFileTemplate != null) return fileNames;
+      const assigned = new Set<string>();
+      const free: string[] = [];
+      for (const [index, fileName] of fileNames.entries()) {
+        const named = (segmentsToExport[index]?.name ?? '') !== '';
+        // eslint-disable-next-line no-await-in-loop
+        const name = named ? await findFreeFileName(fileName, async (candidate) => assigned.has(candidate.toLowerCase()) || isOutputNameTaken(candidate)) : fileName;
+        assigned.add(name.toLowerCase());
+        free.push(name);
+      }
+      return free;
+    };
+    // The clip files a merged-only export has written, deleted again if it fails or is cancelled before the merge.
+    const mergePartsWritten: string[] = [];
+    const onMergePartWritten = (path: string) => { mergePartsWritten.push(path); };
+    // With Overwrite off, a clip file already there is kept rather than written, but it may be an earlier export with
+    // other edits: the merge gets a fresh cut of that clip instead, on a free name, deleted again after the merge.
+    // That name is never the merged file's own.
+    const getMergeInputs = async (outFiles: ExportedFile[], cutFileNames: string[], mergedOutFilePath: string, cutAgain: (segments: typeof segmentsToExport, fileNames: string[]) => Promise<ExportedFile[]>) => {
+      const skipped = outFiles.flatMap((file, index) => (file.created ? [] : [index]));
+      if (skipped.length === 0) return { segmentPaths: outFiles.map((file) => file.path), freshParts: [] };
+      const isMergedName = (name: string) => pathJoin(outputDir, name).toLowerCase() === pathJoin(mergedOutFilePath).toLowerCase();
+      const partNames = await getMergePartNames(skipped.map((index) => cutFileNames[index]!), async (name) => isMergedName(name) || isOutputNameTaken(name));
+      const freshParts = await cutAgain(skipped.map((index) => segmentsToExport[index]!), partNames);
+      return { segmentPaths: outFiles.map((file, index) => freshParts[skipped.indexOf(index)]?.path ?? file.path), freshParts };
+    };
+    // Cancel stops the FFmpeg running then; between steps it's caught here, so the next step doesn't start.
+    const exportAbort = new AbortController();
+    // The simple editor's card titles the phase with a playful line (Working.tsx); advanced mode keeps the plain step.
+    const setExportWorking = ({ phase, ...state }: { text: string, detailText?: string | undefined, phase?: ExportPhase | undefined }) => (
+      setWorking({ ...state, phase: simpleMode ? phase : undefined, abortController: exportAbort })
+    );
 
-    if (!isSizeLimitedExport && numStreamsToCopy === 0) {
+    const quality = resolveExportQuality({
+      isSizeLimited: isSizeLimitedExport,
+      sizeLimitMb,
+      controlMode: sizeLimitControlMode,
+      preset: sizeLimitPreset,
+      transform: effectiveSizeLimitedTransformSettings,
+    }, quickExport?.quality);
+    // A quick export says which one it is above the progress, e.g. "Discord · 10 MB · Clip 1 of 2".
+    const withQuickExportLabel = (detailText: string | undefined) => (
+      quickExport == null ? detailText : [quickExport.label, ...(detailText != null ? [detailText] : [])].join(' · ')
+    );
+
+    if (!quality.isSizeLimited && numStreamsToCopy === 0) {
       errorToast(i18n.t('No tracks selected for export'));
       return;
     }
@@ -3154,13 +3827,18 @@ function App() {
 
     if (workingRef.current) return;
     try {
-      setWorking({ text: i18n.t('Exporting') });
+      setExportWorking({ text: i18n.t('Exporting'), detailText: withQuickExportLabel(undefined), phase: 'starting' });
+      // Checked again before the original is recycled, so a file that changed meanwhile is never touched.
+      const sourceIdentity = await identifyFile(filePath);
 
-      if (segmentsToChaptersOnly && (hasSegmentSpeedChanges || hasSegmentCropChanges)) {
-        throw new UserFacingError(i18n.t('Choose a clip export mode to apply speed and crop changes. Chapters-only export keeps the original video.'));
+      if (
+        isChaptersOnlyExport({ segmentsToChaptersOnly, isSizeLimited: quality.isSizeLimited })
+        && (hasSegmentSpeedChanges || hasSegmentCropChanges || hasSegmentVolumeChanges)
+      ) {
+        throw new UserFacingError(i18n.t('Choose a clip export mode to apply speed, crop and volume changes. Chapters-only export keeps the original video.'));
       }
 
-      if (isSizeLimitedExport) {
+      if (quality.isSizeLimited) {
         const notices = new Set<string>();
         const warnings = new Set<string>();
         const useAutoSeparateNaming = sizeLimitSeparateNamingMode === 'auto';
@@ -3176,7 +3854,8 @@ function App() {
           );
         }
 
-        if (!exportConfirmEnabled) {
+        // Advanced mode's reminder; the simple editor's result keeps to what matters.
+        if (!exportConfirmEnabled && !simpleMode) {
           notices.add(
             i18n.t(
               'Export options are not shown. You can enable the export sheet again in Settings.',
@@ -3189,43 +3868,50 @@ function App() {
         const totalJobs = (shouldProduceSeparateOutputs
           ? sizeLimitedSegmentsForExport.length
           : 0) + (willMerge ? 1 : 0);
+        const clipCount = shouldProduceSeparateOutputs ? sizeLimitedSegmentsForExport.length : 0;
+        const joinedClipCount = willMerge ? sizeLimitedSegmentsForExport.length : 0;
+        // The title says what it's doing: fitting to the size, or why it tries again.
+        const getStageTitle = (metadata: SizeLimitedProgressMetadata | undefined) => getSizeLimitedStageTitle({
+          metadata,
+          sizeText: formatRequestedSizeLimit(quality.sizeLimitMb),
+          t: (key, options) => i18n.t(key, options),
+        });
         let currentWorkingText = i18n.t('Exporting');
         let currentWorkingDetailText: string | undefined;
         const updateWorkingState = ({
-          text,
+          metadata,
           detailText,
         }: {
-          text: string;
+          metadata: SizeLimitedProgressMetadata | undefined;
           detailText?: string | undefined;
         }) => {
+          const text = getStageTitle(metadata);
           if (
             currentWorkingText === text
             && currentWorkingDetailText === detailText
           ) return;
           currentWorkingText = text;
           currentWorkingDetailText = detailText;
-          setWorking({ text, detailText });
+          setExportWorking({ text, detailText: withQuickExportLabel(detailText), phase: metadata?.retryReason ?? 'encoding' });
         };
+        // A job's last tick (done) comes without its stage: keep the stage it was at.
+        let lastStage: { jobIndex: number, metadata: SizeLimitedProgressMetadata } | undefined;
         const updateJobProgress = ({
           jobIndex,
-          jobText,
           jobProgress,
-          metadata,
+          metadata: reported,
         }: {
           jobIndex: number;
-          jobText: string;
           jobProgress: number;
           metadata?: SizeLimitedProgressMetadata | undefined;
         }) => {
           const safeTotalJobs = Math.max(totalJobs, 1);
           setProgress((jobIndex + jobProgress) / safeTotalJobs);
+          if (reported != null) lastStage = { jobIndex, metadata: reported };
+          const metadata = reported ?? (lastStage?.jobIndex === jobIndex ? lastStage.metadata : undefined);
           updateWorkingState({
-            text: jobText,
-            detailText: formatSizeLimitedJobStageText({
-              jobIndex,
-              totalJobs,
-              metadata,
-            }),
+            metadata,
+            detailText: formatSizeLimitedJobStageText({ jobIndex, totalJobs, clipCount, joinedClipCount, metadata }),
           });
         };
 
@@ -3256,15 +3942,12 @@ function App() {
             index,
             segment,
           ] of sizeLimitedSegmentsForExport.entries()) {
+            exportAbort.signal.throwIfAborted();
             const outPath = cutOutPaths[index];
             invariant(outPath != null);
             updateWorkingState({
-              text: i18n.t('Exporting'),
-              detailText: formatSizeLimitedJobStageText({
-                jobIndex: index,
-                totalJobs,
-                metadata: undefined,
-              }),
+              metadata: undefined,
+              detailText: formatSizeLimitedJobStageText({ jobIndex: index, totalJobs, clipCount, joinedClipCount, metadata: undefined }),
             });
 
             const result = await exportSizeLimitedSegment({
@@ -3273,11 +3956,11 @@ function App() {
               outPath,
               segment,
               sourceDuration: fileDuration,
-              targetSizeMb: sizeLimitMb,
-              controlMode: sizeLimitControlMode,
-              preset: sizeLimitPreset,
-              resolution: effectiveSizeLimitedTransformSettings.resolution,
-              fps: effectiveSizeLimitedTransformSettings.fps,
+              targetSizeMb: quality.sizeLimitMb,
+              controlMode: quality.controlMode,
+              preset: quality.preset,
+              resolution: quality.transform.resolution,
+              fps: quality.transform.fps,
               advancedEncoder: sizeLimitAdvancedEncoder,
               advancedTwoPass: sizeLimitAdvancedTwoPass,
               advancedAv1CpuPreset: sizeLimitAdvancedAv1CpuPreset,
@@ -3295,16 +3978,11 @@ function App() {
               sourceRotation: effectiveRotation,
               rotation: isRotationSet ? effectiveRotation : undefined,
               appendFfmpegCommandLog,
-              audioGainDb: sizeLimitedAudioGainDb,
+              audioGainDb: combineAudioGain(sizeLimitedAudioGainDb, segment),
               overlayClips: hasOverlayClips ? overlayClips : undefined,
               overlayVideoWidth: sizeLimitedVideoStream.width,
               overlayVideoHeight: sizeLimitedVideoStream.height,
-              onProgress: (jobProgress, metadata) => updateJobProgress({
-                jobIndex: index,
-                jobText: i18n.t('Exporting'),
-                jobProgress,
-                metadata,
-              }),
+              onProgress: (jobProgress, metadata) => updateJobProgress({ jobIndex: index, jobProgress, metadata }),
             });
             results.push(result);
           }
@@ -3312,16 +3990,13 @@ function App() {
 
         let mergedOutFilePath: string | undefined;
         if (willMerge) {
+          exportAbort.signal.throwIfAborted();
           const mergedJobIndex = shouldProduceSeparateOutputs
             ? sizeLimitedSegmentsForExport.length
             : 0;
           updateWorkingState({
-            text: i18n.t('Merging'),
-            detailText: formatSizeLimitedJobStageText({
-              jobIndex: mergedJobIndex,
-              totalJobs,
-              metadata: undefined,
-            }),
+            metadata: undefined,
+            detailText: formatSizeLimitedJobStageText({ jobIndex: mergedJobIndex, totalJobs, clipCount, joinedClipCount, metadata: undefined }),
           });
 
           const generatedMergedFileNames = useAutoMergedNaming
@@ -3352,11 +4027,11 @@ function App() {
             gpuAcceleration: exportGpuAcceleration,
             outPath: mergedOutFilePath,
             segments: sizeLimitedSegmentsForExport,
-            targetSizeMb: sizeLimitMb,
-            controlMode: sizeLimitControlMode,
-            preset: sizeLimitPreset,
-            resolution: effectiveSizeLimitedTransformSettings.resolution,
-            fps: effectiveSizeLimitedTransformSettings.fps,
+            targetSizeMb: quality.sizeLimitMb,
+            controlMode: quality.controlMode,
+            preset: quality.preset,
+            resolution: quality.transform.resolution,
+            fps: quality.transform.fps,
             advancedEncoder: sizeLimitAdvancedEncoder,
             advancedTwoPass: sizeLimitAdvancedTwoPass,
             advancedAv1CpuPreset: sizeLimitAdvancedAv1CpuPreset,
@@ -3378,12 +4053,7 @@ function App() {
             overlayClips: hasOverlayClips ? overlayClips : undefined,
             overlayVideoWidth: sizeLimitedVideoStream.width,
             overlayVideoHeight: sizeLimitedVideoStream.height,
-            onProgress: (jobProgress, metadata) => updateJobProgress({
-              jobIndex: mergedJobIndex,
-              jobText: i18n.t('Merging'),
-              jobProgress,
-              metadata,
-            }),
+            onProgress: (jobProgress, metadata) => updateJobProgress({ jobIndex: mergedJobIndex, jobProgress, metadata }),
           });
           results.push(mergedResult);
         }
@@ -3394,6 +4064,8 @@ function App() {
           results,
           shouldDecorateSeparateOutputs,
           shouldDecorateMergedOutput,
+          controlMode: quality.controlMode,
+          preset: quality.preset,
         });
         renamedOutputs.warnings.forEach((warning) => warnings.add(warning));
 
@@ -3403,45 +4075,63 @@ function App() {
         );
         const resultSummary = buildSizeLimitedResultSummary(
           finalizedResults,
-          sizeLimitMb,
+          quality.sizeLimitMb,
         );
         appendSizeLimitedResultNotices(finalizedResults, notices, warnings);
 
-        if (firstCreatedResult != null && simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
+        if (firstCreatedResult != null && simpleMode && !prefersReducedMotion) shootConfetti();
 
-        const revealResult = (willMerge ? finalizedResults.at(-1) : undefined)
-          ?? firstCreatedResult
-          ?? finalizedResults[0];
-        invariant(revealResult != null);
         const exportedPaths = finalizedResults.filter((result) => result.created).map((result) => result.path);
-        const revealPath = revealResult.path;
 
-        if (exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport) {
-          const newCleanupChoices = cleanupChoices.askForCleanup
-            ? await askForCleanupChoices()
-            : cleanupChoices;
-          if (newCleanupChoices) {
-            await cleanupFiles(newCleanupChoices).catch((error) => {
-              console.warn('Export completed but cleanup failed', error);
-              warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
-            });
-          }
-        } else if (exportedPaths.length > 0 && simpleMode && cleanupChoices.closeFile) {
-          closeCurrentFileAfterExport();
-        }
+        // "Do this automatically after each export" in the clean-up dialog (asked first, when it asks).
+        const askedForCleanup = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport === true && cleanupChoices.askForCleanup;
+        const newCleanupChoices: CleanupChoicesType | undefined = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport
+          ? (askedForCleanup ? await askForCleanupChoices({ afterExport: true }) : cleanupChoices)
+          : undefined;
 
-        if (!hideAllNotifications) {
-          showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
-          openSizeLimitedFinishedDialog({
-            filePath: revealPath,
-            warnings: [...warnings],
-            notices: [...notices],
-            summary: resultSummary,
+        // The original is only ever moved to the Recycle Bin through this checked path, whichever setting asks for it.
+        const highlights = new Set<string>();
+        if (simpleMode && resultSummary.skippedCount > 0) highlights.add(i18n.t('A file with that name was already there, so it was kept.'));
+        const closedForRecycling = await recycleOriginalAfterExport({
+          highlights,
+          wanted: shouldRecycleOriginalAfterExport(trashSourceAfterExport, askedForCleanup, newCleanupChoices),
+          exportSignal: exportAbort.signal,
+          cleanupAfter: newCleanupChoices,
+          sourcePath: filePath,
+          sourceIdentity,
+          allPlannedCreated: finalizedResults.length > 0 && finalizedResults.every((result) => result.created),
+          exportedPaths,
+          notices,
+          warnings,
+        });
+
+        if (newCleanupChoices != null) {
+          await cleanupFiles({ ...newCleanupChoices, trashSourceFile: false }).catch((error) => {
+            console.warn('Export completed but cleanup failed', error);
+            warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
           });
         }
 
+        if (!hideAllNotifications) showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
+        const mergedFinal = willMerge ? finalizedResults.at(-1) : undefined;
+        finishExport({
+          exportedPaths,
+          mergedPath: mergedFinal?.created ? mergedFinal.path : undefined,
+          closeAfter: newCleanupChoices == null && !closedForRecycling && exportedPaths.length > 0 && !cleanupChoices.cleanupAfterExport && simpleMode && cleanupChoices.closeFile,
+          showResult: (extras) => openSizeLimitedFinishedDialog({
+            filePaths: exportedPaths,
+            warnings: [...warnings],
+            notices: simpleMode ? [] : [...notices],
+            highlight: [...highlights].join('\n') || undefined,
+            summary: resultSummary,
+            showDetails: !simpleMode,
+            ...extras,
+          }),
+        });
+
         setExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
         setCurrentFileExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
+        rememberExportedClip(filePath, sourceIdentity, exportedPaths);
         emitEvent({ eventName: 'export-complete', paths: exportedPaths });
         return;
       }
@@ -3495,13 +4185,14 @@ function App() {
         let cutFileNames: string[];
         if (willMerge && autoDeleteMergedSegments) {
           const generated = await generateCutFileNames(defaultCutFileTemplate);
-          cutFileNames = generated.fileNames;
+          // Made and deleted again: never on a file already there (an earlier export's clips).
+          cutFileNames = await getMergePartNames(generated.fileNames, isOutputNameTaken);
           addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
         } else {
           const generated = await generateCutFileNames(
             cutFileTemplateOrDefault,
           );
-          cutFileNames = generated.fileNames;
+          cutFileNames = await keepClipNamesFree(generated.fileNames);
           if (generated.problems.error != null) {
             warnings.add(generated.problems.error);
             warnings.add(t('Fell back to default output file name'));
@@ -3509,10 +4200,14 @@ function App() {
           addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
         }
 
-        const outFiles = await cutMultipleWithTextOverlays({
+        exportAbort.signal.throwIfAborted();
+        setExportWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined), phase: 'cutting' });
+        // Read here, where they're known to be set: the closure below can't see that.
+        const { index: videoStreamIndex, width: videoWidth, height: videoHeight } = activeVideoStream;
+        const cutWithTexts = (segments: typeof segmentsToExport, names: string[], onClipWritten: ((path: string) => void) | undefined) => cutMultipleWithTextOverlays({
           outputDir,
-          segments: segmentsToExport,
-          cutFileNames,
+          segments,
+          cutFileNames: names,
           fileDuration,
           rotation: effectiveRotation,
           copyFileStreams,
@@ -3527,18 +4222,23 @@ function App() {
           paramsByStreamId,
           chapters: chaptersToAdd,
           overlayClips,
-          videoStreamIndex: activeVideoStream.index,
-          videoWidth: activeVideoStream.width,
-          videoHeight: activeVideoStream.height,
+          videoStreamIndex,
+          videoWidth,
+          videoHeight,
+          encodeAllAudio: willMerge,
+          signal: exportAbort.signal,
+          onClipWritten,
           onProgress: setProgress,
         });
+        const outFiles = await cutWithTexts(segmentsToExport, cutFileNames, willMerge && autoDeleteMergedSegments ? onMergePartWritten : undefined);
 
         let mergedOutFilePath: string | undefined;
         let mergedResult: ExportedFile | undefined;
 
         if (willMerge) {
+          exportAbort.signal.throwIfAborted();
           setProgress(0);
-          setWorking({ text: i18n.t('Merging') });
+          setExportWorking({ text: i18n.t('Joining your clips'), detailText: withQuickExportLabel(undefined), phase: 'cutting' });
 
           const chapterNames = segmentsToChapters && !invertCutSegments
             ? segmentsToExport.map((segment) => segment.name)
@@ -3556,10 +4256,11 @@ function App() {
           invariant(fileName != null);
           mergedOutFilePath = getOutPath({ customOutDir, filePath, fileName });
 
+          const { segmentPaths, freshParts } = await getMergeInputs(outFiles, cutFileNames, mergedOutFilePath, (segments, names) => cutWithTexts(segments, names, onMergePartWritten));
           mergedResult = await concatCutSegments({
             customOutDir,
             outFormat: fileFormat,
-            segmentPaths: outFiles.map((file) => file.path),
+            segmentPaths,
             ffmpegExperimental,
             preserveMovData,
             movFastStart,
@@ -3567,14 +4268,18 @@ function App() {
             chapterNames,
             preserveMetadataOnMerge,
             mergedOutFilePath,
+            signal: exportAbort.signal,
           });
 
           const createdOutFiles = outFiles.flatMap((file) => (file.created ? [file.path] : []));
+          await tryDeleteFiles(freshParts.flatMap((file) => (file.created ? [file.path] : [])));
+          mergePartsWritten.length = 0;
           if (autoDeleteMergedSegments && mergedResult.created) await tryDeleteFiles(createdOutFiles);
         }
 
         if (outFiles.some((file) => !file.created)) notices.add(i18n.t('Existing outputs were skipped.'));
-        if (!exportConfirmEnabled) {
+        // Advanced mode's reminder; the simple editor's result keeps to what matters.
+        if (!exportConfirmEnabled && !simpleMode) {
           notices.add(
             i18n.t(
               'Export options are not shown. You can enable the export sheet again in Settings.',
@@ -3582,10 +4287,11 @@ function App() {
           );
         }
 
+        let extraStreamsFailed = false;
         if (exportExtraStreams) {
           try {
             setProgress(undefined);
-            setWorking({
+            setExportWorking({
               text: i18n.t('Extracting {{count}} unprocessable tracks', {
                 count: nonCopiedExtraStreams.length,
               }),
@@ -3600,41 +4306,61 @@ function App() {
           } catch (err) {
             console.error('Extra stream export failed', err);
             warnings.add(i18n.t('Unable to export unprocessable streams.'));
+            extraStreamsFailed = true;
           }
         }
 
-        if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
+        if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti();
 
         const exportedPaths = getWrittenExportPaths({ files: outFiles, merged: mergedResult, deletedSegments: autoDeleteMergedSegments && mergedResult?.created === true });
-        const revealPath = exportedPaths[0] ?? mergedOutFilePath ?? outFiles[0]?.path;
-        invariant(revealPath != null);
 
-        if (exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport) {
-          const newCleanupChoices = cleanupChoices.askForCleanup
-            ? await askForCleanupChoices()
-            : cleanupChoices;
-          if (newCleanupChoices) {
-            await cleanupFiles(newCleanupChoices).catch((error) => {
-              console.warn('Export completed but cleanup failed', error);
-              warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
-            });
-          }
-        } else if (exportedPaths.length > 0 && simpleMode && cleanupChoices.closeFile) {
-          closeCurrentFileAfterExport();
-        }
+        // "Do this automatically after each export" in the clean-up dialog (asked first, when it asks).
+        const askedForCleanup = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport === true && cleanupChoices.askForCleanup;
+        const newCleanupChoices: CleanupChoicesType | undefined = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport
+          ? (askedForCleanup ? await askForCleanupChoices({ afterExport: true }) : cleanupChoices)
+          : undefined;
 
-        if (!hideAllNotifications) {
-          showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
-          openCutFinishedDialog({
-            filePath: revealPath,
-            warnings: [...warnings],
-            notices: [...notices],
-            fileCount: exportedPaths.length,
+        // The original is only ever moved to the Recycle Bin through this checked path, whichever setting asks for it.
+        const highlights = new Set<string>();
+        if (simpleMode && outFiles.some((file) => !file.created)) highlights.add(i18n.t('A file with that name was already there, so it was kept.'));
+        const closedForRecycling = await recycleOriginalAfterExport({
+          highlights,
+          wanted: shouldRecycleOriginalAfterExport(trashSourceAfterExport, askedForCleanup, newCleanupChoices),
+          exportSignal: exportAbort.signal,
+          cleanupAfter: newCleanupChoices,
+          sourcePath: filePath,
+          sourceIdentity,
+          allPlannedCreated: !extraStreamsFailed && outFiles.length > 0 && outFiles.every((file) => file.created) && (mergedResult == null || mergedResult.created),
+          exportedPaths,
+          notices,
+          warnings,
+        });
+
+        if (newCleanupChoices != null) {
+          await cleanupFiles({ ...newCleanupChoices, trashSourceFile: false }).catch((error) => {
+            console.warn('Export completed but cleanup failed', error);
+            warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
           });
         }
 
+        if (!hideAllNotifications) showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
+        finishExport({
+          exportedPaths,
+          mergedPath: mergedResult?.created ? mergedResult.path : undefined,
+          closeAfter: newCleanupChoices == null && !closedForRecycling && exportedPaths.length > 0 && !cleanupChoices.cleanupAfterExport && simpleMode && cleanupChoices.closeFile,
+          showResult: (extras) => openCutFinishedDialog({
+            filePaths: exportedPaths,
+            warnings: [...warnings],
+            notices: simpleMode ? [] : [...notices],
+            highlight: [...highlights].join('\n') || undefined,
+            showAdvice: !simpleMode,
+            ...extras,
+          }),
+        });
+
         setExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
         setCurrentFileExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
+        rememberExportedClip(filePath, sourceIdentity, exportedPaths);
         emitEvent({ eventName: 'export-complete', paths: exportedPaths });
         return;
       }
@@ -3663,11 +4389,12 @@ function App() {
       // https://github.com/mifi/lossless-cut/issues/2637
       if (willMerge && autoDeleteMergedSegments) {
         const generated = await generateCutFileNames(defaultCutFileTemplate);
-        cutFileNames = generated.fileNames;
+        // Made and deleted again: never on a file already there (an earlier export's clips).
+        cutFileNames = await getMergePartNames(generated.fileNames, isOutputNameTaken);
         addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
       } else {
         const generated = await generateCutFileNames(cutFileTemplateOrDefault);
-        cutFileNames = generated.fileNames;
+        cutFileNames = await keepClipNamesFree(generated.fileNames);
         if (generated.problems.error != null) {
           console.warn(
             'Output segments file name invalid, using default instead',
@@ -3680,7 +4407,9 @@ function App() {
       }
 
       // throw (() => { const err = new Error('test'); err.code = 'ENOENT'; return err; })();
-      const outFiles = await cutMultiple({
+      exportAbort.signal.throwIfAborted();
+      setExportWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined), phase: 'cutting' });
+      const cutClips = (segments: typeof segmentsToExport, names: string[], onClipWritten: ((path: string) => void) | undefined) => cutMultiple({
         outputDir,
         customOutDir,
         outFormat: fileFormat,
@@ -3689,8 +4418,8 @@ function App() {
         copyFileStreams,
         allFilesMeta,
         keyframeCut,
-        segments: segmentsToExport,
-        cutFileNames,
+        segments,
+        cutFileNames: names,
         onProgress: setProgress,
         shortestFlag,
         ffmpegExperimental,
@@ -3704,7 +4433,12 @@ function App() {
         paramsByStreamId,
         chapters: chaptersToAdd,
         detectedFps,
+        // From all the clips, so a fresh cut for the merge gets the same audio as the others.
+        encodeAllAudio: willMerge && segmentsToExport.some((segment) => isClipVolumeChanged(segment)),
+        signal: exportAbort.signal,
+        onClipWritten,
       });
+      const outFiles = await cutClips(segmentsToExport, cutFileNames, willMerge && autoDeleteMergedSegments ? onMergePartWritten : undefined);
 
       let mergedOutFilePath: string | undefined;
       let mergedResult: ExportedFile | undefined;
@@ -3715,8 +4449,9 @@ function App() {
           cutMergedFileTemplateOrDefault,
         );
 
+        exportAbort.signal.throwIfAborted();
         setProgress(0);
-        setWorking({ text: i18n.t('Merging') });
+        setExportWorking({ text: i18n.t('Joining your clips'), detailText: withQuickExportLabel(undefined), phase: 'cutting' });
 
         const chapterNames = segmentsToChapters && !invertCutSegments
           ? segmentsToExport.map((s) => s.name)
@@ -3739,10 +4474,11 @@ function App() {
         invariant(fileName != null);
         mergedOutFilePath = getOutPath({ customOutDir, filePath, fileName });
 
+        const { segmentPaths, freshParts } = await getMergeInputs(outFiles, cutFileNames, mergedOutFilePath, (segments, names) => cutClips(segments, names, onMergePartWritten));
         mergedResult = await concatCutSegments({
           customOutDir,
           outFormat: fileFormat,
-          segmentPaths: outFiles.map((f) => f.path),
+          segmentPaths,
           ffmpegExperimental,
           preserveMovData,
           movFastStart,
@@ -3750,16 +4486,20 @@ function App() {
           chapterNames,
           preserveMetadataOnMerge,
           mergedOutFilePath,
+          signal: exportAbort.signal,
         });
 
         // don't delete existing files that were not created by losslesscut now (due to overwrite disabled) https://github.com/mifi/lossless-cut/issues/2436
         const createdOutFiles = outFiles.flatMap((f) => (f.created ? [f.path] : []));
+        await tryDeleteFiles(freshParts.flatMap((file) => (file.created ? [file.path] : [])));
+        mergePartsWritten.length = 0;
         if (autoDeleteMergedSegments && mergedResult.created) await tryDeleteFiles(createdOutFiles);
       }
 
       if (outFiles.some((file) => !file.created)) notices.add(i18n.t('Existing outputs were skipped.'));
 
-      if (!exportConfirmEnabled) {
+      // Advanced mode's reminder; the simple editor's result keeps to what matters.
+      if (!exportConfirmEnabled && !simpleMode) {
         notices.add(
           i18n.t(
             'Export options are not shown. You can enable the export sheet again in Settings.',
@@ -3786,10 +4526,11 @@ function App() {
         );
       }
 
+      let extraStreamsFailed = false;
       if (exportExtraStreams) {
         try {
           setProgress(undefined); // If extracting extra streams takes a long time, prevent loader from being stuck at 100%
-          setWorking({
+          setExportWorking({
             text: i18n.t('Extracting {{count}} unprocessable tracks', {
               count: nonCopiedExtraStreams.length,
             }),
@@ -3804,49 +4545,71 @@ function App() {
         } catch (err) {
           console.error('Extra stream export failed', err);
           warnings.add(i18n.t('Unable to export unprocessable streams.'));
+          extraStreamsFailed = true;
         }
       }
 
       if (outFiles.some((file) => file.created) && areWeCutting) notices.add(i18n.t('Cutpoints may be inaccurate.'));
 
-      if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti({ ticks: 50 });
+      if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti();
 
       // Note: this should be after cleanup, so we don't accidentally open two dialogs at the same time, leading to error *and* success dialog simultaneously https://github.com/mifi/lossless-cut/issues/2609
       const exportedPaths = getWrittenExportPaths({ files: outFiles, merged: mergedResult, deletedSegments: autoDeleteMergedSegments && mergedResult?.created === true });
-      const revealPath = exportedPaths[0] ?? mergedOutFilePath ?? outFiles[0]?.path;
-      invariant(revealPath != null);
 
-      if (exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport) {
-        const newCleanupChoices = cleanupChoices.askForCleanup
-          ? await askForCleanupChoices()
-          : cleanupChoices;
-        // only if not canceled
-        if (newCleanupChoices) {
-          await cleanupFiles(newCleanupChoices).catch((error) => {
-            console.warn('Export completed but cleanup failed', error);
-            warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
-          });
-        }
-      } else if (exportedPaths.length > 0 && simpleMode && cleanupChoices.closeFile) {
-        closeCurrentFileAfterExport();
-      }
+      // "Do this automatically after each export" in the clean-up dialog (asked first, when it asks).
+      const askedForCleanup = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport === true && cleanupChoices.askForCleanup;
+      const newCleanupChoices: CleanupChoicesType | undefined = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport
+        ? (askedForCleanup ? await askForCleanupChoices({ afterExport: true }) : cleanupChoices)
+        : undefined;
 
-      if (!hideAllNotifications) {
-        showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
-        openCutFinishedDialog({
-          filePath: revealPath,
-          warnings: [...warnings],
-          notices: [...notices],
-          fileCount: exportedPaths.length,
+      // The original is only ever moved to the Recycle Bin through this checked path, whichever setting asks for it.
+      const highlights = new Set<string>();
+      if (simpleMode && outFiles.some((file) => !file.created)) highlights.add(i18n.t('A file with that name was already there, so it was kept.'));
+      const closedForRecycling = await recycleOriginalAfterExport({
+        highlights,
+        wanted: shouldRecycleOriginalAfterExport(trashSourceAfterExport, askedForCleanup, newCleanupChoices),
+        exportSignal: exportAbort.signal,
+        cleanupAfter: newCleanupChoices,
+        sourcePath: filePath,
+        sourceIdentity,
+        allPlannedCreated: !extraStreamsFailed && outFiles.length > 0 && outFiles.every((file) => file.created) && (mergedResult == null || mergedResult.created),
+        exportedPaths,
+        notices,
+        warnings,
+      });
+
+      if (newCleanupChoices != null) {
+        await cleanupFiles({ ...newCleanupChoices, trashSourceFile: false }).catch((error) => {
+          console.warn('Export completed but cleanup failed', error);
+          warnings.add(i18n.t('Export finished, but cleanup could not be completed.'));
         });
       }
 
+      if (!hideAllNotifications) showOsNotification(i18n.t(exportedPaths.length > 0 ? 'Export finished' : 'No new files were written'));
+      finishExport({
+        exportedPaths,
+        mergedPath: mergedResult?.created ? mergedResult.path : undefined,
+        closeAfter: newCleanupChoices == null && !closedForRecycling && exportedPaths.length > 0 && !cleanupChoices.cleanupAfterExport && simpleMode && cleanupChoices.closeFile,
+        showResult: (extras) => openCutFinishedDialog({
+          filePaths: exportedPaths,
+          warnings: [...warnings],
+          notices: simpleMode ? [] : [...notices],
+          highlight: [...highlights].join('\n') || undefined,
+          showAdvice: !simpleMode,
+          ...extras,
+        }),
+      });
+
       setExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
       setCurrentFileExportCount((c) => c + (exportedPaths.length > 0 ? 1 : 0));
+      rememberExportedClip(filePath, sourceIdentity, exportedPaths);
 
       emitEvent({ eventName: 'export-complete', paths: exportedPaths });
     } catch (err) {
       emitEvent({ eventName: 'export-complete' });
+
+      // A merged-only export that stopped part way: the clip files it wrote go.
+      if (mergePartsWritten.length > 0) await tryDeleteFiles(mergePartsWritten);
 
       if (isAbortedError(err)) return;
 
@@ -3882,7 +4645,11 @@ function App() {
       setProgress(undefined);
     }
   }, [
+    cutFileTemplate,
+    finishExport,
     activeVideoStream,
+    recycleOriginalAfterExport,
+    trashSourceAfterExport,
     allFilesMeta,
     appendFfmpegCommandLog,
     appendSizeLimitedResultNotices,
@@ -3895,7 +4662,6 @@ function App() {
     buildSizeLimitedResultSummary,
     cleanupChoices,
     cleanupFiles,
-    closeCurrentFileAfterExport,
     concatCutSegments,
     copyFileStreams,
     customOutDir,
@@ -3916,6 +4682,7 @@ function App() {
     fileFormat,
     filePath,
     formatSizeLimitedJobStageText,
+    formatRequestedSizeLimit,
     generateCutFileNames,
     generateCutMergedFileNames,
     generateSizeLimitedCustomCutFileNames,
@@ -3926,6 +4693,8 @@ function App() {
     hasOverlayClips,
     hasSegmentSpeedChanges,
     hasSegmentCropChanges,
+    hasSegmentVolumeChanges,
+    rememberExportedClip,
     haveInvalidSegs,
     hideAllNotifications,
     invertCutSegments,
@@ -4004,6 +4773,19 @@ function App() {
     filePath,
     onExportConfirm,
   ]);
+
+  // Export straight away, without the sheet: Ctrl+click on Export or Ctrl+E with the sheet's last settings, and
+  // Ctrl+1/2/3 once with a quick export preset's quality (the sheet keeps its own). Otherwise a normal export.
+  const quickExport = useCallback(async (presetIndex?: number) => {
+    if (!filePath || workingRef.current) return;
+    const translate = (key: string, options: Record<string, string | number>) => i18n.t(key, options);
+    const preset = presetIndex != null ? normalizeQuickExportPresets(quickExportPresets)[presetIndex] : undefined;
+    // A shortcut left on a quick export that isn't there any more does nothing.
+    if (presetIndex != null && preset == null) return;
+    await onExportConfirm(preset != null
+      ? { label: getQuickExportPresetLabel(preset, translate), quality: preset }
+      : { label: getLastSettingsLabel({ isSizeLimited: isSizeLimitedExport, sizeLimitMb }, translate) });
+  }, [filePath, isSizeLimitedExport, onExportConfirm, quickExportPresets, sizeLimitMb, workingRef]);
 
   const captureSnapshot = useCallback(async () => {
     if (!filePath || workingRef.current) return;
@@ -4260,7 +5042,7 @@ function App() {
     }) => {
       // The whole file loads no segments: its full-file segment is created once the media has loaded.
       const segments = getProjectSegmentsToLoad(project);
-      if (segments.length > 0) loadCutSegments({ segments, append: false });
+      if (segments.length > 0) loadCutSegments({ segments, append: false, asOpened: true });
       setCustomTagsByFile(
         project.streamEdits?.customTags != null
           ? { [mediaFilePath]: project.streamEdits.customTags }
@@ -4323,9 +5105,12 @@ function App() {
     async ({
       filePath: fp,
       projectPath,
+      relocatedFrom,
     }: {
       filePath: string;
       projectPath?: string | undefined;
+      /** The recording was found in a new place: its edits move here (#16). */
+      relocatedFrom?: RelocatedRecording | undefined;
     }) => {
       // Every loadMedia call claims a generation. A load whose generation is no longer
       // current has been superseded by a newer file, so it must not touch state.
@@ -4335,19 +5120,17 @@ function App() {
 
       // The project file the opened state comes from, if any.
       let loadedProjectPath: string | undefined;
+      // Other copies found holding the same edits ("Both" keeps two), which autosave then needn't write again.
+      let sameCopyPaths: string[] = [];
 
       async function loadProject(path: string) {
         await loadProjectIntoState({ path, mediaFilePath: fp });
         loadedProjectPath = path;
       }
 
-      async function tryOpenProjectPath(path: string) {
-        if (!(await mainApi.pathExists(path))) return false;
-        await loadProject(path);
-        return true;
-      }
-
-      const storeProjectInSourceDir = !storeProjectInWorkingDir;
+      // Projects found in older places (next to the recording, the export folder), to move to the Recycle Bin once the
+      // project is saved in ClipPress's folder; and those left at a relocated recording's old place.
+      let sidecarsToRetire: string[] = relocatedFrom?.projectCopies ?? [];
 
       async function tryFindAndLoadProjectFile({
         chapters,
@@ -4357,18 +5140,46 @@ function App() {
         cod: string | undefined;
       }) {
         try {
-          // First try to open from from working dir
-          if (await tryOpenProjectPath(getEdlFilePath(fp, cod))) return;
-
-          // then try to open project from source file dir
-          const sameDirEdlFilePath = getEdlFilePath(fp);
-          // MAS only allows fs.access (pathExists) if we don't have access to input dir yet, so check first if the file exists,
-          // so we don't need to annoy the user by asking for permission if the project file doesn't exist
-          if (await mainApi.pathExists(sameDirEdlFilePath)) {
-            // Ok, the file exists. now we have to ask the user, because we need to read that file
-            await ensureAccessToSourceDir(fp);
-            // Ok, we got access from the user (or already have access), now read the project file
-            await loadProject(sameDirEdlFilePath);
+          // Where the setting saves first, then ClipPress's folder, the export folder and next to the recording.
+          const storeEnv = getProjectStoreEnv();
+          const found: { path: string, mtimeMs: number }[] = [];
+          for (const candidate of getProjectLookupPaths(fp, projectFileLocation, cod, storeEnv)) {
+            // MAS only allows fs.access (pathExists) if we don't have access to input dir yet, so check first if the file exists,
+            // so we don't need to annoy the user by asking for permission if the project file doesn't exist
+            if (await mainApi.pathExists(candidate)) {
+              let mtimeMs = 0;
+              try {
+                ({ mtimeMs } = await lstat(candidate));
+              } catch {
+                // Can't tell its age: it still counts, after any copy that can
+              }
+              found.push({ path: candidate, mtimeMs });
+            }
+          }
+          if (found.length > 0) {
+            // More than one copy (the setting was changed, "Both", or an older version saved next to the recording): the
+            // most recently saved edits win; on a tie, the place the setting points to (the order above). One that
+            // can't be read is passed over for the next.
+            const { opened, unreadable } = await readNewestProjectCopy(found, async (path) => {
+              // Next to the recording we may have to ask the user, because we need to read it
+              if (dirname(path) === dirname(fp)) await ensureAccessToSourceDir(fp);
+              return loadLlcProject(path);
+            }, (err) => err instanceof DirectoryAccessDeclinedError);
+            const unreadablePaths = unreadable.map(({ path }) => path);
+            for (const { path, error } of unreadable) logProjectFiles('warn', `Could not read the edits in ${path}: ${error instanceof Error ? error.message : String(error)}`);
+            // Autosave is about to save what is opened everywhere the setting points (or the first edit, if nothing could
+            // be opened): what it didn't open is kept under another name next to it first.
+            const savePaths = getProjectSavePaths(fp, projectFileLocation, customOutDir, storeEnv);
+            if (autoSaveProjectFile) sameCopyPaths = await keepCopiesNotOpened({ savePaths, openedPath: opened?.path, unreadable: unreadablePaths });
+            // Reported below, and the recording opens without edits.
+            if (opened == null) throw unreadable[0]?.error;
+            if (unreadable.length > 0) getSwal().toast.fire({ icon: 'warning', timer: 10000, text: i18n.t('The newest copy of your edits couldn\'t be read, so an earlier copy was opened.') });
+            applyProjectState({ mediaFilePath: fp, project: opened.project });
+            loadedProjectPath = opened.path;
+            // Only its own: one in the export folder is named after its recording only, so it may be another's.
+            const toRetire = getProjectCopiesToRetire(found.map(({ path }) => path).filter((path) => !unreadablePaths.includes(path)), projectFileLocation, savePaths, isWindows || isMac);
+            sidecarsToRetire = [...sidecarsToRetire, ...(await filterOwnProjectFiles(fp, toRetire, opened.path))];
+            return;
           }
 
           // OK, we didn't find a project file, instead maybe try to create project (segments) from chapters
@@ -4385,13 +5196,15 @@ function App() {
         } catch (err) {
           if (err instanceof DirectoryAccessDeclinedError) throw err;
           console.error('EDL load failed, but continuing', err);
-          errorToast(
-            `${i18n.t('Failed to load segments')} (${err instanceof Error && err.message})`,
-          );
+          // The unreadable file is set aside as a .replaced- backup, so the edits can still be recovered.
+          errorToast(simpleMode
+            ? i18n.t("This recording's edits couldn't be read, so it opened without them. Their file is kept.")
+            : `${i18n.t('Failed to load segments')} (${err instanceof Error && err.message})`);
         }
       }
 
-      setWorking({ text: i18n.t('Loading file') });
+      performance.mark('clippress:load-start');
+      setWorking({ text: i18n.t('Opening {{name}}', { name: basename(fp) }), quiet: true });
       try {
         // Need to check if file is actually readable
         const pathReadAccessErrorCode = await getPathReadAccessError(fp);
@@ -4418,8 +5231,11 @@ function App() {
           return;
         }
 
-        const ffprobeMeta = await readFileFfprobeMeta(fp);
+        performance.mark('clippress:load-probe-start');
+        // Stat first: a recording probed before and unchanged since (Next clip, a reopen) skips ffprobe.
         const fileStats = await readFileStats(fp);
+        const ffprobeMeta = await readFileFfprobeMetaCached(fp, fileStats);
+        performance.mark('clippress:load-probed');
         // console.log('file meta read', fileMeta);
 
         const fileFormatNew = await getDefaultOutFormat({
@@ -4454,8 +5270,8 @@ function App() {
           outDir: customOutDir,
         });
 
-        // if storeProjectInSourceDir is true, we will be writing project file to input path's dir, so ensure that one too
-        if (storeProjectInSourceDir) await ensureAccessToSourceDir(fp);
+        // Projects saved next to the recording are written to its folder, so ensure access to that one too
+        if (projectFileLocation === 'recording' || projectFileLocation === 'both') await ensureAccessToSourceDir(fp);
 
         const existingHtml5FriendlyFile = await findExistingHtml5FriendlyFile(
           fp,
@@ -4509,9 +5325,11 @@ function App() {
         await whenProjectSaved();
         if (isStale()) return;
 
-        // eslint-disable-next-line unicorn/prefer-ternary
+        performance.mark('clippress:load-before-project');
         if (projectPath) {
           await loadProject(projectPath);
+          // Edits opened on purpose (or a relocated recording's) replace what this recording had: kept as a backup.
+          if (autoSaveProjectFile) sameCopyPaths = await keepCopiesAboutToBeReplaced(getProjectSavePaths(fp, projectFileLocation, customOutDir, getProjectStoreEnv()), projectPath);
         } else {
           await tryFindAndLoadProjectFile({
             chapters: ffprobeMeta.chapters,
@@ -4588,10 +5406,16 @@ function App() {
 
         if (isStale()) return;
         // Autosave compares later changes with the state opened here.
-        setProjectSession({ id: generation, loadedProjectPath });
+        setProjectSession({ id: generation, loadedProjectPath, ...(loadedProjectPath != null && sameCopyPaths.length > 0 ? { sameCopyPaths } : {}) });
+        if (sidecarsToRetire.length > 0) sidecarRetirementRef.current = { sessionId: generation, paths: sidecarsToRetire };
+        // A relocated recording takes the place of its old entries.
+        setRecentFiles((list) => addRecentFile((relocatedFrom?.mediaPaths ?? []).reduce((rest, oldPath) => removeRecentFile(rest, oldPath, isWindows || isMac), list), fp, Date.now(), isWindows || isMac));
+        setShelfFolder(dirname(fp));
+        setShelfAnchorPath(fp);
         // This needs to be last, because it triggers <video> to load the video
         // If not, onVideoError might be triggered before setWorking() has been cleared.
         // https://github.com/mifi/lossless-cut/issues/515
+        performance.mark('clippress:load-file-set');
         setFilePath(fp);
       } catch (err) {
         // A superseded load must not reset the newer file's state nor surface its error,
@@ -4606,9 +5430,9 @@ function App() {
       }
     },
     [
-      storeProjectInWorkingDir,
+      projectFileLocation,
+      autoSaveProjectFile,
       setWorking,
-      getEdlFilePath,
       enableImportChapters,
       ensureAccessToSourceDir,
       loadCutSegments,
@@ -4629,7 +5453,10 @@ function App() {
       showPreviewFileLoadedMessage,
       showNotNativelySupportedMessage,
       loadProjectIntoState,
+      applyProjectState,
       whenProjectSaved,
+      setRecentFiles,
+      simpleMode,
     ],
   );
 
@@ -4654,11 +5481,19 @@ function App() {
     [findNearestKeyFrameTime, getRelevantTime, seekAbs],
   );
 
+  // Alt+← / → in the simple editor, which shows no keyframes: the clip edge before or after.
+  const seekClipEdge = useCallback((direction: -1 | 1) => {
+    if (!isDurationValid(fileDuration)) return;
+    const time = findClipEdge({ time: getRelevantTime(), clips: isInitialSegment(cutSegments) ? [] : cutSegments, duration: fileDuration, direction, frame: 1 / (detectedFps || 30) });
+    if (time != null) seekAbs(time);
+  }, [cutSegments, detectedFps, fileDuration, getRelevantTime, seekAbs]);
+
   const onTimelineWheel = useTimelineScroll({
     wheelSensitivity,
     mouseWheelZoomModifierKey,
     mouseWheelFrameSeekModifierKey,
     mouseWheelKeyframeSeekModifierKey,
+    extraMouseModifierKeys,
     invertTimelineScroll,
     zoomRel,
     seekRel,
@@ -4678,6 +5513,7 @@ function App() {
     }) => {
       let path = pathIn;
       let projectPath: string | undefined;
+      let relocatedFrom: RelocatedRecording | undefined;
 
       // Open .llc AND media referenced within
       if (isLlcProject) {
@@ -4688,17 +5524,22 @@ function App() {
         console.log({ mediaFileName });
         if (!mediaFileName) return;
 
-        const mediaFilePath = pathJoin(dirname(path), mediaFileName);
-
+        // Next to the project, or where it says the recording is (a project from ClipPress's own folder isn't next to it).
         // Note: MAS only allows fs.stat (pathExists) if we don't have access to input dir yet
-        if (!(await mainApi.pathExists(mediaFilePath))) {
-          errorToast(
-            i18n.t(
-              'The media file referenced by the project file you tried to open does not exist in the same directory as the project file: {{mediaFileName}}',
-              { mediaFileName },
-            ),
-          );
-          return;
+        let mediaFilePath: string | undefined;
+        for (const candidate of getProjectMediaCandidates(project, path, getProjectStoreEnv())) {
+          if (await mainApi.pathExists(candidate)) {
+            mediaFilePath = candidate;
+            break;
+          }
+        }
+
+        if (mediaFilePath == null) {
+          // Moved or renamed: the user can point to it, and the edits move with it (#16).
+          const oldMediaPath = getProjectMediaOldPath(project, path, customOutDir, getProjectStoreEnv()) ?? pathJoin(dirname(path), mediaFileName);
+          const relocation = await relocateRecording({ oldMediaPath, otherOldMediaPaths: project.mediaFilePath != null ? [project.mediaFilePath] : [], project, projectPath: path });
+          if (relocation == null) return;
+          ({ mediaPath: mediaFilePath, relocatedFrom } = relocation);
         }
 
         projectPath = path;
@@ -4714,9 +5555,9 @@ function App() {
 
       if (/\.vob$/i.test(path) && mustDisallowVob()) return;
 
-      await loadMedia({ filePath: path, projectPath });
+      await loadMedia({ filePath: path, projectPath, relocatedFrom });
     },
-    [ensureAccessToSourceDir, loadMedia],
+    [customOutDir, ensureAccessToSourceDir, loadMedia, relocateRecording],
   );
 
   // todo merge with userOpenFiles?
@@ -4725,10 +5566,19 @@ function App() {
       if (workingRef.current) return;
       if (filePath === path) return;
       closeExportResultDialog();
-      setWorking({ text: i18n.t('Loading file') });
+      setWorking({ text: i18n.t('Opening clip'), quiet: true });
       try {
         await withErrorHandling(async () => {
-          await userOpenSingleFile({ path });
+          try {
+            await userOpenSingleFile({ path });
+          } catch (err) {
+            // Next clip and Up next move past it instead of offering it again.
+            if (err instanceof UnsupportedFileError) {
+              const info = await lstat(path).catch(() => undefined);
+              if (info != null) setUnopenableShelfKeys((keys) => new Set([...keys, shelfThumbnailKey({ path, name: basename(path), modifiedAt: info.mtimeMs, size: info.size })]));
+            }
+            throw err;
+          }
         }, i18n.t('Failed to open file'));
       } finally {
         setWorking(undefined);
@@ -4736,6 +5586,32 @@ function App() {
     },
     [workingRef, filePath, closeExportResultDialog, setWorking, withErrorHandling, userOpenSingleFile],
   );
+
+  /** Opens a clip from the shelf, or tidies the shelf if it has gone (recycled or moved meanwhile). */
+  const openShelfClip = useCallback(async (path: string) => {
+    if (!(await mainApi.pathExists(path))) {
+      refreshShelf();
+      showNotification({ icon: 'info', text: i18n.t('That clip is no longer in its folder.') });
+      return;
+    }
+    await batchOpenSingleFile(path);
+  }, [batchOpenSingleFile, refreshShelf, showNotification]);
+  useEffect(() => {
+    openShelfClipRef.current = (path) => { openShelfClip(path); };
+  }, [openShelfClip]);
+  const openNextClip = useCallback(() => {
+    if (nextClip != null) openShelfClip(nextClip.path);
+  }, [nextClip, openShelfClip]);
+  const chooseShelfFolder = useCallback(async () => {
+    const { canceled, filePaths } = await showOpenDialog({
+      properties: ['openDirectory'],
+      ...((shelfFolder ?? lastOpenedPathRef.current) != null ? { defaultPath: (shelfFolder ?? lastOpenedPathRef.current)! } : {}),
+      title: t('Choose a folder'),
+    });
+    const [folder] = filePaths;
+    if (canceled || folder == null) return;
+    setShelfFolder(folder);
+  }, [shelfFolder, t]);
 
   const batchFileJump = useCallback(
     (direction: number, alsoOpen: boolean) => {
@@ -4777,7 +5653,18 @@ function App() {
 
   const goToTimecode = useCallback(async () => {
     if (!filePath) return;
-    const timecode = await promptTimecode({
+    // Simple mode writes the time like the clock that opened this (0:12.40) and always reads it that way,
+    // whatever the advanced time format is set to. Its typing tips sit behind an "i" rather than on screen.
+    const showHours = (fileDuration ?? 0) >= 3600;
+    const timecode = await promptTimecode(simpleMode ? {
+      initialValue: formatClockTime(commandedTimeRef.current, { decimals: 2, showHours }),
+      title: i18n.t('Go to a time'),
+      help: i18n.t('Type a time like 1:30, or +5 or -5 to jump from where you are.'),
+      allowRelative: true,
+      inputPlaceholder: formatClockTime(0, { decimals: 2, showHours }),
+      parse: (value) => parseDuration(value),
+      invalidMessage: i18n.t("That isn't a time. Try something like 1:30."),
+    } : {
       initialValue: formatTimecode({ seconds: commandedTimeRef.current }),
       title: i18n.t('Seek to timecode'),
       description: i18n.t('Use + and - for relative seek'),
@@ -4791,6 +5678,8 @@ function App() {
     else seekAbs(timecode.duration);
   }, [
     filePath,
+    fileDuration,
+    simpleMode,
     promptTimecode,
     formatTimecode,
     commandedTimeRef,
@@ -4936,15 +5825,22 @@ function App() {
   ]);
 
   const addStreamSourceFile = useCallback(
-    async (path: string) => {
-      if (allFilesMeta[path]) return undefined; // Already added?
+    /** `only`: just the new file's audio (a separate mic or commentary recording) or video tracks kept; else all. */
+    async (path: string, only?: 'audio' | 'video') => {
+      const added = allFilesMeta[path];
+      if (added != null && path === filePath) return undefined;
+      if (added != null) {
+        // Added before (say, its audio): the tracks asked for now are kept too.
+        setCopyStreamIdsForPath(path, (old) => ({ ...old, ...fromPairs(added.streams.flatMap(({ index, codec_type: type }) => (only == null || type === only ? [[index, true]] : []))) }));
+        return undefined;
+      }
       const fileMeta = await readFileFfprobeMeta(path);
       // console.log('streams', fileMeta.streams);
       setExternalFilesMeta((old) => ({ ...old, [path]: fileMeta }));
-      setCopyStreamIdsForPath(path, () => fromPairs(fileMeta.streams.map(({ index }) => [index, true])));
+      setCopyStreamIdsForPath(path, () => fromPairs(fileMeta.streams.map(({ index, codec_type: type }) => [index, only == null || type === only])));
       return fileMeta;
     },
-    [allFilesMeta, setCopyStreamIdsForPath],
+    [allFilesMeta, filePath, setCopyStreamIdsForPath],
   );
 
   const updateStreamParams = useCallback<
@@ -5053,6 +5949,25 @@ function App() {
 
         let firstNewFilePath = newFilePaths[0]!;
 
+        // Simple mode: a folder goes on the shelf, and its first clip opens.
+        if (simpleMode && newFilePaths.length === 1 && (await lstat(firstNewFilePath)).isDirectory()) {
+          if (workingRef.current) {
+            showNotification({ icon: 'info', text: i18n.t('ClipPress is busy. Open the file again when the current task has finished.') });
+            return;
+          }
+          const folder = firstNewFilePath;
+          const queue = buildShelfQueue(await listShelfFolder(folder), { order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac });
+          // All exported: the first one that opens.
+          const first = pickNextClip(queue, undefined, isWindows || isMac, unopenableShelfKeys) ?? queue.find((item) => !unopenableShelfKeys.has(shelfThumbnailKey(item.file)))?.file;
+          if (first == null) {
+            errorToast(i18n.t('No videos in this folder'));
+            return;
+          }
+          setShelfFolder(folder);
+          await batchOpenSingleFile(first.path);
+          return;
+        }
+
         // first check if it is a single directory, and if so, read it recursively
         if (
           newFilePaths.length === 1
@@ -5096,9 +6011,13 @@ function App() {
           newFilePaths = await readVideoTs(firstNewFilePath);
         }
 
-        if (workingRef.current) return;
+        if (workingRef.current) {
+          // Say why nothing happened, instead of ignoring the file (#60).
+          showNotification({ icon: 'info', text: i18n.t('ClipPress is busy. Open the file again when the current task has finished.') });
+          return;
+        }
         try {
-          setWorking({ text: i18n.t('Loading file') });
+          setWorking({ text: i18n.t('Opening clip'), quiet: true });
 
           // If it's a project file (not llc) and we have an already opened file, import segments from the project
           const matchingImportProjectType = getImportProjectType(firstNewFilePath);
@@ -5157,7 +6076,24 @@ function App() {
 
           let openFileResponse: string | undefined;
           if (inputOptionsKeys.length === 1) [openFileResponse] = inputOptionsKeys;
-          if (enableAskForFileOpenAction && inputOptionsKeys.length > 1) openFileResponse = await askForFileOpenAction(inputOptions);
+          if (enableAskForFileOpenAction && inputOptionsKeys.length > 1 && simpleMode && inputOptions.open != null) {
+            // Open or cancel, the rest under "More options": its audio, its video or both added to this recording, or
+            // the other choices in plain words.
+            openFileResponse = await askForFileOpenChoice({
+              fileName: basename(firstNewFilePath),
+              extras: [
+                ...(inputOptions.tracks != null ? [
+                  { key: 'tracksAudio', label: i18n.t('Its audio'), add: 'audio' as const },
+                  { key: 'tracksVideo', label: i18n.t('Its video'), add: 'video' as const },
+                  { key: 'tracks', label: i18n.t('Both'), add: 'both' as const },
+                ] : []),
+                ...(inputOptions.mergeWithCurrentFile != null ? [{ key: 'mergeWithCurrentFile', label: i18n.t('Join it after this recording') }] : []),
+                ...(inputOptions.project != null ? [{ key: 'project', label: inputOptions.project }] : []),
+                ...(inputOptions.subtitles != null ? [{ key: 'subtitles', label: inputOptions.subtitles }] : []),
+                ...(inputOptions.addToBatch != null ? [{ key: 'addToBatch', label: inputOptions.addToBatch }] : []),
+              ],
+            });
+          } else if (enableAskForFileOpenAction && inputOptionsKeys.length > 1) openFileResponse = await askForFileOpenAction(inputOptions);
           else if (newFilePaths.length === 1) openFileResponse = 'open';
 
           if (openFileResponse === 'open') {
@@ -5174,6 +6110,11 @@ function App() {
           }
           if (openFileResponse === 'tracks') {
             await addStreamSourceFile(firstNewFilePath);
+            setStreamsSelectorShown(true);
+            return;
+          }
+          if (openFileResponse === 'tracksAudio' || openFileResponse === 'tracksVideo') {
+            await addStreamSourceFile(firstNewFilePath, openFileResponse === 'tracksAudio' ? 'audio' : 'video');
             setStreamsSelectorShown(true);
             return;
           }
@@ -5209,6 +6150,12 @@ function App() {
       userOpenSingleFile,
       addStreamSourceFile,
       filePath,
+      showNotification,
+      simpleMode,
+      shelfOrder,
+      shelfExports,
+      batchOpenSingleFile,
+      unopenableShelfKeys,
     ],
   );
 
@@ -5232,6 +6179,37 @@ function App() {
     if (canceled) return;
     userOpenFiles(filePaths);
   }, [t, userOpenFiles]);
+
+  /** Opens a recording from the welcome screen's list. One that was moved or deleted can be found, with its edits (#16). */
+  const openRecentFile = useCallback(async (path: string) => {
+    if (await mainApi.pathExists(path)) {
+      await userOpenFiles([path]);
+      return;
+    }
+    if (workingRef.current) return;
+    closeExportResultDialog();
+    await withErrorHandling(async () => {
+      // Its newest edits that can be read, wherever they are kept.
+      const oldPlaceCopies = await findProjectFiles(getProjectLookupPaths(path, projectFileLocation, customOutDir, getProjectStoreEnv()));
+      const { opened, unreadable } = await readNewestProjectCopy(oldPlaceCopies, loadLlcProject);
+      for (const { path: copy, error } of unreadable) console.warn('Could not read the edits of a missing recording', copy, error);
+      const project = opened?.project;
+      const relocation = await relocateRecording({ oldMediaPath: path, project, projectPath: opened?.path });
+      if (relocation == null || workingRef.current) return;
+      // Moved together with edits kept next to it: whichever copy is newest, at the old place or the new, is opened
+      // (the others are kept aside as usual), never an older one over a newer.
+      const newPlaceCopies = await findProjectFiles(getProjectLookupPaths(relocation.mediaPath, projectFileLocation, customOutDir, getProjectStoreEnv()));
+      const projectPath = newPlaceCopies.length > 0
+        ? (await readNewestProjectCopy([...oldPlaceCopies, ...newPlaceCopies], loadLlcProject)).opened?.path
+        : opened?.path;
+      setWorking({ text: i18n.t('Opening clip'), quiet: true });
+      try {
+        await loadMedia({ filePath: relocation.mediaPath, projectPath, relocatedFrom: relocation.relocatedFrom });
+      } finally {
+        setWorking(undefined);
+      }
+    }, i18n.t('Failed to open file'));
+  }, [closeExportResultDialog, customOutDir, loadMedia, projectFileLocation, relocateRecording, setWorking, userOpenFiles, withErrorHandling, workingRef]);
 
   const concatBatch = useCallback(() => {
     if (batchFiles.length < 2) {
@@ -5393,15 +6371,18 @@ function App() {
       seekForwards: () => seekRelAccelerated(keyboardNormalSeekSpeed),
       seekForwards2: () => seekRelAccelerated(keyboardSeekSpeed2),
       seekForwards3: () => seekRelAccelerated(keyboardSeekSpeed3),
-      seekBackwardsPercent: () => seekRelPercent(-0.01),
-      seekForwardsPercent: () => seekRelPercent(0.01),
-      seekBackwardsKeyframe: () => seekClosestKeyframe(-1),
-      seekForwardsKeyframe: () => seekClosestKeyframe(1),
+      // The simple editor: Ctrl+← / → step one frame (1% of the view only looks like a frame when zoomed in), and
+      // Alt+← / → go to the clip edge before or after. Advanced mode keeps LosslessCut's.
+      seekBackwardsPercent: () => (simpleMode ? shortStep(-1) : seekRelPercent(-0.01)),
+      seekForwardsPercent: () => (simpleMode ? shortStep(1) : seekRelPercent(0.01)),
+      seekBackwardsKeyframe: () => (simpleMode ? seekClipEdge(-1) : seekClosestKeyframe(-1)),
+      seekForwardsKeyframe: () => (simpleMode ? seekClipEdge(1) : seekClosestKeyframe(1)),
       seekPreviousFrame: () => shortStep(-1),
       seekNextFrame: () => shortStep(1),
-      jumpPrevSegment: () => jumpSeg({ rel: -1 }),
+      // The simple editor's ↑ / ↓ also show the clip they select, so I and O then act on the clip in view.
+      jumpPrevSegment: () => jumpSeg({ rel: -1, ...(simpleMode && { seek: true as const }) }),
       jumpSeekPrevSegment: () => jumpSeg({ rel: -1, seek: true }),
-      jumpNextSegment: () => jumpSeg({ rel: 1 }),
+      jumpNextSegment: () => jumpSeg({ rel: 1, ...(simpleMode && { seek: true as const }) }),
       jumpSeekNextSegment: () => jumpSeg({ rel: 1, seek: true }),
       jumpFirstSegment: () => jumpSeg({ abs: 0 }),
       jumpSeekFirstSegment: () => jumpSeg({ abs: 0, seek: true }),
@@ -5416,19 +6397,40 @@ function App() {
       batchPreviousFile: () => batchFileJump(-1, false),
       batchNextFile: () => batchFileJump(1, false),
       batchOpenPreviousFile: () => batchFileJump(-1, true),
-      batchOpenNextFile: () => batchFileJump(1, true),
+      // With no batch list (simple mode never shows one), the shelf's next clip, as the top bar's Next clip.
+      batchOpenNextFile: () => (batchFiles.length === 0 && simpleMode ? openNextClip() : batchFileJump(1, true)),
       batchOpenSelectedFile,
       closeBatch,
       removeCurrentSegment: () => removeSegment(currentSegIndexSafe, true),
+      removeSelectedClips,
+      startOver,
       removeCurrentCutpoint: () => removeSegment(currentSegIndexSafe),
       undo: () => editHistoryOrder.undo(editHistories),
       redo: () => editHistoryOrder.redo(editHistories),
-      labelCurrentSegment: () => labelSegment(currentSegIndexSafe),
+      labelCurrentSegment,
       addSegment,
       duplicateCurrentSegment,
       toggleSegmentSpeedControls,
+      addTextOverlay: addTextOverlayNow,
+      // The same key finishes, as Done does.
+      // Its shortcut closes the crop editor again, like Done (keeping a zoom that's still settling).
+      editCurrentSegmentCrop: () => {
+        if (editingCropSegmentId == null) editSegmentCrop(currentSegIndexSafe);
+        else if (cropFinishRef.current != null) cropFinishRef.current();
+        else setEditingCropSegmentId(undefined);
+      },
       toggleLastCommands,
       export: () => onExportPress(),
+      quickExport: () => quickExport(),
+      quickExportPreset1: () => quickExport(0),
+      quickExportPreset2: () => quickExport(1),
+      quickExportPreset3: () => quickExport(2),
+      quickExportPreset4: () => quickExport(3),
+      quickExportPreset5: () => quickExport(4),
+      quickExportPreset6: () => quickExport(5),
+      quickExportPreset7: () => quickExport(6),
+      quickExportPreset8: () => quickExport(7),
+      quickExportPreset9: () => quickExport(8),
       extractCurrentSegmentFramesAsImages,
       extractSelectedSegmentsFramesAsImages,
       reorderSegsByStartTime,
@@ -5510,6 +6512,12 @@ function App() {
 
     return ret;
   }, [
+    editingCropSegmentId,
+    removeSelectedClips,
+    startOver,
+    batchFiles.length,
+    openNextClip,
+    simpleMode,
     editHistories,
     editHistoryOrder,
     togglePlaySelectedSegments,
@@ -5536,6 +6544,8 @@ function App() {
     duplicateCurrentSegment,
     toggleLastCommands,
     toggleSegmentSpeedControls,
+    addTextOverlayNow,
+    editSegmentCrop,
     extractCurrentSegmentFramesAsImages,
     extractSelectedSegmentsFramesAsImages,
     reorderSegsByStartTime,
@@ -5608,14 +6618,16 @@ function App() {
     keyboardSeekSpeed3,
     seekRelPercent,
     seekClosestKeyframe,
+    seekClipEdge,
     shortStep,
     jumpSeg,
     zoomRel,
     batchFileJump,
     removeSegment,
     currentSegIndexSafe,
-    labelSegment,
+    labelCurrentSegment,
     onExportPress,
+    quickExport,
     userHtml5ifyCurrentFile,
     toggleKeyframeCut,
     applyEnabledStreamsFilter,
@@ -5808,7 +6820,15 @@ function App() {
     e.target.blur();
   }, []);
 
-  const onVideoClick = useCallback(() => togglePlay(), [togglePlay]);
+  // A click on the picture lets go of a selected text there, as on a design tool's canvas, instead of playing.
+  const onVideoClick = useCallback(() => {
+    const time = getRelevantTime();
+    if (selectedOverlayId != null && overlayClips.some((overlayClip) => overlayClip.overlayId === selectedOverlayId && isOverlayActiveAtTime(overlayClip, time))) {
+      setSelectedOverlayId(undefined);
+      return;
+    }
+    togglePlay();
+  }, [getRelevantTime, overlayClips, selectedOverlayId, togglePlay]);
 
   const tryExportEdlFile = useCallback(
     async (type: EdlExportType) => {
@@ -6027,7 +7047,7 @@ function App() {
   useEffect(() => {
     async function onDrop(ev: DragEvent) {
       ev.preventDefault();
-      if (!ev.dataTransfer) return;
+      if (!ev.dataTransfer || isSelfFileDrag()) return;
       const filePaths = [...ev.dataTransfer.files]
         .map((f) => electron.webUtils.getPathForFile(f))
         .filter(Boolean);
@@ -6039,6 +7059,40 @@ function App() {
     element?.addEventListener('drop', onDrop);
     return () => element?.removeEventListener('drop', onDrop);
   }, [userOpenFiles]);
+
+  // Show where a dragged file will go: the overlay while a clip is open, the welcome screen's drop card otherwise.
+  useEffect(() => {
+    const element = appDropRef.current;
+    if (element == null) return undefined;
+    // `dragover` keeps firing while a file hovers the window; when it stops (left the window, Esc, dropped),
+    // the overlay goes away even if no `dragleave` arrives.
+    let hideTimeout: ReturnType<typeof setTimeout> | undefined;
+    const end = () => {
+      clearTimeout(hideTimeout);
+      setFileDragActive(false);
+    };
+    const onDragOver = (ev: DragEvent) => {
+      if (!ev.dataTransfer?.types.includes('Files') || isSelfFileDrag()) return;
+      setFileDragActive(true);
+      clearTimeout(hideTimeout);
+      hideTimeout = setTimeout(end, 350);
+    };
+    const onDragLeave = (ev: DragEvent) => {
+      // relatedTarget is null when the pointer leaves the window.
+      if (ev.relatedTarget == null) end();
+    };
+    element.addEventListener('dragenter', onDragOver);
+    element.addEventListener('dragover', onDragOver);
+    element.addEventListener('dragleave', onDragLeave);
+    element.addEventListener('drop', end, true);
+    return () => {
+      clearTimeout(hideTimeout);
+      element.removeEventListener('dragenter', onDragOver);
+      element.removeEventListener('dragover', onDragOver);
+      element.removeEventListener('dragleave', onDragLeave);
+      element.removeEventListener('drop', end, true);
+    };
+  }, []);
 
   useEffect(() => {
     function onDrop(ev: DragEvent) {
@@ -6061,24 +7115,46 @@ function App() {
     [detectedFileFormat, fileFormat, onOutputFormatUserChange],
   );
 
-  const onTunerRequested = useCallback(
-    (type: TunerType) => {
-      setTunerVisible(type);
-      if (type === 'waveformHeight') {
-        setWaveformMode('waveform');
-      }
-    },
-    [setWaveformMode],
-  );
-
+  // Which encoders work is checked in the background once a clip has opened, so an export doesn't wait for it:
+  // after its filmstrip and waveform, while the video is paused (or at most 30 s on); advanced mode's lanes aren't
+  // tracked, so a while after.
   useEffect(() => {
-    (async () => {
-      setFfmpegInfo(
-        await runStartupCheck({
-          onError: ({ title, message }) => setGenericError({ title, err: message }),
-        }),
-      );
-    })();
+    if (filePath == null) return undefined;
+    const timer = setTimeout(prefetchEncoderCapabilities, openWorkPending || playing ? 30_000 : (simpleMode ? 1500 : 8000));
+    return () => clearTimeout(timer);
+  }, [filePath, openWorkPending, playing, simpleMode]);
+  const openWorkPendingRef = useRef(openWorkPending);
+  useEffect(() => {
+    openWorkPendingRef.current = openWorkPending;
+  }, [openWorkPending]);
+
+  // FFmpeg's self-check starts two processes; at launch it waits a moment, and for the first file to open (its
+  // filmstrip and waveform, at most 30 s), so it doesn't compete with that (a broken FFmpeg shows up then anyway).
+  // A changed FFmpeg path is checked at once.
+  const startupCheckedRef = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      startupCheckedRef.current = true;
+      const info = await runStartupCheck({
+        onError: ({ title, message }) => setGenericError({ title, err: message }),
+      });
+      if (!cancelled) setFfmpegInfo(info);
+    };
+    const delay = startupCheckedRef.current ? 0 : 3000;
+    const waitUntil = Date.now() + 30_000;
+    let timer = setTimeout(function run() {
+      // At launch, a recording that's opening goes first.
+      if (!startupCheckedRef.current && openWorkPendingRef.current && Date.now() < waitUntil) {
+        timer = setTimeout(run, 500);
+        return;
+      }
+      check();
+    }, delay);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [customFfPath, setGenericError]);
 
   const appContext = useMemo<AppContextType>(
@@ -6103,6 +7179,37 @@ function App() {
   );
 
   const showLeftBar = batchFiles.length > 0;
+
+  // Stable props for memoised children: a new object or arrow each render would re-render them every time
+  // anything in the editor changes.
+  const shelfProps = useMemo(() => ({
+    folder: shelfFolder,
+    queue: shelf.queue,
+    currentPath: filePath,
+    nextPath: nextClip?.path,
+    caseInsensitive: isWindows || isMac,
+    order: shelfOrder,
+    onOrderChange: setShelfOrder,
+    onOpen: openShelfClip,
+    onChooseFolder: chooseShelfFolder,
+    thumbnails: shelf.thumbnails,
+    requestThumbnail: shelf.requestThumbnail,
+  }), [chooseShelfFolder, filePath, nextClip?.path, openShelfClip, setShelfOrder, shelf.queue, shelf.requestThumbnail, shelf.thumbnails, shelfFolder, shelfOrder]);
+  const audioHeader = useMemo(() => (
+    <AudioTrackHeader
+      previewVolume={playbackVolume}
+      onPreviewVolumeChange={setPlaybackVolume}
+      onTogglePreviewMuted={toggleMuted}
+      gainControls={previewAudioGainControls}
+      onGainChange={updateAudioGainForStream}
+    />
+  ), [playbackVolume, previewAudioGainControls, setPlaybackVolume, toggleMuted, updateAudioGainForStream]);
+  const editCurrentSegmentCrop = useCallback(() => editSegmentCrop(currentSegIndexSafe), [currentSegIndexSafe, editSegmentCrop]);
+  const closeConcatDialog = useCallback(() => setConcatDialogOpen(false), []);
+  const closeKeyboardShortcuts = useCallback(() => {
+    setKeyboardShortcutsVisible(false);
+    setKeyboardShortcutsView(undefined);
+  }, [setKeyboardShortcutsVisible]);
 
   function renderSubtitles() {
     if (!activeSubtitle) return null;
@@ -6143,8 +7250,7 @@ function App() {
       flexDirection: 'column',
       height: '100vh',
       transition: darkModeTransition,
-      background:
-        'linear-gradient(180deg, color-mix(in srgb, var(--gray-1) 96%, transparent), color-mix(in srgb, var(--gray-2) 98%, transparent))',
+      background: 'var(--cp-app-bg)',
     }),
     [baseColorStyle],
   );
@@ -6155,25 +7261,34 @@ function App() {
         <SegColorsContext.Provider value={segColorsContext}>
           <UserSettingsContext.Provider value={userSettingsContext}>
             <div ref={appDropRef} className={rootClass} style={rootStyle} id="app-root">
-              <AppChrome />
+              <AppChrome keyBindingByAction={keyBindingByAction} />
 
               {isFileOpened && (
                 <TopMenu
                   filePath={filePath}
                   currentClipName={currentClipName}
-                  onCurrentClipNameChange={(name) => setCurrentClipName(name)}
+                  onCurrentClipNameChange={setCurrentClipName}
                   toggleSettings={toggleSettings}
                   numStreamsToCopy={numStreamsToCopy}
                   numStreamsTotal={numStreamsTotal}
                   setStreamsSelectorShown={setStreamsSelectorShown}
                   onOpenFiles={openFilesDialog}
+                  onShelfShown={refreshShelf}
+                  shelf={shelfProps}
+                  nextClipName={simpleMode ? nextClip?.name : undefined}
+                  onOpenNextClip={openNextClip}
+                  nextClipKeys={keyBindingByAction['batchOpenNextFile']?.keys}
+                  exportKeys={keyBindingByAction['export']?.keys}
                   onExportPress={onExportPress}
+                  onQuickExportPress={quickExport}
                   segmentsToExport={segmentsToExport}
-                  areWeCutting={areWeCutting}
                 />
               )}
 
               <div className={styles['mainArea']}>
+                {!showRightBar && clipsPanelGone && isFileOpened && filePath != null && (
+                  <ClipsPanelTab label={simpleMode ? t('Show clips') : t('Show sidebar')} keys={keyBindingByAction['toggleSegmentsList']?.keys} onClick={toggleSegmentsList} />
+                )}
                 <AnimatePresence>
                   {showLeftBar && isFileOpened && (
                     <BatchFilesList
@@ -6197,8 +7312,27 @@ function App() {
                     <div className={styles['emptyStateShell']}>
                       <NoFileLoaded
                         onClick={openFilesDialog}
+                        onOpenFolderClick={openDirDialog}
                         keyBindingByAction={keyBindingByAction}
-                      />
+                        dragging={fileDragActive && !working}
+                        showSteps={recentFiles.length === 0 && nextClip == null}
+                      >
+                        {nextClip != null && (
+                          <ShelfUpNext
+                            file={nextClip}
+                            thumbnail={shelf.thumbnails.get(shelfThumbnailKey(nextClip))}
+                            requestThumbnail={shelf.requestThumbnail}
+                            onOpen={openShelfClip}
+                          />
+                        )}
+                        <RecentFiles
+                          files={recentFiles}
+                          customOutDir={customOutDir}
+                          onOpen={openRecentFile}
+                          onRemove={(path) => setRecentFiles((list) => removeRecentFile(list, path, isWindows || isMac))}
+                          onClear={() => setRecentFiles([])}
+                        />
+                      </NoFileLoaded>
                     </div>
                   ) : (
                     <>
@@ -6227,8 +7361,23 @@ function App() {
                             rotation={effectiveRotation}
                             crop={previewCrop}
                             editing={editingCropSegment != null && !bigWaveformEnabled}
+                            clipLabel={editingCropSegment != null ? (editingCropSegment.name || t('Clip {{number}}', { number: currentSegIndexSafe + 1 })) : undefined}
                             onChange={changeSegmentCrop}
                             onDone={() => setEditingCropSegmentId(undefined)}
+                            doneKeys={keyBindingByAction['editCurrentSegmentCrop']?.keys}
+                            finishRef={cropFinishRef}
+                            frameContent={editingCropSegment != null && activeVideoStream?.width != null && activeVideoStream.height != null && (
+                              // The export crops first and then draws the texts, so while cropping they sit in the frame.
+                              <TextOverlayEditor
+                                readOnly
+                                overlayClips={overlayClips}
+                                selectedOverlayId={undefined}
+                                relevantTime={relevantTime}
+                                videoWidth={activeVideoStream.width}
+                                videoHeight={activeVideoStream.height}
+                                rotation={effectiveRotation}
+                              />
+                            )}
                           >
                             {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                             <video
@@ -6240,18 +7389,39 @@ function App() {
                               src={fileUri}
                               onPlay={onStartPlaying}
                               onPause={onStopPlaying}
-                              onAbort={onVideoAbort}
+                              onAbort={() => { setVideoBusy(false); onVideoAbort(); }}
                               onDurationChange={onDurationChange}
                               onLoadedMetadata={() => setSegmentPreviewSpeed(previewSegmentSpeed)}
                               onTimeUpdate={onTimeUpdate}
-                              onError={onVideoError}
+                              onError={() => { setVideoBusy(false); onVideoError(); }}
                               onClick={onVideoClick}
                               onDoubleClick={toggleFullscreenVideo}
                               onFocusCapture={onVideoFocus}
                               onSeeked={onSeeked}
+                              onLoadStart={() => {
+                                setVideoBusy(true);
+                                // A new load, even of the same recording: its first frame is waited for again.
+                                onVideoLoaded(undefined);
+                              }}
+                              onWaiting={() => setVideoBusy(true)}
+                              onLoadedData={() => {
+                                setVideoBusy(false);
+                                onVideoLoaded(filePath);
+                                if (playOnOpen && filePath != null && autoPlayedPathRef.current !== filePath) {
+                                  autoPlayedPathRef.current = filePath;
+                                  play();
+                                }
+                                // For measuring how fast a file opens (read by tests; costs nothing).
+                                performance.mark('clippress:video-loaded');
+                              }}
+                              onCanPlay={() => setVideoBusy(false)}
+                              onPlaying={() => setVideoBusy(false)}
+                              onEmptied={() => setVideoBusy(false)}
                             >
                               {renderSubtitles()}
                             </video>
+
+                            <PreviewSpinner busy={videoBusy && fileUri != null && !compatPlayerEnabled} />
 
                             {filePath != null && compatPlayerEnabled && (
                             <MediaSourcePlayer
@@ -6260,9 +7430,11 @@ function App() {
                               videoStream={activeVideoStream}
                               audioStreams={activeAudioStreams}
                               audioGainByStreamId={activeAudioGainByStreamId}
+                              clipVolumes={previewClipVolumes}
                               masterVideoRef={videoRef}
                               mediaSourceQuality={mediaSourceQuality}
                               ffmpegHwaccel={ffmpegHwaccel}
+                              onFailedChange={setCompatPlayerFailed}
                             />
                             )}
                           </SegmentCropPreview>
@@ -6275,6 +7447,9 @@ function App() {
                             videoWidth={activeVideoStream.width}
                             videoHeight={activeVideoStream.height}
                             rotation={effectiveRotation}
+                            keysBlocked={exportConfirmOpen || streamsSelectorShown || settingsVisible || keyboardShortcutsVisible}
+                            typeIntoOverlayId={typeIntoOverlayId}
+                            onTypeIntoDone={clearTypeIntoOverlay}
                             onSelectOverlay={setSelectedOverlayId}
                             onUpdateOverlay={updateOverlayClip}
                           />
@@ -6293,6 +7468,10 @@ function App() {
                         />
                         )}
 
+                        {compatPlayerEnabled && compatPlayerFailed && (
+                          <PreviewFailedCard hint={compatPlayerFailedCard.hint} action={compatPlayerFailedCard.action} />
+                        )}
+
                         {compatPlayerEnabled && (
                         <div className={styles['previewNotice']}>
                           {isRotationSet ? (
@@ -6301,7 +7480,8 @@ function App() {
                               {t('Rotation preview')}
                             </>
                           ) : (
-                            <>{t('FFmpeg-assisted playback')}</>
+                            // The simple editor calls it what the "Make this recording playable" choice does.
+                            simpleMode ? t('Instant preview') : t('FFmpeg-assisted playback')
                           )}
 
                           <div
@@ -6342,6 +7522,8 @@ function App() {
                             alignItems: 'flex-end',
                           }}
                         >
+                          {/* The simple editor's sound controls are on its audio track; a recording without one has none. */}
+                          {!simpleMode && (
                           <VolumeControl
                             playbackVolume={playbackVolume}
                             setPlaybackVolume={setPlaybackVolume}
@@ -6349,6 +7531,7 @@ function App() {
                             audioGainControls={previewAudioGainControls}
                             onAudioGainChange={updateAudioGainForStream}
                           />
+                          )}
 
                           {!simpleMode && shouldShowPlaybackStreamSelector && (
                           <PlaybackStreamSelector
@@ -6367,16 +7550,6 @@ function App() {
                             onActiveAudioStreamsChange={
                             onActiveAudioStreamsChange
                           }
-                          />
-                          )}
-
-                          {!showRightBar && (
-                          <IoMdMenu
-                            title={t('Show clips')}
-                            size={30}
-                            role="button"
-                            className={styles['sidebarToggle']}
-                            onClick={toggleSegmentsList}
                           />
                           )}
                         </div>
@@ -6432,12 +7605,20 @@ function App() {
                           playbackRate={playbackRate}
                           currentFrame={currentFrame}
                           playbackMode={playbackMode}
-                          onAddTextOverlay={addTextOverlay}
-                          onEditSegmentCrop={() => editSegmentCrop(currentSegIndexSafe)}
+                          onAddTextOverlay={addTextOverlayNow}
+                          onEditSegmentCrop={editCurrentSegmentCrop}
                           canEditSegmentCrop={!invertCutSegments && currentCutSeg?.end != null}
+                          onSplitClip={splitCurrentSegment}
+                          canSplitClip={canSplitAtPlayhead}
+                          relevantTime={relevantTime}
+                          fileDuration={fileDuration}
+                          goToTimecode={goToTimecode}
+                          formatTimeAndFrames={formatTimeAndFrames}
+                          keyBindingByAction={keyBindingByAction}
                         />
 
                         <Timeline
+                          edgeSnapCue={edgeSnapCue}
                           shouldShowKeyframes={shouldShowKeyframes}
                           waveforms={waveforms}
                           overviewWaveform={overviewWaveform}
@@ -6447,16 +7628,23 @@ function App() {
                           showThumbnails={showThumbnails}
                           neighbouringKeyFrames={neighbouringKeyFrames}
                           thumbnails={thumbnailsSorted}
-                          playerTime={playerTime}
+                          filmstrip={filmstrip}
+                          audioPeaks={audioPeaks}
+                          audioTrackGainDb={audioTrackGainDb}
+                          showAudioLane={showAudioLane}
+                          onEditClipVolume={hasAudio && !invertCutSegments ? editClipVolume : undefined}
+                          audioHeader={audioHeader}
+                          getCurrentTime={getRelevantTime}
+                          onScrubbingChange={onTimelineScrubbingChange}
                           commandedTime={commandedTime}
                           relevantTime={relevantTime}
                           commandedTimeRef={commandedTimeRef}
                           startTimeOffset={startTimeOffset}
                           zoom={zoom}
                           seekAbs={seekAbs}
-                          fileDurationNonZero={fileDurationNonZero}
+                          fileDurationNonZero={timelineDuration}
                           cutSegments={cutSegments}
-                          setCurrentSegIndex={setCurrentSegIndex}
+                          setCurrentSegIndex={onClipClick}
                           currentSegIndexSafe={currentSegIndexSafe}
                           currentCutSeg={currentCutSeg}
                           inverseCutSegments={inverseCutSegments}
@@ -6472,6 +7660,8 @@ function App() {
                           goToTimecode={goToTimecode}
                           darkMode={darkMode}
                           setCutTime={setCutTime}
+                          setCutStart={setCutStart}
+                          setCutEnd={setCutEnd}
                           overlayClips={overlayClips}
                           selectedOverlayId={selectedOverlayId}
                           onSelectOverlay={setSelectedOverlayId}
@@ -6483,22 +7673,28 @@ function App() {
                           onEditSegmentCrop={editSegmentCrop}
                           onToggleSegmentSpeedControls={toggleSpeedControlsForSegment}
                           onRemoveSegmentSpeed={removeSegmentSpeed}
+                          onRemoveSegment={removeSegment}
+                          removeSegmentKeys={keyBindingByAction['removeSelectedClips']?.keys}
+                          menuKeys={timelineMenuKeys}
+                          pickedClipIds={pickedClips}
+                          hasVideo={hasVideo}
                         />
                       </div>
                     </>
                   )}
                 </div>
 
-                <AnimatePresence>
+                <AnimatePresence custom={clipsPanelAnimated} onExitComplete={() => setClipsPanelGone(true)}>
                   {showRightBar && isFileOpened && filePath != null && (
                     <SegmentList
+                      animated={clipsPanelAnimated}
                       width={rightBarWidth}
                       currentSegIndex={currentSegIndexSafe}
                       cutSegments={cutSegments}
                       inverseCutSegments={inverseCutSegments}
                       getFrameCount={getFrameCount}
                       formatTimecode={formatTimecode}
-                      onSegClick={setCurrentSegIndex}
+                      onSegClick={onClipClick}
                       updateSegOrder={updateSegOrder}
                       updateSegOrders={updateSegOrders}
                       onLabelSegment={labelSegment}
@@ -6509,6 +7705,9 @@ function App() {
                       removeSegment={removeSegment}
                       onRemoveSelected={removeSelectedSegments}
                       toggleSegmentsList={toggleSegmentsList}
+                      togglePanelKeys={keyBindingByAction['toggleSegmentsList']?.keys}
+                      onRemovePicked={removeSelectedClips}
+                      menuKeys={clipMenuKeys}
                       splitCurrentSegment={splitCurrentSegment}
                       selectedSegments={segmentsOrInverse.selected}
                       fileDuration={fileDuration}
@@ -6531,6 +7730,7 @@ function App() {
                       onMutateSegmentsByExpr={mutateSegmentsByExpr}
                       onLabelSelectedSegments={labelSelectedSegments}
                       updateSegAtIndex={updateSegAtIndex}
+                      maxLabelLength={maxLabelLength}
                       editingSegmentTags={editingSegmentTags}
                       editingSegmentTagsSegmentIndex={
                         editingSegmentTagsSegmentIndex
@@ -6543,12 +7743,30 @@ function App() {
                       getSegEstimatedSize={getSegEstimatedSize}
                       onEditSpeed={editSegmentSpeed}
                       onEditCrop={editSegmentCrop}
+                      renamingSegId={renamingSegId}
+                      setRenamingSegId={setRenamingSegId}
+                      pickedClipIds={pickedClips}
+                      onPickClipsInBox={onPickClipsInBox}
+                      onStartOver={startOver}
                     />
                   )}
                 </AnimatePresence>
               </div>
 
               {/* Dialogs */}
+
+              {/* Outside the preview: portal events still bubble through React parents, e.g. a wheel to the crop editor. */}
+              {clipVolumeEditor != null && clipVolumeEditorSegment != null && (
+                <ClipVolumePopover
+                  anchor={clipVolumeEditor.anchor}
+                  clipLabel={clipVolumeEditorSegment.name || t('Clip {{number}}', { number: clipVolumeEditorIndex + 1 })}
+                  audioGainDb={clipVolumeEditorSegment.audioGainDb}
+                  audioMuted={clipVolumeEditorSegment.audioMuted === true}
+                  trackGainDb={sharedTrackGainDb}
+                  onChange={onClipVolumeChange}
+                  onClose={closeClipVolumeEditor}
+                />
+              )}
 
               <ExportConfirm
                 areWeCutting={areWeCutting}
@@ -6674,32 +7892,36 @@ function App() {
                 <Dialog.Portal>
                   <Dialog.Overlay />
                   <Dialog.Content
+                    aria-describedby={undefined}
+                    // Focus the dialog itself, not the first tab, so opening Settings doesn't draw a focus ring on "General".
+                    onOpenAutoFocus={(e) => {
+                      e.preventDefault();
+                      (e.currentTarget as HTMLElement | null)?.focus({ preventScroll: true });
+                    }}
                     style={{
-                      width: '60em',
+                      width: 'min(52rem, 92vw)',
+                      height: 'min(38rem, 86vh)',
+                      padding: 0,
                       overflow: 'hidden',
                       display: 'flex',
                       flexDirection: 'column',
                     }}
                   >
                     <div className={styles['settingsDialogHeader']}>
-                      <Dialog.Title>{t('Settings')}</Dialog.Title>
-                      <Dialog.Description>
-                        {t(
-                          'Hover mouse over buttons in the main interface to see which function they have',
-                        )}
-                      </Dialog.Description>
+                      <Dialog.Title style={{ margin: 0 }}>{t('Settings')}</Dialog.Title>
                     </div>
 
-                    <div className={`consistent-scrollbar ${styles['settingsDialogBody']}`}>
+                    <div className={styles['settingsDialogBody']}>
                       <Settings
-                        onTunerRequested={onTunerRequested}
-                        onKeyboardShortcutsDialogRequested={
-                          toggleKeyboardShortcuts
-                        }
-                        askForCleanupChoices={askForCleanupChoices}
-                        toggleStoreProjectInWorkingDir={
-                          toggleStoreProjectInWorkingDir
-                        }
+                        category={settingsCategory}
+                        setCategory={setSettingsCategory}
+                        onKeyboardShortcutsDialogRequested={() => {
+                          // From Settings: every action, the advanced ones too.
+                          setKeyboardShortcutsView('all');
+                          toggleKeyboardShortcuts();
+                        }}
+                        askForCleanupChoices={changeCleanupChoices}
+                        onProjectFileLocationChange={changeProjectFileLocation}
                         showAdvancedSettings={showAdvancedSettings}
                         setShowAdvancedSettings={setShowAdvancedSettings}
                       />
@@ -6709,33 +7931,9 @@ function App() {
                 </Dialog.Portal>
               </Dialog.Root>
 
-              <Dialog.Root
-                open={tunerVisible != null}
-                onOpenChange={(open) => !open && setTunerVisible(undefined)}
-              >
-                <Dialog.Portal>
-                  <Dialog.Overlay />
-                  <Dialog.Content
-                    style={{
-                      width: '30rem',
-                      maxWidth: 'min(92vw, 30rem)',
-                    }}
-                    aria-describedby={undefined}
-                  >
-                    {tunerVisible != null && (
-                      <ValueTuners
-                        type={tunerVisible}
-                        onFinished={() => setTunerVisible(undefined)}
-                      />
-                    )}
-                    <Dialog.CloseButton />
-                  </Dialog.Content>
-                </Dialog.Portal>
-              </Dialog.Root>
-
               <ConcatDialog
                 isShown={batchFiles.length > 0 && concatDialogOpen}
-                onHide={() => setConcatDialogOpen(false)}
+                onHide={closeConcatDialog}
                 paths={batchFilePaths}
                 mergedFileTemplate={mergedFileTemplateOrDefault}
                 generateMergedFileNames={generateMergedFileNames}
@@ -6749,15 +7947,35 @@ function App() {
                 onOutputFormatUserChange={onOutputFormatUserChange}
               />
 
-              <KeyboardShortcuts
-                isShown={keyboardShortcutsVisible}
-                onHide={() => setKeyboardShortcutsVisible(false)}
-                keyBindings={keyBindings}
-                setKeyBindings={setKeyBindings}
-                currentCutSeg={currentCutSeg}
-                resetKeyBindings={resetKeyBindings}
-                getKeyboardAction={getKeyboardAction}
-              />
+              {/* Loaded the first time it's opened, not at every start */}
+              {keyboardShortcutsVisible && (
+                <Suspense fallback={null}>
+                  <KeyboardShortcuts
+                    isShown={keyboardShortcutsVisible}
+                    onHide={closeKeyboardShortcuts}
+                    keyBindings={keyBindings}
+                    setKeyBindings={setKeyBindings}
+                    currentCutSeg={currentCutSeg}
+                    resetKeyBindings={resetKeyBindings}
+                    getKeyboardAction={getKeyboardAction}
+                    initialView={keyboardShortcutsView}
+                    onChangeShortcutsRequested={() => {
+                      closeKeyboardShortcuts();
+                      setSettingsCategory('shortcuts');
+                      setSettingsVisible(true);
+                    }}
+                  />
+                </Suspense>
+              )}
+
+              {isFileOpened && fileDragActive && !working && (
+                <div className={styles['dropOverlay']} aria-hidden>
+                  <div className={styles['dropOverlayCard']}>
+                    <FiDownload />
+                    {t('Drop to open')}
+                  </div>
+                </div>
+              )}
 
               {/* This should probably be last, so that it's always on top */}
               <AnimatePresence>
@@ -6765,6 +7983,8 @@ function App() {
                   <Working
                     text={working.text}
                     detailText={working.detailText}
+                    phase={working.phase}
+                    quiet={working.quiet}
                     progress={progress}
                     onAbortClick={abortWorking}
                   />
@@ -6791,7 +8011,7 @@ function App() {
               )}
 
               <WhatsNew />
-              <UpdateNotice visible={!settingsVisible} />
+              <UpdateNotice visible={!settingsVisible} overClipsPanel={showRightBar && isFileOpened && filePath != null} />
 
               <ErrorDialog
                 error={genericError}
@@ -6800,6 +8020,8 @@ function App() {
             </div>
 
             <SwalContainer darkMode={darkMode} style={baseColorStyle} />
+            <TooltipLayer />
+            <MenuHost />
           </UserSettingsContext.Provider>
         </SegColorsContext.Provider>
       </AppContext.Provider>

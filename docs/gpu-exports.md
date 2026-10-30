@@ -16,7 +16,7 @@ Where several GPUs are present, NVIDIA is preferred, then AMD, then Intel.
 | Quality | GPU AV1 | CPU AV1 on 8+ CPU threads, otherwise GPU H.264 | CPU AV1 |
 | Fast | GPU AV1 | GPU H.264 | CPU AV1 (fast preset), then CPU H.264 |
 
-Advanced mode's **AV1 GPU** and **H.264 GPU** choices use whichever vendor is present, mapping
+In Custom settings, the **AV1 GPU** and **H.264 GPU** choices use whichever vendor is present, mapping
 the p1–p7 preset to the vendor's own scale. NVIDIA **2-pass** now runs as one encode with the
 encoder's full multipass: FFmpeg 2-pass logs do nothing for hardware encoders, so the old second
 run produced an identical file. That removed 24–42% of the time in benchmarks at the same size
@@ -42,8 +42,8 @@ inputs fit a video-memory budget (each open decoder holds about 250 MB at 1440p)
 
 If an export fails, ClipPress retries it with CPU decoding, then (for Simple presets and regular
 exports) on the next encoder in line, and skips a failed encoder for the rest of the session.
-Cancelling is never retried, and an explicit Advanced encoder choice reports its error instead.
+Cancelling is never retried, and an encoder picked in Custom settings reports its error instead.
 
 **Settings → Use the GPU to speed up exports** turns off GPU decoding and GPU encoding for regular
-exports. Target-size presets keep choosing their encoder as above; use Advanced mode to force a
-CPU encoder.
+exports. Target-size presets keep choosing their encoder as above; to force a CPU encoder, pick one in
+Custom settings.

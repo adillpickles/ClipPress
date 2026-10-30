@@ -177,7 +177,7 @@ async function run() {
 
   // The renderer runs API actions, so a response also shows that it is listening.
   console.log('Sending quit command');
-  await ky.post(`http://127.0.0.1:${apiPort}/api/action/quit`, { timeout: 15_000, retry: 0 });
+  await ky.post(`http://127.0.0.1:${apiPort}/api/action/quit`, { json: {}, timeout: 15_000, retry: 0 });
 
   const result = await Promise.race([exitPromise, timers.setTimeout(30_000, undefined, { ref: false })]);
   if (result == null) throw new Error('The app did not quit within 30 seconds');

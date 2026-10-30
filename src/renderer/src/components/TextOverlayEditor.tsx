@@ -1,31 +1,32 @@
-import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
+import type { CSSProperties, MouseEvent as ReactMouseEvent, TextareaHTMLAttributes } from 'react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
-import type { OverlayBox, OverlayClip } from '../types';
+import type { OverlayClip } from '../types';
+import type { UndoableSetOptions } from '../undoableHistory';
 import {
-  clampOverlayBox,
   defaultTextOverlayFontFamily,
   fitTextOverlayBox,
   getOverlayFontSize,
   getRotatedVideoDimensions,
+  getTextOverlayOffsetAt,
   isOverlayActiveAtTime,
   layoutTextOverlay,
-  maxTextOverlayFontSize,
-  minTextOverlayFontSize,
-  minTextOverlayWidth,
   textOverlayLineHeight,
 } from '../textOverlays';
+import { moveTextBox, resizeTextBoxWidth, scaleTextBox } from '../textBox';
+import type { TextBoxCorner, TextBoxSide, TextBoxStart } from '../textBox';
+import holdDragCursor from '../dragCursor';
+import styles from './TextOverlayEditor.module.css';
 
-const moveHandleHeight = 20;
-const edgeHandleWidth = 10;
-const cornerHandleSize = 16;
-const accent = 'rgba(88, 200, 255, 0.95)';
+const corners: TextBoxCorner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+const sides: TextBoxSide[] = ['left', 'right'];
+/** A press moves the box only once the pointer has gone this far, so a click or double-click never nudges it. */
+const moveDeadZonePx = 3;
+/** How close (screen pixels) the box's centre must come to the picture's centre to snap onto it. */
+const snapPx = 6;
 
-type InteractionMode = 'move' | 'width' | 'scale';
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
+type Gesture = { kind: 'move' } | { kind: 'corner', corner: TextBoxCorner } | { kind: 'side', side: TextBoxSide };
 
 const textStyle: CSSProperties = {
   fontFamily: defaultTextOverlayFontFamily,
@@ -36,8 +37,22 @@ const textStyle: CSSProperties = {
 };
 
 /**
- * Text boxes keep a fixed font size and grow to fit their lines, matching the exported image.
- * The right edge sets the wrap width; the corner scales the text; the bar above moves it.
+ * One text's text box. Its ref callback stays the same while the box is there (an inline one changes every render, and
+ * React calls the old one with null, which would read as the box going away and stop typing).
+ */
+function OverlayTextArea({ overlayId, onTextAreaRef, ...props }: { overlayId: string, onTextAreaRef: (id: string, textArea: HTMLTextAreaElement | null) => void } & TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const ref = useCallback((textArea: HTMLTextAreaElement | null) => onTextAreaRef(overlayId, textArea), [onTextAreaRef, overlayId]);
+  // eslint-disable-next-line react/jsx-props-no-spreading
+  return <textarea ref={ref} {...props} />;
+}
+
+/**
+ * The texts on the picture, as a design tool's text boxes (Clipchamp, Canva): a click selects a box and a drag anywhere
+ * on it moves it (its centre snaps to the picture's centre lines); a click on the selected box (Canva's way), a
+ * double-click, Enter or Add Text starts typing; the
+ * corners resize the text and the sides change its width. Each text is laid out at the export's own pixel size and
+ * scaled down, so it wraps exactly where the exported image does. Read-only, it just draws the texts (inside the
+ * Zoom / Crop frame, where they'll land).
  */
 function TextOverlayEditor({
   overlayClips,
@@ -46,6 +61,10 @@ function TextOverlayEditor({
   videoWidth,
   videoHeight,
   rotation,
+  readOnly = false,
+  keysBlocked = false,
+  typeIntoOverlayId,
+  onTypeIntoDone,
   onSelectOverlay,
   onUpdateOverlay,
 }: {
@@ -55,11 +74,20 @@ function TextOverlayEditor({
   videoWidth: number,
   videoHeight: number,
   rotation: number | undefined,
-  onSelectOverlay: (overlayId: string | undefined) => void,
-  onUpdateOverlay: (overlayId: string, updater: (clip: OverlayClip) => OverlayClip) => void,
+  readOnly?: boolean,
+  /** A dialog or panel has the keys: Enter and Escape aren't the text box's. */
+  keysBlocked?: boolean,
+  /** The text Add Text just made: start typing in it as soon as it shows. */
+  typeIntoOverlayId?: string | undefined,
+  onTypeIntoDone?: (() => void) | undefined,
+  onSelectOverlay?: ((overlayId: string | undefined) => void) | undefined,
+  onUpdateOverlay?: ((overlayId: string, updater: (clip: OverlayClip) => OverlayClip, undo?: UndoableSetOptions) => void) | undefined,
 }) {
+  const { t } = useTranslation();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [wrapperSize, setWrapperSize] = useState({ width: 0, height: 0 });
+  const [typingId, setTypingId] = useState<string>();
+  const [guides, setGuides] = useState<{ vertical: boolean, horizontal: boolean }>();
 
   useEffect(() => {
     const element = wrapperRef.current;
@@ -98,84 +126,139 @@ function TextOverlayEditor({
   const previewScale = surfaceSize.height / video.height;
 
   const visibleOverlays = useMemo(() => overlayClips.filter((overlayClip) => isOverlayActiveAtTime(overlayClip, relevantTime)), [overlayClips, relevantTime]);
+  const editable = !readOnly && onUpdateOverlay != null && onSelectOverlay != null;
+  const selectedVisible = editable && visibleOverlays.some((overlayClip) => overlayClip.overlayId === selectedOverlayId);
 
-  const updateFitted = useCallback((overlayId: string, updater: (clip: OverlayClip) => OverlayClip) => {
-    onUpdateOverlay(overlayId, (clip) => fitTextOverlayBox(updater(clip), video.width, video.height));
-  }, [onUpdateOverlay, video.height, video.width]);
+  // The text box only takes keyboard focus when the user asks to type: a text just added, a double-click or Enter.
+  // Not when a box is selected or playback reaches it, which would take the keys from playback (Space, #67).
+  const textAreasRef = useRef(new Map<string, HTMLTextAreaElement>());
 
-  const interactionRef = useRef<{
-    mode: InteractionMode,
-    overlayId: string,
-    pointerX: number,
-    pointerY: number,
-    box: OverlayBox,
-    fontSize: number,
-  }>();
+  const startTyping = useCallback((overlayId: string, at?: { x: number, y: number }) => {
+    const textArea = textAreasRef.current.get(overlayId);
+    if (textArea == null) return;
+    let caret: number | undefined;
+    const content = textArea.parentElement;
+    if (at != null && content != null && content.offsetWidth > 0) {
+      // From the text's own layout (the box is laid out at the export's size, then scaled down to the preview).
+      const rect = content.getBoundingClientRect();
+      const scale = rect.width / content.offsetWidth;
+      caret = getTextOverlayOffsetAt({ text: textArea.value, widthPx: content.offsetWidth, fontSizePx: Number.parseFloat(getComputedStyle(textArea).fontSize), x: (at.x - rect.left) / scale, y: (at.y - rect.top) / scale });
+    }
+    textArea.focus();
+    // Where it was clicked, the caret alone (nothing selected); from Enter or Add Text, all of it, to type over.
+    if (caret == null) textArea.select();
+    else textArea.setSelectionRange(caret, caret);
+  }, []);
 
-  const beginInteraction = useCallback((event: ReactMouseEvent, overlayClip: OverlayClip, mode: InteractionMode) => {
-    if (event.button !== 0) return;
+  // A text that was just added (Add Text) is ready to type over, once its box is on the picture: Add Text can close
+  // Zoom / Crop, or move the playhead, first. Asked for by the app, as this editor may only just have opened.
+  useEffect(() => {
+    if (typeIntoOverlayId == null) return;
+    // Something else took the keys first (Export opened before the text showed): it keeps them.
+    if (selectedOverlayId !== typeIntoOverlayId || keysBlocked) {
+      onTypeIntoDone?.();
+      return;
+    }
+    if (!editable || !textAreasRef.current.has(typeIntoOverlayId)) return;
+    startTyping(typeIntoOverlayId);
+    onTypeIntoDone?.();
+    // The boxes are drawn once the editor has measured itself (surfaceSize) and when the text is at the playhead.
+  }, [editable, keysBlocked, onTypeIntoDone, selectedOverlayId, startTyping, surfaceSize, typeIntoOverlayId, visibleOverlays]);
+
+  // Enter types into the selected text; Escape lets go of it. Ahead of the editor's own shortcuts (Enter renames
+  // the clip), but only while the selected text is on the picture and nothing else has the keys.
+  useEffect(() => {
+    if (!selectedVisible || keysBlocked || typingId != null || selectedOverlayId == null) return undefined;
+    const overlayId = selectedOverlayId;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.key !== 'Enter' && event.key !== 'Escape') || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      // Only from the page itself or the picture: a focused control (a button reached with Tab, a field, a dialog)
+      // keeps its own Enter and Escape.
+      const { target } = event;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable)) return;
+      if (target instanceof Element && target !== document.body && target !== document.documentElement && wrapperRef.current?.contains(target) !== true) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === 'Enter') startTyping(overlayId);
+      else onSelectOverlay?.(undefined);
+    };
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
+  }, [keysBlocked, onSelectOverlay, selectedOverlayId, selectedVisible, startTyping, typingId]);
+
+  const setTextAreaRef = useCallback((overlayId: string, textArea: HTMLTextAreaElement | null) => {
+    if (textArea != null) {
+      textAreasRef.current.set(overlayId, textArea);
+      return;
+    }
+    textAreasRef.current.delete(overlayId);
+    // A text box removed while typing (another text selected, the playhead moved on) gets no blur event.
+    setTypingId((id) => (id === overlayId ? undefined : id));
+  }, []);
+
+  const measureHeight = useCallback((text: string) => (fontSize: number, width: number) => (
+    layoutTextOverlay({ text, widthPx: width * video.width, fontSizePx: fontSize * video.height }).heightPx / video.height
+  ), [video.height, video.width]);
+
+  const gestureCleanupRef = useRef<() => void>();
+  useEffect(() => () => gestureCleanupRef.current?.(), []);
+
+  const beginGesture = useCallback((event: ReactMouseEvent, overlayClip: OverlayClip, gesture: Gesture) => {
+    if (event.button !== 0 || onUpdateOverlay == null || surfaceSize.width <= 0) return;
     event.preventDefault();
     event.stopPropagation();
+    gestureCleanupRef.current?.();
+    // Another box being typed in lets go of the keys (the press itself doesn't move the focus).
+    const active = document.activeElement;
+    if (active instanceof HTMLTextAreaElement && active !== textAreasRef.current.get(overlayClip.overlayId)) active.blur();
+    onSelectOverlay?.(overlayClip.overlayId);
 
-    interactionRef.current = {
-      mode,
-      overlayId: overlayClip.overlayId,
-      pointerX: event.clientX,
-      pointerY: event.clientY,
-      box: overlayClip.box,
-      fontSize: getOverlayFontSize(overlayClip),
+    const { overlayId, text } = overlayClip;
+    const fontSize = getOverlayFontSize(overlayClip);
+    const fitHeight = measureHeight(text);
+    const start: TextBoxStart = { box: overlayClip.box, height: fitHeight(fontSize, overlayClip.box.width), fontSize };
+    const surface = { ...surfaceSize };
+    const pointer = { x: event.clientX, y: event.clientY };
+    // A click (no drag) on a text already selected, not being typed in, types where it was clicked.
+    const typeOnClick = gesture.kind === 'move' && overlayClip.overlayId === selectedOverlayId && typingId !== overlayClip.overlayId;
+    // One undo step per drag, however long it pauses.
+    const undo = { coalesceKey: `text-box:${overlayId}:${Date.now()}`, wholeGesture: true };
+    let moving = gesture.kind !== 'move';
+    let releaseCursor = gesture.kind === 'move' ? undefined : holdDragCursor(gesture.kind === 'side' ? 'ew-resize' : (gesture.corner === 'top-left' || gesture.corner === 'bottom-right' ? 'nwse-resize' : 'nesw-resize'));
+
+    const listeners = new AbortController();
+    const finish = () => {
+      listeners.abort();
+      releaseCursor?.();
+      setGuides(undefined);
+      gestureCleanupRef.current = undefined;
     };
-    onSelectOverlay(overlayClip.overlayId);
-  }, [onSelectOverlay]);
+    gestureCleanupRef.current = finish;
 
-  useEffect(() => {
-    const onMouseMove = (event: MouseEvent) => {
-      const interaction = interactionRef.current;
-      if (interaction == null || surfaceSize.width <= 0 || surfaceSize.height <= 0) return;
-      const { overlayId, mode, pointerX, pointerY, box, fontSize } = interaction;
-      const deltaX = event.clientX - pointerX;
-      const deltaY = event.clientY - pointerY;
-
-      if (mode === 'move') {
-        onUpdateOverlay(overlayId, (clip) => ({
-          ...clip,
-          box: clampOverlayBox({ ...box, x: box.x + (deltaX / surfaceSize.width), y: box.y + (deltaY / surfaceSize.height) }),
-        }));
+    window.addEventListener('mousemove', (moveEvent) => {
+      const delta = { x: moveEvent.clientX - pointer.x, y: moveEvent.clientY - pointer.y };
+      if (!moving) {
+        if (Math.hypot(delta.x, delta.y) < moveDeadZonePx) return;
+        moving = true;
+        releaseCursor = holdDragCursor('move');
+      }
+      if (gesture.kind === 'move') {
+        const moved = moveTextBox(start, { x: delta.x / surface.width, y: delta.y / surface.height }, { x: snapPx / surface.width, y: snapPx / surface.height });
+        setGuides(moved.guides.vertical || moved.guides.horizontal ? moved.guides : undefined);
+        onUpdateOverlay(overlayId, (clip) => ({ ...clip, box: moved.box }), undo);
         return;
       }
-
-      if (mode === 'width') {
-        updateFitted(overlayId, (clip) => ({
-          ...clip,
-          box: { ...box, width: clamp(box.width + (deltaX / surfaceSize.width), minTextOverlayWidth, 1 - box.x) },
-        }));
-        return;
-      }
-
-      // Scale along the box diagonal: dragging the corner out grows the text and its wrap width together.
-      const boxWidthPx = box.width * surfaceSize.width;
-      const boxHeightPx = box.height * surfaceSize.height;
-      const requested = 1 + ((deltaX + deltaY) / Math.max(1, boxWidthPx + boxHeightPx));
-      const nextFontSize = clamp(fontSize * requested, minTextOverlayFontSize, maxTextOverlayFontSize);
-      const factor = nextFontSize / fontSize;
-      updateFitted(overlayId, (clip) => ({
-        ...clip,
-        fontSize: nextFontSize,
-        box: { ...box, width: clamp(box.width * factor, minTextOverlayWidth, 1 - box.x) },
-      }));
-    };
-
-    const onMouseUp = () => {
-      interactionRef.current = undefined;
-    };
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-  }, [onUpdateOverlay, surfaceSize.height, surfaceSize.width, updateFitted]);
+      const resized = gesture.kind === 'corner'
+        ? scaleTextBox(start, gesture.corner, delta, surface, fitHeight)
+        : resizeTextBoxWidth(start, gesture.side, delta.x / surface.width, fitHeight);
+      onUpdateOverlay(overlayId, (clip) => ({ ...clip, fontSize: resized.fontSize, box: resized.box }), undo);
+    }, { signal: listeners.signal });
+    window.addEventListener('mouseup', (upEvent) => {
+      finish();
+      if (typeOnClick && !moving) startTyping(overlayId, { x: upEvent.clientX, y: upEvent.clientY });
+    }, { signal: listeners.signal });
+    window.addEventListener('blur', finish, { signal: listeners.signal });
+  }, [measureHeight, onSelectOverlay, onUpdateOverlay, selectedOverlayId, startTyping, surfaceSize, typingId]);
 
   const surfaceStyle = useMemo<CSSProperties>(() => ({
     position: 'relative',
@@ -185,123 +268,99 @@ function TextOverlayEditor({
   }), [surfaceSize.height, surfaceSize.width]);
 
   return (
-    <div ref={wrapperRef} style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+    <div ref={wrapperRef} className={styles['wrapper']}>
       <div style={surfaceStyle}>
         {surfaceSize.height > 0 && visibleOverlays.map((overlayClip) => {
-          const selected = overlayClip.overlayId === selectedOverlayId;
+          const selected = editable && overlayClip.overlayId === selectedOverlayId;
+          const typing = selected && typingId === overlayClip.overlayId;
           const fontSizePx = getOverlayFontSize(overlayClip) * video.height;
-          const layout = layoutTextOverlay({ text: overlayClip.text, widthPx: overlayClip.box.width * video.width, fontSizePx });
-          const left = overlayClip.box.x * surfaceSize.width;
-          const top = overlayClip.box.y * surfaceSize.height;
-          const width = overlayClip.box.width * surfaceSize.width;
+          const widthPx = overlayClip.box.width * video.width;
+          const layout = layoutTextOverlay({ text: overlayClip.text, widthPx, fontSizePx });
           const height = layout.heightPx * previewScale;
           const scaledTextStyle: CSSProperties = {
             ...textStyle,
-            fontSize: fontSizePx * previewScale,
-            padding: `${layout.paddingY * previewScale}px ${layout.paddingX * previewScale}px`,
+            fontSize: fontSizePx,
+            padding: `${layout.paddingY}px ${layout.paddingX}px`,
           };
+          // The side handles fit between the corners on a short box.
+          const sideHandleHeight = Math.min(16, height - 24);
 
           return (
             <div
               key={overlayClip.overlayId}
-              role="button"
-              tabIndex={-1}
-              onMouseDown={(event) => {
-                event.stopPropagation();
-                onSelectOverlay(overlayClip.overlayId);
-              }}
-              style={{
-                position: 'absolute',
-                left,
-                top,
-                width,
-                height,
-                pointerEvents: 'auto',
-                boxSizing: 'border-box',
-                border: selected ? `1px solid ${accent}` : '1px dashed rgba(255, 255, 255, 0.45)',
-                background: selected ? 'rgba(8, 13, 19, 0.2)' : 'transparent',
-                borderRadius: 6,
-              }}
+              role={editable ? 'button' : undefined}
+              tabIndex={editable ? -1 : undefined}
+              aria-label={editable ? t('Text: {{text}}', { text: overlayClip.text }) : undefined}
+              className={[styles['box'], ...(editable ? [styles['boxEditable']] : []), ...(selected ? [styles['boxSelected']] : []), ...(typing ? [styles['boxTyping']] : [])].join(' ')}
+              title={selected && !typing ? t('Click to type') : undefined}
+              onMouseDown={editable ? (event) => beginGesture(event, overlayClip, { kind: 'move' }) : undefined}
+              onDoubleClick={editable ? (event) => startTyping(overlayClip.overlayId, { x: event.clientX, y: event.clientY }) : undefined}
+              style={{ left: overlayClip.box.x * surfaceSize.width, top: overlayClip.box.y * surfaceSize.height, width: overlayClip.box.width * surfaceSize.width, height }}
             >
-              {selected ? (
-                <textarea
-                  value={overlayClip.text}
-                  onChange={(event) => updateFitted(overlayClip.overlayId, (clip) => ({ ...clip, text: event.target.value }))}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  spellCheck={false}
-                  // eslint-disable-next-line jsx-a11y/no-autofocus
-                  autoFocus
-                  style={{
-                    ...scaledTextStyle,
-                    position: 'absolute',
-                    inset: 0,
-                    width: '100%',
-                    height: '100%',
-                    boxSizing: 'border-box',
-                    margin: 0,
-                    border: 'none',
-                    outline: 'none',
-                    resize: 'none',
-                    overflow: 'hidden',
-                    background: 'transparent',
-                    whiteSpace: 'pre-wrap',
-                    overflowWrap: 'anywhere',
-                  }}
-                />
-              ) : (
-                <div style={{ ...scaledTextStyle, boxSizing: 'border-box', overflow: 'hidden', height: '100%' }}>
-                  {layout.lines.map((line, index) => (
-                    // Lines are positional; the same text can repeat.
-                    // eslint-disable-next-line react/no-array-index-key
-                    <div key={index}>{line || ' '}</div>
-                  ))}
-                </div>
-              )}
+              {/* Laid out at the export's pixel size, then scaled to the preview. */}
+              <div className={styles['content']} style={{ width: widthPx, height: layout.heightPx, transform: `scale(${previewScale})` }}>
+                {selected ? (
+                  <OverlayTextArea
+                    overlayId={overlayClip.overlayId}
+                    onTextAreaRef={setTextAreaRef}
+                    aria-label={t('Text')}
+                    tabIndex={typing ? 0 : -1}
+                    value={overlayClip.text}
+                    onChange={(event) => onUpdateOverlay?.(overlayClip.overlayId, (clip) => fitTextOverlayBox({ ...clip, text: event.target.value }, video.width, video.height))}
+                    onFocus={() => setTypingId(overlayClip.overlayId)}
+                    onBlur={() => setTypingId((id) => (id === overlayClip.overlayId ? undefined : id))}
+                    onMouseDown={(event) => { if (typing) event.stopPropagation(); }}
+                    // The box is always as tall as its lines; it must never scroll (that hid the top line).
+                    onScroll={(event) => { const textArea = event.currentTarget; textArea.scrollTop = 0; }}
+                    // Escape stops typing; the text stays selected.
+                    onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); event.currentTarget.blur(); } }}
+                    spellCheck={false}
+                    className={styles['textArea']}
+                    style={{ ...scaledTextStyle, whiteSpace: 'pre-wrap' }}
+                  />
+                ) : (
+                  <div style={{ ...scaledTextStyle, boxSizing: 'border-box', overflow: 'hidden', height: '100%' }}>
+                    {layout.lines.map((line, index) => (
+                      // Lines are positional; the same text can repeat.
+                      // eslint-disable-next-line react/no-array-index-key
+                      <div key={index}>{line || ' '}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {selected && (
                 <>
-                  <button
-                    type="button"
-                    onMouseDown={(event) => beginInteraction(event, overlayClip, 'move')}
-                    title="Drag to move"
-                    style={{
-                      position: 'absolute',
-                      left: -1,
-                      bottom: '100%',
-                      height: moveHandleHeight,
-                      padding: '0 8px',
-                      border: 'none',
-                      borderRadius: '6px 6px 0 0',
-                      background: accent,
-                      color: 'rgba(5, 12, 20, 0.9)',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                      cursor: 'move',
-                    }}
-                  >
-                    Text
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Text box width"
-                    title="Drag to change the text width"
-                    onMouseDown={(event) => beginInteraction(event, overlayClip, 'width')}
-                    style={{ position: 'absolute', top: '50%', right: -(edgeHandleWidth / 2) - 1, width: edgeHandleWidth, height: Math.min(28, Math.max(14, height - (cornerHandleSize * 2))), transform: 'translateY(-50%)', padding: 0, border: '1px solid rgba(5, 12, 20, 0.6)', borderRadius: 4, background: accent, cursor: 'ew-resize' }}
-                  />
-                  <button
-                    type="button"
-                    aria-label="Text size"
-                    title="Drag to resize the text"
-                    onMouseDown={(event) => beginInteraction(event, overlayClip, 'scale')}
-                    style={{ position: 'absolute', right: -(cornerHandleSize / 2), bottom: -(cornerHandleSize / 2), width: cornerHandleSize, height: cornerHandleSize, padding: 0, border: '2px solid rgba(5, 12, 20, 0.6)', borderRadius: 999, background: accent, cursor: 'nwse-resize' }}
-                  />
+                  {corners.map((corner) => (
+                    <button
+                      key={corner}
+                      type="button"
+                      tabIndex={-1}
+                      aria-label={t('Text size')}
+                      className={styles['corner']}
+                      data-corner={corner}
+                      onMouseDown={(event) => beginGesture(event, overlayClip, { kind: 'corner', corner })}
+                    />
+                  ))}
+                  {sideHandleHeight >= 6 && sides.map((side) => (
+                    <button
+                      key={side}
+                      type="button"
+                      tabIndex={-1}
+                      aria-label={t('Text box width')}
+                      className={styles['side']}
+                      data-side={side}
+                      style={{ '--side-height': `${sideHandleHeight}px` } as CSSProperties}
+                      onMouseDown={(event) => beginGesture(event, overlayClip, { kind: 'side', side })}
+                    />
+                  ))}
                 </>
               )}
             </div>
           );
         })}
+        {guides?.vertical && <div className={styles['guideVertical']} />}
+        {guides?.horizontal && <div className={styles['guideHorizontal']} />}
       </div>
     </div>
   );

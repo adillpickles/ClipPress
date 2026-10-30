@@ -3,7 +3,6 @@ import type { PlatformPath } from 'node:path';
 import {
   findProtectedSourceCollision,
   isProtectedSourcePath,
-  isSameFilePath,
   makeSourceSafeFileNames,
 } from './sourcePathProtection';
 import { UserFacingError } from '../../errors';
@@ -19,10 +18,6 @@ const { stat } = window.require('fs/promises');
  * Renderer-bound wrappers around the pure helpers in `sourcePathProtection`, so callers
  * do not each have to reach through `window.require` for the platform's path module.
  */
-
-export function isSameFile(a: string | undefined, b: string | undefined) {
-  return isSameFilePath({ a, b, path });
-}
 
 export function isSourcePath(candidate: string | undefined, protectedPaths: readonly (string | undefined)[]) {
   return isProtectedSourcePath({ candidate, protectedPaths, path });

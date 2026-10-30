@@ -1,0 +1,147 @@
+.viewSwitch {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  margin: .25rem 0 1rem;
+}
+
+/* The only part of the dialog that scrolls. The negative margins and matching padding move its scrollbar out
+   towards the dialog's edge and leave room for the focus rings of controls at its left and right edges. */
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  margin: 0 -.75rem 0 -.25rem;
+  padding: 0 .75rem 0 .25rem;
+}
+
+.body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.body::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--gray-9) 55%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* Stays at the top of the list while it scrolls; the rows pass under its background. The top padding keeps
+   the input's focus ring inside the scroll area. */
+.search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 0 .25rem;
+  padding: .25rem 0 .5rem;
+  background: var(--cp-panel);
+}
+
+.category {
+  margin-bottom: 1.25rem;
+}
+
+.categoryTitle {
+  margin: .25rem 0 .35rem;
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+  font-weight: 600;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .3rem 0;
+  border-bottom: 1px solid var(--cp-line);
+  font-size: .875rem;
+}
+
+.rowName {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  color: var(--cp-text);
+}
+
+.rowKeys {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: .2rem;
+}
+
+.binding {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.bindingRemove {
+  margin-left: .35rem;
+  opacity: .35;
+}
+
+.row:hover .bindingRemove,
+.bindingRemove:focus-visible {
+  opacity: 1;
+}
+
+.noBinding {
+  color: var(--cp-text-subtle);
+  font-size: .8125rem;
+}
+
+.essentials {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  column-gap: 1.75rem;
+  margin-bottom: .5rem;
+}
+
+.essentialsColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.essentialsGroup {
+  min-width: 0;
+}
+
+.essentialsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .32rem 0;
+  border-bottom: 1px solid var(--cp-line);
+  font-size: .8125rem;
+  color: var(--cp-text);
+}
+
+.essentialsKeys {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.slash {
+  margin: 0 .3rem;
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+}

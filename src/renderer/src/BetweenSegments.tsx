@@ -15,7 +15,10 @@ function BetweenSegments({ left: leftPercent, width, invertCutSegments, instant 
 }) {
   const left = `${leftPercent}%`;
 
-  const { effectiveExportMode, prefersReducedMotion, springAnimation } = useUserSettings();
+  const { effectiveExportMode, prefersReducedMotion, springAnimation, simpleMode } = useUserSettings();
+
+  // In simple mode the gaps are just empty track: the clip blocks already show what is kept.
+  if (simpleMode && !invertCutSegments) return null;
 
   return (
     <motion.div

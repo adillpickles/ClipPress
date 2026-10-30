@@ -10,6 +10,8 @@ import type { FFprobeStream } from '../../common/ffprobe';
 import { getFrameDuration } from './util';
 import { normalizeRotation } from './textOverlays';
 import type { FfmpegHwAccel } from '../../common/types';
+import usePreviewAudioGain from './hooks/usePreviewAudioGain';
+import type { PreviewClipVolume } from './hooks/usePreviewAudioGain';
 
 const { compatPlayer: { createMediaSourceStream } } = window.require('@electron/remote').require('./index.js');
 
@@ -333,20 +335,33 @@ async function startPlayback({ path, slaveVideo, masterVideo, videoStreamIndex, 
   processChunk();
 }
 
-function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioGainByStreamId, masterVideoRef, mediaSourceQuality, ffmpegHwaccel }: {
+function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioGainByStreamId, clipVolumes, masterVideoRef, mediaSourceQuality, ffmpegHwaccel, onFailedChange }: {
   rotate: number | undefined,
   filePath: string,
   videoStream: FFprobeStream | undefined,
   audioStreams: FFprobeStream[],
   audioGainByStreamId: Record<number, number>,
+  /** Clip volumes, applied to what this player plays (track volumes are already in FFmpeg's mix). */
+  clipVolumes?: PreviewClipVolume[] | undefined,
   masterVideoRef: RefObject<HTMLVideoElement>,
   mediaSourceQuality: number,
   ffmpegHwaccel: FfmpegHwAccel,
+  /** The parent shows what went wrong, outside the video area, which can be hidden or cropped. */
+  onFailedChange?: ((failed: boolean) => void) | undefined,
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // This video is kept at the source's time (see the sync above), so clip edges line up as in the native player.
+  usePreviewAudioGain(videoRef, undefined, filePath, clipVolumes);
   const [loading, setLoading] = useState(true);
   const [showCanvas, setShowCanvas] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    onFailedChange?.(failed);
+  }, [failed, onFailedChange]);
+
+  useEffect(() => () => onFailedChange?.(false), [onFailedChange]);
 
   const onVideoError = useCallback<ReactEventHandler<HTMLVideoElement>>((error) => {
     console.error('video error', error);
@@ -367,12 +382,20 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
     let abortController: AbortController | undefined;
     let disposed = false;
     let startDebounced: ReturnType<typeof debounce>;
+    let failedAt: number | undefined;
+    // Seeks while FFmpeg is still starting up aren't followed yet, so a failed start retries from there.
+    let startingController: AbortController | undefined;
+    let seekedWhileStarting = false;
 
     const start = async () => {
       if (disposed) return;
       abortController?.abort();
       const controller = new AbortController();
       abortController = controller;
+      startingController = controller;
+      seekedWhileStarting = false;
+      failedAt = undefined;
+      setFailed(false);
 
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
@@ -419,17 +442,40 @@ function MediaSourcePlayer({ rotate, filePath, videoStream, audioStreams, audioG
           },
           ffmpegHwaccel,
         });
+        if (startingController === controller) startingController = undefined;
       } catch (err) {
-        if (!controller.signal.aborted) console.error('Preview failed', err);
+        if (startingController === controller) startingController = undefined;
+        if (!controller.signal.aborted) {
+          console.error('Preview failed', err);
+          if (seekedWhileStarting) {
+            controller.abort();
+            startDebounced();
+            return;
+          }
+          failedAt = seekTo;
+          setLoading(false);
+          // There may simply be no frames left to decode at the very end, so don't call that a failure.
+          if (!(masterVideo.duration - seekTo < 1)) setFailed(true);
+        }
         controller.abort();
       }
     };
 
     startDebounced = debounce(start, 500, { leading: true, trailing: true });
 
+    // A failed start no longer follows the playhead, so try again from wherever the user seeks to.
+    // Some recordings only fail to decode from certain points, such as the very start (#68).
+    const onMasterSeeked = () => {
+      if (startingController != null) seekedWhileStarting = true;
+      if (failedAt == null || masterVideo.currentTime === failedAt) return;
+      startDebounced();
+    };
+    masterVideo.addEventListener('seeked', onMasterSeeked);
+
     startDebounced();
 
     return () => {
+      masterVideo.removeEventListener('seeked', onMasterSeeked);
       disposed = true;
       startDebounced.cancel();
       abortController?.abort();

@@ -2,6 +2,7 @@ import type { ReactEventHandler } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChromiumHTMLVideoElement, PlaybackMode } from '../types';
 import { showPlaybackFailedMessage } from '../swal';
+import { createSeekQueue } from '../seekQueue';
 
 export default ({ filePath }: { filePath: string | undefined }) => {
   const [commandedTime, setCommandedTimeRaw] = useState(0);
@@ -47,47 +48,18 @@ export default ({ filePath }: { filePath: string | undefined }) => {
   const [playing, setPlaying] = useState(false);
   const playingRef = useRef(false);
 
-  // https://kitchen.vibbio.com/blog/optimizing-html5-video-scrubbing/
-  const seekingRef = useRef<NodeJS.Timeout | undefined>(undefined);
-  const seekToRef = useRef<number>();
+  // Coalesces seeks while scrubbing; see seekQueue.ts.
+  const seekQueue = useMemo(() => createSeekQueue({
+    seek: (time) => {
+      if (videoRef.current != null) videoRef.current.currentTime = time;
+    },
+  }), []);
 
-  useEffect(() => () => {
-    clearTimeout(seekingRef.current);
-    seekingRef.current = undefined;
-    seekToRef.current = undefined;
-  }, [filePath]);
+  useEffect(() => () => seekQueue.reset(), [filePath, seekQueue]);
 
-  const smoothSeek = useCallback((seekTo: number) => {
-    const video = videoRef.current;
+  const smoothSeek = useCallback((seekTo: number) => seekQueue.request(seekTo), [seekQueue]);
 
-    if (video == null) {
-      seekToRef.current = seekTo;
-      return;
-    }
-
-    if (seekingRef.current) {
-      seekToRef.current = seekTo;
-    } else {
-      video.currentTime = seekTo;
-      // safety precaution:
-      seekingRef.current = setTimeout(() => {
-        seekingRef.current = undefined;
-      }, 1000);
-    }
-  }, []);
-
-  const onSeeked = useCallback<ReactEventHandler<HTMLVideoElement>>(() => {
-    if (seekToRef.current != null) {
-      const video = videoRef.current;
-      if (video == null) return;
-
-      video.currentTime = seekToRef.current;
-      seekToRef.current = undefined;
-    } else {
-      clearTimeout(seekingRef.current);
-      seekingRef.current = undefined;
-    }
-  }, []);
+  const onSeeked = useCallback<ReactEventHandler<HTMLVideoElement>>(() => seekQueue.landed(), [seekQueue]);
 
   const commandedTimeRef = useRef(commandedTime);
 
@@ -120,10 +92,13 @@ export default ({ filePath }: { filePath: string | undefined }) => {
   const onPlayingChange = useCallback((val: boolean) => {
     playingRef.current = val;
     setPlaying(val);
+    // Timeupdates are only kept while playing, so start from where the video is.
+    if (val && videoRef.current) setPlayerTime(videoRef.current.currentTime);
     if (!val && videoRef.current) {
-      setCommandedTime(videoRef.current.currentTime);
+      // A seek still on its way (e.g. playback paused for a scrub) is where the user asked to be.
+      setCommandedTime(seekQueue.latestTarget() ?? videoRef.current.currentTime);
     }
-  }, [setCommandedTime]);
+  }, [seekQueue, setCommandedTime]);
 
   const onStopPlaying = useCallback(() => {
     onPlayingChange(false);

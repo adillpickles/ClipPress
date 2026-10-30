@@ -2,13 +2,16 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'reac
 
 import isDev from '../isDev';
 import { buildLlcProjectData, writeLlcProject } from '../edlStore';
-import { encodeLlcProjectFile, getProjectSegmentsToSave } from '../llcProject';
+import { encodeLlcProjectFile, getProjectSegmentsToSave, withMediaDuration } from '../llcProject';
 import ProjectAutoSave from '../projectAutoSave';
 import createProjectFilePathKey from '../projectFilePathKey';
 import type { ProjectSession, ProjectSnapshot } from '../projectAutoSave';
 import { getSuffixedOutPath, isWindows } from '../util';
 import type { CustomTagsByFile, OverlayClip, ParamsByStreamId, StateSegment } from '../types';
-import { errorToast } from '../swal';
+import type { ProjectFileLocation } from '../../../common/types';
+import { logProjectFiles } from '../projectFilesIo';
+import { getProjectSavePaths, getProjectStoreEnv } from '../projectStore';
+import getSwal, { errorToast } from '../swal';
 import i18n from '../i18n';
 
 const path = window.require('path');
@@ -27,9 +30,9 @@ async function fileExists(filePath: string) {
 }
 
 
-export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, projectSession, customOutDir, fileDuration, cutSegments, customTagsByFile, paramsByStreamId, overlayClips }: {
+export default ({ autoSaveProjectFile, projectFileLocation, filePath, projectSession, customOutDir, fileDuration, cutSegments, customTagsByFile, paramsByStreamId, overlayClips }: {
   autoSaveProjectFile: boolean,
-  storeProjectInWorkingDir: boolean,
+  projectFileLocation: ProjectFileLocation,
   filePath: string | undefined,
   /** The open of `filePath` the state belongs to. */
   projectSession: ProjectSession | undefined,
@@ -41,10 +44,13 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
   overlayClips: OverlayClip[],
 }) => {
   const projectSuffix = 'proj.llc';
-  // New LLC format can be stored along with input file or in working dir (customOutDir)
+  // A project next to a file (or in the export folder): older versions, and the opt-in settings.
   const getEdlFilePath = useCallback((fp?: string, cod?: string) => getSuffixedOutPath({ customOutDir: cod, filePath: fp, nameSuffix: projectSuffix }), []);
-  const getProjectFileSavePath = useCallback((storeProjectInWorkingDirIn: boolean) => getEdlFilePath(filePath, storeProjectInWorkingDirIn ? customOutDir : undefined), [getEdlFilePath, filePath, customOutDir]);
-  const projectFileSavePath = useMemo(() => getProjectFileSavePath(storeProjectInWorkingDir), [getProjectFileSavePath, storeProjectInWorkingDir]);
+  // By default in ClipPress's own folder, so recording folders stay clean (see projectStore.ts). "Both" also keeps a
+  // copy next to the recording: the main place first.
+  const getProjectFileSavePaths = useCallback((location: ProjectFileLocation) => (filePath != null ? getProjectSavePaths(filePath, location, customOutDir, getProjectStoreEnv()) : undefined), [filePath, customOutDir]);
+  const projectFileSavePaths = useMemo(() => getProjectFileSavePaths(projectFileLocation), [getProjectFileSavePaths, projectFileLocation]);
+  const projectFileSavePath = projectFileSavePaths?.[0];
 
   const [autoSave] = useState(() => new ProjectAutoSave({
     // Closing the file or the app saves at once (see `flushProject`), as does leaving the window.
@@ -54,14 +60,19 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
       errorToast(i18n.t('Unable to save project file'));
       console.error('Failed to save project file', err);
     },
+    // Only "Both" keeps a copy: the one next to the recording. The edits are still in ClipPress's folder.
+    onCopyError: ({ path: copyPath, error }) => {
+      getSwal().toast.fire({ icon: 'warning', timer: 10000, text: i18n.t('Couldn\'t save the copy next to the recording. Your edits are saved in ClipPress\'s folder.') });
+      logProjectFiles('warn', `Could not save the copy of the edits next to the recording: ${copyPath}: ${error instanceof Error ? error.message : String(error)}`);
+    },
     pathKey: createProjectFilePathKey({ path, caseInsensitive: isWindows, realpath: (dir) => realpathSync.native(dir), identity: (dir) => statSync(dir, { bigint: true }) }),
   }));
 
   const snapshot = useMemo<ProjectSnapshot | undefined>(() => {
-    if (projectSession == null || filePath == null || !projectFileSavePath) return undefined;
+    if (projectSession == null || filePath == null || projectFileSavePaths == null || !projectFileSavePath) return undefined;
     const project = buildLlcProjectData({ mediaFilePath: filePath, cutSegments: getProjectSegmentsToSave(cutSegments), customTagsByFile, paramsByStreamId, overlayClips });
-    return { session: projectSession, path: projectFileSavePath, project, fileData: encodeLlcProjectFile(project, fileDuration) };
-  }, [cutSegments, customTagsByFile, fileDuration, filePath, overlayClips, paramsByStreamId, projectFileSavePath, projectSession]);
+    return { session: projectSession, path: projectFileSavePath, copyPaths: projectFileSavePaths.slice(1), project, fileData: withMediaDuration(encodeLlcProjectFile(project, fileDuration), fileDuration) };
+  }, [cutSegments, customTagsByFile, fileDuration, filePath, overlayClips, paramsByStreamId, projectFileSavePath, projectFileSavePaths, projectSession]);
 
   // A layout effect, so autosave has every committed state before any later event can close the file.
   useLayoutEffect(() => {
@@ -86,17 +97,20 @@ export default ({ autoSaveProjectFile, storeProjectInWorkingDir, filePath, proje
   const saveProjectNow = useCallback(() => autoSave.saveNow(), [autoSave]);
   const flushProject = useCallback(() => autoSave.flush(), [autoSave]);
   const hasUnsavedProjectChanges = useCallback(() => autoSave.hasUnsavedChanges(), [autoSave]);
+  const hasSavedProject = useCallback((sessionId: number, projectPath: string) => autoSave.hasSaved(sessionId, projectPath), [autoSave]);
   const deleteProjectFile = useCallback((projectPath: string, remove: () => Promise<void>) => autoSave.deleteFile(projectPath, { remove, exists: fileExists }), [autoSave]);
 
   return {
     getEdlFilePath,
     projectFileSavePath,
-    getProjectFileSavePath,
+    projectFileSavePaths,
+    getProjectFileSavePaths,
     endProjectSession,
     whenProjectSaved,
     saveProjectNow,
     flushProject,
     hasUnsavedProjectChanges,
+    hasSavedProject,
     deleteProjectFile,
   };
 };

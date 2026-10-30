@@ -1,10 +1,8 @@
 import type { CSSProperties, MouseEventHandler } from 'react';
 import { forwardRef } from 'react';
-import { FiScissors } from 'react-icons/fi';
-import { FaFileExport } from 'react-icons/fa';
+import { FiShare } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 
-import { primaryColor } from '../colors';
 import useUserSettings from '../hooks/useUserSettings';
 import type { SegmentToExport } from '../types';
 import styles from './ExportButton.module.css';
@@ -12,50 +10,59 @@ import styles from './ExportButton.module.css';
 
 interface Props {
   segmentsToExport: SegmentToExport[],
-  areWeCutting: boolean,
   onClick: MouseEventHandler<HTMLButtonElement>,
+  /** Ctrl+click: export right away with the last settings, instead of opening the export options. */
+  onQuickExport?: (() => void) | undefined,
   style?: CSSProperties,
   label?: string,
   titleOverride?: string,
+  /** The export shortcut, shown in its hint. */
+  exportKeys?: string | undefined,
 }
 
 // eslint-disable-next-line react/display-name
 const ExportButton = forwardRef<HTMLButtonElement, Props>(({
   segmentsToExport,
-  areWeCutting,
   onClick,
+  onQuickExport,
   style,
   label,
   titleOverride,
+  exportKeys,
 }, ref) => {
-  const CutIcon = areWeCutting ? FiScissors : FaFileExport;
-
   const { t } = useTranslation();
 
-  const { autoMerge, simpleMode } = useUserSettings();
+  const { simpleMode } = useUserSettings();
 
+  // Just what it does (its key shows beside it): Ctrl+click is explained in Settings > Export, with the quick exports.
   let title = titleOverride ?? t('Export');
-  if (titleOverride == null && segmentsToExport.length === 1) {
+  if (titleOverride == null && !simpleMode && segmentsToExport.length === 1) {
     title = t('Export selection');
-  } else if (titleOverride == null && segmentsToExport.length > 1) {
+  } else if (titleOverride == null && !simpleMode && segmentsToExport.length > 1) {
     title = t('Export {{ num }} segments', { num: segmentsToExport.length });
   }
 
-  const text = label ?? (autoMerge && segmentsToExport && segmentsToExport.length > 1 ? t('Export all') : t('Export'));
+  const handleClick: MouseEventHandler<HTMLButtonElement> = (e) => {
+    if (onQuickExport != null && (e.ctrlKey || e.metaKey)) {
+      onQuickExport();
+      return;
+    }
+    onClick(e);
+  };
 
   return (
     <button
       ref={ref}
       type="button"
       className={[...(simpleMode ? ['export-animation'] : []), styles['exportButton']].join(' ')}
-      style={{ backgroundColor: primaryColor, ...style }}
-      onClick={onClick}
+      style={style}
+      onClick={handleClick}
       title={title}
+      data-tip-keys={exportKeys}
     >
-      <CutIcon
-        style={{ verticalAlign: 'middle', marginRight: '.2em' }}
-      />
-      {text}
+      <FiShare aria-hidden style={{ fontSize: '1em', flexShrink: 0 }} />
+      {/* Always "Export" here: what it makes depends on the export options, and their own button says it. */}
+      {label ?? t('Export')}
     </button>
   );
 });

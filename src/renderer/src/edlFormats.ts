@@ -1,7 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import i18n from 'i18next';
 import invariant from 'tiny-invariant';
-import { Duration } from 'luxon';
 
 import { parse as csvParse } from 'csv-parse/browser/esm/sync';
 import { stringify as csvStringify } from 'csv-stringify/browser/esm/sync';
@@ -209,7 +208,7 @@ export async function parseEdlCmx3600(text: string, fps: number) {
     const minutes = parseInt(match[2]!, 10);
     const seconds = parseInt(match[3]!, 10);
     const frames = parseInt(match[4]!, 10);
-    return Duration.fromObject({ hours, minutes, seconds: seconds + (frames / fps) }).as('seconds');
+    return (hours * 3600) + (minutes * 60) + seconds + (frames / fps);
   };
 
   return cmx.events.map((event) => ({

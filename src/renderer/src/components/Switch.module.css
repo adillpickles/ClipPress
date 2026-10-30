@@ -1,41 +1,75 @@
 .SwitchRoot {
   all: unset;
-  width: 46px;
-  height: 27px;
-  background-color: color-mix(in srgb, var(--gray-8) 72%, transparent);
+  flex-shrink: 0;
+  width: 36px;
+  height: 20px;
+  background-color: var(--gray-6);
   border-radius: 9999px;
   position: relative;
-  border: 1px solid color-mix(in srgb, var(--gray-10) 35%, transparent);
-  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--gray-7);
   -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
-  transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease;
+  cursor: pointer;
+  transition: background-color .14s ease, border-color .14s ease, box-shadow .14s ease;
 }
-.SwitchRoot:focus {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue-8) 35%, transparent);
+.SwitchRoot:hover {
+  border-color: var(--gray-8);
+}
+.SwitchRoot:focus-visible {
+  box-shadow: var(--cp-focus-ring);
 }
 .SwitchRoot[data-state='checked'] {
-  background-color: var(--blue-9);
-  border-color: color-mix(in srgb, var(--blue-10) 48%, transparent);
-}
-.SwitchRoot[data-state='checked']:focus {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue-8) 35%, transparent);
+  background-color: var(--cp-accent);
+  border-color: var(--cp-accent);
 }
 
 .SwitchThumb {
   display: block;
-  width: 21px;
-  height: 21px;
+  width: 16px;
+  height: 16px;
   background-color: white;
   border-radius: 9999px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.24);
-  transition: transform 100ms;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 120ms ease, background-color 120ms ease;
   transform: translateX(2px);
   will-change: transform;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 .SwitchThumb[data-state='checked'] {
-  transform: translateX(22px);
+  transform: translateX(17px);
 }
-.SwitchRoot:disabled {
-  opacity: .5;
+
+/* Off, light theme: an outlined track with a smaller grey knob (the Windows 11 look). A pale filled track
+   with a white knob all but disappears on the light panels. */
+.SwitchRoot[data-state='unchecked'] {
+  background-color: var(--cp-bg);
+  border-color: var(--gray-9);
+}
+.SwitchRoot[data-state='unchecked']:hover {
+  background-color: var(--cp-hover);
+  border-color: var(--gray-10);
+}
+.SwitchThumb[data-state='unchecked'] {
+  background-color: var(--gray-10);
+  box-shadow: none;
+  transform: translateX(2px) scale(.75);
+}
+
+/* Off, dark theme: unchanged, the white knob already stands out on the dark track. */
+:global(.dark-theme) .SwitchRoot[data-state='unchecked'] {
+  background-color: var(--gray-6);
+  border-color: var(--gray-7);
+}
+:global(.dark-theme) .SwitchRoot[data-state='unchecked']:hover {
+  background-color: var(--gray-6);
+  border-color: var(--gray-8);
+}
+:global(.dark-theme) .SwitchThumb[data-state='unchecked'] {
+  background-color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transform: translateX(2px);
+}
+.SwitchRoot:disabled,
+.SwitchRoot[data-disabled] {
+  opacity: .45;
+  cursor: not-allowed;
 }

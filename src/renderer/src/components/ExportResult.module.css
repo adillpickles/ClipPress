@@ -1,0 +1,353 @@
+/* The dialog after an export (ExportResult.tsx): the video as a picture, centred, with its name and facts. */
+.result {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.single {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 0;
+  margin-top: .7rem;
+}
+
+/* The picture: a click copies the video, a drag takes the file out. */
+.thumb {
+  all: unset;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  max-width: 22rem;
+  aspect-ratio: 16 / 9;
+  box-sizing: border-box;
+  border-radius: var(--cp-radius-lg);
+  overflow: hidden;
+  background: var(--cp-bg);
+  border: 1px solid var(--cp-line);
+  cursor: pointer;
+  /* `all: unset` above also drops what makes a draggable element draggable. */
+  -webkit-user-drag: element;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.thumb:disabled {
+  cursor: default;
+}
+
+.placeholder {
+  font-size: 1.6rem;
+  color: var(--cp-text-subtle);
+}
+
+/* Hover: a faint blue tint and the copy icon, only while the pointer is on it (not for keyboard focus or a copy). */
+.thumb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--cp-accent) 9%, transparent);
+  opacity: 0;
+  transition: opacity .15s ease;
+  pointer-events: none;
+}
+
+.thumb:not(:disabled):hover::after {
+  opacity: 1;
+}
+
+.thumb:not(:disabled):hover,
+.thumb:focus-visible {
+  border-color: var(--cp-accent);
+}
+
+.thumb:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.copyBadge {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 999px;
+  background: rgb(10 14 20 / 62%);
+  color: white;
+  font-size: 1.15rem;
+  opacity: 0;
+  transform: scale(.9);
+  transition: opacity .15s ease, transform .15s ease;
+  pointer-events: none;
+}
+
+.thumb:not(:disabled):hover .copyBadge,
+.thumb:focus-visible .copyBadge,
+.thumbCopied .copyBadge {
+  opacity: 1;
+  transform: none;
+}
+
+/* The copy icon turns into the check: one shrinks and turns away as the other grows in, in one cell. */
+.copyIcon,
+.checkIcon {
+  grid-area: 1 / 1;
+  transition: opacity .2s ease, transform .22s cubic-bezier(.2, .8, .2, 1);
+}
+
+.checkIcon {
+  color: var(--cp-accent);
+  opacity: 0;
+  transform: scale(.5) rotate(-30deg);
+}
+
+.thumbCopied .copyIcon {
+  opacity: 0;
+  transform: scale(.5) rotate(30deg);
+}
+
+.thumbCopied .checkIcon {
+  opacity: 1;
+  transform: none;
+}
+
+/* Away from the pointer the badge only fades: a check shows with it (Ctrl+C), and the copy icon comes back only once
+   the badge is gone, so neither the old icon nor the tint flashes. */
+.thumb:not(:hover).thumbCopied .copyIcon,
+.thumb:not(:hover).thumbCopied .checkIcon {
+  transition: none;
+}
+
+.thumb:not(:hover):not(.thumbCopied) .copyIcon,
+.thumb:not(:hover):not(.thumbCopied) .checkIcon {
+  transition-duration: 0s;
+  transition-delay: .2s;
+}
+
+/* One soft pulse on the outline. */
+.thumbCopied {
+  animation: copied-ring .7s ease-out;
+}
+
+@keyframes copied-ring {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cp-accent) 40%, transparent); }
+  100% { box-shadow: 0 0 0 8px transparent; }
+}
+
+/* The name: a click shows the file in its folder; the small folder after it says so, and lights up with it. */
+.name {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: .5em;
+  box-sizing: border-box;
+  max-width: 100%;
+  margin-top: .9rem;
+  padding: 0 .2em;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: .9375rem;
+  cursor: pointer;
+  transition: color .12s ease;
+}
+
+.nameText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nameIcon {
+  flex-shrink: 0;
+  font-size: .85em;
+  color: var(--cp-text-subtle);
+  transition: color .12s ease;
+}
+
+.name:hover {
+  color: var(--cp-accent-text);
+}
+
+.name:hover .nameText {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.name:hover .nameIcon {
+  color: var(--cp-accent-text);
+}
+
+.name:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.facts {
+  margin-top: .25rem;
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Several files: one row each. */
+.list {
+  list-style: none;
+  margin: .35rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  max-height: 17rem;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  min-width: 0;
+}
+
+.thumbSmall {
+  flex-shrink: 0;
+  width: 6.5rem;
+  border-radius: var(--cp-radius);
+}
+
+.thumbSmall .copyBadge {
+  width: 1.9rem;
+  height: 1.9rem;
+  font-size: .9rem;
+}
+
+.rowText {
+  min-width: 0;
+  flex: 1;
+}
+
+.rowText .name {
+  margin-top: 0;
+  margin-left: -.2em;
+  font-size: .875rem;
+}
+
+.highlight {
+  margin-top: .25rem;
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+  text-align: center;
+  /* One line per thing to say. */
+  white-space: pre-line;
+}
+
+/* Real problems, shown plainly. */
+.warnings {
+  list-style: none;
+  margin: .5rem 0 0;
+  padding: .55rem .75rem;
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  border-radius: var(--cp-radius);
+  background: var(--cp-warning-soft);
+  font-size: .8125rem;
+}
+
+.warnings li {
+  display: flex;
+  gap: .45rem;
+  align-items: baseline;
+}
+
+.warnings svg {
+  flex-shrink: 0;
+  color: var(--cp-warning);
+  transform: translateY(.1em);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin-top: 1rem;
+}
+
+/* A few quiet words for a moment: the copy after exporting, or a copy that failed. Its length comes from the code. */
+.status {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--cp-text-muted);
+  font-size: .75rem;
+}
+
+.statusText {
+  animation: status-life 2s ease forwards;
+}
+
+.statusFailed {
+  color: var(--red-11);
+}
+
+@keyframes status-life {
+  0% { opacity: 0; }
+  8% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Details: small and quiet, at the left of the buttons. */
+.detailsToggle {
+  all: unset;
+  flex-shrink: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .25em;
+  margin-left: -.35em;
+  padding: .2em .45em .2em .3em;
+  border-radius: var(--cp-radius);
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+  font-weight: 600;
+  transition: background-color .12s ease, color .12s ease;
+}
+
+.detailsToggle:hover {
+  color: var(--cp-text-muted);
+  background: var(--cp-hover);
+}
+
+.detailsToggle:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.detailsBody {
+  margin-top: .5rem;
+  font-size: .8125rem;
+  color: var(--cp-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thumbCopied { animation: none; }
+  .copyIcon, .checkIcon { transition: none; }
+}

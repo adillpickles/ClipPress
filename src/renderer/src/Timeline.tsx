@@ -1,37 +1,43 @@
-import type { MutableRefObject, CSSProperties, WheelEventHandler, MouseEventHandler, MouseEvent as ReactMouseEvent } from 'react';
-import { memo, useRef, useMemo, useCallback, useEffect, useState } from 'react';
-import { motion, useMotionValue, useSpring } from 'motion/react';
+import type { MutableRefObject, CSSProperties, ReactNode, WheelEventHandler, MouseEventHandler, MouseEvent as ReactMouseEvent } from 'react';
+import { memo, useRef, useMemo, useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { useMotionValue, useSpring } from 'motion/react';
 import debounce from 'lodash/debounce';
 import { useTranslation } from 'react-i18next';
-import { FaCaretDown, FaCaretUp } from 'react-icons/fa';
 import invariant from 'tiny-invariant';
 
 import TimelineSeg from './TimelineSeg';
 import BetweenSegments from './BetweenSegments';
 import useContextMenu from './hooks/useContextMenu';
+import { openMenu } from './components/Menu';
 import useUserSettings from './hooks/useUserSettings';
 
 import styles from './Timeline.module.css';
 
 
-import { timelineBackground, darkModeTransition } from './colors';
+import { darkModeTransition } from './colors';
 import type { Frame } from './ffmpeg';
 import type { FormatTimecode, InverseCutSegment, OverviewWaveform, OverlayClip, RenderableWaveform, WaveformSlice, StateSegment, Thumbnail } from './types';
 import Button from './components/Button';
 import type { UseSegments } from './hooks/useSegments';
-import { keyMap } from './hooks/useTimelineScroll';
-import { minTextOverlayDuration } from './textOverlays';
+import { isGestureModifierHeld } from './hooks/useTimelineScroll';
+import useGlidingSegments from './hooks/useGlidingSegments';
+import { getTextLaneRows, minTextOverlayDuration } from './textOverlays';
+import type { TextLaneRow } from './textOverlays';
 import SegmentRetimeBar from './components/SegmentRetimeBar';
 import LaneDeleteButton from './components/LaneDeleteButton';
+import TimelineRuler, { createHoverStore, HoverMarker } from './components/TimelineRuler';
+import formatClockTime from './util/clockTime';
 import { getSegmentOutputDuration, getSegmentSpeed, getSpeedForOutputDuration } from './segmentSpeed';
-import { createTimelineMap, getRetimeAutoScrollStep, getWarpedImageSpans } from './timelineMap';
+import { createTimelineMap, getMaxScale, getRetimeAutoScrollStep, getWarpedImageSpans } from './timelineMap';
 import type { TimelineMap } from './timelineMap';
+import { fadeInArrivingFrame, filmTileHeight, getFilmTileSlots, getFilmTiles } from './filmstrip';
+import type { FilmTile } from './filmstrip';
+import type { Filmstrip } from './hooks/useFilmstrip';
+import type { AudioPeaks } from './audioPeaks';
+import AudioLane from './components/AudioLane';
+import holdDragCursor from './dragCursor';
+import type { UndoableSetOptions } from './undoableHistory';
 
-const remote = window.require('@electron/remote');
-const { Menu } = remote;
-
-
-const currentTimeWidth = 1;
 
 // eslint-disable-next-line react/display-name
 const Waveform = memo(({ waveform, timelineMap, laneDuration, fileDurationNonZero, darkMode }: {
@@ -47,7 +53,8 @@ const Waveform = memo(({ waveform, timelineMap, laneDuration, fileDurationNonZer
 
   return spans.map((span) => {
     const spanStyle: CSSProperties = { pointerEvents: 'none', position: 'absolute', height: '100%', left: `${span.left}%`, width: `${span.width}%`, overflow: 'hidden' };
-    if (waveform.url == null) return <div key={span.left} style={spanStyle} className={styles['loading-bg']} />;
+    // A slice that failed isn't loading: no endless animation (it repaints the lane every frame).
+    if (waveform.url == null) return <div key={span.left} style={spanStyle} className={'failed' in waveform && waveform.failed ? undefined : styles['loading-bg']} />;
     return (
       <div key={span.left} style={spanStyle}>
         <img src={waveform.url} draggable={false} alt="" style={{ position: 'absolute', height: '100%', left: `${span.innerLeft}%`, width: `${span.innerWidth}%`, filter: darkMode ? undefined : 'invert(1)', imageRendering: 'pixelated' }} />
@@ -57,10 +64,9 @@ const Waveform = memo(({ waveform, timelineMap, laneDuration, fileDurationNonZer
 });
 
 // eslint-disable-next-line react/display-name
-const Waveforms = memo(({ timelineMap, laneDuration, laneWidthPercent, fileDurationNonZero, waveforms, overviewWaveform, zoom, darkMode, height }: {
+const Waveforms = memo(({ timelineMap, laneDuration, fileDurationNonZero, waveforms, overviewWaveform, zoom, darkMode, height }: {
   timelineMap: TimelineMap,
   laneDuration: number,
-  laneWidthPercent: number,
   fileDurationNonZero: number,
   waveforms: WaveformSlice[],
   overviewWaveform: OverviewWaveform | undefined,
@@ -68,7 +74,7 @@ const Waveforms = memo(({ timelineMap, laneDuration, laneWidthPercent, fileDurat
   darkMode: boolean,
   height: number,
 }) => (
-  <div style={{ height, width: `${laneWidthPercent}%`, position: 'relative' }}>
+  <div style={{ height, width: '100%', position: 'relative' }}>
     {zoom === 1 && overviewWaveform != null ? (
       <Waveform waveform={overviewWaveform} timelineMap={timelineMap} laneDuration={laneDuration} fileDurationNonZero={fileDurationNonZero} darkMode={darkMode} />
     ) : waveforms.map((waveform) => (
@@ -77,42 +83,104 @@ const Waveforms = memo(({ timelineMap, laneDuration, laneWidthPercent, fileDurat
   </div>
 ));
 
-// eslint-disable-next-line react/display-name
-const CommandedTime = memo(({ commandedTimePercent }: { commandedTimePercent: string }) => {
-  const color = 'var(--gray-12)';
-  const commonStyle: CSSProperties = { left: commandedTimePercent, position: 'absolute', pointerEvents: 'none' };
-  return (
-    <>
-      <FaCaretDown style={{ ...commonStyle, top: 0, color, fontSize: 14, marginLeft: -7, marginTop: -6 }} />
-      <div style={{ ...commonStyle, bottom: 0, top: 0, backgroundColor: color, width: currentTimeWidth }} />
-      <FaCaretUp style={{ ...commonStyle, bottom: 0, color, fontSize: 14, marginLeft: -7, marginBottom: -5 }} />
-    </>
-  );
-});
+const fadeInFilmTile = fadeInArrivingFrame(styles['arriving']!);
 
-const timelineHeight = 36;
-const textLaneHeight = 24;
+/** The whole recording as a dimmed, hatched strip of frames behind the clip blocks (simple mode). */
+// eslint-disable-next-line react/display-name
+const FilmTape = memo(({ tiles, loading }: { tiles: readonly FilmTile[], loading: boolean }) => (
+  <div className={styles['filmTape']} aria-hidden>
+    <div className={styles['filmFrames']}>
+      {tiles.map((tile) => tile.url != null && <img key={tile.left} ref={loading ? fadeInFilmTile : undefined} src={tile.url} alt="" draggable={false} style={{ left: tile.left, width: tile.width }} />)}
+    </div>
+  </div>
+));
+
+/**
+ * The one playhead. Paused, it sits at the time the user asked for. While playing, it follows the video on
+ * every display frame, written straight to the element (no React render, no easing), so it moves smoothly
+ * rather than in steps each time the video reports its position (about 4 times a second).
+ */
+function Playhead({ playing, commandedTime, getCurrentTime, calculateTimelinePos, lanePx }: {
+  playing: boolean,
+  commandedTime: number,
+  getCurrentTime: () => number,
+  calculateTimelinePos: (time: number | undefined) => number | undefined,
+  /** The lane's width: the playhead moves with a transform (no layout or repaint of the lanes each frame). */
+  lanePx: number,
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const calculateTimelinePosRef = useRef(calculateTimelinePos);
+  const lanePxRef = useRef(lanePx);
+
+  useLayoutEffect(() => {
+    calculateTimelinePosRef.current = calculateTimelinePos;
+    lanePxRef.current = lanePx;
+    const el = ref.current;
+    if (el == null) return;
+    const pos = calculateTimelinePos(playing ? getCurrentTime() : commandedTime);
+    el.style.transform = `translateX(${(pos ?? 0) * lanePx}px)`;
+  }, [calculateTimelinePos, commandedTime, getCurrentTime, lanePx, playing]);
+
+  useEffect(() => {
+    if (!playing) return undefined;
+    let frame = requestAnimationFrame(function follow() {
+      const el = ref.current;
+      if (el != null) {
+        const pos = calculateTimelinePosRef.current(getCurrentTime());
+        if (pos != null) el.style.transform = `translateX(${pos * lanePxRef.current}px)`;
+      }
+      frame = requestAnimationFrame(follow);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [getCurrentTime, playing]);
+
+  return (
+    <div ref={ref} className={styles['playhead']}>
+      <div className={styles['playheadHandle']} />
+    </div>
+  );
+}
+
+const rulerHeight = 22;
+const clipLaneHeight = 44;
+/** Simple mode's clips lane is taller: it shows the filmstrip and holds the speed band, so speed controls don't add a lane. */
+const simpleClipLaneHeight = 64;
+const audioLaneHeight = 34;
+const textLaneHeight = 28;
 const retimeLaneHeight = 38;
+const thumbnailsHeight = 63;
 /** Extra lane space (fraction of the visible width) kept past the end while retiming. */
 const retimeTrailingSpace = 0.15;
-const laneLabelStyle: CSSProperties = {
-  position: 'absolute',
-  left: 8,
-  top: 4,
-  color: 'var(--gray-11)',
-  fontSize: 11,
-  textTransform: 'uppercase',
-  letterSpacing: '.06em',
-  pointerEvents: 'none',
-  fontWeight: 700,
-};
+/**
+ * The widest the lane gets. Chromium lays out at most 2^25 px, so a wider lane (a wide window at the deepest zoom)
+ * would put what's placed in percent (clips) and what's drawn in pixels (playhead, filmstrip) apart.
+ */
+const maxLanePx = 2 ** 24;
+/**
+ * Texts that share their time split the text lane into (at most two, see getTextLaneRows) rows of 11px; the
+ * lane keeps its height (so the preview keeps its size).
+ */
+const stackedTextInset = 2;
+const stackedTextGap = 1;
 
-const timeWrapperStyle: CSSProperties = { height: timelineHeight };
+function getStackedTextGeometry({ row, rows }: TextLaneRow) {
+  // The lane's top border takes a pixel.
+  const height = (textLaneHeight - 1 - (2 * stackedTextInset) - ((rows - 1) * stackedTextGap)) / rows;
+  return { top: stackedTextInset + (row * (height + stackedTextGap)), height };
+}
+
+/**
+ * The speed band's inset from its clip's edges. It clears TimelineSeg's 10px trim handles, so pressing a selected
+ * clip's edge always trims. Every band has it, selected clip or not: pressing a band selects its clip, and the
+ * band mustn't then move under the cursor.
+ */
+const retimeOverlayInset = 12;
 
 function Timeline({
   fileDurationNonZero,
   startTimeOffset,
-  playerTime,
+  getCurrentTime,
+  onScrubbingChange,
   commandedTime,
   relevantTime,
   zoom,
@@ -130,6 +198,12 @@ function Timeline({
   shouldShowWaveform,
   shouldShowKeyframes,
   thumbnails,
+  filmstrip,
+  audioPeaks,
+  audioTrackGainDb,
+  showAudioLane,
+  audioHeader,
+  onEditClipVolume,
   zoomWindowStartTime,
   zoomWindowEndTime,
   onZoomWindowStartTimeChange,
@@ -138,12 +212,15 @@ function Timeline({
   waveformHeight,
   showThumbnails,
   playing,
+  edgeSnapCue,
   isFileOpened,
   onWheel,
   commandedTimeRef,
   goToTimecode,
   darkMode,
   setCutTime,
+  setCutStart,
+  setCutEnd,
   overlayClips,
   selectedOverlayId,
   onSelectOverlay,
@@ -155,10 +232,18 @@ function Timeline({
   onEditSegmentCrop,
   onToggleSegmentSpeedControls,
   onRemoveSegmentSpeed,
+  onRemoveSegment,
+  removeSegmentKeys,
+  menuKeys,
+  pickedClipIds,
+  hasVideo,
 } : {
   fileDurationNonZero: number,
   startTimeOffset: number,
-  playerTime: number | undefined,
+  /** The video's position while playing, the asked-for time otherwise. Read every frame, without re-rendering. */
+  getCurrentTime: () => number,
+  /** Dragging along the timeline starts and ends a scrub: playback pauses during it and resumes after. */
+  onScrubbingChange: (scrubbing: boolean) => void,
   commandedTime: number,
   relevantTime: number,
   zoom: number,
@@ -176,6 +261,16 @@ function Timeline({
   shouldShowWaveform: boolean,
   shouldShowKeyframes: boolean,
   thumbnails: Thumbnail[],
+  /** Simple mode: frames of the whole recording for the clips lane. */
+  filmstrip: Filmstrip,
+  /** Simple mode's audio track under the clips. */
+  audioPeaks: AudioPeaks | undefined,
+  /** The drawn track's volume, which scales its waveform. */
+  audioTrackGainDb: number | undefined,
+  showAudioLane: boolean,
+  audioHeader: ReactNode,
+  /** Opens a clip's volume popover at a point (right-click on the audio track, or the clip's menu). */
+  onEditClipVolume?: ((index: number, point: { x: number, y: number }) => void) | undefined,
   zoomWindowStartTime: number,
   zoomWindowEndTime: number | undefined,
   onZoomWindowStartTimeChange: (a: number) => void,
@@ -184,16 +279,20 @@ function Timeline({
   waveformHeight: number,
   showThumbnails: boolean,
   playing: boolean,
+  /** I or O just locked onto a clip edge here: a short line shows where. */
+  edgeSnapCue?: { time: number, id: number } | undefined,
   isFileOpened: boolean,
   onWheel: WheelEventHandler,
   commandedTimeRef: MutableRefObject<number>,
   goToTimecode: () => void,
   darkMode: boolean,
   setCutTime: UseSegments['setCutTime'];
+  setCutStart: () => void,
+  setCutEnd: () => void,
   overlayClips: OverlayClip[],
   selectedOverlayId: string | undefined,
   onSelectOverlay: (overlayId: string | undefined) => void,
-  onUpdateOverlayClip: (overlayId: string, updater: (clip: OverlayClip) => OverlayClip) => void,
+  onUpdateOverlayClip: (overlayId: string, updater: (clip: OverlayClip) => OverlayClip, undo?: UndoableSetOptions) => void,
   onDeleteOverlayClip: (overlayId: string) => void,
   speedControlsSegmentIds: ReadonlySet<string>,
   onChangeSegmentSpeed: (segmentId: string, speed: number) => void,
@@ -201,28 +300,34 @@ function Timeline({
   onEditSegmentCrop: (index: number) => void,
   onToggleSegmentSpeedControls: (segmentId: string) => void,
   onRemoveSegmentSpeed: (segmentId: string) => void,
+  /** Simple mode's clip-block menu: split a clip at the playhead, duplicate it, remove it. */
+  onRemoveSegment?: ((index: number, wholeSegment?: true) => void) | undefined,
+  /** The keys that remove the selected clip, shown in the clip menu. */
+  removeSegmentKeys?: string | undefined,
+  /** The keys of the timeline menu's items (I, O, G by default). */
+  menuKeys?: { setCutStart?: string | undefined, setCutEnd?: string | undefined, goToTimecode?: string | undefined } | undefined,
+  /** Clips picked in the Clips panel for Delete. */
+  pickedClipIds?: readonly string[] | undefined,
+  /** Media with video can have text: its lane is then always shown, so adding text doesn't resize the preview. */
+  hasVideo: boolean,
 }) {
   const { t } = useTranslation();
 
-  const { invertCutSegments, springAnimation, segmentMouseModifierKey } = useUserSettings();
+  const { invertCutSegments, segmentMouseModifierKey, extraMouseModifierKeys, simpleMode } = useUserSettings();
 
   const timelineScrollerRef = useRef<HTMLDivElement>(null);
   const timelineScrollerSkipEventRef = useRef<boolean>(false);
   const timelineScrollerSkipEventDebounce = useRef<() => void>();
   const timelineWrapperRef = useRef<HTMLDivElement>(null);
 
-  const [hoveringTime, setHoveringTime] = useState<number>();
+  // The time under the mouse, outside React state: hovering re-renders only the marker, not the timeline.
+  const [hoverStore] = useState(createHoverStore);
 
-  const displayTime = (hoveringTime != null && isFileOpened && !playing ? hoveringTime : relevantTime) + startTimeOffset;
-  const displayTimePercent = useMemo(() => `${Math.round((displayTime / fileDurationNonZero) * 100)}%`, [displayTime, fileDurationNonZero]);
 
   const isZoomed = zoom > 1;
 
-  const keyFramesInZoomWindow = useMemo(() => (zoomWindowEndTime == null ? [] : neighbouringKeyFrames.filter((f) => f.time >= zoomWindowStartTime && f.time <= zoomWindowEndTime)), [neighbouringKeyFrames, zoomWindowEndTime, zoomWindowStartTime]);
+  const zoomWindowLength = zoomWindowEndTime != null ? zoomWindowEndTime - zoomWindowStartTime : undefined;
 
-  // Don't show keyframes if too packed together (at current zoom)
-  // See https://github.com/mifi/lossless-cut/issues/259
-  const areKeyframesTooClose = keyFramesInZoomWindow.length > zoom * 200;
 
   const retimeSegments = useMemo(() => cutSegments.flatMap((seg, index) => (
     seg.end != null && speedControlsSegmentIds.has(seg.segId) ? [{ seg: { ...seg, end: seg.end }, index }] : []
@@ -230,20 +335,40 @@ function Timeline({
 
   // The live speed of the segment being retimed, plus the timeline length when the drag began.
   const [retimeDrag, setRetimeDrag] = useState<{ segId: string, speed: number, scaleDuration: number }>();
+  // A clip edge being dragged follows the cursor exactly, rather than springing after it.
+  const [segmentDragging, setSegmentDragging] = useState(false);
 
-  const timelineMap = useMemo(() => {
-    if (invertCutSegments) return createTimelineMap([], fileDurationNonZero);
-    const segments = retimeDrag == null ? cutSegments : cutSegments.map((seg) => (seg.segId === retimeDrag.segId ? { ...seg, speed: retimeDrag.speed } : seg));
-    return createTimelineMap(segments, fileDurationNonZero);
-  }, [cutSegments, fileDurationNonZero, invertCutSegments, retimeDrag]);
+  // The text being dragged, and the text lane's rows when the drag began: the other texts keep theirs meanwhile.
+  const [textDrag, setTextDrag] = useState<{ overlayId: string, rows: ReadonlyMap<string, TextLaneRow> }>();
+  const textLaneRows = useMemo(() => getTextLaneRows(overlayClips, textDrag), [overlayClips, textDrag]);
+  const textLaneRowsRef = useRef(textLaneRows);
+  useEffect(() => {
+    textLaneRowsRef.current = textLaneRows;
+  }, [textLaneRows]);
+
+  // Only clips at another speed shape the map: keyed on them, so a plain trim or edit keeps the same map (and the
+  // same toLanePercent), and the other clips, the filmstrip and the ruler don't re-render.
+  const retimedSegments = (retimeDrag == null ? cutSegments : cutSegments.map((seg) => (seg.segId === retimeDrag.segId ? { ...seg, speed: retimeDrag.speed } : seg)))
+    .filter((seg) => seg.end != null && seg.end > seg.start && (seg.speed ?? 1) !== 1);
+  const retimedKey = invertCutSegments ? '' : retimedSegments.map((seg) => `${seg.start}:${seg.end}:${seg.speed}`).join('|');
+  const timelineMap = useMemo(
+    () => createTimelineMap(invertCutSegments ? [] : retimedSegments, fileDurationNonZero),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [retimedKey, fileDurationNonZero, invertCutSegments],
+  );
 
   // While retiming, the pixel scale stays fixed so the edge tracks the cursor: lanes grow or
   // shrink and scroll (with room to keep dragging) instead of the whole timeline refitting.
   const scaleDuration = retimeDrag?.scaleDuration ?? timelineMap.displayDuration;
-  const laneDuration = timelineMap.displayDuration + (retimeDrag != null ? (scaleDuration / zoom) * retimeTrailingSpace : 0);
-  const laneWidthPercent = zoom * 100 * (laneDuration / scaleDuration);
+  const [scrollerWidth, setScrollerWidth] = useState(0);
+  const laneZoom = scrollerWidth > 0 ? Math.min(zoom, maxLanePx / scrollerWidth) : zoom;
+  const laneDuration = timelineMap.displayDuration + (retimeDrag != null ? (scaleDuration / laneZoom) * retimeTrailingSpace : 0);
+  const laneWidthPercent = laneZoom * 100 * (laneDuration / scaleDuration);
 
   const retimeDragging = retimeDrag != null;
+  // What the lanes draw: in the simple editor an edit's new edges glide in, on every lane together (advanced mode keeps
+  // its spring).
+  const drawnSegments = useGlidingSegments(cutSegments, !simpleMode || retimeDragging || segmentDragging);
   const timelineMapRef = useRef(timelineMap);
   useEffect(() => {
     timelineMapRef.current = timelineMap;
@@ -257,8 +382,6 @@ function Timeline({
     return pos !== undefined ? `${pos * 100}%` : undefined;
   }, [calculateTimelinePos]);
 
-  const currentTimePercent = useMemo(() => calculateTimelinePercent(playerTime), [calculateTimelinePercent, playerTime]);
-  const commandedTimePercent = useMemo(() => calculateTimelinePercent(commandedTime), [calculateTimelinePercent, commandedTime]);
 
   const timeOfInterestPosPixels = useMemo(() => {
     // https://github.com/mifi/lossless-cut/issues/676
@@ -317,14 +440,14 @@ function Timeline({
 
     if (isZoomed) {
       invariant(timelineScrollerRef.current != null);
-      const zoomedTargetWidth = timelineScrollerRef.current.offsetWidth * zoom;
+      const zoomedTargetWidth = timelineScrollerRef.current.offsetWidth * laneZoom;
 
       const map = timelineMapRef.current;
       const scrollLeft = Math.max((map.toDisplay(commandedTimeRef.current) / map.displayDuration) * zoomedTargetWidth - timelineScrollerRef.current.offsetWidth / 2, 0);
       scrollLeftMotion.set(scrollLeft);
       timelineScrollerRef.current.scrollLeft = scrollLeft;
     }
-  }, [zoom, commandedTimeRef, scrollLeftMotion, isZoomed]);
+  }, [laneZoom, commandedTimeRef, scrollLeftMotion, isZoomed]);
 
 
   useEffect(() => {
@@ -339,8 +462,38 @@ function Timeline({
     };
   }, []);
 
+  useEffect(() => {
+    const scroller = timelineScrollerRef.current;
+    invariant(scroller != null);
+    const observer = new ResizeObserver(() => setScrollerWidth(scroller.offsetWidth));
+    observer.observe(scroller);
+    setScrollerWidth(scroller.offsetWidth);
+    return () => observer.disconnect();
+  }, []);
+
+  // The visible start while scrolling is kept here, updated once per frame, and handed to the editor only once
+  // scrolling stops (it's only used there for thumbnails): scrolling and auto-pan don't re-render the whole editor.
+  const [visibleStart, setVisibleStart] = useState(zoomWindowStartTime);
+  const [propStart, setPropStart] = useState(zoomWindowStartTime);
+  if (zoomWindowStartTime !== propStart) {
+    // The editor moved it (e.g. a new file): follow.
+    setPropStart(zoomWindowStartTime);
+    setVisibleStart(zoomWindowStartTime);
+  }
+  const scrollFrameRef = useRef(0);
+  const reportTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => {
+    cancelAnimationFrame(scrollFrameRef.current);
+    clearTimeout(reportTimerRef.current);
+  }, []);
   const onTimelineScroll = useCallback(() => {
-    onZoomWindowStartTimeChange(calcZoomWindowStartTime());
+    cancelAnimationFrame(scrollFrameRef.current);
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      const start = calcZoomWindowStartTime();
+      setVisibleStart(start);
+      clearTimeout(reportTimerRef.current);
+      reportTimerRef.current = setTimeout(() => onZoomWindowStartTimeChange(start), 250);
+    });
   }, [calcZoomWindowStartTime, onZoomWindowStartTimeChange]);
 
   // Keep cursor in middle while scrolling
@@ -364,8 +517,8 @@ function Timeline({
   const mouseDownRef = useRef<unknown>();
 
   useEffect(() => {
-    setHoveringTime(undefined);
-  }, [relevantTime]);
+    hoverStore.set(undefined);
+  }, [hoverStore, relevantTime]);
 
   // for performance
   const currentCutSegRef = useRef<StateSegment | undefined>(currentCutSeg);
@@ -391,7 +544,7 @@ function Timeline({
     // start/end handles 1.5% of visible timeline
     const threshold = ((0.01 / 2) * fileDurationNonZero) / zoom;
 
-    if (currentCutSeg != null && currentCutSeg.selected && e[keyMap[segmentMouseModifierKey]]) {
+    if (currentCutSeg != null && currentCutSeg.selected && isGestureModifierHeld(e, segmentMouseModifierKey, extraMouseModifierKeys, 'segment')) {
       if (Math.abs(mouseTimelinePos - currentCutSeg.start) < threshold) {
         resizingSegmentRef.current = { operation: currentCutSeg.end == null ? 'move' : 'start' }; // move marker or resize segment
       } else if (currentCutSeg.end != null && Math.abs(mouseTimelinePos - currentCutSeg.end) < threshold) {
@@ -399,22 +552,30 @@ function Timeline({
       } else if (currentCutSeg.end != null && mouseTimelinePos >= currentCutSeg.start && mouseTimelinePos <= currentCutSeg.end) {
         resizingSegmentRef.current = { operation: 'move', offset: mouseTimelinePos - currentCutSeg.start };
       }
+      if (resizingSegmentRef.current != null) setSegmentDragging(true);
     }
 
     mouseDownRef.current = e.target;
+    let scrubbing = false;
+    // Every move of one drag is one undo step.
+    const undo = { coalesceKey: `segment-drag:${Date.now()}`, wholeGesture: true };
 
     function onMouseMove(e2: MouseEvent) {
       if (mouseDownRef.current == null) return;
+      if (!scrubbing) {
+        scrubbing = true;
+        onScrubbingChange(true);
+      }
       const mouseDragTimelinePos = getMouseTimelinePos(e2);
       seekAbs(mouseDragTimelinePos);
       try {
         // eslint-disable-next-line unicorn/prefer-switch
         if (resizingSegmentRef.current?.operation === 'start') {
-          setCutTime('start', mouseDragTimelinePos);
+          setCutTime('start', mouseDragTimelinePos, undo);
         } else if (resizingSegmentRef?.current?.operation === 'end') {
-          setCutTime('end', mouseDragTimelinePos);
+          setCutTime('end', mouseDragTimelinePos, undo);
         } else if (resizingSegmentRef?.current?.operation === 'move') {
-          setCutTime('move', mouseDragTimelinePos - (resizingSegmentRef.current.offset ?? 0));
+          setCutTime('move', mouseDragTimelinePos - (resizingSegmentRef.current.offset ?? 0), undo);
         }
       } catch (err) {
         console.warn('Error while resizing segment:', err instanceof Error ? err.message : err);
@@ -424,8 +585,10 @@ function Timeline({
     function onMouseUp() {
       mouseDownRef.current = undefined;
       resizingSegmentRef.current = undefined;
+      setSegmentDragging(false);
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('mousemove', onMouseMove);
+      if (scrubbing) onScrubbingChange(false);
     }
 
     // https://github.com/mifi/lossless-cut/issues/1432
@@ -433,7 +596,55 @@ function Timeline({
     // https://stackoverflow.com/questions/6073505/what-is-the-difference-between-screenx-y-clientx-y-and-pagex-y
     window.addEventListener('mouseup', onMouseUp, { once: true });
     window.addEventListener('mousemove', onMouseMove);
-  }, [fileDurationNonZero, getMouseTimelinePos, seekAbs, segmentMouseModifierKey, setCutTime, zoom]);
+  }, [extraMouseModifierKeys, fileDurationNonZero, getMouseTimelinePos, onScrubbingChange, seekAbs, segmentMouseModifierKey, setCutTime, zoom]);
+
+  // Simple mode: drag an edge handle of the active clip to trim it (no modifier key needed).
+  const onTrimHandleMouseDown = useCallback((edge: 'start' | 'end') => (e: ReactMouseEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // eslint-disable-next-line no-shadow
+    const currentCutSeg = currentCutSegRef.current;
+    if (currentCutSeg == null) return;
+    seekAbs(edge === 'start' ? currentCutSeg.start : (currentCutSeg.end ?? currentCutSeg.start));
+    resizingSegmentRef.current = { operation: edge };
+    setSegmentDragging(true);
+    const releaseCursor = holdDragCursor('ew-resize');
+    mouseDownRef.current = e.target;
+    let scrubbing = false;
+    // The whole drag is one undo step, not one per mouse move.
+    const undo = { coalesceKey: `trim:${edge}:${Date.now()}`, wholeGesture: true };
+
+    function onMouseMove(e2: MouseEvent) {
+      if (!scrubbing) {
+        scrubbing = true;
+        onScrubbingChange(true);
+      }
+      const time = getMouseTimelinePos(e2);
+      seekAbs(time);
+      try {
+        setCutTime(edge, time, undo);
+      } catch (err) {
+        console.warn('Error while trimming clip:', err instanceof Error ? err.message : err);
+      }
+    }
+
+    function onMouseUp() {
+      mouseDownRef.current = undefined;
+      resizingSegmentRef.current = undefined;
+      setSegmentDragging(false);
+      releaseCursor();
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('blur', onMouseUp);
+      window.removeEventListener('mousemove', onMouseMove);
+      if (scrubbing) onScrubbingChange(false);
+    }
+
+    window.addEventListener('mouseup', onMouseUp, { once: true });
+    // The window losing focus mid-drag (Alt+Tab) may never see the mouse let go: the drag ends there.
+    window.addEventListener('blur', onMouseUp, { once: true });
+    window.addEventListener('mousemove', onMouseMove);
+  }, [getMouseTimelinePos, onScrubbingChange, seekAbs, setCutTime]);
 
   const onOverlayMouseDown = useCallback((overlayClip: OverlayClip, mode: 'start' | 'end' | 'move') => (e: ReactMouseEvent<HTMLElement>) => {
     if (e.nativeEvent.buttons !== 1) return;
@@ -450,10 +661,19 @@ function Timeline({
       start: overlayClip.start,
       end: overlayClip.end,
     };
+    const releaseCursor = holdDragCursor(mode === 'move' ? 'grabbing' : 'ew-resize');
+    // One undo step per drag, however long it pauses.
+    const undo = { coalesceKey: `text-clip:${overlayClip.overlayId}:${Date.now()}`, wholeGesture: true };
+    let scrubbing = false;
 
     function onMouseMove(e2: MouseEvent) {
       const overlayInteraction = overlayInteractionRef.current;
       if (overlayInteraction == null) return;
+      if (!scrubbing) {
+        scrubbing = true;
+        onScrubbingChange(true);
+        setTextDrag({ overlayId: overlayClip.overlayId, rows: textLaneRowsRef.current });
+      }
       const mouseDragTimelinePos = getMouseTimelinePos(e2);
       seekAbs(mouseDragTimelinePos);
       onUpdateOverlayClip(overlayClip.overlayId, (clip) => {
@@ -487,18 +707,25 @@ function Timeline({
           ...clip,
           end: Math.min(fileDurationNonZero, Math.max(overlayInteraction.end + delta, overlayInteraction.start + minTextOverlayDuration)),
         };
-      });
+      }, undo);
     }
 
     function onMouseUp() {
       overlayInteractionRef.current = undefined;
+      releaseCursor();
       window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('blur', onMouseUp);
       window.removeEventListener('mousemove', onMouseMove);
+      if (scrubbing) {
+        onScrubbingChange(false);
+        setTextDrag(undefined);
+      }
     }
 
     window.addEventListener('mouseup', onMouseUp, { once: true });
+    window.addEventListener('blur', onMouseUp, { once: true });
     window.addEventListener('mousemove', onMouseMove);
-  }, [fileDurationNonZero, getMouseTimelinePos, onSelectOverlay, onUpdateOverlayClip, seekAbs]);
+  }, [fileDurationNonZero, getMouseTimelinePos, onScrubbingChange, onSelectOverlay, onUpdateOverlayClip, seekAbs]);
 
   const onRetimeHandleMouseDown = useCallback((seg: Omit<StateSegment, 'end'> & { end: number }, index: number) => (event: ReactMouseEvent<HTMLElement>) => {
     const scroller = timelineScrollerRef.current;
@@ -523,6 +750,7 @@ function Timeline({
       setRetimeDrag({ segId: seg.segId, speed: nextSpeed, scaleDuration: dragScaleDuration });
     };
     setRetimeDrag({ segId: seg.segId, speed: committedSpeed, scaleDuration: dragScaleDuration });
+    const releaseCursor = holdDragCursor('ew-resize');
 
     // Dragging toward (or past) either edge scrolls the timeline so the drag can continue.
     let frame = requestAnimationFrame(function autoScroll() {
@@ -541,6 +769,7 @@ function Timeline({
     const finish = (commit: boolean) => {
       cancelAnimationFrame(frame);
       listeners.abort();
+      releaseCursor();
       setRetimeDrag(undefined);
       if (commit && nextSpeed !== committedSpeed) onChangeSegmentSpeed(seg.segId, nextSpeed);
     };
@@ -549,6 +778,8 @@ function Timeline({
       update();
     }, { signal: listeners.signal });
     window.addEventListener('mouseup', () => finish(true), { signal: listeners.signal });
+    // Alt+Tab mid-drag: the mouse may be let go elsewhere, so the drag ends (as it is) when the window loses focus.
+    window.addEventListener('blur', () => finish(true), { signal: listeners.signal });
     window.addEventListener('keydown', (keyEvent) => {
       if (keyEvent.key !== 'Escape') return;
       keyEvent.stopPropagation();
@@ -560,42 +791,31 @@ function Timeline({
     event.preventDefault();
     event.stopPropagation();
     onSelectOverlay(overlayClip.overlayId);
-    const menu = Menu.buildFromTemplate([
-      {
-        label: t('Delete text clip'),
+    openMenu({
+      at: { x: event.clientX, y: event.clientY },
+      items: [{
+        // In simple mode a "clip" is a part of the recording; the lane just says "Text".
+        label: simpleMode ? t('Delete text') : t('Delete text clip'),
         click: () => onDeleteOverlayClip(overlayClip.overlayId),
-      },
-    ]);
-    menu.popup({ window: remote.getCurrentWindow() });
-  }, [onDeleteOverlayClip, onSelectOverlay, t]);
-
-  const timeRef = useRef<HTMLDivElement>(null);
-  const timeFadeTimeoutRef = useRef<NodeJS.Timeout>();
+      }],
+    });
+  }, [onDeleteOverlayClip, onSelectOverlay, simpleMode, t]);
 
   const onMouseMove = useCallback<MouseEventHandler<HTMLDivElement>>((e) => {
-    // need to manually check, because we cannot use css :hover when pointer-events: none
-    // and we need pointer-events: none on time because we want to be able to click through it to segments behind (and they are not parent)
-    const rect = timeRef.current?.getBoundingClientRect();
-    const isInBounds = rect && e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
-    const showHide = (show: boolean) => timeRef.current?.style.setProperty('opacity', show ? '0.2' : '1');
-    if (isInBounds != null) showHide(isInBounds);
-    // console.log('isInBounds', isInBounds);
-
-    // https://github.com/mifi/lossless-cut/issues/2592#issuecomment-3476211496
-    if (timeFadeTimeoutRef.current) clearTimeout(timeFadeTimeoutRef.current);
-    timeFadeTimeoutRef.current = setTimeout(() => showHide(false), 1000);
-
-    if (!mouseDownRef.current) { // no button pressed
-      setHoveringTime(getMouseTimelinePos(e.nativeEvent));
-    }
+    // The time under the pointer shows only while nothing is being dragged (the playhead, a clip's edge…).
+    if (mouseDownRef.current || e.buttons !== 0) hoverStore.set(undefined);
+    else hoverStore.set(getMouseTimelinePos(e.nativeEvent));
     e.preventDefault();
-  }, [getMouseTimelinePos]);
+  }, [getMouseTimelinePos, hoverStore]);
 
-  const onMouseOut = useCallback(() => setHoveringTime(undefined), []);
+  const onMouseOut = useCallback(() => hoverStore.set(undefined), [hoverStore]);
 
   const contextMenuTemplate = useMemo(() => [
-    { label: t('Seek to timecode'), click: goToTimecode },
-  ], [goToTimecode, t]);
+    { label: simpleMode ? t('Start a clip at the playhead') : t('Start current segment at current time'), click: setCutStart, keys: menuKeys?.setCutStart },
+    { label: simpleMode ? t('End the clip at the playhead') : t('End current segment at current time'), click: setCutEnd, keys: menuKeys?.setCutEnd },
+    { type: 'separator' as const },
+    { label: simpleMode ? t('Go to a time…') : t('Seek to timecode'), click: goToTimecode, keys: menuKeys?.goToTimecode },
+  ], [goToTimecode, menuKeys, setCutEnd, setCutStart, simpleMode, t]);
 
   useContextMenu(timelineScrollerRef, contextMenuTemplate);
 
@@ -604,206 +824,324 @@ function Timeline({
     onGenerateOverviewWaveformClick();
   }, [onGenerateOverviewWaveformClick]);
 
+  const showTextLane = hasVideo || overlayClips.length > 0;
+  const noneTicked = cutSegments.some((seg) => seg.end != null) && cutSegments.every((seg) => seg.end == null || !seg.selected);
+  // The waveform lane keeps its height whether it shows the waveform or the "zoom in" hint, so zooming
+  // doesn't resize the preview.
+  // (Simple mode has its own audio track under the clips instead.)
+  const showWaveformLane = waveformEnabled && !simpleMode;
+  const showWaveformHint = showWaveformLane && !shouldShowWaveform;
+  const showWaveforms = showWaveformLane && shouldShowWaveform && (waveforms.length > 0 || overviewWaveform != null);
+  // Simple mode draws speed controls on the clip block itself rather than in a lane of their own.
+  const retimeOverlay = simpleMode;
+  const showRetimeLane = !retimeOverlay && retimeSegments.length > 0;
+  const lanePx = scrollerWidth * (laneWidthPercent / 100);
+  const keyFramesInZoomWindow = useMemo(() => (zoomWindowLength == null ? [] : neighbouringKeyFrames.filter((f) => f.time >= visibleStart && f.time <= visibleStart + zoomWindowLength)), [neighbouringKeyFrames, visibleStart, zoomWindowLength]);
+  // Don't show keyframes if too packed together (at current zoom)
+  // See https://github.com/mifi/lossless-cut/issues/259
+  const areKeyframesTooClose = keyFramesInZoomWindow.length > zoom * 200;
+  const pxToTime = useCallback((px: number) => timelineMap.toSource((px / Math.max(lanePx, 1)) * laneDuration), [laneDuration, lanePx, timelineMap]);
+  // The visible stretch of the lane, in source time. Retimed clips stretch or squeeze the lane, so
+  // this is mapped from lane time rather than taken as a fixed share of the file.
+  const visibleEnd = lanePx > 0
+    ? timelineMap.toSource(Math.min(laneDuration, timelineMap.toDisplay(visibleStart) + (scrollerWidth / lanePx) * laneDuration))
+    : (zoomWindowEndTime ?? fileDurationNonZero);
+
+  // Simple mode's filmstrip: tiles of the video's shape at the clip blocks' height, side by side, made only for
+  // the visible stretch and a few tiles either side (in steps of 8 tiles, so scrolling re-renders them rarely).
+  const showFilm = simpleMode && !invertCutSegments;
+  const filmTileWidth = filmTileHeight * (filmstrip.aspect ?? 16 / 9);
+  const filmStepPx = filmTileWidth * 8;
+  const visibleStartPx = (toLanePercent(visibleStart) / 100) * lanePx;
+  const filmFromPx = (Math.floor(visibleStartPx / filmStepPx) - 1) * filmStepPx;
+  const filmToPx = (Math.ceil((visibleStartPx + scrollerWidth) / filmStepPx) + 1) * filmStepPx;
+  const filmTiles = useMemo(() => (showFilm && filmstrip.frames.length > 0
+    ? getFilmTiles({ frames: filmstrip.frames, covered: filmstrip.covered, tileWidth: filmTileWidth, fromPx: filmFromPx, toPx: filmToPx, lanePx, pxToTime })
+    : []), [filmFromPx, filmTileWidth, filmToPx, filmstrip.covered, filmstrip.frames, lanePx, pxToTime, showFilm]);
+  // The filmstrip does what's in view first, and makes denser frames when zoomed in past its own: as dense as the
+  // most stretched part of the view needs (a slowed clip's tiles each span less of the recording).
+  const { setView: setFilmstripView } = filmstrip;
+  const filmTileSeconds = lanePx > 0 ? ((laneDuration / lanePx) * filmTileWidth) / getMaxScale(timelineMap, visibleStart, visibleEnd) : 0;
+  useEffect(() => {
+    if (!showFilm || !(filmTileSeconds > 0) || !(visibleEnd > visibleStart)) return;
+    const tileTimes = getFilmTileSlots({ tileWidth: filmTileWidth, fromPx: visibleStartPx, toPx: visibleStartPx + scrollerWidth, lanePx, pxToTime }).map((slot) => slot.time);
+    setFilmstripView({ from: visibleStart, to: visibleEnd, tileSeconds: filmTileSeconds, tileTimes });
+  }, [filmTileSeconds, filmTileWidth, lanePx, pxToTime, scrollerWidth, setFilmstripView, showFilm, visibleEnd, visibleStart, visibleStartPx]);
+
+  const formatHoverLabel = useCallback((hoverTime: number) => {
+    const time = hoverTime + startTimeOffset;
+    return simpleMode ? formatClockTime(time, { decimals: 2, showHours: fileDurationNonZero >= 3600 }) : formatTimeAndFrames(time);
+  }, [fileDurationNonZero, formatTimeAndFrames, simpleMode, startTimeOffset]);
+  const hoverMarker = useMemo(() => (
+    <HoverMarker store={hoverStore} visible={isFileOpened && !playing} toLanePercent={toLanePercent} formatLabel={formatHoverLabel} />
+  ), [formatHoverLabel, hoverStore, isFileOpened, playing, toLanePercent]);
+
   return (
-    // eslint-disable-next-line jsx-a11y/no-static-element-interactions,jsx-a11y/mouse-events-have-key-events
-    <div
-      style={{ position: 'relative', borderTop: '1px solid var(--gray-7)', borderBottom: '1px solid var(--gray-7)' }}
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      // eslint-disable-next-line jsx-a11y/mouse-events-have-key-events
-      onMouseOut={onMouseOut}
-    >
-      {(waveformEnabled && !shouldShowWaveform) && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: timelineHeight, bottom: timelineHeight, left: 0, right: 0, color: 'var(--gray-11)' }}>
-          {t('Zoom in more to view waveform')}
-          <Button onClick={onGenerateOverviewWaveformClick2} style={{ marginLeft: '.5em' }}>{t('Load overview')}</Button>
-        </div>
-      )}
-
-      <div
-        style={{ overflowX: 'scroll', overflowY: 'hidden' }}
-        className="hide-scrollbar"
-        onWheel={onWheel}
-        onScroll={onTimelineScroll}
-        ref={timelineScrollerRef}
-      >
-        {waveformEnabled && shouldShowWaveform && (waveforms.length > 0 || overviewWaveform != null) && (
-          <Waveforms
-            timelineMap={timelineMap}
-            laneDuration={laneDuration}
-            laneWidthPercent={laneWidthPercent}
-            fileDurationNonZero={fileDurationNonZero}
-            waveforms={waveforms}
-            overviewWaveform={overviewWaveform}
-            zoom={zoom}
-            darkMode={darkMode}
-            height={waveformHeight}
-          />
-        )}
-
-        {showThumbnails && (
-          <div style={{ height: 60, width: `${laneWidthPercent}%`, position: 'relative', marginBottom: 3 }}>
-            {thumbnails.map((thumbnail, i) => {
-              const leftPercent = toLanePercent(thumbnail.time);
-              const nextThumbnail = thumbnails[i + 1];
-              const nextThumbTime = nextThumbnail ? nextThumbnail.time : fileDurationNonZero;
-              const maxWidthPercent = (toLanePercent(nextThumbTime) - leftPercent) * 0.9;
-              return (
-                <img key={thumbnail.url} src={thumbnail.url} alt="" style={{ position: 'absolute', left: `${leftPercent}%`, height: '100%', boxSizing: 'border-box', maxWidth: `${maxWidthPercent}%`, objectFit: 'cover', border: '1px solid rgba(255, 255, 255, 0.5)', borderBottomRightRadius: 15, borderTopLeftRadius: 15, borderTopRightRadius: 15, pointerEvents: 'none' }} />
-              );
-            })}
-          </div>
-        )}
-
-        {overlayClips.length > 0 && (
-          <div style={{ height: textLaneHeight, width: `${laneWidthPercent}%`, position: 'relative', backgroundColor: 'var(--gray-3)', borderTop: '1px solid var(--gray-7)' }}>
-            <div style={laneLabelStyle}>Text</div>
-
-            {overlayClips.map((overlayClip) => {
-              const left = calculateTimelinePercent(overlayClip.start);
-              const width = `${Math.max(toLanePercent(overlayClip.end) - toLanePercent(overlayClip.start), 0.5)}%`;
-              const selected = overlayClip.overlayId === selectedOverlayId;
-
-              return (
-                <div
-                  key={overlayClip.overlayId}
-                  role="button"
-                  tabIndex={-1}
-                  onMouseDown={onOverlayMouseDown(overlayClip, 'move')}
-                  onContextMenu={onOverlayContextMenu(overlayClip)}
-                  style={{
-                    position: 'absolute',
-                    left,
-                    width,
-                    top: 3,
-                    bottom: 3,
-                    background: selected ? 'rgba(76, 191, 255, 0.22)' : 'rgba(255, 255, 255, 0.12)',
-                    border: selected ? '1px solid rgba(76, 191, 255, 0.92)' : '1px solid rgba(255, 255, 255, 0.22)',
-                    borderRadius: 6,
-                    color: 'var(--gray-12)',
-                    fontSize: 12,
-                    display: 'flex',
-                    alignItems: 'center',
-                    overflow: 'hidden',
-                    boxSizing: 'border-box',
-                    cursor: 'grab',
-                    boxShadow: selected ? '0 0 0 1px rgba(76, 191, 255, 0.18), 0 8px 18px rgba(12, 18, 26, 0.18)' : undefined,
-                  }}
-                >
-                  <button
-                    type="button"
-                    onMouseDown={onOverlayMouseDown(overlayClip, 'start')}
-                    style={{ position: 'absolute', left: -4, top: 0, bottom: 0, width: 14, cursor: 'ew-resize', border: 'none', background: selected ? 'linear-gradient(90deg, rgba(76, 191, 255, 0.24), transparent)' : 'transparent' }}
-                  />
-                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', pointerEvents: 'none', margin: selected ? '0 36px 0 10px' : '0 10px', width: '100%', fontWeight: selected ? 700 : 600 }}>{overlayClip.text || 'Text'}</div>
-                  {selected && (
-                    <LaneDeleteButton title={t('Delete text clip')} onDelete={() => onDeleteOverlayClip(overlayClip.overlayId)} />
-                  )}
-                  <button
-                    type="button"
-                    onMouseDown={onOverlayMouseDown(overlayClip, 'end')}
-                    style={{ position: 'absolute', right: -4, top: 0, bottom: 0, width: 14, cursor: 'ew-resize', border: 'none', background: selected ? 'linear-gradient(270deg, rgba(76, 191, 255, 0.24), transparent)' : 'transparent' }}
-                  />
-                </div>
-              );
-            })}
-
-            {currentTimePercent !== undefined && (
-              <motion.div transition={springAnimation} animate={{ left: currentTimePercent }} style={{ position: 'absolute', bottom: 0, top: 0, backgroundColor: 'var(--gray-12)', width: currentTimeWidth, pointerEvents: 'none' }} />
-            )}
-            {commandedTimePercent !== undefined && (
-              <CommandedTime commandedTimePercent={commandedTimePercent} />
-            )}
-          </div>
-        )}
-
-        {retimeSegments.length > 0 && (
-          <div style={{ height: retimeLaneHeight, width: `${laneWidthPercent}%`, position: 'relative', isolation: 'isolate', overflow: 'hidden', backgroundColor: 'var(--gray-2)', borderTop: '1px solid var(--gray-7)' }}>
-            <div style={laneLabelStyle}>Speed</div>
-
-            {retimeSegments.map(({ seg, index }) => {
-              const left = toLanePercent(seg.start);
-              const dragging = retimeDrag?.segId === seg.segId;
-              const speed = dragging ? retimeDrag.speed : getSegmentSpeed(seg);
-              return (
-                <SegmentRetimeBar
-                  key={seg.segId}
-                  left={`${left}%`}
-                  width={`${toLanePercent(seg.end) - left}%`}
-                  speed={speed}
-                  committedSpeed={getSegmentSpeed(seg)}
-                  outputDuration={getSegmentOutputDuration({ ...seg, speed })}
-                  isActive={index === currentSegIndexSafe}
-                  dragging={dragging}
-                  formatTimecode={formatTimecode}
-                  onHandleMouseDown={onRetimeHandleMouseDown(seg, index)}
-                  onSelect={() => setCurrentSegIndex(index)}
-                  onChange={(nextSpeed) => onChangeSegmentSpeed(seg.segId, nextSpeed)}
-                  onEdit={() => onEditSegmentSpeed(index)}
-                  onRemove={() => onRemoveSegmentSpeed(seg.segId)}
-                  onHide={() => onToggleSegmentSpeedControls(seg.segId)}
-                />
-              );
-            })}
-          </div>
-        )}
-
-        <div
-          style={{ height: timelineHeight, width: `${laneWidthPercent}%`, position: 'relative', backgroundColor: timelineBackground, transition: darkModeTransition, borderTop: overlayClips.length > 0 ? '1px solid var(--gray-7)' : undefined }}
-          ref={timelineWrapperRef}
-        >
-          <div style={laneLabelStyle}>Video</div>
-
-          {inverseCutSegments.map((seg) => (
-            <BetweenSegments
-              key={seg.segId}
-              left={toLanePercent(seg.start)}
-              width={toLanePercent(seg.end) - toLanePercent(seg.start)}
-              instant={retimeDragging}
-              invertCutSegments={invertCutSegments}
-            />
-          ))}
-
-          {cutSegments.map((seg, i) => {
-            const selected = invertCutSegments || seg.selected;
-
-            return (
-              <TimelineSeg
-                key={seg.segId}
-                seg={seg}
-                segNum={i}
-                onSegClick={setCurrentSegIndex}
-                isActive={i === currentSegIndexSafe}
-                toLanePercent={toLanePercent}
-                instant={retimeDragging}
-                invertCutSegments={invertCutSegments}
-                formatTimecode={formatTimecode}
-                selected={selected}
-                speedControlsVisible={speedControlsSegmentIds.has(seg.segId)}
-                onEditSpeed={onEditSegmentSpeed}
-                onRemoveSpeed={onRemoveSegmentSpeed}
-                onToggleSpeedControls={onToggleSegmentSpeedControls}
-                onEditCrop={onEditSegmentCrop}
-              />
-            );
-          })}
-
-          {shouldShowKeyframes && !areKeyframesTooClose && keyFramesInZoomWindow.map((f) => (
-            <div key={f.time} style={{ position: 'absolute', top: 0, bottom: 0, left: `${toLanePercent(f.time)}%`, marginLeft: -1, width: 1, background: 'var(--gray-10)', pointerEvents: 'none' }} />
-          ))}
-
-          {currentTimePercent !== undefined && (
-            <motion.div transition={springAnimation} animate={{ left: currentTimePercent }} style={{ position: 'absolute', bottom: 0, top: 0, backgroundColor: 'var(--gray-12)', width: currentTimeWidth, pointerEvents: 'none' }} />
-          )}
-          {commandedTimePercent !== undefined && (
-            <CommandedTime commandedTimePercent={commandedTimePercent} />
-          )}
-        </div>
+    <div className={styles['timeline']}>
+      {/* The lane labels are decoration; the audio track's controls are real buttons, so only the labels are hidden. */}
+      <div className={styles['gutter']}>
+        <div style={{ height: rulerHeight }} aria-hidden />
+        {showWaveformLane && <div className={styles['laneLabel']} style={{ height: waveformHeight }} aria-hidden>{t('Audio')}</div>}
+        {showThumbnails && <div style={{ height: thumbnailsHeight }} aria-hidden />}
+        {showTextLane && <div className={styles['laneLabel']} style={{ height: textLaneHeight }} aria-hidden>{t('Text')}</div>}
+        {showRetimeLane && <div className={styles['laneLabel']} style={{ height: retimeLaneHeight }} aria-hidden>{t('Speed')}</div>}
+        <div className={styles['laneLabel']} style={{ height: simpleMode ? simpleClipLaneHeight : clipLaneHeight }} aria-hidden>{simpleMode ? t('Clips') : t('Segments')}</div>
+        {showAudioLane && <div style={{ height: audioLaneHeight, display: 'flex', flexDirection: 'column' }}>{audioHeader}</div>}
       </div>
 
-      <div style={timeWrapperStyle} className={styles['time-wrapper']}>
-        <div className={styles['time']} ref={timeRef}>
-          {formatTimeAndFrames(displayTime)}{isZoomed ? ` ${displayTimePercent}` : ''}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions,jsx-a11y/mouse-events-have-key-events */}
+      <div
+        className={styles['tracks']}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        // eslint-disable-next-line jsx-a11y/mouse-events-have-key-events
+        onMouseOut={onMouseOut}
+      >
+        <div
+          // Sized by the window, never by the (zoomed, many times wider) lane inside it.
+          style={{ overflowX: 'scroll', overflowY: 'hidden', contain: 'inline-size' }}
+          className="hide-scrollbar"
+          // Its width tells how many pixels a time gap takes (I and O don't snap across a gap you can see).
+          data-timeline-scroller=""
+          onWheel={onWheel}
+          onScroll={onTimelineScroll}
+          ref={timelineScrollerRef}
+        >
+          {/* In pixels once the scroller's width is known (offsetWidth, rounded), so what's placed in percent (clips,
+              ruler, texts) and what's placed in pixels (playhead, filmstrip tiles, audio track) agree: far zoomed in,
+              the scroller's fraction of a pixel put them hundreds of pixels apart. */}
+          <div style={{ width: scrollerWidth > 0 ? lanePx : `${laneWidthPercent}%`, position: 'relative' }}>
+            <TimelineRuler
+              toLanePercent={toLanePercent}
+              lanePx={lanePx}
+              laneDuration={laneDuration}
+              visibleStart={visibleStart}
+              visibleEnd={visibleEnd}
+              fileDuration={fileDurationNonZero}
+              height={rulerHeight}
+            >
+              {hoverMarker}
+            </TimelineRuler>
+
+            {showWaveformHint && (
+              <div className={styles['waveformHint']} style={{ height: waveformHeight }}>
+                {t('Zoom in more to view waveform')}
+                <Button size="sm" onClick={onGenerateOverviewWaveformClick2}>{t('Load overview')}</Button>
+              </div>
+            )}
+            {showWaveformLane && !showWaveformHint && !showWaveforms && <div style={{ height: waveformHeight }} className={styles['loading-bg']} />}
+            {showWaveforms && (
+              <Waveforms
+                timelineMap={timelineMap}
+                laneDuration={laneDuration}
+                fileDurationNonZero={fileDurationNonZero}
+                waveforms={waveforms}
+                overviewWaveform={overviewWaveform}
+                zoom={zoom}
+                darkMode={darkMode}
+                height={waveformHeight}
+              />
+            )}
+
+            {showThumbnails && (
+              <div style={{ height: thumbnailsHeight - 3, width: '100%', position: 'relative', marginBottom: 3 }}>
+                {thumbnails.map((thumbnail, i) => {
+                  const leftPercent = toLanePercent(thumbnail.time);
+                  const nextThumbnail = thumbnails[i + 1];
+                  const nextThumbTime = nextThumbnail ? nextThumbnail.time : fileDurationNonZero;
+                  const maxWidthPercent = (toLanePercent(nextThumbTime) - leftPercent) * 0.9;
+                  return (
+                    <img key={thumbnail.url} src={thumbnail.url} alt="" style={{ position: 'absolute', left: `${leftPercent}%`, height: '100%', boxSizing: 'border-box', maxWidth: `${maxWidthPercent}%`, objectFit: 'cover', borderRadius: 4, pointerEvents: 'none' }} />
+                  );
+                })}
+              </div>
+            )}
+
+            {showTextLane && (
+              <div className={styles['lane']} style={{ height: textLaneHeight }}>
+                {overlayClips.map((overlayClip) => {
+                  const left = calculateTimelinePercent(overlayClip.start);
+                  const width = `${Math.max(toLanePercent(overlayClip.end) - toLanePercent(overlayClip.start), 0.5)}%`;
+                  const selected = overlayClip.overlayId === selectedOverlayId;
+                  const laneRow = textLaneRows.get(overlayClip.overlayId);
+                  // Sharing its time with other texts: one row of the lane rather than all of it.
+                  const stacked = laneRow != null && laneRow.rows > 1 ? getStackedTextGeometry(laneRow) : undefined;
+                  const deleteLabel = simpleMode ? t('Delete text') : t('Delete text clip');
+
+                  return (
+                    <div
+                      key={overlayClip.overlayId}
+                      role="button"
+                      tabIndex={-1}
+                      className={[styles['textClip'], ...(selected ? [styles['textClipSelected']] : []), ...(stacked != null ? [styles['textClipStacked']] : [])].join(' ')}
+                      title={overlayClip.text}
+                      onMouseDown={onOverlayMouseDown(overlayClip, 'move')}
+                      onContextMenuCapture={onOverlayContextMenu(overlayClip)}
+                      style={stacked != null ? { left, width, top: stacked.top, bottom: 'auto', height: stacked.height } : { left, width }}
+                    >
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        aria-label={t('Change when the text starts')}
+                        className={[styles['textClipHandle'], styles['textClipHandleStart']].join(' ')}
+                        onMouseDown={onOverlayMouseDown(overlayClip, 'start')}
+                      />
+                      <div className={styles['textClipLabel']} style={{ marginRight: selected ? (stacked != null ? 18 : 28) : 8 }}>{overlayClip.text || t('Text')}</div>
+                      {selected && (
+                        // A smaller button fits a stacked row.
+                        <LaneDeleteButton title={deleteLabel} onDelete={() => onDeleteOverlayClip(overlayClip.overlayId)} style={stacked != null ? { right: 3, width: stacked.height, height: stacked.height } : undefined} />
+                      )}
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        aria-label={t('Change when the text ends')}
+                        className={[styles['textClipHandle'], styles['textClipHandleEnd']].join(' ')}
+                        onMouseDown={onOverlayMouseDown(overlayClip, 'end')}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {showRetimeLane && (
+              <div className={styles['lane']} style={{ height: retimeLaneHeight, isolation: 'isolate', overflow: 'hidden' }}>
+                {retimeSegments.map(({ seg, index }) => {
+                  const drawn = drawnSegments[index] ?? seg;
+                  const left = toLanePercent(drawn.start);
+                  const dragging = retimeDrag?.segId === seg.segId;
+                  const speed = dragging ? retimeDrag.speed : getSegmentSpeed(seg);
+                  return (
+                    <SegmentRetimeBar
+                      key={seg.segId}
+                      left={`${left}%`}
+                      width={`${toLanePercent(drawn.end ?? seg.end) - left}%`}
+                      speed={speed}
+                      committedSpeed={getSegmentSpeed(seg)}
+                      outputDuration={getSegmentOutputDuration({ ...seg, speed })}
+                      isActive={index === currentSegIndexSafe}
+                      dragging={dragging}
+                      formatTimecode={formatTimecode}
+                      onHandleMouseDown={onRetimeHandleMouseDown(seg, index)}
+                      onSelect={() => setCurrentSegIndex(index)}
+                      onChange={(nextSpeed) => onChangeSegmentSpeed(seg.segId, nextSpeed)}
+                      onEdit={() => onEditSegmentSpeed(index)}
+                      onRemove={() => onRemoveSegmentSpeed(seg.segId)}
+                      onHide={() => onToggleSegmentSpeedControls(seg.segId)}
+                    />
+                  );
+                })}
+              </div>
+            )}
+
+            <div
+              className={[styles['lane'], styles['clipLane']].join(' ')}
+              style={{ height: simpleMode ? simpleClipLaneHeight : clipLaneHeight, transition: darkModeTransition }}
+              ref={timelineWrapperRef}
+            >
+              {showFilm && filmstrip.frames.length > 0 && <FilmTape tiles={filmTiles} loading={!filmstrip.done} />}
+
+              {inverseCutSegments.map((seg) => (
+                <BetweenSegments
+                  key={seg.segId}
+                  left={toLanePercent(seg.start)}
+                  width={toLanePercent(seg.end) - toLanePercent(seg.start)}
+                  instant={retimeDragging || segmentDragging}
+                  invertCutSegments={invertCutSegments}
+                />
+              ))}
+
+              {cutSegments.map((seg, i) => {
+                // With no clip ticked, the export takes all of them (useSegments).
+                const selected = invertCutSegments || seg.selected || noneTicked;
+
+                return (
+                  <TimelineSeg
+                    key={seg.segId}
+                    seg={drawnSegments[i] ?? seg}
+                    segNum={i}
+                    onSegClick={setCurrentSegIndex}
+                    isActive={i === currentSegIndexSafe}
+                    picked={pickedClipIds?.includes(seg.segId) ?? false}
+                    toLanePercent={toLanePercent}
+                    instant={retimeDragging || segmentDragging}
+                    invertCutSegments={invertCutSegments}
+                    formatTimecode={formatTimecode}
+                    selected={selected}
+                    speedControlsVisible={speedControlsSegmentIds.has(seg.segId)}
+                    onEditSpeed={onEditSegmentSpeed}
+                    onRemoveSpeed={onRemoveSegmentSpeed}
+                    onToggleSpeedControls={onToggleSegmentSpeedControls}
+                    onEditCrop={onEditSegmentCrop}
+                    onEditVolume={onEditClipVolume}
+                    filmTiles={filmTiles}
+                    filmLoading={!filmstrip.done}
+                    lanePx={lanePx}
+                    onTrimHandleMouseDown={simpleMode ? onTrimHandleMouseDown : undefined}
+                    onRemove={simpleMode ? onRemoveSegment : undefined}
+                    removeKeys={removeSegmentKeys}
+                  />
+                );
+              })}
+
+              {retimeOverlay && retimeSegments.map(({ seg, index }) => {
+                const drawn = drawnSegments[index] ?? seg;
+                const left = toLanePercent(drawn.start);
+                const dragging = retimeDrag?.segId === seg.segId;
+                const speed = dragging ? retimeDrag.speed : getSegmentSpeed(seg);
+                return (
+                  <SegmentRetimeBar
+                    key={seg.segId}
+                    overlay
+                    left={`calc(${left}% + ${retimeOverlayInset}px)`}
+                    // max(): a clip narrower than the insets gets no band rather than a negative width.
+                    width={`max(0px, calc(${toLanePercent(drawn.end ?? seg.end) - left}% - ${retimeOverlayInset * 2}px))`}
+                    speed={speed}
+                    committedSpeed={getSegmentSpeed(seg)}
+                    outputDuration={getSegmentOutputDuration({ ...seg, speed })}
+                    isActive={index === currentSegIndexSafe}
+                    dragging={dragging}
+                    formatTimecode={formatTimecode}
+                    onHandleMouseDown={onRetimeHandleMouseDown(seg, index)}
+                    onSelect={() => setCurrentSegIndex(index)}
+                    onChange={(nextSpeed) => onChangeSegmentSpeed(seg.segId, nextSpeed)}
+                    onEdit={() => onEditSegmentSpeed(index)}
+                    onRemove={() => onRemoveSegmentSpeed(seg.segId)}
+                    onHide={() => onToggleSegmentSpeedControls(seg.segId)}
+                  />
+                );
+              })}
+
+              {shouldShowKeyframes && !areKeyframesTooClose && keyFramesInZoomWindow.map((f) => (
+                <div key={f.time} style={{ position: 'absolute', top: 0, bottom: 0, left: `${toLanePercent(f.time)}%`, marginLeft: -1, width: 1, background: 'var(--gray-10)', pointerEvents: 'none' }} />
+              ))}
+            </div>
+
+            {showAudioLane && (
+              <AudioLane
+                peaks={audioPeaks}
+                trackGainDb={audioTrackGainDb}
+                height={audioLaneHeight}
+                segments={drawnSegments}
+                activeIndex={currentSegIndexSafe}
+                noneTicked={noneTicked}
+                invertCutSegments={invertCutSegments}
+                toLanePercent={toLanePercent}
+                pxToTime={pxToTime}
+                lanePx={lanePx}
+                visibleStartPx={visibleStartPx}
+                viewportPx={scrollerWidth}
+                onClipClick={setCurrentSegIndex}
+                onClipContextMenu={onEditClipVolume}
+              />
+            )}
+
+            {edgeSnapCue != null && (
+              <div key={edgeSnapCue.id} className={styles['edgeSnapCue']} style={{ left: `${toLanePercent(edgeSnapCue.time)}%` }} aria-hidden />
+            )}
+
+            <Playhead playing={playing} commandedTime={commandedTime} getCurrentTime={getCurrentTime} calculateTimelinePos={calculateTimelinePos} lanePx={lanePx} />
+          </div>
         </div>
       </div>
     </div>

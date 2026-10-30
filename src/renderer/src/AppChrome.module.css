@@ -1,3 +1,5 @@
+/* Custom title bar. It has no background of its own, so it shares the app's softly lit surface edge to edge;
+   menu and window buttons get rounded, gentle hover states like Beta 5. */
 .wrapper {
   height: 2.7rem;
   display: flex;
@@ -5,17 +7,19 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 0 .35rem 0 .8rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--gray-8) 26%, transparent);
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--blue-8) 12%, transparent), transparent 34%),
-    linear-gradient(180deg, color-mix(in srgb, var(--gray-2) 96%, transparent), color-mix(in srgb, var(--gray-1) 98%, transparent));
-  color: var(--gray-12);
+  background: transparent;
+  color: var(--cp-text);
   flex-shrink: 0;
   -webkit-app-region: drag;
 }
 
 .wrapperInactive {
-  opacity: .92;
+  opacity: .9;
+}
+
+/* Maximised, the window buttons run to the screen's right edge (see .closeControl below). */
+.wrapperMaximized {
+  padding-right: 0;
 }
 
 .left {
@@ -33,24 +37,24 @@
 }
 
 .brandMark {
-  width: 1.55rem;
-  height: 1.55rem;
-  border-radius: .55rem;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 7px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--blue-5) 24%, transparent);
-  border: 1px solid color-mix(in srgb, var(--blue-8) 28%, transparent);
-  color: var(--blue-11);
-  font-size: .92rem;
+  background: linear-gradient(180deg, #4ccad4, #2b8e97);
+  color: #0b1417;
+  font-size: 1.4rem;
   flex-shrink: 0;
 }
 
 .brandText {
+  font-family: var(--cp-font-display);
   font-size: .9rem;
-  font-weight: 800;
+  font-weight: 750;
   letter-spacing: -.02em;
-  color: var(--gray-12);
+  color: var(--cp-text);
 }
 
 .menuBar {
@@ -66,48 +70,77 @@
   cursor: pointer;
   padding: .42rem .66rem;
   border-radius: .7rem;
-  color: var(--gray-10);
+  color: var(--cp-text-subtle);
   font-size: .8rem;
-  font-weight: 700;
+  font-weight: 650;
   line-height: 1;
   transition: background-color .14s ease, color .14s ease;
 }
 
 .menuButton:hover,
 .menuButton:focus-visible {
-  background: color-mix(in srgb, var(--gray-4) 42%, transparent);
-  color: var(--gray-12);
+  background: color-mix(in srgb, var(--gray-4) 55%, transparent);
+  color: var(--cp-text);
+}
+
+/* Its menu is popped up: stays pressed, a little stronger than hover. */
+.menuButtonOpen,
+.menuButtonOpen:hover {
+  background: color-mix(in srgb, var(--gray-5) 75%, transparent);
+  color: var(--cp-text);
+}
+
+.menuButton:focus-visible {
+  box-shadow: var(--cp-focus-ring);
 }
 
 .windowControls {
   display: flex;
+  align-self: stretch;
   align-items: stretch;
   gap: .15rem;
   margin-left: auto;
   -webkit-app-region: no-drag;
 }
 
+/* The full-height hit area; the visible button is the pill inside. */
 .windowControl {
   all: unset;
+  width: 2.55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cp-text-muted);
+  cursor: pointer;
+}
+
+.wrapperMaximized .closeControl {
+  /* Takes over the bar's right padding, so the corner pixel closes the window and the pill stays where it was. */
+  padding-right: .35rem;
+}
+
+.windowControlPill {
   width: 2.55rem;
   height: 2.1rem;
   border-radius: .75rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--gray-11);
-  cursor: pointer;
-  transition: background-color .14s ease, color .14s ease;
+  transition: background-color .14s ease, color .14s ease, box-shadow .14s ease;
 }
 
-.windowControl:hover,
-.windowControl:focus-visible {
-  background: color-mix(in srgb, var(--gray-4) 44%, transparent);
-  color: var(--gray-12);
+.windowControl:hover .windowControlPill,
+.windowControl:focus-visible .windowControlPill {
+  background: color-mix(in srgb, var(--gray-4) 55%, transparent);
+  color: var(--cp-text);
 }
 
-.closeControl:hover,
-.closeControl:focus-visible {
-  background: color-mix(in srgb, var(--red-4) 26%, transparent);
+.windowControl:focus-visible .windowControlPill {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.closeControl:hover .windowControlPill,
+.closeControl:focus-visible .windowControlPill {
+  background: color-mix(in srgb, var(--red-9) 22%, transparent);
   color: var(--red-11);
 }

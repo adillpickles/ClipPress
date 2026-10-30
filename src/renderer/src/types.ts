@@ -1,10 +1,11 @@
-import type { MenuItem, MenuItemConstructorOptions } from 'electron';
 import { z } from 'zod';
+import type { MenuEntry } from './components/Menu';
 import type { FFprobeChapter, FFprobeFormat, FFprobeStream } from '../../common/ffprobe';
 import type { FileStream } from './ffmpeg';
 import { minSegmentSpeed, maxSegmentSpeed } from './segmentSpeed';
 import { minCropSize } from './segmentCrop';
 import type { SegmentCrop } from './segmentCrop';
+import type { UndoableSetOptions } from './undoableHistory';
 
 
 export interface ChromiumHTMLVideoElement extends HTMLVideoElement {
@@ -44,6 +45,10 @@ export const llcProjectSaveableSegmentSchema = z.object({
   selected: z.boolean().optional(),
   speed: z.number().min(minSegmentSpeed).max(maxSegmentSpeed).optional(),
   crop: segmentCropSchema.optional(),
+  /** The clip's own volume in dB, added to each track's. No limits here: one odd value must not reject the whole project. */
+  audioGainDb: z.number().optional(),
+  /** Silences the clip but keeps its volume for when it is un-muted. */
+  audioMuted: z.boolean().optional(),
   /** Marks a project's only segment as the untouched whole file. Older readers drop it and load an ordinary segment. */
   initial: z.boolean().optional(),
 });
@@ -111,6 +116,10 @@ export const llcProjectV2Schema = z.object({
 export const llcProjectV3Schema = z.object({
   version: z.literal(3),
   mediaFileName: z.string().optional(),
+  /** Where the recording is: a project kept in ClipPress's own folder isn't next to it. Older readers ignore it. */
+  mediaFilePath: z.string().optional(),
+  /** The recording's length in seconds when saved, to check a recording found elsewhere against. Older readers ignore it. */
+  mediaDuration: z.number().optional(),
   cutSegments: llcProjectSaveableSegmentSchema.array(),
   streamEdits: z.object({
     customTags: z.record(z.string(), z.string()).optional(),
@@ -127,6 +136,8 @@ export interface SegmentBase {
   name?: string | undefined,
   speed?: number | undefined,
   crop?: SegmentCrop | undefined,
+  audioGainDb?: number | undefined,
+  audioMuted?: boolean | undefined,
 }
 
 export interface DefiniteSegmentBase {
@@ -134,6 +145,8 @@ export interface DefiniteSegmentBase {
   end: number,
   speed?: number | undefined,
   crop?: SegmentCrop | undefined,
+  audioGainDb?: number | undefined,
+  audioMuted?: boolean | undefined,
 }
 
 export interface SegmentColorIndex {
@@ -166,8 +179,6 @@ export type EdlFileType = 'llc' | 'csv' | 'csv-frames' | 'cutlist' | 'xmeml' | '
 export type EdlImportType = 'youtube' | EdlFileType;
 
 export type EdlExportType = 'csv' | 'tsv-human' | 'csv-human' | 'csv-frames' | 'srt' | 'llc';
-
-export type TunerType = 'wheelSensitivity' | 'waveformHeight' | 'keyboardNormalSeekSpeed' | 'keyboardSeekSpeed2' | 'keyboardSeekSpeed3' | 'keyboardSeekAccFactor';
 
 export interface WaveformBase {
   createdAt: Date,
@@ -216,9 +227,10 @@ export type ParseTimecode = (val: string) => number | undefined;
 
 export type GetFrameCount = (sec: number) => number | undefined;
 
-export type UpdateSegAtIndex = (index: number, newProps: Partial<StateSegment>) => void;
+export type UpdateSegAtIndex = (index: number, newProps: Partial<StateSegment>, options?: UndoableSetOptions) => void;
 
-export type ContextMenuTemplate = (MenuItemConstructorOptions | MenuItem)[];
+/** A menu for the app's own menu (Menu.tsx): Electron's template shape. */
+export type ContextMenuTemplate = MenuEntry[];
 
 export type ExportMode = 'segments_to_chapters' | 'merge' | 'merge+separate' | 'separate';
 

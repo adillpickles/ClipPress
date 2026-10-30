@@ -1,0 +1,86 @@
+/* Bottom right, no wider than the Clips panel. With the panel closed, that covers only the end of the timeline's
+   lanes, below its buttons. */
+.toast,
+.card {
+  position: fixed;
+  right: 1rem;
+  bottom: 1.25rem;
+  z-index: 100;
+  box-sizing: border-box;
+  max-width: min(15rem, calc(100vw - 2rem));
+  border-radius: var(--cp-radius-lg);
+  border: 1px solid var(--cp-line);
+  background: var(--cp-raised);
+  color: var(--cp-text);
+  box-shadow: var(--cp-shadow-popover);
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  padding: .6rem .85rem;
+  font-size: .875rem;
+  line-height: 1.4;
+  animation: toastIn .18s ease-out;
+}
+
+.ok {
+  flex-shrink: 0;
+  color: var(--cp-success);
+  font-size: 1rem;
+}
+
+.card {
+  width: 15rem;
+  padding: .8rem .9rem .85rem;
+  border-color: var(--accent-8);
+  animation: toastIn .18s ease-out;
+}
+
+/* With the Clips panel open, lifted over its list, so its footer (the export length, and the segment buttons in
+   advanced mode) stays visible. Only then: with the panel closed, this height is where the timeline's Zoom / Crop
+   and Add Text buttons are. */
+.overClipsPanel {
+  bottom: 5.75rem;
+}
+
+/* Only the message makes room for the close button; the buttons below can use the full width. */
+.card [role='status'] {
+  padding-right: 1.4rem;
+}
+
+.dismiss {
+  all: unset;
+  position: absolute;
+  top: .5rem;
+  right: .5rem;
+  width: 1.6rem;
+  height: 1.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--cp-radius-sm);
+  color: var(--cp-text-subtle);
+  cursor: pointer;
+}
+
+.dismiss:hover {
+  background: var(--cp-hover);
+  color: var(--cp-text);
+}
+
+.dismiss:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(.4rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

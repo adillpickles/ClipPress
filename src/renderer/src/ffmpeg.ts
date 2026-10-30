@@ -5,23 +5,55 @@ import type { FRAMERATE } from 'smpte-timecode';
 import Timecode from 'smpte-timecode';
 import minBy from 'lodash/minBy';
 import invariant from 'tiny-invariant';
-import z from 'zod';
+import { z } from 'zod';
+import { AudioPeaksReader, getPeaksArgs, getPeaksBucketSeconds, getPeaksSampleRate } from './audioPeaks';
+import type { AudioPeaks } from './audioPeaks';
+import { FilmstripStreamReader } from './filmstrip';
+import type { FilmstripFrame } from './filmstrip';
 
 import { pcmAudioCodecs, isMov } from './util/streams';
-import { getStdioString, isExecaError, readFileSize } from './util';
+import { getStdioString, isAbortedError, isExecaError, readFileSize } from './util';
 import { isDurationValid } from './segments';
 import type { FFprobeChapter, FFprobeFormat, FFprobeProbeResult, FFprobeStream } from '../../common/ffprobe';
 import { parseSrt, parseSrtToSegments } from './edlFormats';
 import { classifyFfprobeFailure, getFfprobeFailureDetail } from './util/ffprobeFailure';
 import { UnsupportedFileError, UserFacingError } from '../errors';
 import mainApi from './mainApi';
+import { firstShelfThumbnail } from './shelfThumbnails';
+import runCancellable from './util/ffmpegCancel';
 
 const { ffmpeg } = window.require('@electron/remote').require('./index.js');
 
-const { renderWaveformPng, mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, runFfmpeg, runFfprobe, getFfmpegPath, setCustomFfPath } = ffmpeg;
+const { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, getFfmpegPath, setCustomFfPath } = ffmpeg;
+
+type Runners = typeof ffmpeg.runWithCallbacks;
+type RunnerName = Parameters<Runners>[0];
+type MainRunner<K extends RunnerName> = (typeof ffmpeg)[K] extends (...args: infer A) => infer R ? (...args: A) => R : never;
+
+// Called with its answer's callbacks: a promise from the main process costs one more synchronous round trip (see
+// runWithCallbacks), which holds up the page.
+function viaCallbacks<K extends RunnerName>(name: K, ...args: Parameters<MainRunner<K>>) {
+  return new Promise<Awaited<ReturnType<MainRunner<K>>>>((resolve, reject) => ffmpeg.runWithCallbacks(name, args as never, resolve as never, reject));
+}
+
+const runFfprobe = (...args: Parameters<typeof ffmpeg.runFfprobe>) => viaCallbacks('runFfprobe', ...args);
 
 
-export { renderWaveformPng, mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, runFfmpeg, getFfmpegPath, setCustomFfPath };
+export { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, getFfmpegPath, setCustomFfPath };
+
+// The ones below stop when their signal aborts (runCancellable: a signal can't cross to the main process).
+
+export function runFfmpeg(args: readonly string[], { cancelSignal, ...options }: NonNullable<Parameters<typeof ffmpeg.runFfmpeg>[1]> = {}, additionalOptions: { logCli?: boolean } = {}) {
+  return runCancellable(cancelSignal, ffmpeg.abortFfmpeg, (cancelId) => viaCallbacks('runFfmpeg', args, options, { ...additionalOptions, cancelId }));
+}
+
+export function renderWaveformPng({ signal, ...options }: Omit<Parameters<typeof ffmpeg.renderWaveformPng>[0], 'cancelId'> & { signal?: AbortSignal }) {
+  return runCancellable(signal, ffmpeg.abortFfmpeg, (cancelId) => viaCallbacks('renderWaveformPng', { ...options, cancelId }));
+}
+
+function runFfmpegStreaming(args: readonly string[], { signal, ...options }: Omit<Parameters<typeof ffmpeg.runFfmpegStreaming>[1], 'cancelId'> & { signal: AbortSignal }) {
+  return runCancellable(signal, ffmpeg.abortFfmpeg, (cancelId) => viaCallbacks('runFfmpegStreaming', args, { ...options, cancelId }));
+}
 
 
 export class RefuseOverwriteError extends Error {
@@ -194,11 +226,19 @@ export function getSafeCutTime(frames: Frame[], cutTime: number, nextMode: boole
 
 export function findNearestKeyFrameTime({ frames, time, direction, fps }: { frames: Frame[], time: number, direction: number, fps: number | undefined }) {
   const sigma = fps ? (1 / fps) : 0.1;
-  const keyframes = frames.filter((f) => f.keyframe && (direction > 0 ? f.time > time + sigma : f.time < time - sigma));
-  if (keyframes.length === 0) return undefined;
-  const nearestKeyFrame = sortBy(keyframes, (keyframe) => (direction > 0 ? keyframe.time - time : time - keyframe.time))[0];
-  if (!nearestKeyFrame) return undefined;
-  return nearestKeyFrame.time;
+  // One pass, no copies or sorting: this runs for every clip, over thousands of frames.
+  let nearest: number | undefined;
+  let nearestDistance = Infinity;
+  for (const f of frames) {
+    if (f.keyframe && (direction > 0 ? f.time > time + sigma : f.time < time - sigma)) {
+      const distance = direction > 0 ? f.time - time : time - f.time;
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = f.time;
+      }
+    }
+  }
+  return nearest;
 }
 
 export function tryMapChaptersToEdl(chapters: FFprobeChapter[]) {
@@ -409,6 +449,29 @@ export async function readFileFfprobeMeta(filePath: string) {
 }
 
 export type FileFfprobeMeta = Awaited<ReturnType<typeof readFileFfprobeMeta>>;
+
+// The probes of the last few recordings, by exact path, size and modified time: opening one again (Next clip, which the
+// background preparation already probed, or a reopen) skips ffprobe, most of the wait before its first frame.
+const probedRecordings = new Map<string, Promise<FileFfprobeMeta>>();
+const maxProbedRecordings = 8;
+
+/** readFileFfprobeMeta, kept for a recording that hasn't changed since (`stats` from a stat of it just now). */
+export async function readFileFfprobeMetaCached(filePath: string, stats: { size: number, mtimeMs: number }) {
+  const key = `${filePath}|${stats.size}|${Math.round(stats.mtimeMs)}`;
+  let probing = probedRecordings.get(key);
+  if (probing != null) {
+    // The most recently used last, so the oldest goes first.
+    probedRecordings.delete(key);
+  } else {
+    probing = readFileFfprobeMeta(filePath);
+    // Only a probe that worked is kept.
+    probing.catch(() => { if (probedRecordings.get(key) === probing) probedRecordings.delete(key); });
+  }
+  probedRecordings.set(key, probing);
+  while (probedRecordings.size > maxProbedRecordings) probedRecordings.delete(probedRecordings.keys().next().value!);
+  // A copy each time: nothing that reads it can change what the next open gets.
+  return structuredClone(await probing);
+}
 export type FileStream = FileFfprobeMeta['streams'][number];
 
 async function renderThumbnail(filePath: string, timestamp: number, signal: AbortSignal) {
@@ -426,6 +489,36 @@ async function renderThumbnail(filePath: string, timestamp: number, signal: Abor
 
   const blob = safeCreateBlob(stdout, { type: 'image/jpeg' });
   return URL.createObjectURL(blob);
+}
+
+/**
+ * A small frame for the shelf: the first keyframe a second in (or the first frame of a shorter video). Keyframes
+ * only and one decoding thread: most of the time goes on starting FFmpeg and opening the file, and a single
+ * thread skips setting up a pool per process when several run at once. Hardware decoding was slower here (its
+ * set-up costs more than decoding one frame).
+ */
+export async function renderShelfThumbnail(filePath: string, signal: AbortSignal, height = 72) {
+  const attempt = (seekArgs: string[]) => async () => {
+    const { stdout } = await runFfmpeg([
+      '-hide_banner',
+      '-threads', '1',
+      ...seekArgs,
+      '-i', filePath,
+      '-map', '0:v:0',
+      '-an', '-sn', '-dn',
+      '-frames:v', '1',
+      // By default twice the shelf's 36 px, for sharp thumbnails on a 2x display.
+      '-vf', `scale=-2:${height}`,
+      '-q:v', '6',
+      '-f', 'image2',
+      '-c:v', 'mjpeg',
+      '-',
+    ], { cancelSignal: signal }, { logCli: false });
+    return stdout.length > 0 ? URL.createObjectURL(safeCreateBlob(stdout, { type: 'image/jpeg' })) : undefined;
+  };
+  // With no keyframe after 1 s (a clip shorter than its keyframe interval, or one keyframe at the start), FFmpeg
+  // fails having found nothing to encode: then the first frame.
+  return firstShelfThumbnail([attempt(['-skip_frame', 'nokey', '-ss', '1']), attempt([])], signal);
 }
 
 export async function extractSubtitleTrack(filePath: string, streamId: number) {
@@ -464,6 +557,71 @@ export async function extractSubtitleTrackVtt(filePath: string, streamId: number
 
   const blob = safeCreateBlob(stdout, { type: 'text/vtt' });
   return URL.createObjectURL(blob);
+}
+
+/** How often the waveform is redrawn while it's being made. */
+const peaksUpdateMs = 100;
+
+/**
+ * The audio track's waveform (see audioPeaks.ts): low-rate mono samples, reduced to peaks as FFmpeg makes them.
+ * `onPeaks` gets the waveform so far as it fills in (every 100 ms or so), and the whole of it at the end.
+ */
+export async function renderAudioPeaks({ filePath, streamIndex, duration, signal, onPeaks }: {
+  filePath: string,
+  streamIndex: number | undefined,
+  duration: number,
+  signal: AbortSignal,
+  onPeaks: (peaks: AudioPeaks) => void,
+}) {
+  const sampleRate = getPeaksSampleRate(duration);
+  const reader = new AudioPeaksReader(sampleRate, getPeaksBucketSeconds(duration));
+  let shownAt = -Infinity;
+  await runFfmpegStreaming(getPeaksArgs({ filePath, streamIndex, sampleRate }), {
+    signal,
+    onOutput: (stdout: Uint8Array) => {
+      if (signal.aborted) return;
+      reader.push(stdout);
+      if (performance.now() - shownAt < peaksUpdateMs) return;
+      shownAt = performance.now();
+      onPeaks(reader.peaks);
+    },
+  });
+  if (!signal.aborted) onPeaks(reader.peaks);
+}
+
+/**
+ * One pass of the timeline filmstrip (arguments from filmstrip.ts): each frame is handed to `onFrame` as soon as
+ * FFmpeg has made it. Resolves with the number of frames once FFmpeg is done.
+ */
+export async function streamFilmstripFrames({ args, timeOffset, signal, onFrame }: {
+  args: string[],
+  timeOffset: number,
+  signal: AbortSignal,
+  onFrame: (frame: FilmstripFrame & { aspect: number | undefined }) => void,
+}) {
+  const reader = new FilmstripStreamReader(timeOffset);
+  let count = 0;
+  try {
+    await runFfmpegStreaming(args, {
+      signal,
+      // Only the lines about frames (showinfo's): not the rest of FFmpeg's log.
+      stderrIncludes: 'pts_time:',
+      onOutput: (stdout: Uint8Array, stderrLines: string[]) => {
+        // What a stopped FFmpeg sent before it went isn't wanted.
+        if (signal.aborted) return;
+        reader.push(stdout, stderrLines).forEach(({ time, image, aspect }) => {
+          count += 1;
+          const blob = safeCreateBlob(image, { type: 'image/jpeg' });
+          onFrame({ time, aspect, url: URL.createObjectURL(blob), blob });
+        });
+      },
+    });
+  } catch (err) {
+    // Stopped (the recording closed, or the Abort button) rather than failed.
+    if (isAbortedError(err)) throw Object.assign(new Error('Filmstrip pass stopped'), { name: 'AbortError' });
+    throw err;
+  }
+  return count;
 }
 
 export async function renderThumbnails({ filePath, from, duration, onThumbnail, signal }: {

@@ -2,20 +2,36 @@ import type { ButtonHTMLAttributes, DetailedHTMLProps } from 'react';
 import { forwardRef } from 'react';
 
 import styles from './Button.module.css';
-import { primaryColor, primaryTextColor } from '../colors';
 
-export type ButtonProps = DetailedHTMLProps<ButtonHTMLAttributes<HTMLButtonElement>, HTMLButtonElement>;
+export type ButtonVariant = 'default' | 'primary' | 'ghost' | 'danger';
+export type ButtonSize = 'sm' | 'md' | 'lg';
+
+export type ButtonProps = DetailedHTMLProps<ButtonHTMLAttributes<HTMLButtonElement>, HTMLButtonElement> & {
+  variant?: ButtonVariant | undefined,
+  size?: ButtonSize | undefined,
+};
 
 // eslint-disable-next-line react/display-name
-const Button = forwardRef<HTMLButtonElement, ButtonProps>(({ type = 'button', className, ...props }, ref) => (
-  // eslint-disable-next-line react/jsx-props-no-spreading, react/button-has-type
-  <button ref={ref} className={[...(className ? [className] : []), styles['button']].join(' ')} type={type} {...props} />
+const Button = forwardRef<HTMLButtonElement, ButtonProps>(({ type = 'button', className, variant = 'default', size = 'md', ...props }, ref) => (
+  <button
+    ref={ref}
+    className={[
+      ...(className ? [className] : []),
+      styles['button'],
+      ...(variant !== 'default' ? [styles[variant]] : []),
+      ...(size !== 'md' ? [styles[size]] : []),
+    ].join(' ')}
+    // eslint-disable-next-line react/button-has-type
+    type={type}
+    // eslint-disable-next-line react/jsx-props-no-spreading
+    {...props}
+  />
 ));
 
 export default Button;
 
 // eslint-disable-next-line react/display-name
-export const DialogButton = forwardRef<HTMLButtonElement, { primary?: boolean } & ButtonProps>(({ primary, ...props }, ref) => (
+export const DialogButton = forwardRef<HTMLButtonElement, { primary?: boolean } & ButtonProps>(({ primary, style, ...props }, ref) => (
   // eslint-disable-next-line react/jsx-props-no-spreading
-  <Button ref={ref} style={{ padding: '.5em 2em', ...(primary && { color: 'white', backgroundColor: primaryColor, borderColor: primaryTextColor }) }} {...props} />
+  <Button ref={ref} variant={primary ? 'primary' : undefined} style={{ padding: '0 1.4em', minWidth: '6em', ...style }} {...props} />
 ));

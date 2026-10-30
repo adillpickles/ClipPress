@@ -1,19 +1,176 @@
-.time-wrapper {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+.timeline {
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--cp-radius);
+  border: 1px solid var(--cp-line);
+  background: var(--cp-bg);
+  overflow: hidden;
+}
+
+.gutter {
+  flex-shrink: 0;
+  width: 4.6rem;
+  border-right: 1px solid var(--cp-line);
+  display: flex;
+  flex-direction: column;
+}
+
+.laneLabel {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
-  justify-content: center;
+  padding: 0 .55rem;
+  border-top: 1px solid var(--cp-line);
+  color: var(--cp-text-subtle);
+  font-size: .6875rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.tracks {
+  position: relative;
+  flex-grow: 1;
+  min-width: 0;
+}
+
+/* Shown in the waveform lane when zoomed out too far; it keeps the lane's height. Sticky, so it stays in view
+   when the lane is wider than the window. */
+.waveformHint {
+  position: sticky;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  width: max-content;
+  max-width: 100%;
+  padding: 0 .6rem;
+  color: var(--cp-text-subtle);
+  font-size: .8125rem;
+  white-space: nowrap;
+}
+
+.lane {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  border-top: 1px solid var(--cp-line);
+}
+
+.clipLane {
+  background: color-mix(in srgb, var(--gray-3) 55%, transparent);
+}
+
+.textClip {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border-radius: 5px;
+  /* The tint over the timeline's own background: it looks the same on the lane, but a text on top of another
+     one hides it rather than mixing the two labels. */
+  background: linear-gradient(color-mix(in srgb, var(--gray-12) 13%, transparent), color-mix(in srgb, var(--gray-12) 13%, transparent)), var(--cp-bg);
+  border: 1px solid color-mix(in srgb, var(--gray-12) 22%, transparent);
+  color: var(--cp-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: grab;
+}
+
+/* On top of any text it overlaps, so it can always be seen, dragged and deleted. */
+.textClipSelected {
+  z-index: 1;
+  background: linear-gradient(var(--cp-accent-soft), var(--cp-accent-soft)), var(--cp-bg);
+  border-color: var(--accent-9);
+}
+
+.textClipLabel {
+  flex-grow: 1;
+  min-width: 0;
+  margin-left: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   pointer-events: none;
 }
-.time {
-  background: rgba(0,0,0,0.4);
-  border-radius: 3px;
-  padding: 2px 4px;
-  color: rgba(255, 255, 255, 0.8);
-  transition: opacity 0.2s;
+
+.textClipHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  border: none;
+  padding: 0;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+.textClipHandleStart {
+  left: -2px;
+}
+
+.textClipHandleEnd {
+  right: -2px;
+}
+
+.textClipSelected .textClipHandle::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent-9);
+}
+
+/* One of several texts at the same time: a slimmer row of the lane (its top and height are set inline). */
+.textClipStacked {
+  border-radius: 4px;
+  font-size: 9.5px;
+  line-height: 1;
+}
+
+.textClipStacked .textClipLabel {
+  margin-left: 6px;
+}
+
+.textClipStacked.textClipSelected .textClipHandle::after {
+  top: 2px;
+  bottom: 2px;
+}
+
+/* The one playhead: an accent line across every lane with a rounded handle in the ruler. Its position is
+   written by Timeline's Playhead (React when paused, every display frame while playing). */
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--cp-accent);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 35%);
+  pointer-events: none;
+  z-index: 2;
+  will-change: transform;
+}
+
+.playheadHandle {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 12px;
+  height: 16px;
+  transform: translateX(-50%);
+  border-radius: 6px;
+  background: linear-gradient(180deg, var(--accent-11), var(--cp-accent) 70%);
+  box-shadow: 0 0 0 2px var(--cp-bg), 0 2px 6px rgb(0 0 0 / 45%);
 }
 
 @keyframes background-animation {
@@ -26,4 +183,97 @@
   background: repeating-linear-gradient(45deg, var(--c), var(--c) 1px, transparent 1.5px, transparent 4.4px);
   background-size: 50% 100%;
   animation: background-animation 3s linear infinite;
+}
+
+/* Simple mode: the whole recording as a thin, dim, desaturated film tape with a light hatch, so the parts
+   between clips read as cut; the clip blocks sit on it in full colour (TimelineSeg.module.css).
+   The base rules are the light theme's, where the tape fades towards the light card instead of turning into
+   a black slab; the dark theme's values are under .dark-theme. */
+.filmTape {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 13px;
+  bottom: 13px;
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--gray-5);
+  pointer-events: none;
+}
+
+:global(.dark-theme) .filmTape {
+  background: #0a0a0a;
+}
+
+/* The frames, dimmed once as a group rather than each of its (hundreds of) images; the hatching stays as is. */
+.filmFrames {
+  position: absolute;
+  inset: 0;
+  filter: grayscale(1) contrast(.7) brightness(1.15);
+  opacity: .5;
+}
+
+:global(.dark-theme) .filmFrames {
+  filter: grayscale(1) brightness(.4) contrast(.85);
+  opacity: 1;
+}
+
+/* Tiles of the video's shape side by side (Timeline: filmTiles); the dim tape is lower than the clip blocks whose
+   tiles it shares, so its frames are cropped top and bottom. While the strip is being made, frames fade in as
+   they arrive (fadeInArrivingFrame). */
+.filmTape img {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.filmTape img.arriving {
+  animation: film-tile-in .18s ease-out;
+}
+
+@keyframes film-tile-in {
+  from { opacity: 0; }
+}
+
+.filmTape::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(135deg, rgb(0 0 0 / 7%) 0 1.5px, transparent 1.5px 7px);
+}
+
+:global(.dark-theme) .filmTape::after {
+  background:
+    repeating-linear-gradient(135deg, rgb(255 255 255 / 6%) 0 1.5px, transparent 1.5px 7px),
+    linear-gradient(180deg, rgb(17 17 17 / 15%), rgb(17 17 17 / 35%));
+}
+
+/* I or O locked onto a clip edge: a soft ClipPress-blue line there, fading out. */
+.edgeSnapCue {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--accent-9);
+  box-shadow: 0 0 6px 1px color-mix(in srgb, var(--accent-9) 70%, transparent);
+  pointer-events: none;
+  animation: edge-snap-cue .9s ease-out forwards;
+}
+
+@keyframes edge-snap-cue {
+  0% { opacity: 0; transform: scaleY(.6); }
+  15% { opacity: 1; transform: scaleY(1); }
+  60% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edgeSnapCue {
+    animation: none;
+  }
 }

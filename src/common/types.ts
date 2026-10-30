@@ -1,6 +1,6 @@
 import type { SupportedLanguage } from './i18n.ts';
 
-export type KeyboardAction = 'addSegment' | 'togglePlayResetSpeed' | 'togglePlayNoResetSpeed' | 'reducePlaybackRate' | 'reducePlaybackRateMore' | 'increasePlaybackRate' | 'increasePlaybackRateMore' | 'timelineToggleComfortZoom' | 'seekPreviousFrame' | 'seekNextFrame' | 'captureSnapshot' | 'captureSnapshotToClipboard' | 'setCutStart' | 'setCutEnd' | 'removeCurrentSegment' | 'removeCurrentCutpoint' | 'cleanupFilesDialog' | 'splitCurrentSegment' | 'focusSegmentAtCursor' | 'selectSegmentsAtCursor' | 'increaseRotation' | 'goToTimecode' | 'seekBackwards' | 'seekBackwards2' | 'seekBackwards3' | 'seekBackwardsPercent' | 'seekBackwardsPercent' | 'seekBackwardsKeyframe' | 'jumpCutStart' | 'seekForwards' | 'seekForwards2' | 'seekForwards3' | 'seekForwardsPercent' | 'seekForwardsPercent' | 'seekForwardsKeyframe' | 'jumpCutEnd' | 'jumpTimelineStart' | 'jumpTimelineEnd' | 'jumpFirstSegment' | 'jumpPrevSegment' | 'jumpSeekFirstSegment' | 'jumpSeekPrevSegment' | 'timelineZoomIn' | 'timelineZoomIn' | 'batchPreviousFile' | 'jumpLastSegment' | 'jumpNextSegment' | 'jumpSeekLastSegment' | 'jumpSeekNextSegment' | 'timelineZoomOut' | 'timelineZoomOut' | 'batchNextFile' | 'batchOpenSelectedFile' | 'batchOpenPreviousFile' | 'batchOpenNextFile' | 'undo' | 'undo' | 'redo' | 'redo' | 'copySegmentsToClipboard' | 'copySegmentsToClipboard' | 'toggleFullscreenVideo' | 'labelCurrentSegment' | 'export' | 'toggleKeyboardShortcuts' | 'increaseVolume' | 'decreaseVolume' | 'toggleMuted' | 'detectBlackScenes' | 'detectSilentScenes' | 'detectSceneChanges' | 'toggleLastCommands' | 'play' | 'pause' | 'reloadFile' | 'html5ify' | 'makeCursorTimeZero' | 'togglePlayOnlyCurrentSegment' | 'toggleLoopOnlyCurrentSegment' | 'toggleLoopStartEndOnlyCurrentSegment' | 'togglePlaySelectedSegments' | 'toggleLoopSelectedSegments' | 'editCurrentSegmentTags' | 'duplicateCurrentSegment' | 'reorderSegsByStartTime' | 'invertAllSegments' | 'fillSegmentsGaps' | 'shiftAllSegmentTimes' | 'alignSegmentTimesToKeyframes' | 'readAllKeyframes' | 'createSegmentsFromKeyframes' | 'createFixedDurationSegments' | 'createNumSegments' | 'createFixedByteSizedSegments' | 'createRandomSegments' | 'shuffleSegments' | 'combineOverlappingSegments' | 'combineSelectedSegments' | 'clearSegments' | 'toggleSegmentsList' | 'selectOnlyCurrentSegment' | 'deselectAllSegments' | 'selectAllSegments' | 'toggleCurrentSegmentSelected' | 'invertSelectedSegments' | 'removeSelectedSegments' | 'toggleStreamsSelector' | 'extractAllStreams' | 'showStreamsSelector' | 'showIncludeExternalStreamsDialog' | 'captureSnapshotAsCoverArt' | 'extractCurrentSegmentFramesAsImages' | 'extractSelectedSegmentsFramesAsImages' | 'convertFormatBatch' | 'convertFormatCurrentFile' | 'fixInvalidDuration' | 'closeBatch' | 'concatBatch' | 'toggleKeyframeCutMode' | 'toggleCaptureFormat' | 'toggleStripAudio' | 'toggleStripVideo' | 'toggleStripSubtitle' | 'toggleStripThumbnail' | 'toggleStripCurrentFilter' | 'toggleStripAll' | 'toggleDarkMode' | 'setStartTimeOffset' | 'toggleWaveformMode' | 'toggleShowThumbnails' | 'toggleShowKeyframes' | 'toggleSettings' | 'openSendReportDialog' | 'openFilesDialog' | 'openDirDialog' | 'exportYouTube' | 'closeCurrentFile' | 'quit' | 'selectAllMarkers' | 'generateOverviewWaveform' | 'selectSegmentsByLabel' | 'selectSegmentsByExpr' | 'labelSelectedSegments' | 'mutateSegmentsByExpr' | 'toggleSegmentSpeedControls';
+export type KeyboardAction = 'addSegment' | 'togglePlayResetSpeed' | 'togglePlayNoResetSpeed' | 'reducePlaybackRate' | 'reducePlaybackRateMore' | 'increasePlaybackRate' | 'increasePlaybackRateMore' | 'timelineToggleComfortZoom' | 'seekPreviousFrame' | 'seekNextFrame' | 'captureSnapshot' | 'captureSnapshotToClipboard' | 'setCutStart' | 'setCutEnd' | 'removeCurrentSegment' | 'removeCurrentCutpoint' | 'cleanupFilesDialog' | 'splitCurrentSegment' | 'focusSegmentAtCursor' | 'selectSegmentsAtCursor' | 'increaseRotation' | 'goToTimecode' | 'seekBackwards' | 'seekBackwards2' | 'seekBackwards3' | 'seekBackwardsPercent' | 'seekBackwardsPercent' | 'seekBackwardsKeyframe' | 'jumpCutStart' | 'seekForwards' | 'seekForwards2' | 'seekForwards3' | 'seekForwardsPercent' | 'seekForwardsPercent' | 'seekForwardsKeyframe' | 'jumpCutEnd' | 'jumpTimelineStart' | 'jumpTimelineEnd' | 'jumpFirstSegment' | 'jumpPrevSegment' | 'jumpSeekFirstSegment' | 'jumpSeekPrevSegment' | 'timelineZoomIn' | 'timelineZoomIn' | 'batchPreviousFile' | 'jumpLastSegment' | 'jumpNextSegment' | 'jumpSeekLastSegment' | 'jumpSeekNextSegment' | 'timelineZoomOut' | 'timelineZoomOut' | 'batchNextFile' | 'batchOpenSelectedFile' | 'batchOpenPreviousFile' | 'batchOpenNextFile' | 'undo' | 'undo' | 'redo' | 'redo' | 'copySegmentsToClipboard' | 'copySegmentsToClipboard' | 'toggleFullscreenVideo' | 'labelCurrentSegment' | 'export' | 'toggleKeyboardShortcuts' | 'increaseVolume' | 'decreaseVolume' | 'toggleMuted' | 'detectBlackScenes' | 'detectSilentScenes' | 'detectSceneChanges' | 'toggleLastCommands' | 'play' | 'pause' | 'reloadFile' | 'html5ify' | 'makeCursorTimeZero' | 'togglePlayOnlyCurrentSegment' | 'toggleLoopOnlyCurrentSegment' | 'toggleLoopStartEndOnlyCurrentSegment' | 'togglePlaySelectedSegments' | 'toggleLoopSelectedSegments' | 'editCurrentSegmentTags' | 'duplicateCurrentSegment' | 'reorderSegsByStartTime' | 'invertAllSegments' | 'fillSegmentsGaps' | 'shiftAllSegmentTimes' | 'alignSegmentTimesToKeyframes' | 'readAllKeyframes' | 'createSegmentsFromKeyframes' | 'createFixedDurationSegments' | 'createNumSegments' | 'createFixedByteSizedSegments' | 'createRandomSegments' | 'shuffleSegments' | 'combineOverlappingSegments' | 'combineSelectedSegments' | 'clearSegments' | 'toggleSegmentsList' | 'selectOnlyCurrentSegment' | 'deselectAllSegments' | 'selectAllSegments' | 'toggleCurrentSegmentSelected' | 'invertSelectedSegments' | 'removeSelectedSegments' | 'toggleStreamsSelector' | 'extractAllStreams' | 'showStreamsSelector' | 'showIncludeExternalStreamsDialog' | 'captureSnapshotAsCoverArt' | 'extractCurrentSegmentFramesAsImages' | 'extractSelectedSegmentsFramesAsImages' | 'convertFormatBatch' | 'convertFormatCurrentFile' | 'fixInvalidDuration' | 'closeBatch' | 'concatBatch' | 'toggleKeyframeCutMode' | 'toggleCaptureFormat' | 'toggleStripAudio' | 'toggleStripVideo' | 'toggleStripSubtitle' | 'toggleStripThumbnail' | 'toggleStripCurrentFilter' | 'toggleStripAll' | 'toggleDarkMode' | 'setStartTimeOffset' | 'toggleWaveformMode' | 'toggleShowThumbnails' | 'toggleShowKeyframes' | 'toggleSettings' | 'openSendReportDialog' | 'openFilesDialog' | 'openDirDialog' | 'exportYouTube' | 'closeCurrentFile' | 'quit' | 'selectAllMarkers' | 'generateOverviewWaveform' | 'selectSegmentsByLabel' | 'selectSegmentsByExpr' | 'labelSelectedSegments' | 'mutateSegmentsByExpr' | 'toggleSegmentSpeedControls' | 'addTextOverlay' | 'editCurrentSegmentCrop' | 'quickExport' | 'quickExportPreset1' | 'quickExportPreset2' | 'quickExportPreset3' | 'quickExportPreset4' | 'quickExportPreset5' | 'quickExportPreset6' | 'quickExportPreset7' | 'quickExportPreset8' | 'quickExportPreset9' | 'removeSelectedClips' | 'startOver';
 
 export interface KeyBinding {
   keys: string,
@@ -16,6 +16,9 @@ export type TimecodeFormat = 'timecodeWithDecimalFraction' | 'frameCount' | 'sec
 export type AvoidNegativeTs = 'make_zero' | 'auto' | 'make_non_negative' | 'disabled';
 
 export type ModifierKey = 'ctrl' | 'shift' | 'alt' | 'meta';
+
+export type MouseGesture = 'zoom' | 'frameSeek' | 'keyframeSeek' | 'segment';
+export type ExtraMouseModifierKeys = Partial<Record<MouseGesture, ModifierKey[]>>;
 
 export type PreserveMetadata = 'default' | 'nonglobal' | 'none'
 
@@ -47,12 +50,53 @@ export type SizeLimitAdvancedH264CpuPreset = 'ultrafast' | 'superfast' | 'veryfa
 
 export type SizeLimitNamingMode = 'auto' | 'custom_template';
 
+/** A one-off export from a shortcut (Ctrl+1/2/3). It skips the export sheet and doesn't change the sheet's settings. */
+export interface QuickExportPreset {
+  /** Shown while it exports, e.g. "Discord". May be empty. */
+  name: string,
+  encodeMode: ExportEncodeMode,
+  /** The size limit and preset, for `size_limited`. */
+  sizeLimitMb: number,
+  sizeLimitPreset: SizeLimitPreset,
+}
+
+/** The shelf's order: by date (oldest first) or name (A to Z), and `-desc` the other way round. */
+export type ShelfOrder = 'date' | 'date-desc' | 'name' | 'name-desc';
+
+/**
+ * Where autosave keeps a recording's edits: ClipPress's own folder, next to the recording, both of those (a copy in
+ * each), or the export folder.
+ */
+export type ProjectFileLocation = 'app' | 'recording' | 'both' | 'exportFolder';
+
+/** An export the shelf remembers: the clip it came from, and the files it wrote. */
+export interface ShelfExport {
+  source: string,
+  /** The source as it was when exported, so a new recording saved under the same name isn't taken for it. */
+  sourceSize?: number | undefined,
+  sourceModifiedAt?: number | undefined,
+  outputs: string[],
+  /** Milliseconds since the epoch. */
+  exportedAt: number,
+}
+
+export interface RecentFile {
+  path: string,
+  /** Milliseconds since the epoch. */
+  openedAt: number,
+}
+
 export interface Config {
   version: number,
   lastAppVersion: string,
   captureFormat: CaptureFormat,
   enableCustomOutDir: boolean,
   recentCustomOutDirs: string[],
+  /** Recordings opened lately, newest first, for the welcome screen. */
+  recentFiles: RecentFile[],
+  /** The shelf of clips in a folder: its order, and the exports it remembers (newest first). */
+  shelfOrder: ShelfOrder,
+  shelfExports: ShelfExport[],
   keyframeCut: boolean,
   autoMerge: boolean,
   autoDeleteMergedSegments: boolean,
@@ -62,6 +106,14 @@ export interface Config {
   invertCutSegments: boolean,
   autoExportExtraStreams: boolean,
   exportConfirmEnabled: boolean,
+  /** After a checked, complete export, move the source recording to the Recycle Bin (never a permanent delete). */
+  trashSourceAfterExport: boolean,
+  /** When ClipPress moves the source recording to the Recycle Bin after an export, move every copy of its edits there too. */
+  trashProjectWithSource: boolean,
+  /** After an export, put the exported video on the clipboard (Windows), to paste it straight into a chat. */
+  copyAfterExport: boolean,
+  /** Start playing a clip as soon as it opens. */
+  playOnOpen: boolean,
   askBeforeClose: boolean,
   enableImportChapters: EnableImportChapters,
   enableAskForFileOpenAction: boolean,
@@ -82,6 +134,8 @@ export interface Config {
   autoLoadTimecode: boolean,
   segmentsToChapters: boolean,
   simpleMode: boolean,
+  /** Shows the Simple/Advanced switch. While off, the app runs the new editor whatever simpleMode says. */
+  enableAdvancedMode: boolean,
   /** todo: rename to cutFileTemplate */
   outSegTemplate: string | undefined
   /** todo: rename to cutMergedFileTemplate */
@@ -101,12 +155,14 @@ export interface Config {
   enableAutoHtml5ify: boolean,
   keyBindings: KeyBinding[],
   customFfPath: string | undefined,
-  storeProjectInWorkingDir: boolean,
+  projectFileLocation: ProjectFileLocation,
   enableOverwriteOutput: boolean,
   mouseWheelZoomModifierKey: ModifierKey,
   mouseWheelFrameSeekModifierKey: ModifierKey,
   mouseWheelKeyframeSeekModifierKey: ModifierKey,
   segmentMouseModifierKey: ModifierKey,
+  /** More modifiers for the same mouse gestures, added in Settings > Shortcuts (the ones above can't be removed). */
+  extraMouseModifierKeys: ExtraMouseModifierKeys,
   captureFrameMethod: 'videotag' | 'ffmpeg',
   captureFrameQuality: number,
   captureFrameFileNameFormat: 'timestamp' | 'index',
@@ -157,6 +213,8 @@ export interface Config {
    */
   sizeLimitCutFileTemplate: string | undefined,
   sizeLimitCutMergedFileTemplate: string | undefined,
+  /** Ctrl+1, Ctrl+2 and Ctrl+3, in that order. */
+  quickExportPresets: QuickExportPreset[],
 }
 
 export interface Waveform {

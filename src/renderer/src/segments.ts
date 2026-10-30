@@ -7,6 +7,7 @@ import invariant from 'tiny-invariant';
 import type { DefiniteSegmentBase, PlaybackMode, SegmentBase, SegmentTags, SegmentToExport, StateSegment } from './types';
 import { getSegmentOutputDuration } from './segmentSpeed';
 import type { SegmentCrop } from './segmentCrop';
+import { sanitizeClipGainDb } from './util/audioGain';
 
 
 export const isDurationValid = (duration?: number): duration is number => duration != null && Number.isFinite(duration) && duration > 0;
@@ -28,6 +29,8 @@ export const createSegment = (props?: {
   selected?: boolean | undefined,
   speed?: number | undefined,
   crop?: SegmentCrop | undefined,
+  audioGainDb?: number | undefined,
+  audioMuted?: boolean | undefined,
 }): Omit<StateSegment, 'segColorIndex'> => ({
   start: props?.start ?? 0,
   end: props?.end,
@@ -36,6 +39,8 @@ export const createSegment = (props?: {
   selected: props?.selected ?? true,
   ...(props?.speed != null ? { speed: props.speed } : {}),
   ...(props?.crop != null ? { crop: { ...props.crop } } : {}),
+  ...(sanitizeClipGainDb(props?.audioGainDb) != null ? { audioGainDb: sanitizeClipGainDb(props?.audioGainDb) } : {}),
+  ...(props?.audioMuted === true ? { audioMuted: true } : {}),
 
   // `tags` is an optional object (key-value). Values must always be string
   // See https://github.com/mifi/lossless-cut/issues/879
@@ -52,9 +57,17 @@ export const addSegmentColorIndex = (segment: Omit<StateSegment, 'segColorIndex'
 });
 
 export const mapSaveableSegments = (segments: StateSegment[]) => segments.map(({
-  start, end, name, tags, selected, speed, crop,
+  start, end, name, tags, selected, speed, crop, audioGainDb, audioMuted,
 }) => ({
-  start, end, name, tags, selected, ...(speed != null ? { speed } : {}), ...(crop != null ? { crop } : {}),
+  start,
+  end,
+  name,
+  tags,
+  selected,
+  ...(speed != null ? { speed } : {}),
+  ...(crop != null ? { crop } : {}),
+  ...(sanitizeClipGainDb(audioGainDb) != null ? { audioGainDb: sanitizeClipGainDb(audioGainDb) } : {}),
+  ...(audioMuted === true ? { audioMuted: true } : {}),
 }));
 
 // in the past we had non-string tags

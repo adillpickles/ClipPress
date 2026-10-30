@@ -1,8 +1,8 @@
 import { join } from 'node:path';
 import { stat } from 'node:fs/promises';
 import readline from 'node:readline';
+import { constants as osConstants, setPriority } from 'node:os';
 import type { Options as ExecaOptions, ResultPromise } from 'execa';
-import { execa } from 'execa';
 import assert from 'node:assert';
 import type { Readable } from 'node:stream';
 // eslint-disable-next-line import/no-extraneous-dependencies
@@ -16,7 +16,10 @@ import logger from './logger.js';
 import { parseFfmpegProgressLine } from './progress.js';
 import { getHwaccelArgs, parseFfprobeDuration } from '../common/util.js';
 import { getFfmpegJpegQuality } from './ffmpegUtil.js';
+import { withCancelId } from './ffmpegCancel.js';
 import findSourceFileCollision from '../common/sourceFileIdentity.js';
+
+export { abortFfmpeg } from './ffmpegCancel.js';
 
 
 // cannot use process.kill: https://github.com/sindresorhus/execa/issues/1177
@@ -123,6 +126,24 @@ function getExecaBufferOptions(opts: ExecaOptions = {}) {
 }
 
 // todo collect warnings from ffmpeg output and show them after export? example: https://github.com/mifi/lossless-cut/issues/1469
+/*
+ * execa takes about 80 ms to load, so it isn't loaded while the app starts: index.ts loads it right after the window
+ * is created, and every function here that starts a process awaits it first.
+ */
+let execaModule: typeof import('execa') | undefined;
+let execaLoading: Promise<typeof import('execa')> | undefined;
+export function loadExeca() {
+  execaLoading ??= import('execa').then((module) => {
+    execaModule = module;
+    return module;
+  });
+  return execaLoading;
+}
+function getExeca() {
+  if (execaModule == null) throw new Error('execa is not loaded yet');
+  return execaModule.execa;
+}
+
 function runFfmpegProcess(args: readonly string[], customExecaOptions?: ExecaOptions, additionalOptions?: { logCli?: boolean }) {
   const ffmpegPath = getFfmpegPath();
   const { logCli = true } = additionalOptions ?? {};
@@ -131,11 +152,11 @@ function runFfmpegProcess(args: readonly string[], customExecaOptions?: ExecaOpt
   const abortController = new AbortController();
   const callerSignal = customExecaOptions?.cancelSignal;
   const abort = () => abortController.abort();
-  // A renderer signal arrives as a remote proxy. Forward it into a native main-process
-  // signal so both per-task cancellation and the global Abort button work.
+  // The caller's signal (one of this process's: a renderer's can't cross over, see ffmpegCancel.ts) and the
+  // global Abort button both stop it.
   callerSignal?.addEventListener('abort', abort, { once: true });
   if (callerSignal?.aborted) abort();
-  const process = execa(ffmpegPath, args, getExecaBufferOptions({ ...customExecaOptions, cancelSignal: abortController.signal }));
+  const process = getExeca()(ffmpegPath, args, getExecaBufferOptions({ ...customExecaOptions, cancelSignal: abortController.signal }));
 
   const wrapped = { process, abortController };
 
@@ -159,6 +180,7 @@ export async function runFfmpegConcat({ ffmpegArgs, concatTxt, totalDuration, on
   totalDuration: number,
   onProgress: (a: number) => void,
 }) {
+  await loadExeca();
   const process = runFfmpegProcess(ffmpegArgs);
 
   handleProgress(process, totalDuration, onProgress);
@@ -174,16 +196,74 @@ export async function runFfmpegWithProgress({ ffmpegArgs, duration, onProgress }
   duration?: number | undefined,
   onProgress: (a: number) => void,
 }) {
+  await loadExeca();
   const process = runFfmpegProcess(ffmpegArgs);
   assert(process.stderr != null);
   handleProgress(process, duration, onProgress);
   return process;
 }
 
+/**
+ * Runs FFmpeg and hands over its output as it comes rather than all at the end (e.g. each image of the timeline
+ * filmstrip as soon as it's made): new stdout bytes and the stderr lines containing `stderrIncludes` (none without
+ * it), at most every 20 ms so a busy FFmpeg doesn't flood the renderer with messages. Settles when FFmpeg exits;
+ * abortFfmpeg(cancelId) stops it.
+ */
+export const runFfmpegStreaming = (args: readonly string[], { cancelId, onOutput, stderrIncludes }: {
+  cancelId: string | undefined,
+  onOutput: (stdout: Uint8Array, stderrLines: string[]) => void,
+  stderrIncludes?: string | undefined,
+}) => withCancelId(cancelId, async (cancelSignal) => {
+  await loadExeca();
+  const process = runFfmpegProcess(args, { ...(cancelSignal != null && { cancelSignal }), buffer: false }, { logCli: false });
+  // The timeline's pictures are made while the recording opens and plays: below normal priority, the player and the
+  // UI come first (with all of FFmpeg's decoding threads at normal priority, the page could miss frames for 0.3 s),
+  // and so do other programs, such as a game.
+  if (process.pid != null) {
+    try {
+      setPriority(process.pid, osConstants.priority.PRIORITY_BELOW_NORMAL);
+    } catch (err) {
+      logger.warn('Could not lower the priority of FFmpeg', err);
+    }
+  }
+  let stdout: Buffer[] = [];
+  let stderrLines: string[] = [];
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const flush = () => {
+    timer = undefined;
+    if (stdout.length === 0 && stderrLines.length === 0) return;
+    // Positional: a Buffer and an array of strings cross to the renderer as values.
+    onOutput(Buffer.concat(stdout), stderrLines);
+    stdout = [];
+    stderrLines = [];
+  };
+  const schedule = () => {
+    timer ??= setTimeout(flush, 20);
+  };
+  process.stdout?.on('data', (chunk: Buffer) => {
+    stdout.push(chunk);
+    schedule();
+  });
+  if (process.stderr != null) {
+    readline.createInterface({ input: process.stderr }).on('line', (line) => {
+      if (stderrIncludes == null || !line.includes(stderrIncludes)) return;
+      stderrLines.push(line);
+      schedule();
+    });
+  }
+  try {
+    await process;
+  } finally {
+    clearTimeout(timer);
+    flush();
+  }
+});
+
 export async function runFfprobe(args: readonly string[], { timeout = isDev ? 10000 : 30000, logCli = true } = {}) {
   const ffprobePath = getFfprobePath();
   if (logCli) logger.info(getFfCommandLine('ffprobe', args));
-  const ps = execa(ffprobePath, args, getExecaBufferOptions());
+  await loadExeca();
+  const ps = getExeca()(ffprobePath, args, getExecaBufferOptions());
   const timer = setTimeout(() => {
     logger.warn('killing timed out ffprobe');
     ps.kill();
@@ -195,16 +275,17 @@ export async function runFfprobe(args: readonly string[], { timeout = isDev ? 10
   }
 }
 
-export async function renderWaveformPng({ filePath, start, duration, resample, color, streamIndex, timeout, signal }: {
+async function renderWaveformPngProcesses({ filePath, start, duration, resample, color, streamIndex, timeout, signal }: {
   filePath: string,
-  start?: number,
-  duration?: number,
-  resample?: number,
+  start?: number | undefined,
+  duration?: number | undefined,
+  resample?: number | undefined,
   color: string,
   streamIndex: number,
-  timeout?: number,
-  signal?: AbortSignal,
+  timeout?: number | undefined,
+  signal?: AbortSignal | undefined,
 }): Promise<Waveform> {
+  await loadExeca();
   const args1 = [
     '-hide_banner',
     '-i', filePath,
@@ -260,6 +341,11 @@ export async function renderWaveformPng({ filePath, start, duration, resample, c
   }
 }
 
+/** abortFfmpeg(cancelId) stops it. */
+export const renderWaveformPng = ({ cancelId, ...rest }: Omit<Parameters<typeof renderWaveformPngProcesses>[0], 'signal'> & { cancelId?: string | undefined }) => (
+  withCancelId(cancelId, (signal) => renderWaveformPngProcesses({ ...rest, signal }))
+);
+
 const getInputSeekArgs = ({ filePath, from, to }: { filePath: string, from?: number | undefined, to?: number | undefined }) => [
   ...(from != null ? ['-ss', from.toFixed(5)] : []),
   '-i', filePath,
@@ -298,6 +384,7 @@ export async function detectSceneChanges({ filePath, streamId, minChange, onProg
   to: number,
   ffmpegHwaccel: FfmpegHwAccel,
 }) {
+  await loadExeca();
   const args = [
     '-hide_banner',
     ...getHwaccelArgs(ffmpegHwaccel),
@@ -344,6 +431,7 @@ async function detectIntervals({ filePath, customArgs, onProgress, onSegmentDete
   boundingMode: boolean,
   ffmpegHwaccel: FfmpegHwAccel,
 }) {
+  await loadExeca();
   const args = [
     '-hide_banner',
     ...getHwaccelArgs(ffmpegHwaccel),
@@ -480,6 +568,7 @@ export async function captureFrames({ from, to, videoPath, outPathTemplate, qual
   onProgress: (p: number) => void,
   captureFormat: CaptureFormat,
 }) {
+  await loadExeca();
   const args = [
     '-ss', String(from),
     '-i', videoPath,
@@ -535,6 +624,7 @@ export async function captureFrameToClipboard({ timestamp, videoPath, quality }:
   videoPath: string,
   quality: number,
 }) {
+  await loadExeca();
   const args = [
     ...getCaptureFrameArgs({ timestamp, videoPath, quality }),
     '-c:v', 'mjpeg',
@@ -552,6 +642,7 @@ export async function captureFrameToFile({ timestamp, videoPath, outPath, qualit
   outPath: string,
   quality: number,
 }) {
+  await loadExeca();
   const collision = await findSourceFileCollision({ outPaths: [outPath], protectedPaths: [videoPath], stat: (path) => stat(path, { bigint: true }) });
   if (collision != null) throw new Error('ClipPress will not save a frame onto its source file.');
   const args = [
@@ -742,7 +833,7 @@ export function createMediaSourceProcess({ path, videoStreamIndex, audioStreamIn
 
   logger.info(getFfCommandLine('ffmpeg', args));
 
-  return execa(getFfmpegPath(), args, getExecaOptions({ buffer: { stdout: false, stderr: true }, encoding: 'utf8' }));
+  return getExeca()(getFfmpegPath(), args, getExecaOptions({ buffer: { stdout: false, stderr: true }, encoding: 'utf8' }));
 }
 
 export async function downloadMediaUrl(url: string, outPath: string) {
@@ -768,5 +859,29 @@ export async function downloadMediaUrl(url: string, outPath: string) {
   await runFfmpegProcess(args);
 }
 
-// Don't pass complex objects over the bridge (the process), so just convert it to a promise
-export const runFfmpeg = async (...args: Parameters<typeof runFfmpegProcess>) => runFfmpegProcess(...args);
+// Don't pass complex objects over the bridge (the process), so just convert it to a promise.
+// abortFfmpeg(cancelId) stops it.
+export const runFfmpeg = (args: readonly string[], customExecaOptions?: ExecaOptions, { cancelId, ...additionalOptions }: { logCli?: boolean, cancelId?: string | undefined } = {}) => (
+  withCancelId(cancelId, async (cancelSignal) => {
+    await loadExeca();
+    return runFfmpegProcess(args, { ...customExecaOptions, ...(cancelSignal != null && { cancelSignal }) }, additionalOptions);
+  })
+);
+
+const callbackRunners = { runFfmpeg, runFfprobe, runFfmpegStreaming, renderWaveformPng };
+type CallbackRunners = typeof callbackRunners;
+
+/**
+ * For the page: runs one of these and answers through `resolve` / `reject`. A promise handed to the page costs
+ * @electron/remote a second synchronous round trip to pass its `then` over, and that one waits for whatever the main
+ * process is busy with (~5 ms each, several times while a recording opens). Otherwise the same as the promise.
+ */
+export function runWithCallbacks<K extends keyof CallbackRunners>(
+  name: K,
+  args: Parameters<CallbackRunners[K]>,
+  resolve: (value: Awaited<ReturnType<CallbackRunners[K]>>) => void,
+  reject: (error: unknown) => void,
+) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (callbackRunners[name] as (...runArgs: any[]) => Promise<Awaited<ReturnType<CallbackRunners[K]>>>)(...args).then(resolve, reject);
+}

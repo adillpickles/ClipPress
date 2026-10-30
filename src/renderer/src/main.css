@@ -18,11 +18,106 @@ https://www.radix-ui.com/docs/colors/palette-composition/understanding-the-scale
 @import '@radix-ui/colors/black-alpha.css';
 @import '@radix-ui/colors/white-alpha.css';
 
+/*
+ClipPress design tokens (Beta 6). One accent (brand teal), neutral surfaces, hairline borders.
+
+Tokens that alias Radix variables are declared on `.dark-theme` too: a custom property is resolved
+where it is declared and inherited as that value, so declaring it on :root alone would freeze the
+light values inside the dark theme.
+*/
+:root {
+  /* Brand teal, light theme */
+  --accent-1: #fafefe;
+  --accent-2: #f1fbfc;
+  --accent-3: #e0f6f8;
+  --accent-4: #cdeff2;
+  --accent-5: #b7e6ea;
+  --accent-6: #9dd9df;
+  --accent-7: #79c7cf;
+  --accent-8: #49afb9;
+  --accent-9: #3bb3bd;
+  --accent-10: #31a5af;
+  --accent-11: #0d7680;
+  --accent-12: #0d3a3f;
+  --accent-contrast: #041416;
+  /* Keyboard focus ring. Light accent-8 is only ~2.5:1 on the light surfaces, under the 3:1 a focus ring needs. */
+  --cp-focus-color: var(--accent-11);
+}
+
+.dark-theme {
+  /* Brand teal, dark theme */
+  --accent-1: #0b1415;
+  --accent-2: #0f1b1d;
+  --accent-3: #0d2b2f;
+  --accent-4: #0b383d;
+  --accent-5: #0f454b;
+  --accent-6: #16545b;
+  --accent-7: #1e6870;
+  --accent-8: #278390;
+  --accent-9: #3bb3bd;
+  --accent-10: #4fc3cc;
+  --accent-11: #6fd6de;
+  --accent-12: #c6f1f4;
+  --accent-contrast: #041416;
+  --cp-focus-color: var(--accent-8);
+}
+
+:root, .dark-theme {
+  --cp-font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, 'Open Sans Variable', 'Noto Sans', sans-serif;
+  --cp-font-display: 'Segoe UI Variable Display', 'Segoe UI', system-ui, 'Open Sans Variable', 'Noto Sans', sans-serif;
+  --cp-font-mono: 'Cascadia Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+
+  --cp-bg: var(--gray-1);
+  --cp-panel: var(--gray-2);
+  --cp-raised: var(--gray-3);
+  --cp-hover: var(--gray-4);
+  --cp-active: var(--gray-5);
+  --cp-line: color-mix(in srgb, var(--gray-8) 38%, transparent);
+  --cp-line-strong: color-mix(in srgb, var(--gray-8) 70%, transparent);
+
+  --cp-text: var(--gray-12);
+  --cp-text-muted: var(--gray-11);
+  --cp-text-subtle: var(--gray-10);
+
+  --cp-accent: var(--accent-9);
+  --cp-accent-hover: var(--accent-10);
+  --cp-accent-text: var(--accent-11);
+  --cp-accent-soft: color-mix(in srgb, var(--accent-9) 16%, transparent);
+
+  --cp-success: var(--green-11);
+  --cp-warning: var(--amber-11);
+  --cp-danger: var(--red-11);
+  --cp-danger-soft: color-mix(in srgb, var(--red-9) 16%, transparent);
+  --cp-warning-soft: color-mix(in srgb, var(--amber-9) 16%, transparent);
+
+  --cp-radius-sm: 8px;
+  --cp-radius: 10px;
+  --cp-radius-lg: 16px;
+  --cp-radius-xl: 22px;
+
+  --cp-focus-ring: 0 0 0 2px var(--cp-bg), 0 0 0 4px var(--cp-focus-color);
+  --cp-shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.18);
+  --cp-shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.2);
+  /* The app's surface, title bar included: the base colour with a very faint accent glow from the top left,
+     so it feels lit rather than flat. */
+  --cp-app-bg:
+    radial-gradient(70rem 26rem at 0% -6rem, color-mix(in srgb, var(--accent-9) 12%, transparent), transparent 72%),
+    radial-gradient(50rem 22rem at 100% -8rem, color-mix(in srgb, var(--accent-9) 6%, transparent), transparent 70%),
+    var(--cp-bg);
+}
+
+/* Light theme only: gray-10 is ~3.7:1 on the light surfaces, too faint for the small menu labels, times and counts
+   that use it. This mix is ~5:1 and stays a step lighter than --cp-text-muted, so the two text levels differ.
+   It has to come after the shared block (same specificity); .dark-theme keeps the shared gray-10 value. */
+:root {
+  --cp-text-subtle: color-mix(in srgb, var(--gray-10) 30%, var(--gray-11));
+}
 
 html {
-  font-family: 'Open Sans Variable', 'Noto Sans SemiCondensed', 'Noto Sans', sans-serif;
+  font-family: var(--cp-font);
   font-size: 16px;
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
 body {
@@ -30,6 +125,19 @@ body {
   overflow: hidden;
   color: white;
   background: black;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+}
+
+/* A drag in progress keeps its cursor wherever the pointer goes (dragCursor.ts). */
+html[data-drag-cursor], html[data-drag-cursor] * {
+  cursor: var(--cp-drag-cursor) !important;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
 
 /* https://github.com/electron/electron/issues/2538 */
@@ -43,16 +151,20 @@ body {
 kbd {
   white-space: nowrap;
   display: inline-block;
+  min-width: 1.6em;
+  box-sizing: border-box;
   padding: 3px 5px;
+  font-family: var(--cp-font);
   font-size: 11px;
-  line-height: 10px;
-  color: var(--gray-11);
+  font-weight: 600;
+  line-height: 12px;
+  text-align: center;
+  color: var(--gray-12);
   vertical-align: middle;
-  background-color: var(--gray-4);
-  border: solid 1px var(--gray-8);
-  border-bottom-color: var(--gray-8);
-  border-radius: 3px;
-  box-shadow: inset 0 -1px 0 var(--gray-8);
+  background-color: var(--gray-3);
+  border: solid 1px var(--gray-7);
+  border-radius: 5px;
+  box-shadow: inset 0 -1px 0 var(--gray-7);
 }
 
 code.highlighted {
@@ -65,14 +177,20 @@ code.highlighted {
 }
 
 .consistent-scrollbar::-webkit-scrollbar {
-  width: .5em;
+  width: 10px;
+  height: 10px;
 }
 .consistent-scrollbar::-webkit-scrollbar-track-piece {
   background: transparent;
 }
 .consistent-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--gray-11);
-  border-radius: .1em;
+  background: color-mix(in srgb, var(--gray-9) 60%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.consistent-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--gray-10);
 }
 
 .swal2-losslesscut-radio {
@@ -110,8 +228,8 @@ code.highlighted {
   outline: revert;
 }
 
-input:focus-visible, select:focus-visible {
-  outline: 0.1em solid var(--gray-11);
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--cp-focus-color);
   outline-offset: 0;
 }
 
@@ -142,7 +260,7 @@ input:focus-visible, select:focus-visible {
 }
 
 .spinner-animation {
-  animation: pulse 1s ease-in-out infinite;
+  animation: spin .9s linear infinite;
 }
 
 .loading-animation {

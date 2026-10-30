@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createTimelineMap, getRetimeAutoScrollStep, getWarpedImageSpans } from './timelineMap';
+import { createTimelineMap, getMaxScale, getRetimeAutoScrollStep, getWarpedImageSpans } from './timelineMap';
 
 describe('createTimelineMap', () => {
   it('is the identity without speed changes', () => {
@@ -51,6 +51,18 @@ describe('getWarpedImageSpans', () => {
     expect(spans[1]!.left).toBeCloseTo((10 / 30) * 100);
     expect(spans[1]!.innerLeft).toBeCloseTo(-100);
     expect(spans[1]!.innerWidth).toBeCloseTo(200);
+  });
+});
+
+describe('getMaxScale', () => {
+  it('is how stretched the most stretched part between two times is', () => {
+    const map = createTimelineMap([{ start: 10, end: 20, speed: 0.5 }, { start: 30, end: 40, speed: 2 }], 60);
+    expect(getMaxScale(map, 0, 9)).toBe(1);
+    expect(getMaxScale(map, 5, 15)).toBe(2);
+    expect(getMaxScale(map, 12, 18)).toBe(2);
+    expect(getMaxScale(map, 32, 38)).toBe(0.5);
+    expect(getMaxScale(map, 25, 38)).toBe(1);
+    expect(getMaxScale(createTimelineMap([], 60), 0, 60)).toBe(1);
   });
 });
 

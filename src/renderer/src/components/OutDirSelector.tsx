@@ -41,22 +41,21 @@ export default function OutDirSelector({ children }: { children: React.ReactNode
         <Dialog.Overlay />
 
         <Dialog.Content aria-describedby={undefined}>
-          <Dialog.Title>{t('Working directory')}</Dialog.Title>
-          <Dialog.Description>{t('This is where working files and exported files are stored.')}</Dialog.Description>
+          <Dialog.Title>{t('Save exports to')}</Dialog.Title>
 
-          <Select style={{ width: '100%' }} value={customOutDir ?? ''} onChange={handleChange}>
-            <option value={changeMagicValue}>{t('Choose directory')}...</option>
+          <Select style={{ width: '100%', marginTop: '.5rem' }} value={customOutDir ?? ''} onChange={handleChange} aria-label={t('Save exports to')}>
+            <option value={changeMagicValue}>{t('Choose a folder…')}</option>
             {customOutDir != null && (
               <option value={customOutDir}>{customOutDir}</option>
             )}
-            <option value="">{t('Same directory as input file')}</option>
+            <option value="">{t('Same folder as the recording')}</option>
             {history.map((dir) => (
               <option key={dir} value={dir}>{dir}</option>
             ))}
           </Select>
 
           <Dialog.ButtonRow>
-            <DialogButton onClick={() => setRecentCustomOutDirs([])}>{t('Clear recents')}</DialogButton>
+            {history.length > 0 && <DialogButton onClick={() => setRecentCustomOutDirs([])}>{t('Clear list')}</DialogButton>}
             <Dialog.Close asChild>
               <DialogButton primary>{t('Done')}</DialogButton>
             </Dialog.Close>

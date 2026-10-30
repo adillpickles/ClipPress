@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { buildLlcProjectData, encodeLlcProjectFile, getProjectSegmentsToSave } from './llcProject';
+import { buildLlcProjectData, encodeLlcProjectFile, getProjectSegmentsToSave, withMediaDuration } from './llcProject';
 import ProjectAutoSave from './projectAutoSave';
-import type { ProjectSession } from './projectAutoSave';
+import type { ProjectSaveFailure, ProjectSession } from './projectAutoSave';
 import type { ProjectFilePathKey } from './projectFilePathKey';
 import type { LlcProject, OverlayClip, StateSegment } from './types';
 
@@ -35,14 +35,17 @@ function setup({ latencyMs = 10, pathKey, fileKey }: {
   const disk = new Map<string, LlcProject>();
   const writes: { path: string, data: LlcProject }[] = [];
   const errors: unknown[] = [];
+  const copyErrors: ProjectSaveFailure[] = [];
   let failNext = false;
   let failAll = false;
+  let failingPath: string | undefined;
   const keyOf = fileKey ?? (pathKey != null ? (filePath: string) => ({ key: pathKey(filePath), resolved: true }) : undefined);
   const autoSave = new ProjectAutoSave({
     delayMs,
     write: async (writePath, data) => {
       writes.push({ path: writePath, data });
       await new Promise((resolve) => { setTimeout(resolve, latencyMs); });
+      if (writePath === failingPath) throw new Error('read-only folder');
       if (failNext || failAll) {
         failNext = false;
         throw new Error('disk full');
@@ -50,22 +53,26 @@ function setup({ latencyMs = 10, pathKey, fileKey }: {
       disk.set(pathKey?.(writePath) ?? writePath, data);
     },
     onError: (err) => errors.push(err),
+    onCopyError: (failure) => copyErrors.push(failure),
     ...(keyOf != null ? { pathKey: keyOf } : {}),
   });
   let enabled = true;
-  const show = (session: ProjectSession, project: LlcProject, { at = path, fileDuration = 8 }: { at?: string, fileDuration?: number } = {}) => {
-    autoSave.update({ session, path: at, project, fileData: encodeLlcProjectFile(project, fileDuration) }, { enabled });
+  const show = (session: ProjectSession, project: LlcProject, { at = path, copies, fileDuration = 8 }: { at?: string, copies?: string[], fileDuration?: number } = {}) => {
+    autoSave.update({ session, path: at, ...(copies != null ? { copyPaths: copies } : {}), project, fileData: encodeLlcProjectFile(project, fileDuration) }, { enabled });
   };
   return {
     autoSave,
     disk,
     writes,
     errors,
+    copyErrors,
     show,
     setEnabled: (value: boolean) => { enabled = value; },
     failNextWrite: () => { failNext = true; },
     /** Every write fails until this is turned off again. */
     setDiskFailing: (value: boolean) => { failAll = value; },
+    /** Every write to this path fails (undefined: none). */
+    setFailingPath: (value: string | undefined) => { failingPath = value; },
     /** Lets time pass, running timers and the writes they start. */
     wait: (ms: number) => vi.advanceTimersByTimeAsync(ms),
   };
@@ -144,6 +151,24 @@ describe('ProjectAutoSave', () => {
     t.show({ id: 1, loadedProjectPath: '/elsewhere/clip-proj.llc' }, untouched);
     await t.wait(delayMs + 20);
     expect(t.disk.get(path)?.overlayClips).toBeUndefined();
+  });
+
+  it('tells when the open session has its project where it saves, not before, not after a failed save', async () => {
+    const t = setup();
+    const elsewhere = '/elsewhere/clip-proj.llc';
+    t.show({ id: 1, loadedProjectPath: elsewhere }, withText);
+    expect(t.autoSave.hasSaved(1, elsewhere)).toBe(true);
+    expect(t.autoSave.hasSaved(1, path)).toBe(false);
+    t.failNextWrite();
+    t.autoSave.saveNow();
+    await t.wait(20);
+    expect(t.errors).toHaveLength(1);
+    expect(t.autoSave.hasSaved(1, path)).toBe(false);
+    t.show({ id: 1, loadedProjectPath: elsewhere }, withTrim);
+    await t.wait(delayMs + 20);
+    expect(t.autoSave.hasSaved(1, path)).toBe(true);
+    // Another open of the file is another session
+    expect(t.autoSave.hasSaved(2, path)).toBe(false);
   });
 
   it('saves segments created on open (from chapters) without a project file, as before', async () => {
@@ -1044,6 +1069,270 @@ describe('ProjectAutoSave before the app closes', () => {
       t.autoSave.saveNow();
       await t.wait(2000);
       expect(t.writes).toHaveLength(1);
+    });
+  });
+
+  // "Both": the edits are kept in ClipPress's folder and next to the recording (#90).
+  describe('a project kept in two places', () => {
+    const inApp = '/data/Projects/clip-0123456789abcdef.llc';
+    const beside = '/videos/clip-proj.llc';
+
+    it('writes every edit to both, the first place first, and keeps both in sync', async () => {
+      const t = setup();
+      t.show({ id: 1 }, untouched, { at: inApp, copies: [beside] });
+      t.show({ id: 1 }, withTrim, { at: inApp, copies: [beside] });
+      await t.wait(delayMs + 50);
+      expect(t.writes.map((w) => w.path)).toEqual([inApp, beside]);
+      expect(t.disk.get(inApp)).toEqual(withTrim);
+      expect(t.disk.get(beside)).toEqual(withTrim);
+      expect(t.autoSave.hasSaved(1, inApp)).toBe(true);
+      expect(t.autoSave.hasSaved(1, beside)).toBe(true);
+      t.show({ id: 1 }, withText, { at: inApp, copies: [beside] });
+      t.autoSave.endSession();
+      await t.wait(50);
+      expect(t.disk.get(beside)?.overlayClips).toEqual([textClip]);
+      expect(t.disk.get(inApp)).toEqual(t.disk.get(beside));
+    });
+
+    it('does not write anything for a recording that was only opened', async () => {
+      const t = setup();
+      t.show({ id: 1 }, untouched, { at: inApp, copies: [beside] });
+      await t.wait(2000);
+      t.autoSave.endSession();
+      await t.wait(50);
+      expect(t.writes).toEqual([]);
+    });
+
+    it('does not rewrite the other copy when it already holds what was loaded', async () => {
+      const t = setup();
+      t.show({ id: 1, loadedProjectPath: inApp, sameCopyPaths: [beside] }, withTrim, { at: inApp, copies: [beside] });
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      expect(t.autoSave.hasSaved(1, beside)).toBe(true);
+      await t.wait(2000);
+      t.autoSave.endSession();
+      await t.wait(50);
+      expect(t.writes).toEqual([]);
+    });
+
+    it('adds the missing copy of a project loaded from one of the places, and leaves the other alone', async () => {
+      const t = setup();
+      t.show({ id: 1, loadedProjectPath: inApp }, withTrim, { at: inApp, copies: [beside] });
+      await t.wait(delayMs + 50);
+      expect(t.writes.map((w) => w.path)).toEqual([beside]);
+      expect(t.disk.get(beside)).toEqual(withTrim);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+    });
+
+    it('starts the copy with the next save after switching to both, and stops it after switching back', async () => {
+      const t = setup();
+      t.show({ id: 1, loadedProjectPath: inApp }, withTrim, { at: inApp });
+      await t.wait(delayMs + 50);
+      expect(t.writes).toEqual([]);
+      t.show({ id: 1, loadedProjectPath: inApp }, withTrim, { at: inApp, copies: [beside] });
+      await t.wait(delayMs + 50);
+      expect(t.disk.get(beside)).toEqual(withTrim);
+      t.show({ id: 1, loadedProjectPath: inApp }, withText, { at: inApp });
+      await t.wait(delayMs + 50);
+      expect(t.disk.get(inApp)).toEqual({ ...withText, cutSegments: [{ start: 0, end: 8, name: '', selected: true, initial: true }] });
+      // The copy next to the recording keeps what it had: nothing is lost, it is just no longer kept up to date.
+      expect(t.disk.get(beside)).toEqual(withTrim);
+    });
+
+    it('keeps saving the other copy when one cannot be written, and reports and retries only that one', async () => {
+      const t = setup();
+      t.setFailingPath(beside);
+      t.show({ id: 1 }, untouched, { at: inApp, copies: [beside] });
+      t.show({ id: 1 }, withTrim, { at: inApp, copies: [beside] });
+      await t.wait(delayMs + 50);
+      expect(t.copyErrors).toEqual([{ path: beside, error: expect.any(Error) }]);
+      expect(t.disk.get(inApp)).toEqual(withTrim);
+      expect(t.autoSave.hasSaved(1, inApp)).toBe(true);
+      expect(t.autoSave.hasSaved(1, beside)).toBe(false);
+      // Once the folder can be written to again, trying again writes only the copy that failed.
+      t.setFailingPath(undefined);
+      const writesBefore = t.writes.length;
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.writes.slice(writesBefore).map((w) => w.path)).toEqual([beside]);
+      expect(t.disk.get(beside)).toEqual(withTrim);
+    });
+
+    // Review finding R2-3: the copy next to the recording failing read as the edits not being saved.
+    describe('when only the copy cannot be written', () => {
+      it('warns about the copy once, not as a failed save, while it keeps failing', async () => {
+        const t = setup();
+        t.setFailingPath(beside);
+        t.show({ id: 1 }, untouched, { at: inApp, copies: [beside] });
+        t.show({ id: 1 }, withTrim, { at: inApp, copies: [beside] });
+        await t.wait(delayMs + 50);
+        t.show({ id: 1 }, withText, { at: inApp, copies: [beside] });
+        await t.wait(delayMs + 50);
+        const saving = t.autoSave.whenSaved();
+        await t.wait(50);
+        await saving;
+        expect(t.disk.get(inApp)?.overlayClips).toEqual([textClip]);
+        expect(t.writes.filter((w) => w.path === beside).length).toBeGreaterThanOrEqual(2);
+        expect(t.errors).toEqual([]);
+        expect(t.copyErrors.map((f) => f.path)).toEqual([beside]);
+        // Saved after all, then failing again: worth a word again.
+        t.setFailingPath(undefined);
+        await flushWhile(t);
+        t.setFailingPath(beside);
+        t.show({ id: 1 }, withTrim, { at: inApp, copies: [beside] });
+        await t.wait(delayMs + 50);
+        expect(t.copyErrors.map((f) => f.path)).toEqual([beside, beside]);
+        expect(t.errors).toEqual([]);
+      });
+
+      it('lets the app close once the main place has the edits, trying the copy once more', async () => {
+        const t = setup();
+        t.setFailingPath(beside);
+        t.show({ id: 1 }, untouched, { at: inApp, copies: [beside] });
+        t.show({ id: 1 }, withTrim, { at: inApp, copies: [beside] });
+        await t.wait(delayMs + 50);
+        expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+        // A change is still waited for, until it is in the main place.
+        t.show({ id: 1 }, withText, { at: inApp, copies: [beside] });
+        expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+        const writesBefore = t.writes.length;
+        expect(await flushWhile(t)).toEqual([]);
+        expect(new Set(t.writes.slice(writesBefore).map((w) => w.path))).toEqual(new Set([inApp, beside]));
+        expect(t.disk.get(inApp)?.overlayClips).toEqual([textClip]);
+        expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+        expect(t.copyErrors).toHaveLength(1);
+      });
+
+      it('lets the app close after a file kept in both places was closed', async () => {
+        const t = setup();
+        t.setFailingPath(beside);
+        t.show({ id: 1 }, untouched, { at: inApp, copies: [beside] });
+        t.show({ id: 1 }, withTrim, { at: inApp, copies: [beside] });
+        t.autoSave.endSession();
+        await t.wait(50);
+        expect(t.disk.get(inApp)).toEqual(withTrim);
+        expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+        expect(await flushWhile(t)).toEqual([]);
+      });
+
+      it('still keeps the app from closing when the main place cannot be written, naming both', async () => {
+        const t = setup();
+        t.show({ id: 1 }, untouched, { at: inApp, copies: [beside] });
+        t.show({ id: 1 }, withTrim, { at: inApp, copies: [beside] });
+        t.setFailingPath(inApp);
+        await t.wait(delayMs + 50);
+        expect(t.disk.get(beside)).toEqual(withTrim);
+        expect(t.errors).toHaveLength(1);
+        expect(t.copyErrors).toEqual([]);
+        expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+        expect((await flushWhile(t)).map((f) => f.path)).toEqual([inApp]);
+        // Both failing: the main place's failure keeps the app open, and the copy's is listed with it.
+        t.setDiskFailing(true);
+        t.show({ id: 1 }, withText, { at: inApp, copies: [beside] });
+        expect((await flushWhile(t)).map((f) => f.path)).toEqual([inApp, beside]);
+        expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+      });
+    });
+
+    it('reports one error for a save that fails in both places', async () => {
+      const t = setup();
+      t.setDiskFailing(true);
+      t.show({ id: 1 }, untouched, { at: inApp, copies: [beside] });
+      t.show({ id: 1 }, withTrim, { at: inApp, copies: [beside] });
+      await t.wait(delayMs + 50);
+      expect(t.writes.map((w) => w.path)).toEqual([inApp, beside]);
+      expect(t.errors).toHaveLength(1);
+      expect((await flushWhile(t)).map((f) => f.path)).toEqual([inApp, beside]);
+    });
+
+    it('forgets a failed copy once the setting no longer keeps it', async () => {
+      const t = setup();
+      t.setFailingPath(beside);
+      t.show({ id: 1 }, untouched, { at: inApp, copies: [beside] });
+      t.show({ id: 1 }, withTrim, { at: inApp, copies: [beside] });
+      await t.wait(delayMs + 50);
+      t.show({ id: 1 }, withTrim, { at: inApp });
+      expect(await flushWhile(t)).toEqual([]);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+    });
+
+    it('does not bring back a copy deleted on purpose, and still saves the other one', async () => {
+      const t = setup();
+      t.show({ id: 1 }, untouched, { at: inApp, copies: [beside] });
+      t.show({ id: 1 }, withTrim, { at: inApp, copies: [beside] });
+      await t.wait(delayMs + 50);
+      t.show({ id: 1 }, withText, { at: inApp, copies: [beside] });
+      await t.autoSave.deleteFile(beside, { remove: async () => { t.disk.delete(beside); }, exists: async (p) => t.disk.has(p) });
+      await t.wait(2000);
+      expect(t.disk.has(beside)).toBe(false);
+      expect(t.disk.get(inApp)?.overlayClips).toEqual([textClip]);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+    });
+  });
+
+  // Opening edits with their recording found in a new place (#16): the edits move to the new place's project.
+  it('saves edits loaded from the old place of a recording to the new place, and only then counts them as saved there', async () => {
+    const t = setup();
+    const oldCopy = '/data/Projects/clip-aaaaaaaaaaaaaaaa.llc';
+    const newCopy = '/data/Projects/clip-bbbbbbbbbbbbbbbb.llc';
+    t.show({ id: 1, loadedProjectPath: oldCopy }, withTrim, { at: newCopy });
+    expect(t.autoSave.hasSaved(1, newCopy)).toBe(false);
+    t.autoSave.saveNow();
+    const saving = t.autoSave.whenSaved();
+    await t.wait(50);
+    await saving;
+    expect(t.disk.get(newCopy)).toEqual(withTrim);
+    expect(t.autoSave.hasSaved(1, newCopy)).toBe(true);
+    expect(t.writes.map((w) => w.path)).toEqual([newCopy]);
+  });
+
+  // The recording's length (noted in the file) is only known once the video has loaded: the save that moves the edits
+  // comes before that.
+  describe('the length of the recording', () => {
+    const fileData = (project: LlcProject, fileDuration?: number) => withMediaDuration(encodeLlcProjectFile(project, fileDuration), fileDuration);
+
+    it('is written once known to a copy this open saved before, and to no other', async () => {
+      const t = setup();
+      const oldCopy = '/data/Projects/clip-aaaaaaaaaaaaaaaa.llc';
+      const newCopy = '/data/Projects/clip-bbbbbbbbbbbbbbbb.llc';
+      const report = (fileDuration?: number) => t.autoSave.update({ session: { id: 1, loadedProjectPath: oldCopy }, path: newCopy, project: withTrim, fileData: fileData(withTrim, fileDuration) }, { enabled: true });
+      report();
+      t.autoSave.saveNow();
+      await t.wait(50);
+      expect(t.disk.get(newCopy)?.mediaDuration).toBeUndefined();
+      report(90);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(true);
+      await t.wait(delayMs + 50);
+      expect(t.disk.get(newCopy)?.mediaDuration).toBe(90);
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      report(90);
+      await t.wait(2000);
+      t.autoSave.endSession();
+      await t.wait(50);
+      expect(t.writes.map((w) => w.path)).toEqual([newCopy, newCopy]);
+    });
+
+    it('does not make a project that was only opened be written', async () => {
+      const t = setup();
+      const session = { id: 1, loadedProjectPath: path };
+      t.autoSave.update({ session, path, project: withTrim, fileData: fileData(withTrim) }, { enabled: true });
+      t.autoSave.update({ session, path, project: withTrim, fileData: fileData(withTrim, 90) }, { enabled: true });
+      expect(t.autoSave.hasUnsavedChanges()).toBe(false);
+      await t.wait(2000);
+      t.autoSave.endSession();
+      await t.wait(50);
+      expect(t.writes).toEqual([]);
+    });
+
+    it('does not bring back a copy deleted on purpose', async () => {
+      const t = setup();
+      t.autoSave.update({ session: { id: 1 }, path, project: withTrim, fileData: fileData(withTrim) }, { enabled: true });
+      await t.wait(delayMs + 50);
+      expect(t.disk.has(path)).toBe(true);
+      await t.autoSave.deleteFile(path, { remove: async () => { t.disk.delete(path); }, exists: async (p) => t.disk.has(p) });
+      t.autoSave.update({ session: { id: 1 }, path, project: withTrim, fileData: fileData(withTrim, 90) }, { enabled: true });
+      await t.wait(2000);
+      t.autoSave.endSession();
+      await t.wait(50);
+      expect(t.disk.has(path)).toBe(false);
     });
   });
 });

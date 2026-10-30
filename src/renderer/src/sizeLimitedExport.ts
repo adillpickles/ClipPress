@@ -19,7 +19,8 @@ import {
   getSizeLimitedTwoPassEncodeArgs,
 } from './sizeLimitedFfmpegArgs';
 import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile } from './sizeLimitedResolution';
-import { planSizeLimitedEncode } from './sizeLimitedPlanner';
+import { planSizeLimitedEncode, relaxQualityCapForGenerousBudget } from './sizeLimitedPlanner';
+import { hasQualityCap } from './sizeLimitedEncoderArgs';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import { buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
 import { getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from './segmentSpeed';
@@ -34,6 +35,7 @@ import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } f
 import createAsyncCache from './util/asyncCache';
 import { getGpuEncoderInfo, getHardwareDecodeArgs, gpuEncoderLabels, gpuEncoders, isGpuEncoderAvailable, runWithGpuFallbacksCore, shouldUseHardwareDecode } from './gpuEncoders';
 import type { GpuEncoderName } from './gpuEncoders';
+import { getTempWorkDir } from './util/tempFiles';
 
 const { access, constants: { W_OK }, mkdir, mkdtemp, rmdir, stat, writeFile } = window.require('fs/promises');
 const { dirname, join } = window.require('path');
@@ -42,12 +44,17 @@ const retryTempSuffix = 'clippress-size-limit';
 // 1280x720 satisfies every vendor's alignment rules (AMD AV1 pads to 64x16 blocks).
 const gpuProbeSource = 'color=c=black:s=1280x720:r=30:d=0.2';
 const gpuProbeFrames = '3';
+// Opening an encoder takes well under a second; a cold driver can take a few.
+const gpuProbeTimeoutMs = 15_000;
 
 function decodeProcessOutput({ stdout, stderr }: { stdout: Uint8Array, stderr: Uint8Array }) {
   return `${new TextDecoder().decode(stdout)}\n${new TextDecoder().decode(stderr)}`;
 }
 
-/** Listing an encoder only means FFmpeg was built with it; opening one proves the GPU and driver support it. */
+/**
+ * Listing an encoder only means FFmpeg was built with it; opening one proves the GPU and driver support it. A test that
+ * timed out isn't a sure answer.
+ */
 async function probeGpuEncoder(encoder: GpuEncoderName) {
   const ffmpegArgs = [
     '-hide_banner',
@@ -62,29 +69,81 @@ async function probeGpuEncoder(encoder: GpuEncoderName) {
   ];
 
   try {
-    await runFfmpeg(ffmpegArgs, undefined, { logCli: false });
-    return true;
+    // A driver that hangs while opening the encoder must not hold up every export: it counts as unusable.
+    await runFfmpeg(ffmpegArgs, { timeout: gpuProbeTimeoutMs }, { logCli: false });
+    return { usable: true, sure: true };
   } catch (error) {
+    // Abort stops the export that's waiting for this, rather than ruling the GPU out.
+    if (isAbortedError(error) && !(isExecaError(error) && error.timedOut)) throw error;
     console.info(`${encoder} is not usable on this system`, error);
-    return false;
+    return { usable: false, sure: !(isExecaError(error) && error.timedOut) };
   }
 }
 
-const readEncoderCapabilities = createAsyncCache(async (): Promise<SizeLimitedEncoderCapabilities> => {
+type GpuCapability = (typeof gpuEncoders)[number]['capability'];
+/** What's kept between runs: the answer, and the encoders to test again each run all the same. */
+interface SavedEncoderCheck { capabilities: Omit<SizeLimitedEncoderCapabilities, 'cpuThreads'>, retest: GpuCapability[] }
+
+function isSavedEncoderCheck(value: unknown): value is SavedEncoderCheck {
+  if (value == null || typeof value !== 'object') return false;
+  const { capabilities, retest } = value as Record<string, unknown>;
+  if (capabilities == null || typeof capabilities !== 'object' || !Array.isArray(retest)) return false;
+  const known = gpuEncoders.map(({ capability }) => capability);
+  return ['h264Nvenc', 'av1Nvenc', 'libx264', 'libsvtav1', ...known].every((key) => typeof (capabilities as Record<string, unknown>)[key] === 'boolean')
+    && retest.every((key) => known.includes(key as GpuCapability));
+}
+
+/**
+ * Saves the answer for the next runs. "Usable" holds (an export that fails on it has the next run test again,
+ * markGpuEncoderFailed); "unusable" holds only for a maker with no card in this PC. An encoder of a card that is here
+ * which failed may only have been busy (another app using its sessions, memory short, a waking driver), or unsure (it
+ * timed out): those are tested again each run, the rest is read back.
+ */
+async function saveEncoderCheck(key: string, capabilities: SavedEncoderCheck['capabilities'], listed: (encoder: GpuEncoderName) => boolean, unsure: ReadonlySet<GpuCapability>) {
+  const vendors = await mainApi.getGpuVendors().catch(() => undefined);
+  if (vendors == null) return;
+  const retest = gpuEncoders.filter(({ encoder, vendor, capability }) => listed(encoder) && capabilities[capability] !== true && (unsure.has(capability) || vendors.includes(vendor))).map(({ capability }) => capability);
+  const check: SavedEncoderCheck = { capabilities, retest };
+  await mainApi.saveEncoderCheck(key, check).catch((error: unknown) => console.warn('Could not save the encoder check', error));
+}
+
+// The test runs once per graphics card, driver, FFmpeg and ClipPress version, then is read back from disk (main
+// process, encoderCheck.ts): nothing waits for it on later starts but the few encoders still to test again. Kept for
+// the whole run; an export that fails on a GPU falls back to the next encoder.
+const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimitedEncoderCapabilities> => {
+  const cpuThreads = navigator.hardwareConcurrency || undefined;
+  const saved = await mainApi.readSavedEncoderCheck(key).catch(() => undefined);
+  const unsure = new Set<GpuCapability>();
+  const probe = async (encoder: GpuEncoderName, capability: GpuCapability) => {
+    const result = await probeGpuEncoder(encoder);
+    if (!result.sure) unsure.add(capability);
+    return result.usable;
+  };
+
+  if (isSavedEncoderCheck(saved)) {
+    if (saved.retest.length === 0) return { ...saved.capabilities, cpuThreads };
+    const capabilities = { ...saved.capabilities };
+    const retest = gpuEncoders.filter(({ capability }) => saved.retest.includes(capability));
+    await Promise.all(retest.map(async ({ encoder, capability }) => { capabilities[capability] = await probe(encoder, capability); }));
+    saveEncoderCheck(key, capabilities, (encoder) => retest.some((info) => info.encoder === encoder), unsure).catch(() => undefined);
+    return { ...capabilities, cpuThreads };
+  }
+
   const result = await runFfmpeg(['-hide_banner', '-encoders'], undefined, { logCli: false });
   const encoders = parseFfmpegEncoderNames(decodeProcessOutput(result));
-  const capabilities: SizeLimitedEncoderCapabilities = {
+  const capabilities: SavedEncoderCheck['capabilities'] = {
     h264Nvenc: false,
     av1Nvenc: false,
     libx264: encoders.has('libx264'),
     libsvtav1: encoders.has('libsvtav1'),
-    cpuThreads: navigator.hardwareConcurrency || undefined,
   };
   await Promise.all(gpuEncoders.map(async ({ encoder, capability }) => {
-    capabilities[capability] = encoders.has(encoder) && await probeGpuEncoder(encoder);
+    capabilities[capability] = encoders.has(encoder) && await probe(encoder, capability);
   }));
-  return capabilities;
-}, 5 * 60 * 1000); // GPU availability can change without the executable changing.
+  // Saved in the background: the answer is used now.
+  saveEncoderCheck(key, capabilities, (encoder) => encoders.has(encoder), unsure).catch(() => undefined);
+  return { ...capabilities, cpuThreads };
+});
 
 /**
  * GPU paths that failed during a real export this session. A probe can pass while a driver
@@ -105,6 +164,14 @@ export async function getSizeLimitedEncoderCapabilities(): Promise<SizeLimitedEn
     if (info != null) usable[info.capability] = false;
   }
   return usable;
+}
+
+/**
+ * Finds the usable encoders in the background (read back from disk, or the first time a handful of short test
+ * encodes, ~2 s), so an export doesn't wait for it.
+ */
+export function prefetchEncoderCapabilities() {
+  getSizeLimitedEncoderCapabilities().catch((error: unknown) => console.warn('Could not check the encoders', error));
 }
 
 export function canUseHardwareDecode({ enabled, inputCount, width, height }: {
@@ -132,6 +199,7 @@ export function runWithGpuFallbacks<T>(args: Omit<Parameters<typeof runWithGpuFa
 
 export function markGpuEncoderFailed(encoder: GpuEncoderName) {
   failedGpuEncoders.add(encoder);
+  mainApi.forgetEncoderCheck().catch((error: unknown) => console.warn('Could not forget the encoder check', error));
 }
 
 function assertStrategySupported({ strategy, capabilities }: {
@@ -242,13 +310,11 @@ interface PreparedTextOverlayAsset {
 
 async function prepareTextOverlayAssets({
   overlayClips,
-  outputDir,
   videoWidth,
   videoHeight,
   rotation,
 }: {
   overlayClips: OverlayClip[],
-  outputDir: string,
   videoWidth: number,
   videoHeight: number,
   rotation: number | undefined,
@@ -260,7 +326,8 @@ async function prepareTextOverlayAssets({
     for (const [index, overlayClip] of overlayClips.entries()) {
       const width = Math.max(8, Math.round(rotatedVideoDimensions.width * overlayClip.box.width));
       const imageData = await renderTextOverlayPng({ text: overlayClip.text, width, fontSize: getOverlayFontSize(overlayClip) * rotatedVideoDimensions.height });
-      const imagePath = join(outputDir, `clippress-size-limit-text-overlay-${Date.now()}-${index}.png`);
+      // In ClipPress's temporary folder, so nothing appears next to the export while it runs.
+      const imagePath = join(getTempWorkDir(), `size-limit-text-overlay-${Date.now()}-${index}.png`);
       try {
         await writeFile(imagePath, imageData, { flag: 'wx' });
       } catch (err) {
@@ -420,8 +487,9 @@ function makeProgressMetadata({
   maxAttempts,
   phaseNumber,
   phaseCount,
+  retryReason,
 }: SizeLimitedProgressMetadata) {
-  return { attemptNumber, maxAttempts, phaseNumber, phaseCount } satisfies SizeLimitedProgressMetadata;
+  return { attemptNumber, maxAttempts, phaseNumber, phaseCount, retryReason } satisfies SizeLimitedProgressMetadata;
 }
 
 async function runSinglePassEncode({
@@ -492,7 +560,7 @@ async function executeAttempts({
     plan,
     strategy,
     buildAttempt: (attempt) => buildAttempt(attempt),
-    runAttempt: async (attemptFiles, attempt) => {
+    runAttempt: async (attemptFiles, attempt, retryReason) => {
       if (strategy.executionMode === 'ffmpeg_two_pass') {
         const { pass1Args } = attemptFiles;
         if (pass1Args == null) throw new UserFacingError('2-pass encoding was not configured correctly');
@@ -506,12 +574,14 @@ async function executeAttempts({
             maxAttempts: plan.maxAttempts,
             phaseNumber: 1,
             phaseCount: 2,
+            retryReason,
           }),
           pass2ProgressMetadata: makeProgressMetadata({
             attemptNumber: attempt.attemptNumber,
             maxAttempts: plan.maxAttempts,
             phaseNumber: 2,
             phaseCount: 2,
+            retryReason,
           }),
         });
       } else {
@@ -524,6 +594,7 @@ async function executeAttempts({
             maxAttempts: plan.maxAttempts,
             phaseNumber: 1,
             phaseCount: 1,
+            retryReason,
           }),
         });
       }
@@ -572,6 +643,7 @@ async function resolveSizeLimitedPlan({
   targetSizeMb,
   duration,
   hasAudio,
+  getOutputPixelRate,
 }: {
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
@@ -584,6 +656,8 @@ async function resolveSizeLimitedPlan({
   targetSizeMb: number,
   duration: number,
   hasAudio: boolean,
+  /** The pixels the encode makes each second at a video bitrate (the size may follow it), when known. */
+  getOutputPixelRate: (plannedVideoBitrate: number) => number | undefined,
 }) {
   const capabilities = await getSizeLimitedEncoderCapabilities();
   const strategy = resolveSizeLimitedStrategy({
@@ -599,7 +673,24 @@ async function resolveSizeLimitedPlan({
   });
   assertStrategySupported({ strategy, capabilities });
   const plan = planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strategy });
-  return { capabilities, strategy, plan };
+  // Elsewhere the relaxation would change nothing but skip the top-up. Checked again after a GPU encoder fallback.
+  if (!hasQualityCap(strategy.encoder)) return { capabilities, strategy, plan };
+  return { capabilities, strategy, plan: relaxQualityCapForGenerousBudget(plan, getOutputPixelRate(plan.initialAttempt.videoBitrate)) };
+}
+
+/** The pixels an encode makes each second (its size and frame rate, else the source's), for judging a budget. */
+function makeOutputPixelRate({ resolution, fps, videoStream, rotation, sourceFps }: {
+  resolution: SizeLimitSimpleResolution,
+  fps: SizeLimitSimpleFps,
+  videoStream: Pick<FFprobeStream, 'width' | 'height'>,
+  rotation: number | undefined,
+  sourceFps: number | undefined,
+}) {
+  return (plannedVideoBitrate: number) => {
+    const profile = resolveSizeLimitedVideoProfile({ resolution, fps, sourceWidth: videoStream.width, sourceHeight: videoStream.height, rotation, sourceFps, plannedVideoBitrate });
+    const pixelRate = (profile.outputWidth ?? videoStream.width ?? 0) * (profile.outputHeight ?? videoStream.height ?? 0) * (profile.outputFps ?? sourceFps ?? 0);
+    return Number.isFinite(pixelRate) && pixelRate > 0 ? pixelRate : undefined;
+  };
 }
 
 export function pickSizeLimitedStreams(streams: FFprobeStream[]) {
@@ -696,6 +787,7 @@ export async function exportSizeLimitedSegment({
     targetSizeMb,
     duration: plannedDuration,
     hasAudio: audioStream != null,
+    getOutputPixelRate: makeOutputPixelRate({ resolution, fps, videoStream, rotation: sourceRotation ?? rotation, sourceFps }),
   });
   let { strategy, plan } = await resolvePlan();
 
@@ -714,13 +806,14 @@ export async function exportSizeLimitedSegment({
     } satisfies SizeLimitedExecutionResult;
   }
 
-  const preparedOverlayAssets = overlayClips != null
-    && overlayClips.length > 0
+  // Only the texts this clip shows are drawn (each clip of an export gets them all).
+  const segmentOverlayClips = overlayClips?.filter((overlayClip) => overlayClip.start < segment.end && overlayClip.end > segment.start);
+  const preparedOverlayAssets = segmentOverlayClips != null
+    && segmentOverlayClips.length > 0
     && overlayVideoWidth != null
     && overlayVideoHeight != null
     ? await prepareTextOverlayAssets({
-      overlayClips,
-      outputDir: dirname(outPath),
+      overlayClips: segmentOverlayClips,
       videoWidth: overlayVideoWidth,
       videoHeight: overlayVideoHeight,
       rotation: sourceRotation ?? rotation,
@@ -971,6 +1064,7 @@ export async function exportSizeLimitedMerge({
     targetSizeMb,
     duration: plannedDuration,
     hasAudio: audioStream != null,
+    getOutputPixelRate: makeOutputPixelRate({ resolution, fps, videoStream, rotation: sourceRotation ?? rotation, sourceFps }),
   });
   let { strategy, plan } = await resolvePlan();
 
@@ -995,7 +1089,6 @@ export async function exportSizeLimitedMerge({
     && overlayVideoHeight != null
     ? await prepareTextOverlayAssets({
       overlayClips,
-      outputDir: dirname(outPath),
       videoWidth: overlayVideoWidth,
       videoHeight: overlayVideoHeight,
       rotation: sourceRotation ?? rotation,

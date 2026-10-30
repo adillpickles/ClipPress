@@ -11,6 +11,9 @@ const commonVideoAudioFormats = ['matroska', 'mov', 'mp4', 'mpegts', 'ogv', 'web
 const commonAudioFormats = ['flac', 'ipod', 'mp3', 'oga', 'ogg', 'opus', 'wav'] as const;
 const commonSubtitleFormats = ['ass', 'srt', 'sup', 'webvtt'] as const;
 
+/** A group's name as a heading, without the colon its words were written with. */
+const heading = (label: string) => label.replace(/[:：]\s*$/, '');
+
 function renderFormatOptions(formats: FfmpegFormat[]) {
   return formats.map((format) => (
     <option key={format} value={format}>{format} - {allOutFormats[format]}</option>
@@ -36,7 +39,8 @@ function OutputFormatSelect({ style, disabled, detectedFileFormat, fileFormat, o
   return (
     // eslint-disable-next-line react/jsx-props-no-spreading
     <Select style={style} disabled={disabled} value={fileFormat || ''} title={t('Output container format:')} onChange={withBlur((e) => onOutputFormatUserChange(e.target.value))}>
-      <option key="disabled1" value="" disabled>{t('Output container format:')}</option>
+      {/* Shown only while no format is chosen; the list itself starts with the formats. */}
+      <option key="placeholder" value="" disabled hidden>{t('Output container format:')}</option>
 
       {detectedFileFormat && (
         <option key={detectedFileFormat} value={detectedFileFormat}>
@@ -44,17 +48,21 @@ function OutputFormatSelect({ style, disabled, detectedFileFormat, fileFormat, o
         </option>
       )}
 
-      <option key="disabled2" value="" disabled>--- {t('Common video/audio formats:')} ---</option>
-      {renderFormatOptions(commonVideoAudioFormatsExceptDetectedFormat)}
+      <optgroup label={heading(t('Common video/audio formats:'))}>
+        {renderFormatOptions(commonVideoAudioFormatsExceptDetectedFormat)}
+      </optgroup>
 
-      <option key="disabled3" value="" disabled>--- {t('Common audio formats:')} ---</option>
-      {renderFormatOptions(commonAudioFormatsExceptDetectedFormat)}
+      <optgroup label={heading(t('Common audio formats:'))}>
+        {renderFormatOptions(commonAudioFormatsExceptDetectedFormat)}
+      </optgroup>
 
-      <option key="disabled4" value="" disabled>--- {t('Common subtitle formats:')} ---</option>
-      {renderFormatOptions(commonSubtitleFormatsExceptDetectedFormat)}
+      <optgroup label={heading(t('Common subtitle formats:'))}>
+        {renderFormatOptions(commonSubtitleFormatsExceptDetectedFormat)}
+      </optgroup>
 
-      <option key="disabled5" value="" disabled>--- {t('All other formats:')} ---</option>
-      {renderFormatOptions(otherFormats)}
+      <optgroup label={heading(t('All other formats:'))}>
+        {renderFormatOptions(otherFormats)}
+      </optgroup>
     </Select>
   );
 }

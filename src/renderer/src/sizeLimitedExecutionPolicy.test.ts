@@ -1,8 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import i18n from 'i18next';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { UserFacingError } from '../errors';
 import { finalizeSizeLimitedExecutionResult, shouldWarnAboutTightAdvancedH264Target, tightAdvancedH264WarningVideoBitrateThreshold } from './sizeLimitedExecutionPolicy';
 import { resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
+
+beforeAll(async () => {
+  await i18n.init({ lng: 'en', resources: {}, keySeparator: false, nsSeparator: false });
+});
 
 const fullCapabilities = { h264Nvenc: true, av1Nvenc: true, libx264: true, libsvtav1: true } as const;
 const defaultStrategyArgs = {
@@ -101,7 +106,7 @@ describe('finalizeSizeLimitedExecutionResult', () => {
       metTarget: false,
       created: true,
       strategy,
-    })).toThrow('under the requested file-size limit');
+    })).toThrow("This clip can't be made that small. Try a bigger size or a shorter clip.");
   });
 
   it('throws a direct h264-specific failure after bounded retries are exhausted', () => {
@@ -131,6 +136,6 @@ describe('finalizeSizeLimitedExecutionResult', () => {
       metTarget: false,
       created: true,
       strategy,
-    })).toThrow('H.264 could not reach the requested file-size limit for this clip after 4 attempt(s). Try AV1, lower resolution/FPS, or increase the target size.');
+    })).toThrow("H.264 couldn't get this clip that small. Try AV1, a lower resolution or frame rate, or a bigger size.");
   });
 });

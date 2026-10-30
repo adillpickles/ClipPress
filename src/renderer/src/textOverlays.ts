@@ -32,7 +32,8 @@ function clampOverlayNumber(value: number) {
 
 export function clampOverlayBox(box: OverlayBox): OverlayBox {
   const width = clamp(box.width, 0.05, 1);
-  const height = clamp(box.height, 0.08, 1);
+  // The height comes from the text (fitTextOverlayBox); a small text can be lower than a line of the default size.
+  const height = clamp(box.height, 0.01, 1);
   const x = clamp(box.x, 0, 1 - width);
   const y = clamp(box.y, 0, 1 - height);
   return { x, y, width, height };
@@ -74,16 +75,29 @@ export function createDefaultTextOverlayClip({
   currentTime,
   fileDuration,
   overlayId,
+  existingClips = [],
 }: {
   currentTime: number,
   fileDuration: number | undefined,
   overlayId: string,
+  /** The texts already there: the new one goes where it doesn't cover any of them, when there's room. */
+  existingClips?: readonly Pick<OverlayClip, 'start' | 'end'>[] | undefined,
 }): TextOverlayClip {
   const safeCurrentTime = Math.max(0, currentTime);
   const safeDuration = fileDuration != null && Number.isFinite(fileDuration) && fileDuration > 0 ? fileDuration : undefined;
   const maxStart = safeDuration != null ? Math.max(0, safeDuration - minTextOverlayDuration) : safeCurrentTime;
-  const start = clamp(safeCurrentTime, 0, maxStart);
-  const preferredEnd = start + defaultTextOverlayDuration;
+  let start = clamp(safeCurrentTime, 0, maxStart);
+
+  // Adding a text with the playhead on another one would put the two on top of each other: start the new one
+  // where the texts in its way end instead, if that still leaves room before the end of the file.
+  const blockingEnd = (time: number) => existingClips.find((clip) => clip.start < time + minTextOverlayDuration && clip.end > time)?.end;
+  let freeStart = start;
+  for (let end = blockingEnd(freeStart); end != null; end = blockingEnd(freeStart)) freeStart = end;
+  if (Number.isFinite(freeStart) && (safeDuration == null || freeStart + minTextOverlayDuration <= safeDuration)) start = freeStart;
+
+  // ...and stop it where the next text starts.
+  const nextStart = Math.min(...existingClips.filter((clip) => clip.start > start).map((clip) => clip.start));
+  const preferredEnd = Math.max(start + minTextOverlayDuration, Math.min(start + defaultTextOverlayDuration, nextStart));
   let end = safeDuration != null
     ? Math.max(start + minTextOverlayDuration, Math.min(preferredEnd, safeDuration))
     : preferredEnd;
@@ -106,8 +120,131 @@ export function isOverlayActiveAtTime(overlayClip: OverlayClip, time: number) {
   return time >= overlayClip.start && time <= overlayClip.end;
 }
 
-export function doOverlayAndSegmentOverlap(overlayClip: OverlayClip, segment: { start: number, end: number }) {
-  return overlayClip.start < segment.end && overlayClip.end > segment.start;
+export interface TextLaneRow {
+  /** 0 is the top row. */
+  row: number,
+  /** How many rows the texts it overlaps (directly or through others) are split into; 1 when it overlaps none. */
+  rows: number,
+}
+
+type TextLaneClip = Pick<OverlayClip, 'overlayId' | 'start' | 'end'>;
+
+/** The text lane keeps its height, so more rows than this would be too thin to read, grab or delete. */
+const maxTextLaneRows = 2;
+
+/**
+ * Rows inside the one text lane, so texts that overlap in time sit one above the other instead of on top of
+ * each other. Each text takes the lowest row that is free for its whole time, in list order. A text that
+ * overlaps nothing gets the whole lane (rows: 1). There are at most two rows: with both taken, a text goes in
+ * the one where it shares the least time, on top of the text there (the timeline keeps the selected one on top).
+ *
+ * While a text is dragged (`drag`), the others keep the rows they had when the drag began and the dragged
+ * text takes the lowest row free of them, so nothing jumps between rows under the cursor.
+ */
+export function getTextLaneRows(clips: readonly TextLaneClip[], drag?: { overlayId: string, rows: ReadonlyMap<string, TextLaneRow> } | undefined) {
+  const overlaps = (a: TextLaneClip, b: TextLaneClip) => a.start < b.end && b.start < a.end;
+
+  const placed: { clip: TextLaneClip, row: number }[] = [];
+  const place = (clip: TextLaneClip, keptRow: number | undefined) => {
+    let row = keptRow;
+    if (row == null) {
+      // The time it shares with the texts already in each row: 0 where the row is free.
+      const shared = Array.from({ length: maxTextLaneRows }, () => 0);
+      placed.forEach((other) => {
+        if (overlaps(other.clip, clip)) shared[other.row] = (shared[other.row] ?? 0) + Math.min(other.clip.end, clip.end) - Math.max(other.clip.start, clip.start);
+      });
+      row = shared.indexOf(Math.min(...shared));
+    }
+    placed.push({ clip, row });
+  };
+  clips.forEach((clip) => {
+    if (clip.overlayId !== drag?.overlayId) place(clip, drag?.rows.get(clip.overlayId)?.row);
+  });
+  const dragged = drag != null ? clips.find((clip) => clip.overlayId === drag.overlayId) : undefined;
+  if (dragged != null) place(dragged, undefined);
+
+  // Groups of texts linked by overlaps (in time order, a group ends where the next text starts after all of it):
+  // every text in a group gets the group's row count, so the rows line up.
+  const result = new Map<string, TextLaneRow>();
+  const byStart = [...placed].sort((a, b) => a.clip.start - b.clip.start);
+  let group: typeof placed = [];
+  let groupEnd = Number.NEGATIVE_INFINITY;
+  const closeGroup = () => {
+    const rows = Math.max(0, ...group.map(({ row }) => row)) + 1;
+    group.forEach(({ clip, row }) => result.set(clip.overlayId, { row, rows }));
+  };
+  for (const item of byStart) {
+    if (group.length > 0 && item.clip.start >= groupEnd) {
+      closeGroup();
+      group = [];
+      groupEnd = Number.NEGATIVE_INFINITY;
+    }
+    group.push(item);
+    groupEnd = Math.max(groupEnd, item.clip.end);
+  }
+  if (group.length > 0) closeGroup();
+  return result;
+}
+
+/** Whole characters as seen (an emoji, a letter with its accent), however many code units each takes. */
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+/** Where a browser may break a line inside a word: after a hyphen with a letter or digit before it and a letter after. */
+const hyphenBreak = /(?<=[\p{L}\p{N}]-)(?=\p{L})/u;
+
+function wrapTextLinesAt({
+  ctx,
+  text,
+  maxWidth,
+}: {
+  ctx: Pick<CanvasRenderingContext2D, 'measureText'>,
+  text: string,
+  maxWidth: number,
+}) {
+  const fits = (line: string) => ctx.measureText(line).width <= maxWidth;
+  // Each line with where it starts in the text (a space at a wrap belongs to no line).
+  const lines: { text: string, start: number }[] = [];
+
+  // Wrapped the way the text box shows it while typing (white-space: pre-wrap): spaces stay as typed, except at a
+  // line break, where they hang at the end of the line instead of starting the next one.
+  let paragraphStart = 0;
+  for (const paragraph of text.split('\n')) {
+    let line = '';
+    let lineStart = paragraphStart;
+    for (const match of paragraph.matchAll(/(\s*)(\S+)/g)) {
+      const spaces = match[1] ?? '';
+      const word = match[2] ?? '';
+      // A line can also break after a hyphen between letters ("one-tap"), as the text box breaks it.
+      let start = paragraphStart + match.index + spaces.length;
+      let before = spaces;
+      for (const part of word.split(hyphenBreak)) {
+        if (fits(line + before + part)) {
+          line += before + part;
+        } else {
+          if (line.length > 0 || before.length > 0) lines.push({ text: line, start: lineStart });
+          line = '';
+          lineStart = start;
+          // Split a word wider than the box across lines instead of letting it overflow, between whole characters.
+          let charStart = start;
+          for (const { segment: char } of graphemes.segment(part)) {
+            if (line.length > 0 && !fits(line + char)) {
+              lines.push({ text: line, start: lineStart });
+              line = '';
+              lineStart = charStart;
+            }
+            line += char;
+            charStart += char.length;
+          }
+        }
+        start += part.length;
+        before = '';
+      }
+    }
+    lines.push({ text: line, start: lineStart });
+    paragraphStart += paragraph.length + 1;
+  }
+
+  return lines.length > 0 ? lines : [{ text: '', start: 0 }];
 }
 
 function wrapTextLines({
@@ -119,40 +256,7 @@ function wrapTextLines({
   text: string,
   maxWidth: number,
 }) {
-  const paragraphs = text.split('\n');
-  const lines: string[] = [];
-
-  for (const paragraph of paragraphs) {
-    const trimmedParagraph = paragraph.trim();
-    if (trimmedParagraph.length === 0) {
-      lines.push('');
-    } else {
-      const words = trimmedParagraph.split(/\s+/);
-      let currentLine = '';
-
-      for (const word of words) {
-        const proposedLine = currentLine.length > 0 ? `${currentLine} ${word}` : word;
-        if (ctx.measureText(proposedLine).width <= maxWidth) {
-          currentLine = proposedLine;
-        } else {
-          if (currentLine.length > 0) lines.push(currentLine);
-          currentLine = '';
-          // Split a word wider than the box across lines instead of letting it overflow.
-          for (const char of word) {
-            if (currentLine.length > 0 && ctx.measureText(currentLine + char).width > maxWidth) {
-              lines.push(currentLine);
-              currentLine = '';
-            }
-            currentLine += char;
-          }
-        }
-      }
-
-      if (currentLine.length > 0) lines.push(currentLine);
-    }
-  }
-
-  return lines.length > 0 ? lines : [''];
+  return wrapTextLinesAt({ ctx, text, maxWidth }).map((line) => line.text);
 }
 
 export function getOverlayFontSize(overlayClip: Pick<TextOverlayClip, 'fontSize' | 'box'>) {
@@ -186,6 +290,40 @@ export function layoutTextOverlay({ text, widthPx, fontSizePx, ctx: measureConte
   const lines = wrapTextLines({ ctx, text, maxWidth: Math.max(1, widthPx - (paddingX * 2)) });
   const lineHeightPx = fontSizePx * textOverlayLineHeight;
   return { lines, lineHeightPx, paddingX, paddingY, heightPx: (lines.length * lineHeightPx) + (paddingY * 2) };
+}
+
+/**
+ * Where in the text a point of its box falls (video pixels from the box's top left), from the same layout the box and
+ * the export use: the line under it, then the letter boundary nearest it. For a click that starts typing: the
+ * browser's own answer for a text box counts within the clicked line only.
+ */
+export function getTextOverlayOffsetAt({ text, widthPx, fontSizePx, x, y, ctx: measureContext }: {
+  text: string,
+  widthPx: number,
+  fontSizePx: number,
+  x: number,
+  y: number,
+  ctx?: MeasureContext | undefined,
+}) {
+  const paddingX = fontSizePx * 0.35;
+  const paddingY = fontSizePx * 0.2;
+  const ctx = measureContext ?? getMeasureContext();
+  ctx.font = `${fontSizePx}px ${defaultTextOverlayFontFamily}`;
+  const lines = wrapTextLinesAt({ ctx, text, maxWidth: Math.max(1, widthPx - (paddingX * 2)) });
+  const lineHeightPx = fontSizePx * textOverlayLineHeight;
+  const line = lines[clamp(Math.floor((y - paddingY) / lineHeightPx), 0, lines.length - 1)]!;
+  // Between whole characters as seen (an emoji, a letter with its accent), never inside one.
+  const boundaries = [0, ...[...graphemes.segment(line.text)].map(({ index, segment }) => index + segment.length)];
+  let best = 0;
+  let bestDistance = Infinity;
+  for (const index of boundaries) {
+    const distance = Math.abs(ctx.measureText(line.text.slice(0, index)).width - (x - paddingX));
+    if (distance < bestDistance) {
+      best = index;
+      bestDistance = distance;
+    }
+  }
+  return line.start + best;
 }
 
 /** Box height (fraction of video height) that fits the clip's text; also pins the font size. */
@@ -225,9 +363,10 @@ export async function renderTextOverlayPng({
 
   lines.forEach((line, index) => ctx.fillText(line, paddingX, paddingY + (index * lineHeightPx)));
 
-  const dataUrl = canvas.toDataURL('image/png');
-  const response = await fetch(dataUrl);
-  return new Uint8Array(await response.arrayBuffer());
+  // Encoded off the main thread (toDataURL blocked it, then went through base64 and back).
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (blob == null) throw new Error('Failed to encode text overlay image');
+  return new Uint8Array(await blob.arrayBuffer());
 }
 
 export function sanitizeOverlayClip(overlayClip: OverlayClip, fileDuration?: number): OverlayClip {

@@ -1,0 +1,76 @@
+.lane {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-top: 1px solid var(--cp-line);
+  background: color-mix(in srgb, var(--gray-3) 30%, transparent);
+}
+
+/* Drawn for the visible stretch only and moved along with the scroll position. */
+.canvas {
+  position: absolute;
+  top: 5px;
+  pointer-events: none;
+}
+
+.clip {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent-9) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-9) 30%, transparent), 0 3px 8px -4px rgb(0 0 0 / 60%);
+  cursor: pointer;
+  transition: box-shadow .12s ease;
+}
+
+.clip:hover {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-9) 60%, transparent), 0 3px 8px -4px rgb(0 0 0 / 60%);
+}
+
+.clipActive,
+.clipActive:hover {
+  background: color-mix(in srgb, var(--accent-9) 15%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent-9) 85%, transparent), 0 3px 8px -4px rgb(0 0 0 / 60%);
+}
+
+.clipExcluded,
+.clipExcluded:hover {
+  background: transparent;
+  /* A theme line colour: a white outline vanishes on the light lane. */
+  box-shadow: inset 0 0 0 1px var(--cp-line-strong);
+}
+
+:global(.dark-theme) .clipExcluded,
+:global(.dark-theme) .clipExcluded:hover {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 14%);
+}
+
+/* A changed clip volume, e.g. "50%" or a muted speaker. Opens the volume popover. */
+.badge {
+  all: unset;
+  cursor: pointer;
+  position: absolute;
+  top: 3px;
+  left: 4px;
+  height: 14px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 9.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--gray-12);
+  background: color-mix(in srgb, var(--gray-1) 78%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-9) 55%, transparent);
+}
+
+.badge:hover {
+  background: var(--gray-1);
+}
+
+.badge:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}

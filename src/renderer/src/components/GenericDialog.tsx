@@ -1,18 +1,19 @@
 import type { MouseEventHandler, ReactNode } from 'react';
-import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import invariant from 'tiny-invariant';
-import prettyBytes from 'pretty-bytes';
-import { FaCheckCircle, FaExclamationTriangle, FaInfoCircle } from 'react-icons/fa';
+import { useReducedMotionConfig } from 'motion/react';
 
 import * as Dialog from './Dialog';
 import * as AlertDialog from './AlertDialog';
 import { DialogButton } from './Button';
-import { readFileSize, showItemInFolder } from '../util';
+import { showItemInFolder } from '../util';
 import type { CleanupChoice, CleanupChoicesType } from '../dialogs';
-import { ListItem, Notices, OutputIncorrectSeeHelpMenu, UnorderedList, Warnings } from '../dialogs';
 import Checkbox from './Checkbox';
-import { saveColor, warningColor } from '../colors';
+import ExportResult from './ExportResult';
+import { morphFromWorkingCard } from './Working';
+import HelpTip from './HelpTip';
+import styles from './GenericDialog.module.css';
 
 
 export interface GenericDialogParams {
@@ -35,109 +36,12 @@ export interface SizeLimitedFinishedSummary {
   singleCreatedSizeLabel?: string | undefined,
 }
 
-/**
- * Secondary export information, collapsed by default.
- *
- * A successful export should read as one line and a file name. The codec strategy, the
- * retry notes and the "we kept one video and one audio track" explanations are all true
- * and worth keeping, but they are reference material, not the result. Warnings still
- * announce themselves in the headline and open this section automatically, so nothing
- * that needs acting on is hidden.
- */
-function ExportDetails({ items, defaultOpen, label }: {
-  items: ReactNode,
-  defaultOpen: boolean,
-  label: string,
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-
-  return (
-    <div style={{ marginTop: '1em' }}>
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        style={{
-          background: 'none',
-          border: 'none',
-          padding: 0,
-          cursor: 'pointer',
-          color: 'inherit',
-          opacity: 0.75,
-          font: 'inherit',
-          fontSize: '.85em',
-        }}
-      >
-        {open ? '▾' : '▸'}
-        {' '}
-        {label}
-      </button>
-
-      {open && <UnorderedList>{items}</UnorderedList>}
-    </div>
-  );
-}
-
-/**
- * The body every "export finished" dialog uses.
- *
- * One line saying what was produced, one line of context, and everything else folded
- * away. The inherited dialogs put the standing advice ("test the output", "see the Help
- * menu") at the same level as the result, which made a routine success read like a
- * report to work through.
- */
-function ExportResultBody({ hasWarnings, headline, subtitle, details, warningCount, sizeFilePath }: {
-  hasWarnings: boolean,
-  headline: ReactNode,
-  subtitle?: ReactNode,
-  details?: ReactNode,
-  warningCount: number,
-  sizeFilePath?: string | undefined,
-}) {
-  const { t } = useTranslation();
-  const [measuredFile, setMeasuredFile] = useState<{ path: string, size: number }>();
-  const size = measuredFile?.path === sizeFilePath ? measuredFile?.size : undefined;
-  useEffect(() => {
-    let active = true;
-    if (sizeFilePath != null) {
-      readFileSize(sizeFilePath).then((value) => {
-        if (active) setMeasuredFile({ path: sizeFilePath, size: value });
-      }).catch((error) => console.warn('Unable to read exported file size', error));
-    }
-    return () => { active = false; };
-  }, [sizeFilePath]);
-
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '.5em' }}>
-        <span style={{ color: hasWarnings ? warningColor : saveColor, marginTop: '.15em' }}>
-          {hasWarnings ? <FaExclamationTriangle /> : <FaCheckCircle />}
-        </span>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 'bold', wordBreak: 'break-word' }}>{headline}</div>
-          {size != null && <div style={{ opacity: 0.75, fontSize: '.9em', marginTop: '.15em' }}>{prettyBytes(size)}</div>}
-          {subtitle != null && (
-            <div style={{ opacity: 0.75, fontSize: '.9em', marginTop: '.15em' }}>{subtitle}</div>
-          )}
-        </div>
-      </div>
-
-      {details != null && (
-        <ExportDetails
-          items={details}
-          // A warning is something to act on, so it is shown straight away.
-          defaultOpen={hasWarnings}
-          label={hasWarnings
-            ? t('Details ({{count}} warnings)', { count: warningCount })
-            : t('Details')}
-        />
-      )}
-    </div>
-  );
-}
-
-/** The file name to show as the result, without the directory it landed in. */
-function getResultFileName(filePath: string) {
-  return filePath.split(/[/\\]/).pop() ?? filePath;
+/** What the export after-steps add to every result: the copy already running, and the shelf's next clip. */
+interface ExportResultExtras {
+  autoCopied?: Promise<boolean> | undefined,
+  nextClipName?: string | undefined,
+  /** The merged file, when the export made one: it's the one a click or Ctrl+C copies. */
+  mergedPath?: string | undefined,
 }
 
 export type ShowGenericDialog = (dialog: GenericDialogParams) => void;
@@ -231,12 +135,12 @@ export function useDialog() {
       }, []);
 
       return (
-        <AlertDialog.Content aria-describedby={description} style={{ width: '40vw' }} onOpenAutoFocus={handleOpenAutoFocus}>
+        <AlertDialog.Content className={AlertDialog.messageClassName} aria-describedby={description} onOpenAutoFocus={handleOpenAutoFocus}>
           <AlertDialog.Title>{title}</AlertDialog.Title>
 
           {description && <AlertDialog.Description>{description}</AlertDialog.Description>}
 
-          <Dialog.ButtonRow>
+          <Dialog.ButtonRow center>
             <AlertDialog.Cancel asChild>
               <DialogButton>{cancelButtonText}</DialogButton>
             </AlertDialog.Cancel>
@@ -275,6 +179,14 @@ export function useDialog() {
     const response = await new Promise<boolean>((resolve) => {
       function ExportFinishedDialog() {
         const { onOpenChange } = useGenericDialogContext();
+        const showRef = useRef<HTMLButtonElement>(null);
+
+        // Start on the main action rather than on the first focusable thing (the Details toggle).
+        const handleOpenAutoFocus = useCallback((e: Event) => {
+          if (showRef.current == null) return;
+          e.preventDefault();
+          showRef.current.focus({ focusVisible: false } as FocusOptions);
+        }, []);
 
         const handleConfirmClick = useCallback<MouseEventHandler<HTMLButtonElement>>((e) => {
           e.preventDefault();
@@ -283,7 +195,7 @@ export function useDialog() {
         }, [onOpenChange]);
 
         return (
-          <Dialog.Content aria-describedby={undefined} style={{ width }}>
+          <Dialog.Content aria-describedby={undefined} style={{ width }} onOpenAutoFocus={handleOpenAutoFocus}>
             <Dialog.Title>{title ?? t('Success!')}</Dialog.Title>
 
             {children}
@@ -293,7 +205,7 @@ export function useDialog() {
                 <DialogButton>{t('Close')}</DialogButton>
               </Dialog.Close>
 
-              <DialogButton primary onClick={handleConfirmClick}>{t('Show')}</DialogButton>
+              <DialogButton primary ref={showRef} onClick={handleConfirmClick}>{t('Show in folder')}</DialogButton>
             </Dialog.ButtonRow>
           </Dialog.Content>
         );
@@ -311,127 +223,165 @@ export function useDialog() {
     }
   }, [showGenericDialog, t]);
 
-  const openCutFinishedDialog = useCallback(async ({ filePath, warnings, notices, fileCount = 1 }: {
-    filePath: string,
+  /**
+   * After an export: the result (ExportResult, where a file's name shows it in its folder), then Close, and when the
+   * shelf has another clip to do, Next clip as the main button. Resolves with 'next' when that was chosen.
+   */
+  const openExportResultDialog = useCallback(({ title, files, copyFiles, warnings, highlight, details, autoCopied, nextClipName }: {
+    title: string,
+    files: string[],
+    copyFiles: string[],
+    warnings: string[],
+    highlight?: string | undefined,
+    details?: ReactNode,
+    autoCopied?: Promise<boolean> | undefined,
+    nextClipName?: string | undefined,
+  }) => new Promise<'next' | undefined>((resolve) => {
+    function ExportResultDialog() {
+      const { onOpenChange } = useGenericDialogContext();
+      const mainRef = useRef<HTMLButtonElement>(null);
+      const reduceMotion = useReducedMotionConfig() === true;
+
+      // It grows out of the export's progress card, once, as it first mounts.
+      const morphed = useRef(false);
+      const contentRef = useCallback((el: HTMLDivElement | null) => {
+        if (el == null || morphed.current) return;
+        morphed.current = true;
+        morphFromWorkingCard(el, { reduceMotion });
+      }, [reduceMotion]);
+
+      // Start on the main button rather than on the first focusable thing (the picture).
+      const handleOpenAutoFocus = useCallback((e: Event) => {
+        if (mainRef.current == null) return;
+        e.preventDefault();
+        mainRef.current.focus({ focusVisible: false } as FocusOptions);
+      }, []);
+
+      const onNextClick = useCallback(() => {
+        resolve('next');
+        onOpenChange(false);
+      }, [onOpenChange]);
+
+      return (
+        <Dialog.Content ref={contentRef} aria-describedby={undefined} className={files.length > 1 ? styles['exportResultWide'] : styles['exportResult']} onOpenAutoFocus={handleOpenAutoFocus}>
+          <Dialog.Title className={styles['centredTitle']}>{title}</Dialog.Title>
+          <ExportResult
+            files={files}
+            copyFiles={copyFiles}
+            warnings={warnings}
+            highlight={highlight}
+            details={details}
+            autoCopied={autoCopied}
+            actions={(
+              <>
+                <Dialog.Close asChild>
+                  <DialogButton primary={nextClipName == null} ref={nextClipName == null ? mainRef : undefined}>{t('Close')}</DialogButton>
+                </Dialog.Close>
+                {nextClipName != null && (
+                  <DialogButton primary ref={mainRef} onClick={onNextClick} title={nextClipName}>{t('Next clip')}</DialogButton>
+                )}
+              </>
+            )}
+          />
+          <Dialog.CloseButton />
+        </Dialog.Content>
+      );
+    }
+
+    showGenericDialog({
+      kind: 'exportResult',
+      render: () => <ExportResultDialog />,
+      onClose: () => resolve(undefined),
+    });
+  }), [showGenericDialog, t]);
+
+  const openCutFinishedDialog = useCallback(({ filePaths, warnings, notices, highlight, showAdvice = true, ...extras }: {
+    /** Every file the export made. */
+    filePaths: string[],
     warnings: string[],
     notices: string[],
-    fileCount?: number | undefined,
-  }) => {
-    const hasWarnings = warnings.length > 0;
+    highlight?: string | undefined,
+    /** LosslessCut's standing advice (test the output, the Help menu), for advanced mode. */
+    showAdvice?: boolean | undefined,
+  } & ExportResultExtras) => openExportResultDialog({
+    title: filePaths.length === 0 ? t('Nothing was exported') : t('Exported'),
+    files: filePaths,
+    copyFiles: extras.mergedPath != null ? [extras.mergedPath] : filePaths,
+    warnings,
+    highlight,
+    autoCopied: extras.autoCopied,
+    nextClipName: extras.nextClipName,
+    details: (notices.length > 0 || showAdvice) ? (
+      <ul className={styles['detailsList']}>
+        {notices.map((notice) => <li key={notice}>{notice}</li>)}
+        {showAdvice && (
+          <>
+            {/* https://github.com/mifi/lossless-cut/issues/2048 */}
+            <li>{t('Please test the output file in your desired player/editor before you delete the source file.')}</li>
+            <li>{t('If output does not look right, see the Help menu.')}</li>
+          </>
+        )}
+      </ul>
+    ) : undefined,
+  }), [openExportResultDialog, t]);
 
-    await openExportFinishedDialog({
-      filePath,
-      title: fileCount === 0 ? t('Nothing was exported') : (hasWarnings ? t('Export finished with warnings') : t('Export successful')),
-      width: '34em',
-      children: (
-        <ExportResultBody
-          hasWarnings={hasWarnings}
-          warningCount={warnings.length}
-          headline={fileCount === 0 ? t('No new files were written') : getResultFileName(filePath)}
-          sizeFilePath={fileCount === 1 ? filePath : undefined}
-          subtitle={fileCount > 1 ? t('{{count}} files exported', { count: fileCount }) : undefined}
-          details={(
-            <>
-              <Warnings warnings={warnings} />
-              <Notices notices={notices} />
-              {/* https://github.com/mifi/lossless-cut/issues/2048 */}
-              <ListItem icon={<FaInfoCircle />}>{t('Please test the output file in your desired player/editor before you delete the source file.')}</ListItem>
-              <OutputIncorrectSeeHelpMenu />
-            </>
-          )}
-        />
-      ),
-    });
-  }, [openExportFinishedDialog, t]);
-
-  const openSizeLimitedFinishedDialog = useCallback(async ({ filePath, warnings, notices, summary }: {
-    filePath: string,
+  const openSizeLimitedFinishedDialog = useCallback(({ filePaths, warnings, notices, summary, highlight, showDetails = true, ...extras }: {
+    /** Every file the export made. */
+    filePaths: string[],
     warnings: string[],
     notices: string[],
     summary: SizeLimitedFinishedSummary,
-  }) => {
-    const hasWarnings = warnings.length > 0;
-    const wroteNewFiles = summary.createdCount > 0;
-    const fileName = getResultFileName(filePath);
+    highlight?: string | undefined,
+    /** The simple editor's result has none: the size and the name already say what Details would. */
+    showDetails?: boolean | undefined,
+  } & ExportResultExtras) => openExportResultDialog({
+    title: summary.createdCount > 0 ? t('Exported') : t('Nothing was exported'),
+    files: filePaths,
+    copyFiles: extras.mergedPath != null ? [extras.mergedPath] : filePaths,
+    warnings,
+    highlight,
+    autoCopied: extras.autoCopied,
+    nextClipName: extras.nextClipName,
+    // The limit it was made for, with whatever else is worth knowing, kept out of the way.
+    details: showDetails ? (
+      <ul className={styles['detailsList']}>
+        <li>{t('Size limit: {{target}}', { target: summary.requestedLimitLabel })}</li>
+        {notices.map((notice) => <li key={notice}>{notice}</li>)}
+      </ul>
+    ) : undefined,
+  }), [openExportResultDialog, t]);
 
-    const sizeText = (() => {
-      if (!wroteNewFiles) return undefined;
-
-      const actual = summary.createdCount === 1
-        ? summary.singleCreatedSizeLabel
-        : summary.largestCreatedSizeLabel;
-      if (actual == null) return t('Limit {{target}}', { target: summary.requestedLimitLabel });
-
-      return summary.createdCount === 1
-        ? t('{{actual}} of {{target}} limit', { actual, target: summary.requestedLimitLabel })
-        : t('{{count}} files, largest {{actual}} of {{target}} limit', {
-          count: summary.createdCount,
-          actual,
-          target: summary.requestedLimitLabel,
-        });
-    })();
-
-    const detailItems = (warnings.length > 0 || notices.length > 0)
-      ? (
-        <>
-          <Warnings warnings={warnings} />
-          <Notices notices={notices} />
-        </>
-      )
-      : undefined;
-
-    await openExportFinishedDialog({
-      filePath,
-      title: wroteNewFiles
-        ? (hasWarnings ? t('Export finished with warnings') : t('Export successful'))
-        : t('Nothing was exported'),
-      width: '34em',
-      children: (
-        <ExportResultBody
-          hasWarnings={hasWarnings}
-          warningCount={warnings.length}
-          headline={wroteNewFiles ? fileName : t('No new files were written')}
-          subtitle={sizeText}
-          details={detailItems}
-        />
-      ),
-    });
-  }, [openExportFinishedDialog, t]);
-
-  const openConcatFinishedDialog = useCallback(async ({ filePath, warnings, notices, sourceCount, created = true }: {
+  const openConcatFinishedDialog = useCallback(({ filePath, warnings, notices, highlight, created = true, showAdvice = true }: {
     filePath: string,
     warnings: string[],
     notices: string[],
-    sourceCount?: number | undefined,
+    highlight?: string | undefined,
     created?: boolean | undefined,
-  }) => {
-    const hasWarnings = warnings.length > 0;
+    showAdvice?: boolean | undefined,
+  }) => openExportResultDialog({
+    title: created ? t('Merged') : t('Nothing was exported'),
+    files: created ? [filePath] : [],
+    copyFiles: created ? [filePath] : [],
+    warnings,
+    highlight,
+    details: (notices.length > 0 || showAdvice) ? (
+      <ul className={styles['detailsList']}>
+        {notices.map((notice) => <li key={notice}>{notice}</li>)}
+        {showAdvice && (
+          <>
+            <li>{t('Please test the output files in your desired player/editor before you delete the source files.')}</li>
+            <li>{t('If output does not look right, see the Help menu.')}</li>
+          </>
+        )}
+      </ul>
+    ) : undefined,
+  }), [openExportResultDialog, t]);
 
-    await openExportFinishedDialog({
-      filePath,
-      title: !created ? t('Nothing was exported') : (hasWarnings ? t('Merge finished with warnings') : t('Merge successful')),
-      width: '34em',
-      children: (
-        <ExportResultBody
-          hasWarnings={hasWarnings}
-          warningCount={warnings.length}
-          headline={created ? getResultFileName(filePath) : t('No new files were written')}
-          sizeFilePath={created ? filePath : undefined}
-          subtitle={created && sourceCount != null && sourceCount > 1 ? t('Merged from {{count}} files', { count: sourceCount }) : undefined}
-          details={(
-            <>
-              <Warnings warnings={warnings} />
-              <Notices notices={notices} />
-              <ListItem icon={<FaInfoCircle />}>{t('Please test the output files in your desired player/editor before you delete the source files.')}</ListItem>
-              <OutputIncorrectSeeHelpMenu />
-            </>
-          )}
-        />
-      ),
-    });
-  }, [openExportFinishedDialog, t]);
-
-  async function openCleanupFilesDialog(cleanupChoicesInitial: CleanupChoicesType) {
+  /**
+   * The clean-up choices. Opened to clean up (Clean up, or after an export) its button acts at once; opened from
+   * Settings (`saveOnly`) it only stores what should happen later, so the button just saves.
+   */
+  async function openCleanupFilesDialog(cleanupChoicesInitial: CleanupChoicesType, { saveOnly = false }: { saveOnly?: boolean | undefined } = {}) {
     return new Promise<CleanupChoicesType | undefined>((resolve) => {
       function CleanupChoices() {
         const [choices, setChoices] = useState(cleanupChoicesInitial);
@@ -474,27 +424,34 @@ export function useDialog() {
         }, []);
 
         return (
-          <Dialog.Content aria-describedby={undefined} style={{ width: '80vw' }} onOpenAutoFocus={handleOpenAutoFocus}>
+          <Dialog.Content aria-describedby={undefined} style={{ width: '32rem' }} onOpenAutoFocus={handleOpenAutoFocus}>
             <Dialog.Title>
-              {t('Cleanup files?')}
+              {t('Clean up files')}
             </Dialog.Title>
 
             <Dialog.Description>
-              {t('What do you want to do after exporting a file or when pressing the "delete source file" button?')}
+              {saveOnly
+                ? t('What happens after an export, or when you choose Clean up.')
+                : t('Choose what to clean up now. ClipPress keeps these choices for next time.')}
             </Dialog.Description>
 
-            <Checkbox label={t('Close currently opened file')} checked={closeFile} disabled={trashSourceFile || trashTmpFiles} onCheckedChange={(checked) => onChange('closeFile', checked)} />
-
-            <div style={{ marginBottom: '2em' }}>
-              <Checkbox label={t('Trash auto-generated files')} checked={trashTmpFiles} onCheckedChange={(checked) => onChange('trashTmpFiles', checked)} />
-              <Checkbox label={t('Trash original source file')} checked={trashSourceFile} onCheckedChange={(checked) => onChange('trashSourceFile', checked)} />
-              <Checkbox label={t('Trash project LLC file')} checked={trashProjectFile} onCheckedChange={(checked) => onChange('trashProjectFile', checked)} />
-              <Checkbox label={t('Permanently delete the files if trash fails?')} disabled={!(trashTmpFiles || trashProjectFile || trashSourceFile)} checked={deleteIfTrashFails} onCheckedChange={(checked) => onChange('deleteIfTrashFails', checked)} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '.55rem', marginBottom: '1.25rem' }}>
+              <div className={styles['choiceRow']}>
+                <Checkbox label={t('Close the recording')} checked={closeFile} disabled={trashSourceFile || trashTmpFiles} onCheckedChange={(checked) => onChange('closeFile', checked)} />
+                {(trashSourceFile || trashTmpFiles) && <HelpTip>{t('The recording has to be closed before its files can be moved.')}</HelpTip>}
+              </div>
+              <Checkbox label={t('Move temporary preview files to the Recycle Bin')} checked={trashTmpFiles} onCheckedChange={(checked) => onChange('trashTmpFiles', checked)} />
+              <Checkbox label={t('Move the original recording to the Recycle Bin')} checked={trashSourceFile} onCheckedChange={(checked) => onChange('trashSourceFile', checked)} />
+              <Checkbox label={t('Move the project file (.llc) to the Recycle Bin')} checked={trashProjectFile} onCheckedChange={(checked) => onChange('trashProjectFile', checked)} />
+              <Checkbox label={t('Delete temporary and project files permanently if the Recycle Bin can\'t take them')} disabled={!(trashTmpFiles || trashProjectFile || trashSourceFile)} checked={deleteIfTrashFails} onCheckedChange={(checked) => onChange('deleteIfTrashFails', checked)} />
             </div>
 
-            <div style={{ marginBottom: '2em' }}>
-              <Checkbox label={t('Show this dialog every time?')} checked={askForCleanup} onCheckedChange={(checked) => onChange('askForCleanup', checked)} />
-              <Checkbox label={t('Do all of this automatically after exporting a file?')} checked={cleanupAfterExport} onCheckedChange={(checked) => onChange('cleanupAfterExport', checked)} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '.55rem', paddingTop: '1rem', borderTop: '1px solid var(--cp-line)' }}>
+              <Checkbox label={t('Do this automatically after each export')} checked={cleanupAfterExport} onCheckedChange={(checked) => onChange('cleanupAfterExport', checked)} />
+              <div className={styles['choiceRow']}>
+                <Checkbox label={t('Ask before cleaning up')} checked={askForCleanup} onCheckedChange={(checked) => onChange('askForCleanup', checked)} />
+                <HelpTip>{t('When this is off, Clean up and the clean-up after each export use these choices without showing this window.')}</HelpTip>
+              </div>
             </div>
 
             <Dialog.ButtonRow>
@@ -502,7 +459,7 @@ export function useDialog() {
                 <DialogButton>{t('Cancel')}</DialogButton>
               </Dialog.Close>
 
-              <DialogButton ref={confirmRef} onClick={handleOkClick} primary>{t('Confirm')}</DialogButton>
+              <DialogButton ref={confirmRef} onClick={handleOkClick} primary>{saveOnly ? t('Save') : t('Clean up now')}</DialogButton>
             </Dialog.ButtonRow>
           </Dialog.Content>
         );

@@ -1,0 +1,149 @@
+/* Three groups; the sides share the remaining width equally so Play stays centred, and when the
+   window is too narrow for all of them the groups wrap onto another row instead of overlapping. */
+.transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: .75rem;
+  row-gap: .5rem;
+  min-height: 2.5rem;
+}
+
+.transportLeft,
+.transportRight {
+  flex: 1 1 0;
+  min-width: max-content;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+}
+
+.transportRight {
+  justify-content: flex-end;
+}
+
+.transportCenter {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+}
+
+.timeDisplay {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+  padding: .25rem .45rem;
+  margin-left: -.45rem;
+  border-radius: var(--cp-radius-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.timeDisplay:hover {
+  background: var(--cp-hover);
+}
+
+.timeDisplay:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.timeCurrent {
+  color: var(--cp-text);
+  font-size: .9375rem;
+  font-weight: 600;
+}
+
+.timeDuration {
+  color: var(--cp-text-subtle);
+  font-size: .8125rem;
+  font-weight: 400;
+  white-space: pre;
+}
+
+/* Simple mode's timeline zoom: one soft pill of small round buttons, as tall as the toolbar buttons. */
+.timelineZoom {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  height: 1.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: .125rem;
+  padding: 0 .1875rem;
+  border-radius: 999px;
+  border: 1px solid var(--cp-line);
+  background: var(--cp-raised);
+}
+
+.zoomButton {
+  all: unset;
+  box-sizing: border-box;
+  min-width: 1.375rem;
+  height: 1.375rem;
+  padding: 0 .3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color .14s ease, color .14s ease, box-shadow .14s ease;
+}
+
+.zoomButton:hover:not(:disabled) {
+  background: var(--cp-hover);
+  color: var(--cp-text);
+}
+
+.zoomButton:active:not(:disabled) {
+  background: var(--cp-active);
+}
+
+.zoomButton:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.zoomButton:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+.zoomFit {
+  padding: 0 .5rem;
+}
+
+.playButton {
+  all: unset;
+  box-sizing: border-box;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  background: var(--cp-accent);
+  color: var(--accent-contrast);
+  transition: background-color .14s ease, box-shadow .14s ease, transform .1s ease;
+}
+
+.playButton:hover {
+  background: var(--cp-accent-hover);
+}
+
+.playButton:active {
+  transform: scale(.96);
+}
+
+.playButton:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+

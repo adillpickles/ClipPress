@@ -1,25 +1,36 @@
 import type { RefObject } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
-import useNativeMenu from './useNativeMenu';
+import { closeMenu, openMenu } from '../components/Menu';
 import type { ContextMenuTemplate } from '../types';
 
 
-// https://github.com/transflow/use-electron-context-menu
+/**
+ * Right-clicking the element opens the app's menu (Menu.tsx) with the latest template. Nothing opens for an empty one.
+ */
 export default function useContextMenu(
   ref: RefObject<HTMLElement>,
   template: ContextMenuTemplate,
 ) {
-  const { openMenu, closeMenu } = useNativeMenu(template);
+  const templateRef = useRef(template);
+  useEffect(() => {
+    templateRef.current = template;
+  });
 
   useEffect(() => {
     const el = ref.current;
-    if (el) {
-      el.addEventListener('contextmenu', openMenu);
-      return () => el.removeEventListener('contextmenu', openMenu);
-    }
-    return undefined;
-  }, [openMenu, ref]);
+    if (el == null) return undefined;
+    const onContextMenu = (e: MouseEvent) => {
+      const items = templateRef.current;
+      if (items.length === 0) return;
+      // A text field inside (renaming a clip) keeps its own menu: Cut, Copy, Paste.
+      if (e.target instanceof Element && e.target.closest('textarea, [contenteditable="true"], input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"])') != null) return;
+      e.preventDefault();
+      openMenu({ items, at: { x: e.clientX, y: e.clientY } });
+    };
+    el.addEventListener('contextmenu', onContextMenu);
+    return () => el.removeEventListener('contextmenu', onContextMenu);
+  }, [ref]);
 
   return { closeMenu };
 }

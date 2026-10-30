@@ -1,0 +1,179 @@
+.recent {
+  width: 100%;
+  margin-top: 2rem;
+  text-align: left;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: .4rem;
+}
+
+.title {
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+  font-weight: 600;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.clear {
+  all: unset;
+  cursor: pointer;
+  /* Room for a pill-shaped focus ring; the negative margin keeps the text lined up with the list's edge. */
+  padding: .1rem .4rem;
+  margin-right: -.4rem;
+  border-radius: 999px;
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+}
+
+.clear:hover {
+  color: var(--cp-text);
+  text-decoration: underline;
+}
+
+.clear:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--cp-line);
+  border-radius: var(--cp-radius-lg);
+  background: var(--cp-bg);
+  overflow: hidden;
+}
+
+.item {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.item + .item {
+  border-top: 1px solid var(--cp-line);
+}
+
+.open {
+  all: unset;
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  padding: .55rem 2.6rem .55rem .8rem;
+  cursor: pointer;
+  transition: background-color .12s ease;
+}
+
+.open:hover:not(:disabled) {
+  background: var(--cp-hover);
+}
+
+.open:focus-visible {
+  box-shadow: inset var(--cp-focus-ring);
+}
+
+/* Moved or deleted: dimmed, but it can still be found again. */
+.missing .icon,
+.missing .text {
+  opacity: .55;
+}
+
+.icon {
+  flex-shrink: 0;
+  color: var(--cp-text-subtle);
+}
+
+.text {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.name {
+  color: var(--cp-text);
+  font-size: .875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meta {
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.side {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.when {
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+  white-space: nowrap;
+}
+
+.badge,
+.badgeMissing {
+  padding: .1rem .5rem;
+  border-radius: 999px;
+  font-size: .6875rem;
+  font-weight: 600;
+}
+
+.badge {
+  background: var(--cp-accent-soft);
+  color: var(--cp-accent-text);
+}
+
+.badgeMissing {
+  background: var(--cp-warning-soft);
+  color: var(--cp-warning);
+}
+
+.remove {
+  all: unset;
+  position: absolute;
+  right: .45rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1.6rem;
+  height: 1.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--cp-radius-sm);
+  color: var(--cp-text-subtle);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .12s ease, background-color .12s ease;
+}
+
+.item:hover .remove,
+.remove:focus-visible {
+  opacity: 1;
+}
+
+.remove:hover {
+  background: var(--cp-active);
+  color: var(--cp-text);
+}
+
+.remove:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}

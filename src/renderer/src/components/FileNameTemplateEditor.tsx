@@ -1,5 +1,5 @@
-import type { ChangeEventHandler, KeyboardEvent } from 'react';
-import { memo, useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import type { ChangeEventHandler, FocusEvent, KeyboardEvent } from 'react';
+import { memo, useState, useEffect, useCallback, useId, useRef, useMemo } from 'react';
 import { useDebounce } from 'use-debounce';
 import { useTranslation } from 'react-i18next';
 import { IoIosHelpCircle } from 'react-icons/io';
@@ -35,13 +35,15 @@ function FileNameTemplateEditor(opts: {
   ignoreMissingExtensionWarning?: boolean,
   onReset?: (() => void) | undefined,
   resetLabel?: string | undefined,
+  /** Simple mode: put the cursor in the name once it's ready (the user just asked to edit it). */
+  autoFocus?: boolean | undefined,
 } & ({
   currentSegIndexSafe: number,
   mode: 'separate'
 } | {
   mode: 'merge-segments' | 'merge-files'
 })) {
-  const { template: templateIn, setTemplate, defaultTemplate, generateFileNames, mode, onReset, resetLabel } = opts;
+  const { template: templateIn, setTemplate, defaultTemplate, generateFileNames, mode, onReset, resetLabel, autoFocus } = opts;
   const { currentSegIndexSafe } = 'currentSegIndexSafe' in opts ? opts : { currentSegIndexSafe: undefined };
 
   const { safeOutputFileName, toggleSafeOutputFileName, outputFileNameMinZeroPadding, setOutputFileNameMinZeroPadding, simpleMode } = useUserSettings();
@@ -69,6 +71,17 @@ function FileNameTemplateEditor(opts: {
   }, [simpleMode, templateIn]);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  // Set by Escape so the blur that follows doesn't save the edit being cancelled.
+  const skipSimpleCommitRef = useRef(false);
+  // The name the field shows when nothing is being edited: the preview, or the name last saved here. In simple mode
+  // `text` keeps the template the editor opened with, so previewFileName doesn't follow a saved name; Escape and the
+  // "no real change" check use this instead, so the field never shows a name that won't be used.
+  const savedSimpleDraftRef = useRef('');
+  // Once a name is saved here the field keeps it, with the extension the export will use (the format can still
+  // change): the preview, made from the template the editor opened with, would otherwise put the old name back.
+  const savedBaseNameRef = useRef<string>();
+  const autoFocusDoneRef = useRef(false);
+  const simpleInputId = useId();
 
   const { t } = useTranslation();
 
@@ -183,21 +196,36 @@ function FileNameTemplateEditor(opts: {
 
   useEffect(() => {
     if (!simpleMode) return;
+    const shown = savedBaseNameRef.current != null ? `${savedBaseNameRef.current}${parsePath(previewFileName).ext}` : previewFileName;
+    const previous = savedSimpleDraftRef.current;
+    savedSimpleDraftRef.current = shown;
+    // A name being typed stays; only a field showing the last name follows the preview.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSimpleDraft(previewFileName);
+    setSimpleDraft((draft) => (draft === previous ? shown : draft));
   }, [previewFileName, simpleMode]);
 
   const commitSimpleRename = useCallback(() => {
     if (!simpleMode) return;
+    if (skipSimpleCommitRef.current) {
+      skipSimpleCommitRef.current = false;
+      return;
+    }
 
     const trimmed = simpleDraft.trim();
-    const fallbackName = previewFileName;
-    const effectiveName = trimmed === '' ? fallbackName : trimmed;
-    const { ext: previewExt } = parsePath(fallbackName);
-    let baseName = effectiveName;
+    const savedDraft = savedSimpleDraftRef.current;
+    // Only a real edit saves a name. Clicking in to read or copy the name, or tabbing past
+    // it, used to save the current preview as a fixed template, which froze this clip's
+    // name (times and label included) into every later export.
+    if (trimmed === '' || trimmed === savedDraft) {
+      setSimpleDraft(savedDraft);
+      return;
+    }
 
-    if (previewExt !== '' && effectiveName.toLowerCase().endsWith(previewExt.toLowerCase())) {
-      baseName = effectiveName.slice(0, -previewExt.length);
+    const { ext: previewExt } = parsePath(previewFileName);
+    let baseName = trimmed;
+
+    if (previewExt !== '' && trimmed.toLowerCase().endsWith(previewExt.toLowerCase())) {
+      baseName = trimmed.slice(0, -previewExt.length);
     }
 
     const suffixTemplate = mode === 'separate' && generated != null && generated.fileNames.length > 1
@@ -205,7 +233,9 @@ function FileNameTemplateEditor(opts: {
       : '';
 
     const nextTemplate = `${baseName}${suffixTemplate}${formatVariable(extVariable)}`;
-    setSimpleDraft(effectiveName);
+    savedBaseNameRef.current = baseName;
+    savedSimpleDraftRef.current = trimmed;
+    setSimpleDraft(trimmed);
     setTemplate(nextTemplate);
   }, [generated, mode, previewFileName, setTemplate, simpleDraft, simpleMode]);
 
@@ -216,81 +246,89 @@ function FileNameTemplateEditor(opts: {
   const onSimpleInputKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      commitSimpleRename();
+      // Leaving the field saves it (onBlur).
       event.currentTarget.blur();
     } else if (event.key === 'Escape') {
       event.preventDefault();
-      setSimpleDraft(previewFileName);
+      // This Escape only cancels the edit; without this it also reaches the document and closes the export sheet.
+      event.stopPropagation();
+      skipSimpleCommitRef.current = true;
+      setSimpleDraft(savedSimpleDraftRef.current);
       event.currentTarget.blur();
     }
-  }, [commitSimpleRename, previewFileName]);
+  }, []);
+
+  // Select the name without its extension, as Windows does when renaming a file.
+  const selectSimpleBaseName = useCallback((input: HTMLInputElement) => {
+    const { ext } = parsePath(input.value);
+    input.setSelectionRange(0, input.value.length - ext.length);
+  }, []);
+
+  const onSimpleInputFocus = useCallback((event: FocusEvent<HTMLInputElement>) => selectSimpleBaseName(event.currentTarget), [selectSimpleBaseName]);
+
+  // Waits for the name to be in the field, so focusing it can select it.
+  useEffect(() => {
+    if (!simpleMode || !autoFocus || autoFocusDoneRef.current || simpleDraft === '') return;
+    autoFocusDoneRef.current = true;
+    inputRef.current?.focus();
+  }, [autoFocus, simpleDraft, simpleMode]);
 
   if (simpleMode) {
     const simpleTitle = (mode === 'merge-files' || mode === 'merge-segments')
-      ? t('Merged export filename')
-      : t('Export filename');
-    const simpleModeStateLabel = onReset != null ? t('Custom filename') : t('Export filename');
+      ? t('Merged file name')
+      : t('File name');
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '.6rem', width: '100%', minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '.75rem' }}>
-          <div style={{ color: 'var(--gray-10)', fontSize: '.76rem', fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '.4rem', width: '100%', minWidth: 0 }}>
+        {/* Same layout and type as the automatic name preview it replaces, so the block doesn't jump. */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '.75rem', minHeight: '1.75rem' }}>
+          <label htmlFor={simpleInputId} style={{ color: 'var(--cp-text-muted)', fontSize: '.8125rem', fontWeight: 600 }}>
             {simpleTitle}
-          </div>
+          </label>
           {onReset != null && (
-            <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '.26rem .55rem', borderRadius: '999px', background: 'color-mix(in srgb, var(--gray-4) 32%, transparent)', border: '1px solid color-mix(in srgb, var(--gray-8) 26%, transparent)', color: 'var(--gray-11)', fontSize: '.72rem', fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase' }}>
-              {simpleModeStateLabel}
-            </div>
+            <Button size="sm" onClick={resetSimpleRename}>
+              {resetLabel ?? t('Reset')}
+            </Button>
           )}
         </div>
 
         <TextInput
           ref={inputRef}
+          id={simpleInputId}
           value={simpleDraft}
           onChange={(event) => setSimpleDraft(event.target.value)}
+          onFocus={onSimpleInputFocus}
           onBlur={commitSimpleRename}
           onKeyDown={onSimpleInputKeyDown}
           autoComplete="off"
           autoCapitalize="off"
           autoCorrect="off"
+          spellCheck={false}
           style={{
             width: '100%',
             minWidth: 0,
-            boxSizing: 'border-box',
-            padding: '.95rem 1rem',
-            fontSize: '1.02rem',
-            fontWeight: 600,
-            borderRadius: '1rem',
-            background: 'color-mix(in srgb, var(--gray-1) 88%, transparent)',
-            border: '1px solid color-mix(in srgb, var(--gray-8) 32%, transparent)',
-            boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.04)',
+            padding: '.45rem .7rem',
+            fontSize: '.8125rem',
+            lineHeight: 1.4,
           }}
         />
 
-        {onReset != null && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Button onClick={resetSimpleRename} style={{ padding: '.35rem .7rem' }}>
-              {resetLabel ?? t('Reset')}
-            </Button>
-          </div>
-        )}
-
         {generated?.problems.error != null ? (
-          <div style={{ marginBottom: '.2rem' }}>
+          <div style={{ fontSize: '.8125rem', lineHeight: 1.45 }}>
             <FaExclamationTriangle color={dangerColor} style={{ verticalAlign: 'middle', marginRight: '.3rem' }} />
             {generated.problems.error}
           </div>
         ) : (
           <>
             {generated?.problems.sameAsInputFileNameWarning && (
-              <div style={{ marginBottom: '.2rem' }}>
+              <div style={{ fontSize: '.8125rem', lineHeight: 1.45 }}>
                 <FaExclamationTriangle style={{ verticalAlign: 'middle', marginRight: '.3rem' }} color={warningColor} />
                 {t('This export would use the same path as the source file. Change the filename or save location to avoid overwriting it.')}
               </div>
             )}
 
             {!shouldIgnoreMissingExtension && isMissingExtension && (
-              <div style={{ marginBottom: '.2rem' }}>
+              <div style={{ fontSize: '.8125rem', lineHeight: 1.45 }}>
                 <FaExclamationTriangle style={{ verticalAlign: 'middle', marginRight: '.3rem' }} color={warningColor} />
                 {t('The file name template is missing {{ext}} and will result in a file without the suggested extension. This may result in an unplayable output file.', { ext: extVariableFormatted })}
               </div>

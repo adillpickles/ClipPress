@@ -4,10 +4,10 @@
   gap: .6rem;
   margin: 1.2rem 0 .7rem;
 }
-.speedField > span:first-child { flex: 1; }
+.speedField > label { flex: 1; }
 .presets { display: flex; gap: .35rem; flex-wrap: wrap; }
 .presets button { flex: 1; padding: .35rem .5rem; font-size: .8rem; }
-.presets button[aria-pressed="true"] { border-color: var(--blue-9); background: var(--blue-4); }
+.presets button[aria-pressed="true"] { border-color: var(--accent-9); background: var(--accent-4); }
 .durations {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -22,7 +22,10 @@
 .durations > span { color: var(--gray-11); }
 .error { color: var(--red-11); font-size: .85rem; margin-top: .6rem; }
 .retimeBar {
-  --retime-color: var(--blue-9);
+  --retime-color: var(--accent-9);
+  /* The speed label's colour. The -9 fills are too pale for text on the light theme's bands, so it uses the
+     -11 text shade there; the dark theme keeps the fill colour (below). */
+  --retime-text: var(--cp-accent-text);
   position: absolute;
   top: 3px;
   bottom: 3px;
@@ -39,7 +42,9 @@
   user-select: none;
   container-type: inline-size;
 }
-.retimeBar[data-tone="slow"] { --retime-color: var(--amber-9); }
+.retimeBar[data-tone="slow"] { --retime-color: var(--amber-9); --retime-text: var(--cp-warning); }
+/* After the tone rule (same specificity), so it also covers slow bars. */
+:global(.dark-theme) .retimeBar { --retime-text: var(--retime-color); }
 .retimeBar[data-active="true"] { border-color: var(--retime-color); }
 .retimeHeader {
   position: relative;
@@ -67,7 +72,6 @@
   min-height: 0;
 }
 .retimeSpeed {
-  color: inherit;
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -76,7 +80,7 @@
   align-items: center;
   gap: 1px;
   padding: 0 3px;
-  color: var(--retime-color);
+  color: var(--retime-text);
   font-size: 11px;
   font-weight: 700;
   border-radius: 3px;
@@ -108,3 +112,38 @@
 @container (max-width: 160px) {
   .retimeDuration { display: none; }
 }
+
+/* Simple mode: a slim band along the bottom of the clip block instead of a lane of its own, so turning speed
+   controls on doesn't change the timeline's height (and with it the preview's size). */
+/* Its inset from the clip's edges is set by the timeline, clear of the trim handles; its corners no longer line up
+   with the clip's, so all of them are round. */
+.retimeBar[data-overlay="true"] {
+  top: auto;
+  /* About a third of the clip's height, the frames showing through, clear of the clip's number at the top left: a band
+     to drag and double-click, not a sliver. */
+  bottom: 4px;
+  height: 36%;
+  min-height: 18px;
+  z-index: 1;
+  flex-direction: row;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--retime-color) 70%, transparent);
+  border-radius: 6px;
+  /* A bit more opaque in the light theme, so the label stays readable over bright frames. */
+  background: color-mix(in srgb, var(--gray-1) 66%, transparent);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 35%);
+}
+:global(.dark-theme) .retimeBar[data-overlay="true"] { background: color-mix(in srgb, var(--gray-1) 52%, transparent); }
+.retimeBar[data-overlay="true"] .retimeHeader {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  background: transparent;
+  border: 0;
+  opacity: .3;
+  pointer-events: none;
+}
+.retimeBar[data-overlay="true"] .retimeBody { justify-content: flex-start; padding-left: 2px; }
+.retimeBar[data-overlay="true"] .retimeSpeed { font-size: 11px; }
+.retimeBar[data-overlay="true"] .retimeDuration { font-size: 10px; }
+.retimeBar[data-overlay="true"][data-active="true"] .retimeDuration { right: 12px; }

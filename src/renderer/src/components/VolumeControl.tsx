@@ -66,7 +66,7 @@ function VolumeControl({
         <div className={styles['popover']}>
           {audioGainControls.length > 0 && (
             <div className={styles['section']}>
-              <div className={styles['sectionLabel']}>{t('Clip gain')}</div>
+              <div className={styles['sectionLabel']}>{t('Track volume')}</div>
               <div className={styles['gainList']}>
                 {audioGainControls.map(({ streamIndex, label, audioGainDb }) => (
                   <div key={streamIndex} className={styles['gainItem']}>
@@ -123,8 +123,8 @@ function VolumeControl({
       <button
         type="button"
         className={styles['trigger']}
-        title={t('Preview volume and clip gain')}
-        aria-label={t('Preview volume and clip gain')}
+        title={t('Preview volume and track volume')}
+        aria-label={t('Preview volume and track volume')}
         onClick={() => setIsOpen((value) => !value)}
       >
         <VolumeIcon size={30} />

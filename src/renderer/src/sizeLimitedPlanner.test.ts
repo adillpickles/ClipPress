@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getNextSizeLimitedAttempt, getNextSizeLimitedRetryStep, getNextSizeLimitedUndershootStep, bytesPerMb, planSizeLimitedEncode, targetSizeMbToBytes } from './sizeLimitedPlanner';
+import { getNextSizeLimitedAttempt, getNextSizeLimitedRetryStep, getNextSizeLimitedUndershootStep, bytesPerMb, planSizeLimitedEncode, relaxQualityCapForGenerousBudget, targetSizeMbToBytes } from './sizeLimitedPlanner';
 import { resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 
 const allCapabilities = { h264Nvenc: true, av1Nvenc: true, libx264: true, libsvtav1: true } as const;
@@ -602,5 +602,36 @@ describe('undershoot quality cap relaxation', () => {
     const offsets = [15, 12, 9, 4, 1].map((mb) => offsetFor(20, mb)!);
     const sorted = [...offsets].sort((a, b) => a - b);
     expect(offsets).toEqual(sorted);
+  });
+});
+
+describe('relaxQualityCapForGenerousBudget', () => {
+  const strategy = resolveSizeLimitedStrategy({ controlMode: 'simple', preset: 'quality', advancedEncoder: 'av1_nvenc', advancedTwoPass: false, ...defaultStrategyArgs, capabilities: allCapabilities });
+  const pixels1080p60 = 1920 * 1080 * 60;
+  const plan = (targetSizeMb: number, duration: number) => planSizeLimitedEncode({ targetSizeMb, duration, hasAudio: true, strategy });
+
+  it('starts a short clip with a generous size relaxed, so it lands in one encode', () => {
+    // The reported case: 1 s at 20 MB was encoded twice.
+    const relaxed = relaxQualityCapForGenerousBudget(plan(20, 1), pixels1080p60);
+    expect(relaxed.initialAttempt.qualityCapOffset).toBe(14);
+    expect(relaxed.initialAttempt.videoBitrate).toBe(plan(20, 1).initialAttempt.videoBitrate);
+    // Still under: no top-up after an attempt that was already relaxed.
+    expect(getNextSizeLimitedUndershootStep({ plan: relaxed, previousAttempt: relaxed.initialAttempt, previousOutputSize: 7 * bytesPerMb })).toBeUndefined();
+  });
+
+  it('leaves ordinary budgets as they were', () => {
+    // 10 MB for 30 s, 20 MB for 10 s, and 20 MB for 3 s (where a relaxed first attempt overshot): a top-up stays
+    // possible when the result comes in far under.
+    expect(relaxQualityCapForGenerousBudget(plan(10, 30), pixels1080p60).initialAttempt.qualityCapOffset).toBeUndefined();
+    expect(relaxQualityCapForGenerousBudget(plan(20, 10), pixels1080p60).initialAttempt.qualityCapOffset).toBeUndefined();
+    expect(relaxQualityCapForGenerousBudget(plan(20, 3), pixels1080p60).initialAttempt.qualityCapOffset).toBeUndefined();
+  });
+
+  it('judges by the pixels made, and does nothing when they are unknown', () => {
+    // 20 MB for 4 s is generous at 720p30, not at 1440p60; 1 s isn't at 1440p60 either.
+    expect(relaxQualityCapForGenerousBudget(plan(20, 4), 1280 * 720 * 30).initialAttempt.qualityCapOffset).toBe(14);
+    expect(relaxQualityCapForGenerousBudget(plan(20, 4), 2560 * 1440 * 60).initialAttempt.qualityCapOffset).toBeUndefined();
+    expect(relaxQualityCapForGenerousBudget(plan(20, 1), 2560 * 1440 * 60).initialAttempt.qualityCapOffset).toBeUndefined();
+    expect(relaxQualityCapForGenerousBudget(plan(20, 1), undefined)).toEqual(plan(20, 1));
   });
 });

@@ -5,7 +5,6 @@ import withReactContent from 'sweetalert2-react-content';
 
 import i18n from './i18n';
 import { emitter as animationsEmitter } from './animations';
-import { dialogButtonOrder } from './util';
 
 export const swalContainerWrapperId = 'swal2-container-wrapper';
 
@@ -28,7 +27,8 @@ function initSwal(reducedMotion = false) {
         icon: '',
       },
     }),
-    reverseButtons: dialogButtonOrder === 'ltr',
+    // The main button rightmost, as in the app's own dialogs (Dialog.ButtonRow).
+    reverseButtons: true,
   };
 
   Swal = SwalRaw.mixin({
@@ -38,7 +38,8 @@ function initSwal(reducedMotion = false) {
   toast = Swal.mixin({
     ...commonSwalOptions,
     toast: true,
-    width: '20rem',
+    // Sized to the text, up to the stylesheet's max-width (two or three lines for most messages).
+    width: 'auto',
     position: 'bottom-end',
     showConfirmButton: false,
     showCloseButton: true,
@@ -91,9 +92,11 @@ export default function getSwal() {
   };
 }
 
+// Long enough to read what went wrong: about 60 ms a letter, 2 to 8 s.
 export const errorToast = (text: string) => toast.fire({
   icon: 'error',
   text,
+  timer: Math.min(8000, Math.max(2000, text.length * 60)),
 });
 
 export const showPlaybackFailedMessage = () => errorToast(i18n.t('Unable to playback this file. Try to convert to supported format from the menu'));

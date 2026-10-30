@@ -1,4 +1,5 @@
 import type { SizeLimitControlMode, SizeLimitPreset } from '../../common/types.js';
+import { numberFileName } from './util/clipFileNames';
 
 const bytesPerMb = 1024 * 1024;
 const maxAutoFileNameLength = 250;
@@ -11,12 +12,16 @@ export type SizeLimitedAutoSizeLabel = number | typeof sizeLimitedFinalSizePlace
 export interface SizeLimitedAutoNameItem {
   sizeLabel: SizeLimitedAutoSizeLabel,
   suffixLabel?: string | undefined,
+  /** A named clip in the simple editor: its file is just that name ("Adil.mp4", then "Adil (2).mp4"). */
+  clipName?: string | undefined,
 }
 
 function sanitizeAutoNamePart(value: string, safeOutputFileName: boolean) {
   const trimmed = value.trim();
   if (trimmed.length === 0) return '';
-  return safeOutputFileName ? trimmed.replaceAll(/[^\p{L}\p{N} .-_]/gu, '_') : trimmed;
+  // Keeps letters, numbers, spaces, '.', '_' and '-' (last, so it's a literal and not a range),
+  // which keeps a recording's " - " and drops everything Windows forbids (<>:"/\|?*).
+  return safeOutputFileName ? trimmed.replaceAll(/[^\p{L}\p{N} ._-]/gu, '_') : trimmed;
 }
 
 function getModeLabel({
@@ -65,6 +70,11 @@ function buildAutoName({
   disambiguator?: number | undefined,
 }) {
   const ext = '.mp4';
+  const clipName = sanitizeAutoNamePart(item.clipName ?? '', safeOutputFileName);
+  if (clipName.length > 0) {
+    const stem = safeOutputFileName ? clipName.slice(0, maxAutoFileNameLength - ext.length - 5).trimEnd() : clipName;
+    return numberFileName(`${stem}${ext}`, disambiguator ?? 1);
+  }
   const disambiguatorSuffix = disambiguator != null ? `-${disambiguator}` : '';
   const parts = [
     formatAutoSizeLabel(item.sizeLabel),
@@ -82,6 +92,18 @@ function buildAutoName({
   }
 
   return `${stem}${disambiguatorSuffix}${ext}`;
+}
+
+/**
+ * The file names one export has taken in its folder. Names that differ only in case are the same file on Windows,
+ * so "Kill" and "kill" must not both be handed out.
+ */
+export function createReservedFileNames() {
+  const keys = new Set<string>();
+  return {
+    has: (fileName: string) => keys.has(fileName.toLowerCase()),
+    add: (fileName: string) => { keys.add(fileName.toLowerCase()); },
+  };
 }
 
 export function findAvailableSizeLimitedAutoFileName({
@@ -134,7 +156,7 @@ export function buildSizeLimitedAutoFileNames({
   safeOutputFileName: boolean,
   items: SizeLimitedAutoNameItem[],
 }) {
-  const reserved = new Set<string>();
+  const reserved = createReservedFileNames();
 
   return items.map((item) => {
     const fileName = findAvailableSizeLimitedAutoFileName({

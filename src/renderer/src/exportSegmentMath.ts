@@ -2,6 +2,7 @@ import type { DefiniteSegmentBase } from './types';
 import { getAudioTempoFilter, getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from './segmentSpeed';
 import { getSegmentCropFilter } from './segmentCrop';
 import { getSizeLimitedRotationArgs } from './sizeLimitedFfmpegArgs';
+import { combineAudioGain, getVolumeFilter, isClipVolumeChanged } from './util/audioGain';
 
 export function getRelativeSegmentOverlapWindow({
   overlayStart,
@@ -117,7 +118,9 @@ export function buildSegmentConcatFilters({ segments, videoStreamIndex, audioStr
     if (audioStreamIndex == null) return videoLabel;
     const audioLabel = `[segmenta${index}]`;
     const tempo = getAudioTempoFilter(rate);
-    graph.push(`[${index}:${audioStreamIndex}]asetpts=PTS-STARTPTS${tempo ? `,${tempo}` : ''}${audioLabel}`);
+    // The clip's own volume; the track volume is applied once, after the concat.
+    const clipVolume = isClipVolumeChanged(segment) ? getVolumeFilter(combineAudioGain(undefined, segment)) : undefined;
+    graph.push(`[${index}:${audioStreamIndex}]${['asetpts=PTS-STARTPTS', tempo, clipVolume].filter(Boolean).join(',')}${audioLabel}`);
     return `${videoLabel}${audioLabel}`;
   });
   return { graph, labels: labels.join('') };

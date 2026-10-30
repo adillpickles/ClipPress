@@ -1,0 +1,17 @@
+/* AnimatedHeight: the height follows the content, eased; a little room is left for focus rings at the edges. */
+.outer {
+  overflow: clip;
+  overflow-clip-margin: 4px;
+  transition: height .24s cubic-bezier(.2, .8, .2, 1);
+}
+
+/* Holds its children's margins, so the measured height is the whole content. */
+.inner {
+  display: flow-root;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .outer {
+    transition: none;
+  }
+}

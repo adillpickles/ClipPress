@@ -1,0 +1,306 @@
+/* Simple mode's clip blocks ("C1"): a raised, rounded block showing its own stretch of the filmstrip in full
+   colour, outlined in the clip's own colour (--clip-color, set inline), with its number (and a name label when it
+   has a name) and trim handles on the selected clip.
+   The base rules are the light theme's; the dark theme's deeper shadows and darker film are under .dark-theme. */
+.clip {
+  isolation: isolate;
+  /* So the number can shrink or hide on narrow blocks (below). */
+  container-type: inline-size;
+  box-shadow: 0 6px 14px -8px rgb(0 0 0 / 40%), 0 1px 3px rgb(0 0 0 / 18%);
+}
+
+:global(.dark-theme) .clip {
+  box-shadow: 0 7px 16px -7px rgb(0 0 0 / 85%), 0 2px 5px rgb(0 0 0 / 35%);
+}
+
+.film {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: var(--gray-5);
+  pointer-events: none;
+}
+
+:global(.dark-theme) .film {
+  background: #0a0a0a;
+}
+
+.film img {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.film img.arriving {
+  animation: film-tile-in .18s ease-out;
+}
+
+@keyframes film-tile-in {
+  from { opacity: 0; }
+}
+
+/* The tint and the outline sit over the frames; the selected clip gets a light sheen, a solid ring and a soft glow,
+   all in its own colour (the accent stays for focus and the playhead). */
+.tint {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 10%) 0%, rgb(255 255 255 / 0%) 46%),
+    color-mix(in srgb, var(--clip-color) 8%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--clip-color) 70%, transparent), inset 0 1px 0 rgb(255 255 255 / 16%);
+  transition: box-shadow .12s ease;
+}
+
+.clip:hover .tint {
+  box-shadow: inset 0 0 0 1.5px var(--clip-color), inset 0 1px 0 rgb(255 255 255 / 20%);
+}
+
+.active {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--clip-color) 26%, transparent),
+    0 0 18px color-mix(in srgb, var(--clip-color) 30%, transparent),
+    0 10px 22px -10px rgb(0 0 0 / 40%);
+}
+
+:global(.dark-theme) .active {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--clip-color) 30%, transparent),
+    0 0 18px color-mix(in srgb, var(--clip-color) 28%, transparent),
+    0 10px 22px -8px rgb(0 0 0 / 90%);
+}
+
+/* Picked in the Clips panel for Delete (with Ctrl, Shift or a selection box): a ring of light ClipPress blue. */
+.picked .tint {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent-9) 75%, transparent);
+}
+
+.active .tint,
+.active:hover .tint {
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 22%) 0%, rgb(255 255 255 / 6%) 32%, rgb(255 255 255 / 0%) 58%),
+    color-mix(in srgb, var(--clip-color) 16%, transparent);
+  box-shadow: inset 0 0 0 2.5px var(--clip-color), inset 0 1px 0 rgb(255 255 255 / 30%);
+}
+
+/* Not in the export (unticked): the frames go grey and faint under a light hatch. In the light theme they fade
+   towards the light tape rather than darken, so the clip still reads as a clip, not as cut footage. */
+.excluded .film {
+  filter: grayscale(1);
+  opacity: .55;
+}
+
+:global(.dark-theme) .excluded .film {
+  filter: grayscale(1) brightness(.55);
+  opacity: .7;
+}
+
+.excluded .tint,
+.excluded:hover .tint {
+  background: repeating-linear-gradient(135deg, rgb(0 0 0 / 8%) 0 1.5px, transparent 1.5px 7px);
+  box-shadow: inset 0 0 0 1.5px rgb(0 0 0 / 25%);
+}
+
+:global(.dark-theme) .excluded .tint,
+:global(.dark-theme) .excluded:hover .tint {
+  background: repeating-linear-gradient(135deg, rgb(255 255 255 / 9%) 0 1.5px, transparent 1.5px 7px);
+  box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 22%);
+}
+
+.pill {
+  position: absolute;
+  z-index: 3;
+  top: 5px;
+  left: 6px;
+  max-width: calc(100% - 12px);
+  height: 24px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 2px;
+  /* The number's corners plus the 2px around it. */
+  border-radius: 8px;
+  background: rgb(12 16 17 / 70%);
+  border: 1px solid rgb(255 255 255 / 9%);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 35%);
+  /* The pill is dark in both themes (it sits on the frames), so its text is light in both: the dark theme's gray-12. */
+  color: #eee;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* With no name or speed to show, just the number: no empty label around it. */
+.pillBare {
+  padding: 0 0 0 2px;
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.active .pill {
+  left: 13px;
+  max-width: calc(100% - 26px);
+}
+
+.num {
+  flex-shrink: 0;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 20%), 0 1px 3px rgb(0 0 0 / 45%);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  /* Background and digit colour come from the clip's colour (getSegBadgeStyle). */
+  font-variant-numeric: tabular-nums;
+}
+
+/* A short clip at a wide zoom has no room for the name or speed beside the number: just the number, as for .pillBare,
+   rather than a label too narrow to read. Below that it can be narrower than the number: a smaller number with less
+   inset, and none at all rather than a clipped digit. The selected clip's trim handles take 10px each side, so it
+   needs more room. (The widths allow for two-digit numbers, except where .oneDigit says otherwise.) */
+@container (width < 84px) {
+  .pill {
+    padding: 0 0 0 2px;
+    background: none;
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  .name,
+  .speed {
+    display: none;
+  }
+}
+
+@container (width < 98px) {
+  .active .pill {
+    padding: 0 0 0 2px;
+    background: none;
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  .active .name,
+  .active .speed {
+    display: none;
+  }
+}
+
+@container (width < 38px) {
+  .pill {
+    left: 4px;
+    max-width: calc(100% - 8px);
+    padding-left: 0;
+  }
+
+  .num {
+    min-width: 16px;
+    height: 16px;
+    padding: 0 3px;
+    border-radius: 5px;
+    font-size: 10.5px;
+  }
+}
+
+/* A one-digit number (16px) fits 4px in from each side, so it shows a little narrower than two digits. */
+@container (width < 28px) {
+  .pill:not(.oneDigit) {
+    display: none;
+  }
+}
+
+@container (width < 24px) {
+  .oneDigit {
+    display: none;
+  }
+}
+
+@container (width < 52px) {
+  .active .pill {
+    left: 11px;
+    max-width: calc(100% - 21px);
+    padding-left: 0;
+  }
+
+  .active .num {
+    min-width: 16px;
+    height: 16px;
+    padding: 0 3px;
+    border-radius: 5px;
+    font-size: 10.5px;
+  }
+}
+
+/* Between the 10px trim handles: one digit (16px) needs 37px, two digits about 41px. */
+@container (width < 41px) {
+  .active .pill:not(.oneDigit) {
+    display: none;
+  }
+}
+
+@container (width < 37px) {
+  .active .oneDigit {
+    display: none;
+  }
+}
+
+.name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.speed {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  opacity: .85;
+}
+
+/* Trim handles: drag either edge of the selected clip. */
+.handle {
+  all: unset;
+  box-sizing: border-box;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--clip-color);
+  cursor: ew-resize;
+}
+
+.handle::before {
+  content: '';
+  width: 2px;
+  height: 38%;
+  max-height: 16px;
+  border-radius: 1px;
+  background: var(--clip-on-color);
+  opacity: .7;
+}
+
+.handleStart {
+  left: 0;
+}
+
+.handleEnd {
+  right: 0;
+}

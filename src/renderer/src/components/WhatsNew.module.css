@@ -1,15 +1,41 @@
+.versions {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  max-height: min(60vh, 32rem);
+  overflow-y: auto;
+}
+
 .version {
-  ul {
-    margin: .3em 0;
-  }
-  li {
-    line-height: 1.2;
-  }
   h2 {
-    font-size: 1.1em;
-    margin-top: 0;
-    margin-bottom: .1em;
+    margin: 0 0 .4rem;
+    color: var(--cp-accent-text);
+    font-size: .8125rem;
+    font-weight: 700;
   }
 
-  margin-bottom: 1.5em;
+  ul {
+    margin: 0;
+    padding-left: 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
+  }
+
+  li {
+    color: var(--cp-text-muted);
+    font-size: .875rem;
+    line-height: 1.45;
+  }
+
+  li strong {
+    color: var(--cp-text);
+  }
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem;
+  margin: .6rem 0 0 -.5rem;
 }

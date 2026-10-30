@@ -21,6 +21,13 @@ See also https://github.com/mifi/lossless-cut/issues/2515
 
 interface KeyEventParams { e: KeyboardEvent, action: KeyboardAction | undefined }
 
+/** A button or tick box in the app itself (not in a dialog or a menu, whose keys are theirs). */
+function isPlainControl(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  const isControl = target instanceof HTMLButtonElement || target.getAttribute('role') === 'button' || (target instanceof HTMLInputElement && (target.type === 'checkbox' || target.type === 'radio'));
+  return isControl && target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [data-export-sheet], .swal2-container') == null;
+}
+
 export default ({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfirm, exportConfirmOpen }: {
   keyBindings: KeyBinding[],
   keyUpActions: Record<string, () => void>,
@@ -42,21 +49,37 @@ export default ({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfi
     // todo remove once we use Dialog component (already supports escape button)
     const isEscape = e.code === 'Escape';
     if (exportConfirmOpen) {
+      // (Escape on an open dropdown list never gets here: see selectEscapeGuard.ts.)
       if (isEscape) {
-        closeExportConfirm();
+        // A field that used this Escape itself (e.g. to cancel editing a file name) keeps the sheet open.
+        if (!e.defaultPrevented) {
+          closeExportConfirm();
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
+      // Export, or Ctrl+E (export right away, which with the sheet open means with what it shows).
+      if (action !== 'export' && action !== 'quickExport') {
+        return; // stop here, don't allow other key actions than export while dialog is open
+      }
+      // The export sheet holds focus while it's open, so its own shortcuts also work from inside it, but not while
+      // typing in one of its fields.
+      const target = e.target instanceof Element ? e.target : undefined;
+      if (target?.closest('[data-export-sheet]') != null && target.closest('input, textarea, select, [contenteditable="true"]') == null) {
+        getKeyboardAction(action)();
         e.preventDefault();
         e.stopPropagation();
         return;
-      }
-      if (action !== 'export') {
-        return; // stop here, don't allow other key actions than export while dialog is open
       }
     }
 
     // From now on, only handle key events when focus is on document body
     // because we don't allow focus to anything else
     // except for inputs, buttons, dialogs etc, which we want allowed to handle keys normally.
-    if (e.target !== document.body) {
+    // A button or tick box the user just clicked keeps the focus, though: shortcuts with Ctrl, Alt or Win (Ctrl+Z…)
+    // and Delete mean nothing to it, so they still work; Space, Enter and the arrows stay its own.
+    if (e.target !== document.body && !(isPlainControl(e.target) && (e.ctrlKey || e.metaKey || e.altKey || e.code === 'Delete'))) {
       return;
     }
     // Alternatively, this is how mousetrap does it:
@@ -163,6 +186,24 @@ export default ({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfi
       document.removeEventListener('keyup', handleKeyUp);
     };
   }, [keyBindings]);
+
+  // Shortcuts only run while nothing has focus (see above), but a button clicked with the mouse
+  // keeps focus, so the next shortcut would do nothing (#60). Give focus back to the page after a
+  // mouse click on a control in the main window. Keyboard activation (detail 0) keeps focus where
+  // the user put it, and dialogs and menus manage their own focus.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (e.detail === 0) return;
+      const { activeElement } = document;
+      if (!(activeElement instanceof HTMLElement) || activeElement === document.body) return;
+      if (!(e.target instanceof Node) || !activeElement.contains(e.target)) return;
+      if (!activeElement.matches('button, [role="button"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"]')) return;
+      if (activeElement.closest('[role="dialog"], [role="alertdialog"], [role="menu"], .swal2-container')) return;
+      activeElement.blur();
+    };
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, []);
 
   const updateKeyboardLayout = useCallback(async () => {
     setKeyboardLayoutMap(await navigator.keyboard.getLayoutMap());

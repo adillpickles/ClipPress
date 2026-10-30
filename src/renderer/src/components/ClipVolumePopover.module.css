@@ -1,0 +1,94 @@
+.heading {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  min-width: 0;
+}
+
+.title {
+  flex-shrink: 0;
+  font-size: .875rem;
+  font-weight: 650;
+}
+
+.clipName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  width: 16rem;
+}
+
+.muteButton,
+.resetButton {
+  all: unset;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--cp-text-muted);
+  transition: background-color .12s ease, color .12s ease;
+}
+
+.muteButton {
+  width: 28px;
+  height: 28px;
+  font-size: 15px;
+}
+
+.resetButton {
+  width: 22px;
+  height: 22px;
+}
+
+.muteButton:hover,
+.resetButton:hover:not(:disabled) {
+  background: var(--cp-hover);
+  color: var(--cp-text);
+}
+
+.muteButtonOn {
+  color: var(--cp-warning);
+}
+
+.resetButton:disabled {
+  cursor: default;
+  opacity: .35;
+}
+
+.muteButton:focus-visible,
+.resetButton:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.slider {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  accent-color: var(--cp-accent);
+}
+
+.value {
+  flex-shrink: 0;
+  width: 3.1rem;
+  text-align: right;
+  font-size: .8125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* What the clip really plays at, with the track turned down or up. */
+.playsAt {
+  font-size: .75rem;
+  color: var(--cp-text-muted);
+  font-variant-numeric: tabular-nums;
+}

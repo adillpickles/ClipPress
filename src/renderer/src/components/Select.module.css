@@ -2,39 +2,147 @@
   appearance: none;
   font: inherit;
   line-height: 1.2;
-  font-size: .9em;
+  font-size: .875rem;
   font-weight: 600;
-  background-color: color-mix(in srgb, var(--gray-3) 82%, transparent);
-  color: var(--gray-12);
-  border-radius: .85em;
-  min-height: 2.4rem;
-  padding: 0 2.1em 0 .85em;
+  background-color: var(--cp-raised);
+  color: var(--cp-text);
+  border-radius: var(--cp-radius);
+  min-height: 2rem;
+  padding: 0 2em 0 .7em;
   outline: none;
-  border: 1px solid color-mix(in srgb, var(--gray-8) 62%, transparent);
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--gray-12) 8%, transparent);
+  border: 1px solid var(--cp-line);
+  cursor: pointer;
+  /* One line, like every other control, even when an option's text is long. */
+  white-space: nowrap;
   transition:
-    background-color .18s ease,
-    border-color .18s ease,
-    box-shadow .18s ease;
+    background-color .14s ease,
+    border-color .14s ease,
+    box-shadow .14s ease;
 
   background-image: url("data:image/svg+xml;utf8,<svg fill='rgba(0,0,0,0.6)' height='24' viewBox='0 0 24 24' width='24' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/><path d='M0 0h24v24H0z' fill='none'/></svg>");
   background-repeat: no-repeat;
-  background-position-x: calc(100% - .45rem);
+  background-position-x: calc(100% - .4rem);
   background-position-y: 50%;
   background-size: 1.1rem;
 }
 
 .select:hover {
-  background-color: color-mix(in srgb, var(--gray-4) 88%, transparent);
-  border-color: color-mix(in srgb, var(--gray-9) 72%, transparent);
+  background-color: var(--cp-hover);
+  border-color: var(--cp-line-strong);
 }
 
-.select:focus {
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--blue-8) 35%, transparent),
-    0 1px 0 color-mix(in srgb, var(--gray-12) 8%, transparent);
+.select:focus-visible {
+  outline: none;
+  box-shadow: var(--cp-focus-ring);
+}
+
+.select:disabled {
+  opacity: .5;
+  cursor: not-allowed;
 }
 
 :global(.dark-theme) .select {
   background-image: url("data:image/svg+xml;utf8,<svg fill='rgba(255,255,255,0.6)' height='24' viewBox='0 0 24 24' width='24' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/><path d='M0 0h24v24H0z' fill='none'/></svg>");
+}
+
+/* Chromium's customizable select: the open list is drawn like the rest of the app (a rounded, raised
+   popover) instead of the system's popup. Browsers without it keep the native list. */
+@supports (appearance: base-select) {
+  .select,
+  .select::picker(select) {
+    appearance: base-select;
+  }
+
+  /* overflow: a long choice is cut at the field's edge rather than spilling past it (it can't wrap, see above). */
+  .select {
+    display: inline-flex;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  .select::picker-icon {
+    display: none;
+  }
+
+  /* Open below the field, like a dropdown should, and above it only when the list doesn't fit below (Chromium
+     otherwise picks whichever side has more room). The fixed height cap is what lets a list that is too tall
+     for the space below flip, instead of shrinking to fit; the margin keeps the gap on either side. */
+  .select::picker(select) {
+    margin-block: .3rem;
+    max-block-size: 18rem;
+    position-try-order: normal;
+    padding: .3rem;
+    border: 1px solid var(--cp-line-strong);
+    border-radius: var(--cp-radius);
+    background: var(--cp-raised);
+    color: var(--cp-text);
+    box-shadow: var(--cp-shadow-popover);
+    /* A thin bar without arrows, the app's own, not Windows'. */
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--gray-9) 60%, transparent) transparent;
+    /* Opens with a short fade and drop, like the app's menus. */
+    opacity: 0;
+    translate: 0 -.25rem;
+    transition: opacity .14s ease-out, translate .14s ease-out, display .14s allow-discrete, overlay .14s allow-discrete;
+  }
+
+  .select:open::picker(select) {
+    opacity: 1;
+    translate: 0 0;
+  }
+
+  @starting-style {
+    .select:open::picker(select) {
+      opacity: 0;
+      translate: 0 -.25rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .select::picker(select) {
+      transition: none;
+    }
+  }
+
+  .select option {
+    padding: .4rem .6rem;
+    border-radius: var(--cp-radius-sm);
+    font-size: .875rem;
+    font-weight: 500;
+    color: var(--cp-text);
+    cursor: pointer;
+  }
+
+  .select option::checkmark {
+    display: none;
+  }
+
+  .select option:hover,
+  .select option:focus-visible {
+    outline: none;
+    background: var(--cp-hover);
+  }
+
+  .select option:checked {
+    background: var(--cp-accent-soft);
+    color: var(--cp-accent-text);
+    font-weight: 600;
+  }
+
+  .select option:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+  }
+
+  /* A group's name: a small quiet heading over its options. */
+  .select optgroup {
+    padding-top: .45rem;
+    color: var(--cp-text-subtle);
+    font-size: .75rem;
+    font-weight: 700;
+  }
+
+  .select optgroup:first-of-type {
+    padding-top: .15rem;
+  }
 }

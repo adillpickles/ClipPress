@@ -14,6 +14,7 @@ import safeishEval from '../worker/eval';
 import { isUnsafeOutputFileName } from './outputPathSafety';
 import { getMergeProtectedPaths, makeSourceSafeFileNames, type SourceSafeFileNameAdjustment } from './sourcePathProtection';
 import { UserFacingError } from '../../errors';
+import { uniqueClipFileNames } from './clipFileNames';
 import type { FileFfprobeMeta } from '../ffmpeg';
 
 
@@ -340,7 +341,7 @@ async function generateWithFallback({ generate, desiredTemplate, defaultTemplate
   return protectSource(originalFileNames, problems);
 }
 
-export async function generateCutFileNames({ fileDuration, segmentsToExport: segmentsToExportIn, template: desiredTemplate, fallbackTemplate, protectedPaths, formatTimecode, isCustomFormatSelected, fileFormat, sourceFile, outputDir, safeOutputFileName, maxLabelLength, outputFileNameMinZeroPadding, exportCount, currentFileExportCount }: {
+export async function generateCutFileNames({ fileDuration, segmentsToExport: segmentsToExportIn, template: desiredTemplate, fallbackTemplate, protectedPaths, formatTimecode, isCustomFormatSelected, fileFormat, sourceFile, outputDir, safeOutputFileName, maxLabelLength, outputFileNameMinZeroPadding, exportCount, currentFileExportCount, nameAfterClips = false }: {
   fileDuration: number | undefined,
   segmentsToExport: SegmentToExport[],
   template: string,
@@ -356,8 +357,11 @@ export async function generateCutFileNames({ fileDuration, segmentsToExport: seg
   outputFileNameMinZeroPadding: number,
   exportCount: number,
   currentFileExportCount: number,
+  /** The simple editor, without a name of the user's own: a named clip's file is just its name ("Adil.mp4"). */
+  nameAfterClips?: boolean | undefined,
 }) {
   const segmentsToExport = getGuaranteedSegments(segmentsToExportIn, fileDuration);
+  const isClipNamed = (index: number) => nameAfterClips && (segmentsToExport[index]?.name ?? '') !== '';
 
   return generateWithFallback({
     generate: async ({ template, safeOutputFileName: safeOutputFileName2, sanitizeName }) => {
@@ -365,7 +369,7 @@ export async function generateCutFileNames({ fileDuration, segmentsToExport: seg
 
       const maxOriginalIndex = max(segmentsToExport.map((s) => s.originalIndex)) ?? 0;
 
-      return pMap(segmentsToExport, async (segment, i) => {
+      const fileNames = await pMap(segmentsToExport, async (segment, i) => {
         const { start, end, name = '' } = segment;
         const selectedSegNum = i + 1;
         const selectedSegNumPadded = formatSegNum(i, segmentsToExport.length, outputFileNameMinZeroPadding);
@@ -380,6 +384,8 @@ export async function generateCutFileNames({ fileDuration, segmentsToExport: seg
         }
 
         const { name: inputFileNameWithoutExt } = parsePath(sourceFile.path);
+        const ext = getOutFileExtension({ isCustomFormatSelected, outFormat: fileFormat, filePath: sourceFile.path });
+        if (isClipNamed(i)) return maybeTruncatePath(`${sanitizeName(name)}${ext}`, safeOutputFileName2);
 
         const cutDuration = end - start;
 
@@ -392,7 +398,7 @@ export async function generateCutFileNames({ fileDuration, segmentsToExport: seg
           segSuffix: getSegSuffix(),
           sourceFiles: [sourceFile],
           inputFileNameWithoutExt,
-          ext: getOutFileExtension({ isCustomFormatSelected, outFormat: fileFormat, filePath: sourceFile.path }),
+          ext,
           segLabels: [sanitizeName(name)],
           cutFrom: start,
           cutFromStr: formatTimecode({ seconds: start, fileNameFriendly: true }),
@@ -406,6 +412,8 @@ export async function generateCutFileNames({ fileDuration, segmentsToExport: seg
 
         return maybeTruncatePath(segFileName, safeOutputFileName2);
       }, { concurrency: 5 });
+      // Two clips with the same name: "Adil.mp4" and "Adil (2).mp4".
+      return uniqueClipFileNames(fileNames, isClipNamed);
     },
     desiredTemplate,
     defaultTemplate: fallbackTemplate ?? defaultCutFileTemplate,

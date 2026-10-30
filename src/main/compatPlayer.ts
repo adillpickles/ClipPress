@@ -1,7 +1,7 @@
-import { ExecaError } from 'execa';
+import type { ExecaError } from 'execa';
 
 import logger from './logger.js';
-import { createMediaSourceProcess } from './ffmpeg.js';
+import { createMediaSourceProcess, loadExeca } from './ffmpeg.js';
 
 
 // eslint-disable-next-line import/prefer-default-export
@@ -15,6 +15,7 @@ export function createMediaSourceStream(params: Parameters<typeof createMediaSou
     const { videoStreamIndex, audioStreamIndexes, seekTo } = params;
 
     logger.info('Starting preview process', { videoStreamIndex, audioStreamIndexes, seekTo });
+    await loadExeca();
     const process = createMediaSourceProcess({ ...params, forceColorspace });
 
     // eslint-disable-next-line unicorn/prefer-add-event-listener
@@ -114,7 +115,8 @@ export function createMediaSourceStream(params: Parameters<typeof createMediaSou
         if (abortController.signal.aborted) {
           return undefined;
         }
-        if (err instanceof ExecaError && /^\[swscaler[^\]]+\]\s+Unsupported input/gm.test((err as ExecaError<{ buffer: { stdout: false, stderr: true }, encoding: 'utf8' }>).stderr)) {
+        // By name: execa itself is loaded only when first needed (see ffmpeg.ts).
+        if (err instanceof Error && err.name === 'ExecaError' && /^\[swscaler[^\]]+\]\s+Unsupported input/gm.test((err as ExecaError<{ buffer: { stdout: false, stderr: true }, encoding: 'utf8' }>).stderr)) {
           logger.warn('Media source process failed due to unsupported colorspace, retrying with forced colorspace conversion');
 
           try {

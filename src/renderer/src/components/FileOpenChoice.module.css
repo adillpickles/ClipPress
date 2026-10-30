@@ -1,0 +1,190 @@
+/* The simple editor's "open a dropped file" choice (FileOpenChoice.tsx). */
+.choice {
+  display: flex;
+  flex-direction: column;
+  gap: .9rem;
+  text-align: left;
+}
+
+.file {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  min-width: 0;
+  /* Clear of the dialog's close button, which sits at the top right. */
+  padding-right: 2.25rem;
+  margin-top: -.15rem;
+  color: var(--cp-text-muted);
+  font-size: .875rem;
+  font-weight: 600;
+}
+
+.fileIcon {
+  flex-shrink: 0;
+  color: var(--cp-accent-text);
+}
+
+.fileName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* One grid cell for both pages: the taller one sets the height, so swapping pages never resizes the dialog. */
+.pages {
+  display: grid;
+}
+
+.page {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  /* The shorter page sits in the middle of the room the taller one needs. */
+  justify-content: center;
+  gap: .5rem;
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.pageHidden {
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(3px);
+  pointer-events: none;
+}
+
+.primary,
+.secondary,
+.add,
+.other,
+.moreLink {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  border-radius: var(--cp-radius-lg);
+  background: var(--cp-accent);
+  color: var(--gray-1);
+  font-size: .95rem;
+  font-weight: 700;
+  transition: background-color .12s ease;
+}
+
+:global(.dark-theme) .primary {
+  color: var(--gray-1);
+}
+
+.primary:hover {
+  background: var(--cp-accent-hover);
+}
+
+.secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.4rem;
+  border-radius: var(--cp-radius-lg);
+  border: 1px solid var(--cp-line);
+  color: var(--cp-text);
+  font-size: .875rem;
+  font-weight: 600;
+  transition: background-color .12s ease;
+}
+
+.secondary:hover {
+  background: var(--cp-hover);
+}
+
+.moreLink {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: .2rem;
+  margin-top: .15rem;
+  padding: .2rem .45rem;
+  border-radius: var(--cp-radius-sm);
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+  font-weight: 600;
+}
+
+.moreLink:hover {
+  color: var(--cp-text);
+  background: var(--cp-hover);
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+  font-weight: 600;
+}
+
+.adds {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: .4rem;
+}
+
+.add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .3rem;
+  min-height: 3.6rem;
+  padding: .4rem;
+  border-radius: var(--cp-radius);
+  border: 1px solid var(--cp-line);
+  background: var(--cp-raised);
+  color: var(--cp-text);
+  font-size: .8125rem;
+  font-weight: 600;
+  text-align: center;
+  transition: border-color .12s ease, background-color .12s ease;
+}
+
+.add svg {
+  color: var(--cp-accent-text);
+  font-size: 1rem;
+}
+
+.add:hover,
+.other:hover {
+  border-color: var(--accent-8);
+  background: var(--cp-accent-soft);
+}
+
+.other {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  min-height: 2.3rem;
+  padding: 0 .7rem;
+  border-radius: var(--cp-radius);
+  border: 1px solid var(--cp-line);
+  color: var(--cp-text);
+  font-size: .8125rem;
+  font-weight: 600;
+  transition: border-color .12s ease, background-color .12s ease;
+}
+
+.other svg {
+  color: var(--cp-text-subtle);
+}
+
+.primary:focus-visible,
+.secondary:focus-visible,
+.add:focus-visible,
+.other:focus-visible,
+.moreLink:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}

@@ -1,0 +1,87 @@
+/* The "Details" toggle of an export result: the same soft, rounded disclosure as in the export sheet. */
+.disclosure {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .35em;
+  margin-left: -.4em;
+  padding: .25em .55em .25em .4em;
+  border-radius: var(--cp-radius);
+  color: var(--cp-text-muted);
+  font-size: .85em;
+  font-weight: 600;
+  transition: background-color .12s ease, color .12s ease;
+}
+
+.disclosure:hover {
+  color: var(--cp-text);
+  background: var(--cp-hover);
+}
+
+.disclosure:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+/* Every file of a multi-file export, one line each; the full path is in the tooltip. */
+.fileList {
+  list-style: none;
+  margin: .55em 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .3em;
+  max-height: 9em;
+  overflow-y: auto;
+}
+
+.fileItem {
+  display: flex;
+  align-items: center;
+  gap: .45em;
+  min-width: 0;
+  color: var(--cp-text);
+  font-size: .9em;
+}
+
+.fileIcon {
+  flex-shrink: 0;
+  color: var(--cp-text-muted);
+  font-size: .85em;
+}
+
+.fileName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A choice with its "i" help next to it. */
+.choiceRow {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+}
+
+/* After an export (ExportResult): one file, or several in rows. */
+.exportResult {
+  width: min(29rem, 92vw);
+}
+
+.exportResultWide {
+  width: min(32rem, 92vw);
+}
+
+.centredTitle {
+  margin-left: 2.5rem;
+  text-align: center;
+}
+
+.detailsList {
+  margin: 0;
+  padding-left: 1.1em;
+  display: flex;
+  flex-direction: column;
+  gap: .25em;
+}

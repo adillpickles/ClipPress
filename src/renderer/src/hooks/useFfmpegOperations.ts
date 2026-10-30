@@ -6,10 +6,12 @@ import pMap from 'p-map';
 import invariant from 'tiny-invariant';
 import i18n from 'i18next';
 
-import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists } from '../util';
+import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists, moveExportWithRetry } from '../util';
 import { assertOutPathsNotSource } from '../util/sourceProtection';
 import { isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, getDuration, createChaptersFromSegments, readFileFfprobeMeta, getExperimentalArgs, getVideoTimescaleArgs, logStdoutStderr, runFfmpegConcat, RefuseOverwriteError, runFfmpeg } from '../ffmpeg';
-import { defaultAudioGainDb, getMapStreamsArgs, getStreamIdsToCopy, isMutedAudioGain, isNeutralAudioGain } from '../util/streams';
+import { getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
+import type { ClipVolume } from '../util/audioGain';
+import { combineAudioGain, getVolumeFilter } from '../util/audioGain';
 import { needsSmartCut, getCodecParams } from '../smartcut';
 import { getGuaranteedSegments, isDurationValid } from '../segments';
 import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } from '../textOverlays';
@@ -26,9 +28,21 @@ import type { LossyMode } from '../../../main';
 import { UserFacingError } from '../../errors';
 import mainApi from '../mainApi';
 import { getHwaccelArgs } from '../../../common/util';
+import { getTempWorkDir } from '../util/tempFiles';
 
-const { join, resolve, dirname } = window.require('path');
-const { writeFile, mkdir, access, constants: { W_OK } } = window.require('fs/promises');
+const { join, resolve, dirname, extname } = window.require('path');
+const { writeFile, mkdir, access, rm, constants: { W_OK } } = window.require('fs/promises');
+
+/**
+ * Where an export's FFmpeg writes before the finished file is put in place: beside it, with the same extension (FFmpeg
+ * tells the format from it where none is given). So a cancelled or failed export leaves no half-written file, and
+ * doesn't wipe an earlier export of the same name.
+ */
+function getPartialPath(outPath: string) {
+  // A short name of its own, so a long export name can't grow past the file system's limit.
+  return join(dirname(outPath), `.clippress-partial-${nanoid(8)}${extname(outPath)}`);
+}
+const removePartial = async (path: string) => rm(path, { force: true }).catch((err: unknown) => console.warn('Could not remove a temporary export file', path, err));
 
 
 export class OutputNotWritableError extends Error {
@@ -38,10 +52,11 @@ export class OutputNotWritableError extends Error {
   }
 }
 
-async function writeChaptersFfmetadata(outDir: string, chapters: Chapter[] | undefined) {
+// The folder each caller used to pass is kept in the signature; the file goes to ClipPress's temporary folder.
+async function writeChaptersFfmetadata(_outDir: string, chapters: Chapter[] | undefined) {
   if (!chapters || chapters.length === 0) return undefined;
 
-  const path = join(outDir, `ffmetadata-${nanoid()}.txt`);
+  const path = join(getTempWorkDir(), `ffmetadata-${nanoid()}.txt`);
 
   const ffmetadata = chapters.map(({ start, end, name }) => (
     `[CHAPTER]\nTIMEBASE=1/1000\nSTART=${Math.floor(start * 1000)}\nEND=${Math.floor(end * 1000)}\ntitle=${name || ''}`
@@ -85,9 +100,22 @@ function getAdjustedAudioEncodeArgs({ outFormat, outputIndex }: { outFormat: str
   return [`-c:${outputIndex}`, 'aac', `-b:${outputIndex}`, '192k'];
 }
 
-function getAdjustedAudioGainArgs({ audioGainDb, outFormat, outputIndex }: { audioGainDb: number, outFormat: string | undefined, outputIndex: number }) {
+/**
+ * A track's sound inside one clip: copied when neither the track nor the clip volume changes it, otherwise
+ * filtered and encoded. `forceEncode` encodes even unchanged clips, so every piece of a merge has the same codec.
+ */
+export function getClipAudioArgs({ trackGainDb, clipVolume, forceEncode = false, outFormat, outputIndex }: {
+  trackGainDb: number | undefined,
+  clipVolume: ClipVolume | undefined,
+  forceEncode?: boolean | undefined,
+  outFormat: string | undefined,
+  outputIndex: number,
+}) {
+  const audioGainDb = combineAudioGain(trackGainDb, clipVolume);
+  const neutral = isNeutralAudioGain(audioGainDb);
+  if (neutral && !forceEncode) return undefined;
   return [
-    `-filter:${outputIndex}`, isMutedAudioGain(audioGainDb) ? 'volume=0' : `volume=${audioGainDb.toFixed(2)}dB`,
+    ...(neutral ? [] : [`-filter:${outputIndex}`, getVolumeFilter(audioGainDb)]),
     ...getAdjustedAudioEncodeArgs({ outFormat, outputIndex }),
   ];
 }
@@ -114,23 +142,30 @@ interface PreparedTextOverlayAsset {
 
 async function prepareTextOverlayAssets({
   overlayClips,
-  outputDir,
   videoWidth,
   videoHeight,
   rotation,
 }: {
   overlayClips: OverlayClip[],
-  outputDir: string,
   videoWidth: number,
   videoHeight: number,
   rotation: number | undefined,
 }) {
   const rotatedVideoDimensions = getRotatedVideoDimensions({ width: videoWidth, height: videoHeight, rotation });
+  const written: string[] = [];
   const assets = await pMap(overlayClips, async (overlayClip, index) => {
     const width = Math.max(8, Math.round(rotatedVideoDimensions.width * overlayClip.box.width));
     const imageData = await renderTextOverlayPng({ text: overlayClip.text, width, fontSize: getOverlayFontSize(overlayClip) * rotatedVideoDimensions.height });
-    const imagePath = join(outputDir, `clippress-text-overlay-${Date.now()}-${index}.png`);
-    await writeFile(imagePath, imageData, { flag: 'wx' });
+    // In ClipPress's temporary folder, so nothing appears next to the export while it runs (#51).
+    const imagePath = join(getTempWorkDir(), `text-overlay-${nanoid()}-${index}.png`);
+    try {
+      await writeFile(imagePath, imageData, { flag: 'wx' });
+    } catch (err) {
+      // A partly written image, and the ones before it: the export that would remove them never starts.
+      await tryDeleteFiles([imagePath, ...written]);
+      throw err;
+    }
+    written.push(imagePath);
     return {
       overlayId: overlayClip.overlayId,
       imagePath,
@@ -236,7 +271,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
   const getOutputPlaybackRateArgs = useCallback(() => (outputPlaybackRate !== 1 ? ['-itsscale', String(1 / outputPlaybackRate)] : []), [outputPlaybackRate]);
 
-  const concatFiles = useCallback(async ({ paths, outDir, outPath, metadataFromPath, includeAllStreams, streams, outFormat, ffmpegExperimental, onProgress = () => undefined, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge, videoTimebase }: {
+  const concatFiles = useCallback(async ({ paths, outDir, outPath, metadataFromPath, includeAllStreams, streams, outFormat, ffmpegExperimental, onProgress = () => undefined, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge, videoTimebase, signal }: {
     paths: string[],
     outDir: string | undefined,
     outPath: string,
@@ -251,6 +286,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     chapters: Chapter[] | undefined,
     preserveMetadataOnMerge: boolean,
     videoTimebase?: number | undefined,
+    /** Cancel: checked right before FFmpeg starts (the probes before it can't be stopped). */
+    signal?: AbortSignal | undefined,
   }) => {
     // Innermost guard for every merge: batch concat, auto-concat of exported segments and
     // the size-limited merge all end up here, and only here is the full input list known.
@@ -273,6 +310,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       chaptersPath = await writeChaptersFfmetadata(outDir, chaptersWithNames);
     }
 
+    const partialPath = getPartialPath(outPath);
     try {
       let inputArgs: string[] = [];
       let inputIndex = 0;
@@ -342,7 +380,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         ...getVideoTimescaleArgs(videoTimebase),
 
         ...(outFormat ? ['-f', outFormat] : []),
-        '-y', outPath,
+        '-y', partialPath,
       ];
 
       // https://superuser.com/questions/787064/filename-quoting-in-ffmpeg-concat
@@ -356,21 +394,24 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       console.log(fullCommandLine);
       appendLastCommandsLog(fullCommandLine);
 
+      signal?.throwIfAborted();
       const result = await runFfmpegConcat({ ffmpegArgs, concatTxt, totalDuration, onProgress });
       logStdoutStderr(result);
+      await moveExportWithRetry(partialPath, outPath, enableOverwriteOutput);
 
       await transferTimestamps({ inPath: metadataFromPath, outPath, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, duration: totalDuration });
       onProgress(1);
 
       return { haveExcludedStreams: excludedStreamIds.length > 0, created: true };
     } finally {
+      await removePartial(partialPath);
       if (chaptersPath) await tryDeleteFiles([chaptersPath]);
     }
-  }, [appendLastCommandsLog, assertOutPathIsNotSource, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+  }, [appendLastCommandsLog, assertOutPathIsNotSource, enableOverwriteOutput, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   const losslessCutSingle = useCallback(async ({
     keyframeCut: ssBeforeInput, avoidNegativeTs, copyFileStreams, cutFrom, cutTo, chaptersPath, onProgress, outPath,
-    fileDuration, rotation, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMovData, preserveChapters, movFastStart, customTagsByFile, paramsByStreamId, videoTimebase, detectedFps,
+    fileDuration, rotation, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMovData, preserveChapters, movFastStart, customTagsByFile, paramsByStreamId, videoTimebase, detectedFps, clipVolume, forceAudioEncode,
   }: {
     keyframeCut: boolean,
     avoidNegativeTs: AvoidNegativeTs | undefined,
@@ -394,9 +435,12 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     paramsByStreamId: ParamsByStreamId,
     videoTimebase?: number | undefined,
     detectedFps?: number,
+    clipVolume?: ClipVolume | undefined,
+    forceAudioEncode?: boolean | undefined,
   }) => {
     const frameDuration = getFrameDuration(detectedFps);
     await assertOutPathIsNotSource(outPath, copyFileStreams.map((source) => source.path));
+    const partialPath = getPartialPath(outPath);
 
     const cuttingStart = isCuttingStart(cutFrom);
     const cutFromWithAdjustment = cutFrom + cutFromAdjustmentFrames * frameDuration;
@@ -463,11 +507,9 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       allFilesMeta,
       outFormat,
       needFlac: areWeCutting,
-      getAudioArgs: ({ path, streamIndex, outputIndex }) => {
-        const audioGainDb = paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb ?? defaultAudioGainDb;
-        if (isNeutralAudioGain(audioGainDb)) return undefined;
-        return getAdjustedAudioGainArgs({ audioGainDb, outFormat, outputIndex });
-      },
+      getAudioArgs: ({ path, streamIndex, outputIndex }) => getClipAudioArgs({
+        trackGainDb: paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb, clipVolume, forceEncode: forceAudioEncode, outFormat, outputIndex,
+      }),
     });
 
     const customParamsArgs = (() => {
@@ -559,15 +601,20 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
       ...getVideoTimescaleArgs(videoTimebase),
 
-      '-f', outFormat, '-y', outPath,
+      '-f', outFormat, '-y', partialPath,
     ];
 
     appendFfmpegCommandLog(ffmpegArgs);
-    const result = await runFfmpegWithProgress({ ffmpegArgs, duration: cutDuration, onProgress });
-    logStdoutStderr(result);
+    try {
+      const result = await runFfmpegWithProgress({ ffmpegArgs, duration: cutDuration, onProgress });
+      logStdoutStderr(result);
+      await moveExportWithRetry(partialPath, outPath, enableOverwriteOutput);
+    } finally {
+      await removePartial(partialPath);
+    }
 
     await transferTimestamps({ inPath: filePath, outPath, cutFrom, cutTo, treatInputFileModifiedTimeAsStart, duration: isDurationValid(fileDuration) ? fileDuration : undefined, treatOutputFileModifiedTimeAsStart });
-  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, cutFromAdjustmentFrames, cutToAdjustmentFrames, filePath, getOutputPlaybackRateArgs, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, cutFromAdjustmentFrames, cutToAdjustmentFrames, enableOverwriteOutput, filePath, getOutputPlaybackRateArgs, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   const cutMultipleWithTextOverlays = useCallback(async ({
     outputDir,
@@ -590,7 +637,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     videoStreamIndex,
     videoWidth,
     videoHeight,
+    encodeAllAudio,
     onProgress: onTotalProgress,
+    signal,
+    onClipWritten,
   }: {
     outputDir: string,
     segments: SegmentToExport[],
@@ -612,7 +662,13 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     videoStreamIndex: number,
     videoWidth: number,
     videoHeight: number,
+    /** For merges: encode every clip's sound, so the pieces match and none brings cut-off sound along (#53). */
+    encodeAllAudio: boolean,
     onProgress: (progress: number) => void,
+    /** Cancel: checked before each clip starts. */
+    signal?: AbortSignal | undefined,
+    /** Each clip file this call wrote, as it's put in place (not one it skipped). */
+    onClipWritten?: ((path: string) => void) | undefined,
   }) => {
     invariant(filePath != null);
     invariant(outFormat != null);
@@ -628,7 +684,6 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     try {
       const { assets: preparedOverlayAssets } = await prepareTextOverlayAssets({
         overlayClips,
-        outputDir,
         videoWidth,
         videoHeight,
         rotation,
@@ -704,16 +759,18 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         const hardwareDecode = canUseHardwareDecode({ enabled: exportGpuAcceleration, inputCount: 1, width: videoWidth, height: videoHeight });
 
         return await pMap(segments, async (segment, index) => {
+          signal?.throwIfAborted();
           const { start, end } = segment;
           const segmentRate = getSegmentPlaybackRate(segment, outputPlaybackRate);
           const finalOutPath = join(outputDir, cutFileNames[index]!);
-          await assertOutPathIsNotSource(finalOutPath);
+          await assertOutPathIsNotSource(finalOutPath, copyFileStreams.map((source) => source.path));
           if (await shouldSkipExistingFile(finalOutPath)) {
             onSingleProgress(index, 1);
             return { path: finalOutPath, created: false };
           }
 
           await maybeMkDeepOutDir({ outputDir, fileOutPath: finalOutPath });
+          const partialPath = getPartialPath(finalOutPath);
 
           const segmentDuration = getSegmentOutputDuration(segment, outputPlaybackRate);
           const getMediaInputArgs = (useHardwareDecode: boolean) => flatMap(copyFileStreamsFiltered, ({ path }) => [
@@ -744,11 +801,11 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
             outFormat,
             needFlac: true,
             getAudioArgs: ({ path, streamIndex, outputIndex }) => {
-              const audioGainDb = paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb ?? defaultAudioGainDb;
-              if (segmentRate === 1 && isNeutralAudioGain(audioGainDb)) return undefined;
+              const audioGainDb = combineAudioGain(paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb, segment);
+              if (segmentRate === 1 && isNeutralAudioGain(audioGainDb) && !encodeAllAudio) return undefined;
               const audioFilters = [
                 'asetpts=PTS-STARTPTS', getAudioTempoFilter(segmentRate),
-                !isNeutralAudioGain(audioGainDb) ? (isMutedAudioGain(audioGainDb) ? 'volume=0' : `volume=${audioGainDb.toFixed(2)}dB`) : '',
+                !isNeutralAudioGain(audioGainDb) ? getVolumeFilter(audioGainDb) : '',
               ].filter(Boolean);
               return [`-filter:${outputIndex}`, audioFilters.join(','), ...getAdjustedAudioEncodeArgs({ outFormat, outputIndex })];
             },
@@ -774,29 +831,35 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
             '-shortest',
             '-t', segmentDuration.toFixed(5),
             '-f', outFormat,
-            '-y', finalOutPath,
+            '-y', partialPath,
           ];
 
-          await runWithGpuFallbacks({
-            hardwareDecode,
-            run: async (useHardwareDecode) => {
-              const ffmpegArgs = getFfmpegArgs(useHardwareDecode);
-              appendFfmpegCommandLog(ffmpegArgs);
-              const result = await runFfmpegWithProgress({
-                ffmpegArgs,
-                duration: segmentDuration,
-                onProgress: (progress) => onSingleProgress(index, progress),
-              });
-              logStdoutStderr(result);
-            },
-            onGpuEncoderFailed: async (error) => {
-              if (gpuH264 == null) return false;
-              console.warn(`${gpuH264.encoder} failed; continuing on the next encoder`, error);
-              markGpuEncoderFailed(gpuH264.encoder);
-              gpuH264 = pickGpuEncoder(await getSizeLimitedEncoderCapabilities(), 'h264');
-              return true;
-            },
-          });
+          try {
+            await runWithGpuFallbacks({
+              hardwareDecode,
+              run: async (useHardwareDecode) => {
+                const ffmpegArgs = getFfmpegArgs(useHardwareDecode);
+                appendFfmpegCommandLog(ffmpegArgs);
+                const result = await runFfmpegWithProgress({
+                  ffmpegArgs,
+                  duration: segmentDuration,
+                  onProgress: (progress) => onSingleProgress(index, progress),
+                });
+                logStdoutStderr(result);
+              },
+              onGpuEncoderFailed: async (error) => {
+                if (gpuH264 == null) return false;
+                console.warn(`${gpuH264.encoder} failed; continuing on the next encoder`, error);
+                markGpuEncoderFailed(gpuH264.encoder);
+                gpuH264 = pickGpuEncoder(await getSizeLimitedEncoderCapabilities(), 'h264');
+                return true;
+              },
+            });
+            await moveExportWithRetry(partialPath, finalOutPath, enableOverwriteOutput);
+            onClipWritten?.(finalOutPath);
+          } finally {
+            await removePartial(partialPath);
+          }
 
           await transferTimestamps({
             inPath: filePath,
@@ -817,10 +880,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     } finally {
       if (chaptersPath != null) await tryDeleteFiles([chaptersPath]);
     }
-  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, exportGpuAcceleration, filePath, outputPlaybackRate, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, enableOverwriteOutput, exportGpuAcceleration, filePath, outputPlaybackRate, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   // inspired by https://gist.github.com/fernandoherreradelasheras/5eca67f4200f1a7cc8281747da08496e
-  const cutEncodeSmartPart = useCallback(async ({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate, videoTimebase, allFilesMeta, copyFileStreams, videoStreamIndex, paramsByStreamId, ffmpegExperimental, hasBFrames }: {
+  const cutEncodeSmartPart = useCallback(async ({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate, videoTimebase, allFilesMeta, copyFileStreams, videoStreamIndex, paramsByStreamId, ffmpegExperimental, hasBFrames, clipVolume, forceAudioEncode }: {
     cutFrom: number,
     cutTo: number,
     outPath: string,
@@ -834,6 +897,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     paramsByStreamId: ParamsByStreamId,
     ffmpegExperimental: boolean,
     hasBFrames: number | undefined,
+    clipVolume: ClipVolume | undefined,
+    forceAudioEncode: boolean,
   }) => {
     invariant(filePath != null);
 
@@ -859,11 +924,9 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       copyFileStreams,
       outFormat,
       getVideoArgs,
-      getAudioArgs: ({ path, streamIndex, outputIndex }) => {
-        const audioGainDb = paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb ?? defaultAudioGainDb;
-        if (isNeutralAudioGain(audioGainDb)) return undefined;
-        return getAdjustedAudioGainArgs({ audioGainDb, outFormat, outputIndex });
-      },
+      getAudioArgs: ({ path, streamIndex, outputIndex }) => getClipAudioArgs({
+        trackGainDb: paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb, clipVolume, forceEncode: forceAudioEncode, outFormat, outputIndex,
+      }),
     });
 
     const ffmpegArgs = [
@@ -895,7 +958,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   }, [appendFfmpegCommandLog, assertOutPathIsNotSource, filePath]);
 
   const cutMultiple = useCallback(async ({
-    outputDir, customOutDir, segments: segmentsIn, cutFileNames, fileDuration, rotation, detectedFps, onProgress: onTotalProgress, keyframeCut, copyFileStreams, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, customTagsByFile, paramsByStreamId, chapters,
+    outputDir, customOutDir, segments: segmentsIn, cutFileNames, fileDuration, rotation, detectedFps, onProgress: onTotalProgress, keyframeCut, copyFileStreams, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMetadataOnMerge, preserveMovData, preserveChapters, movFastStart, avoidNegativeTs, customTagsByFile, paramsByStreamId, chapters, encodeAllAudio, signal, onClipWritten,
   }: {
     outputDir: string,
     customOutDir: string | undefined,
@@ -920,6 +983,12 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     customTagsByFile: CustomTagsByFile,
     paramsByStreamId: ParamsByStreamId,
     chapters: Chapter[] | undefined,
+    /** For merges where some clip's volume changed: encode every clip's sound, so the pieces have the same codec. */
+    encodeAllAudio: boolean,
+    /** Cancel: checked before each clip starts. */
+    signal?: AbortSignal | undefined,
+    /** Each clip file this call wrote, as it's put in place (not one it skipped). */
+    onClipWritten?: ((path: string) => void) | undefined,
   }) => {
     console.log('customTagsByFile', customTagsByFile);
     console.log('paramsByStreamId', paramsByStreamId);
@@ -941,7 +1010,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     // or if enabled, will first cut&encode the part before the next keyframe, trying to match the input file's codec params
     // then it will cut the part *from* the keyframe to "end", and concat them together and return the concated file
     // so that for the calling code it looks as if it's just a normal segment
-    const cutSegment = async ({ start: desiredCutFrom, end: cutTo }: { start: number, end: number }, i: number) => {
+    const cutSegment = async (segment: SegmentToExport, i: number) => {
+      signal?.throwIfAborted();
+      const { start: desiredCutFrom, end: cutTo } = segment;
+      const clipVolume: ClipVolume = { audioGainDb: segment.audioGainDb, audioMuted: segment.audioMuted };
       const onProgress = (progress: number) => onSingleProgress(i, progress / 2);
       const onConcatProgress = (progress: number) => onSingleProgress(i, (1 + progress) / 2);
 
@@ -959,7 +1031,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         // simple lossless cut
         invariant(outFormat != null);
         await losslessCutSingle({
-          cutFrom: desiredCutFrom, cutTo, chaptersPath, outPath: finalOutPath, copyFileStreams, keyframeCut, avoidNegativeTs, fileDuration, rotation, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMovData, preserveChapters, movFastStart, customTagsByFile, paramsByStreamId, onProgress: (progress) => onSingleProgress(i, progress),
+          cutFrom: desiredCutFrom, cutTo, chaptersPath, outPath: finalOutPath, copyFileStreams, keyframeCut, avoidNegativeTs, fileDuration, rotation, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMovData, preserveChapters, movFastStart, customTagsByFile, paramsByStreamId, clipVolume, forceAudioEncode: encodeAllAudio, onProgress: (progress) => onSingleProgress(i, progress),
         });
         onSingleProgress(i, 1);
         return { path: finalOutPath, created: true };
@@ -994,11 +1066,18 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         invariant(sourceCodecParams.videoTimebase != null);
         invariant(filePath != null);
         invariant(outFormat != null);
-        await cutEncodeSmartPart({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate: encCustomBitrate != null ? encCustomBitrate * 1000 : sourceCodecParams.videoBitrate, videoStreamIndex: videoStream.index, videoTimebase: sourceCodecParams.videoTimebase, allFilesMeta, copyFileStreams: copyFileStreamsFiltered, paramsByStreamId, ffmpegExperimental, hasBFrames: sourceCodecParams.videoStream.has_b_frames });
+        await cutEncodeSmartPart({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate: encCustomBitrate != null ? encCustomBitrate * 1000 : sourceCodecParams.videoBitrate, videoStreamIndex: videoStream.index, videoTimebase: sourceCodecParams.videoTimebase, allFilesMeta, copyFileStreams: copyFileStreamsFiltered, paramsByStreamId, ffmpegExperimental, hasBFrames: sourceCodecParams.videoStream.has_b_frames, clipVolume, forceAudioEncode: encodeAllAudio });
       }
 
       const cutEncodeWholePart = async () => {
-        await cutEncodeSmartPartWrapper({ cutFrom: desiredCutFrom, cutTo, outPath: finalOutPath });
+        // Through a temporary file like every export, so a cancelled or failed one leaves nothing half written.
+        const partialPath = getPartialPath(finalOutPath);
+        try {
+          await cutEncodeSmartPartWrapper({ cutFrom: desiredCutFrom, cutTo, outPath: partialPath });
+          await moveExportWithRetry(partialPath, finalOutPath, enableOverwriteOutput);
+        } finally {
+          await removePartial(partialPath);
+        }
         onSingleProgress(i, 1);
         return { path: finalOutPath, created: true };
       };
@@ -1033,7 +1112,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
       // for smart cut we need to use keyframe cut here, and no avoid_negative_ts
       await losslessCutSingle({
-        cutFrom: losslessCutFrom, cutTo, chaptersPath, outPath: losslessPartOutPath, copyFileStreams: copyFileStreamsFiltered, keyframeCut: true, avoidNegativeTs: undefined, fileDuration, rotation, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMovData, preserveChapters, movFastStart, customTagsByFile, paramsByStreamId, videoTimebase, onProgress,
+        cutFrom: losslessCutFrom, cutTo, chaptersPath, outPath: losslessPartOutPath, copyFileStreams: copyFileStreamsFiltered, keyframeCut: true, avoidNegativeTs: undefined, fileDuration, rotation, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMovData, preserveChapters, movFastStart, customTagsByFile, paramsByStreamId, videoTimebase, clipVolume, forceAudioEncode: encodeAllAudio, onProgress,
       });
 
       // We don't need to concat, just return the single cut file (we may need smart cut in other segments though)
@@ -1058,7 +1137,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         // need to re-read streams because indexes may have changed. Using main file as source of streams and metadata
         const { streams: streamsAfterCut } = await readFileFfprobeMeta(losslessPartOutPath);
 
-        await concatFiles({ paths: smartCutSegmentsToConcat, outDir: outputDir, outPath: finalOutPath, metadataFromPath: losslessPartOutPath, outFormat, includeAllStreams: true, streams: streamsAfterCut, ffmpegExperimental, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge, videoTimebase, onProgress: onConcatProgress });
+        await concatFiles({ paths: smartCutSegmentsToConcat, outDir: outputDir, outPath: finalOutPath, metadataFromPath: losslessPartOutPath, outFormat, includeAllStreams: true, streams: streamsAfterCut, ffmpegExperimental, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge, videoTimebase, onProgress: onConcatProgress, signal });
         onSingleProgress(i, 1);
         return { path: finalOutPath, created: true };
       } finally {
@@ -1067,13 +1146,31 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     };
 
     try {
-      return await pMap(segments, cutSegment, { concurrency: 1 });
+      // Plain lossless cuts are mostly FFmpeg starting up and seeking, so two at a time finish sooner; encoding (smart
+      // cut, lossy) keeps one, as it's already busy on every core.
+      // When a cut fails, no new one starts, and the one still running is let finish before the error is reported:
+      // nothing may still be writing (or need the chapters file) once the user can export again.
+      let failed = false;
+      const outcomes = await pMap(segments, async (segment, i): Promise<{ result?: Awaited<ReturnType<typeof cutSegment>>, error?: unknown } | undefined> => {
+        if (failed) return undefined;
+        try {
+          const result = await cutSegment(segment, i);
+          if (result.created) onClipWritten?.(result.path);
+          return { result };
+        } catch (error) {
+          failed = true;
+          return { error };
+        }
+      }, { concurrency: isEncoding ? 1 : 2 });
+      const failure = outcomes.find((outcome) => outcome != null && 'error' in outcome);
+      if (failure != null) throw failure.error;
+      return outcomes.map((outcome) => outcome!.result!);
     } finally {
       if (chaptersPath) await tryDeleteFiles([chaptersPath]);
     }
-  }, [shouldSkipExistingFile, assertOutPathIsNotSource, isEncoding, filePath, lossyMode, losslessCutSingle, cutEncodeSmartPart, encCustomBitrate, concatFiles]);
+  }, [shouldSkipExistingFile, assertOutPathIsNotSource, isEncoding, filePath, lossyMode, losslessCutSingle, cutEncodeSmartPart, encCustomBitrate, concatFiles, enableOverwriteOutput]);
 
-  const concatCutSegments = useCallback(async ({ customOutDir, outFormat, segmentPaths, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapterNames, preserveMetadataOnMerge, mergedOutFilePath }: {
+  const concatCutSegments = useCallback(async ({ customOutDir, outFormat, segmentPaths, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapterNames, preserveMetadataOnMerge, mergedOutFilePath, signal }: {
     customOutDir: string | undefined,
     outFormat: string | undefined,
     segmentPaths: string[],
@@ -1084,6 +1181,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     chapterNames: (string | undefined)[] | undefined,
     preserveMetadataOnMerge: boolean,
     mergedOutFilePath: string,
+    signal?: AbortSignal | undefined,
   }) => {
     const outDir = getOutDir(customOutDir, filePath);
     await assertOutPathIsNotSource(mergedOutFilePath, segmentPaths);
@@ -1099,7 +1197,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     invariant(metadataFromPath != null);
     // need to re-read streams because may have changed
     const { streams } = await readFileFfprobeMeta(metadataFromPath);
-    const { created } = await concatFiles({ paths: segmentPaths, outDir, outPath: mergedOutFilePath, metadataFromPath, outFormat, includeAllStreams: true, streams, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge });
+    const { created } = await concatFiles({ paths: segmentPaths, outDir, outPath: mergedOutFilePath, metadataFromPath, outFormat, includeAllStreams: true, streams, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge, signal });
     onProgress(1);
     return { path: mergedOutFilePath, created };
   }, [assertOutPathIsNotSource, concatFiles, filePath, shouldSkipExistingFile]);

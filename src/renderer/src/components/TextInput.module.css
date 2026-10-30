@@ -1,0 +1,29 @@
+.input {
+  flex-grow: 1;
+  box-sizing: border-box;
+  min-height: 2rem;
+  padding: .3rem .55rem;
+  border-radius: var(--cp-radius);
+  font-family: inherit;
+  font-size: .875rem;
+  background-color: var(--cp-bg);
+  color: var(--cp-text);
+  border: 1px solid var(--cp-line-strong);
+  appearance: none;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+
+.input:hover {
+  border-color: var(--gray-9);
+}
+
+.input:focus,
+.input:focus-visible {
+  outline: none;
+  border-color: var(--cp-focus-color);
+  box-shadow: 0 0 0 1px var(--cp-focus-color);
+}
+
+.input:disabled {
+  opacity: .5;
+}

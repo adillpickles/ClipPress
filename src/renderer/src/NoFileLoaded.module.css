@@ -1,81 +1,180 @@
 .dropzone {
   position: absolute;
   inset: 0;
-  margin: 1.75rem;
+  margin: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow-y: auto;
   text-align: center;
-  color: var(--gray-12);
-  cursor: pointer;
-  border: 1px dashed color-mix(in srgb, var(--gray-8) 42%, transparent);
-  border-radius: 1.9rem;
-  background:
-    radial-gradient(circle at top, color-mix(in srgb, var(--blue-8) 10%, transparent), transparent 42%),
-    linear-gradient(180deg, color-mix(in srgb, var(--gray-2) 92%, transparent), color-mix(in srgb, var(--gray-1) 96%, transparent));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 20px 48px rgba(0, 0, 0, 0.16);
-  transition:
-    border-color .18s ease,
-    background-color .18s ease,
-    box-shadow .18s ease,
-    transform .18s ease;
-}
-
-.dropzoneDragging {
-  border-color: color-mix(in srgb, var(--blue-8) 58%, transparent);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    0 24px 56px rgba(0, 0, 0, 0.18),
-    0 0 0 1px color-mix(in srgb, var(--blue-8) 20%, transparent);
-  transform: translateY(-1px);
+  color: var(--cp-text);
 }
 
 .content {
-  width: min(100%, 46rem);
-  padding: 2.6rem 1.6rem;
+  /* Centred while it fits; scrolls from the top when it doesn't. */
+  margin: auto;
+  width: min(100%, 40rem);
+  padding: 2rem 1rem 2.5rem;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.45rem;
+}
+
+/* The visible drop target: a soft, rounded card with a dashed edge that lights up while a file is dragged over.
+   Clicking it opens a clip as well. */
+.dropCard {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2.25rem 2rem 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1.5px dashed color-mix(in srgb, var(--accent-9) 34%, var(--cp-line-strong));
+  border-radius: 24px;
+  background:
+    radial-gradient(28rem 12rem at 50% 0%, color-mix(in srgb, var(--accent-9) 7%, transparent), transparent 75%),
+    color-mix(in srgb, var(--cp-panel) 88%, transparent);
+  box-shadow: 0 18px 40px -24px rgb(0 0 0 / 55%);
+  cursor: pointer;
+  transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+
+/* A quiet hint that the card is clickable, clearly weaker than a file being dragged over it. */
+.dropCard:not(.dropCardActive):hover {
+  border-color: color-mix(in srgb, var(--accent-9) 60%, var(--cp-line-strong));
+  background:
+    radial-gradient(28rem 12rem at 50% 0%, color-mix(in srgb, var(--accent-9) 11%, transparent), transparent 75%),
+    color-mix(in srgb, var(--cp-panel) 88%, transparent);
+}
+
+.dropCardActive {
+  border-style: solid;
+  border-color: var(--accent-9);
+  background:
+    radial-gradient(28rem 12rem at 50% 0%, color-mix(in srgb, var(--accent-9) 16%, transparent), transparent 75%),
+    color-mix(in srgb, var(--accent-9) 6%, var(--cp-panel));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-9) 18%, transparent), 0 18px 40px -24px rgb(0 0 0 / 55%);
+  transform: scale(1.01);
+}
+
+.dropIcon {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cp-accent-soft);
+  color: var(--cp-accent-text);
+  font-size: 1.3rem;
+  margin-bottom: 1rem;
+  transition: transform .15s ease;
+}
+
+.dropCardActive .dropIcon {
+  transform: translateY(2px);
 }
 
 .title {
   margin: 0;
-  color: var(--gray-12);
-  font-size: clamp(2.95rem, 5.4vw, 3.95rem);
-  font-weight: 800;
-  letter-spacing: -.05em;
-  line-height: .98;
+  font-family: var(--cp-font-display);
+  font-size: 1.75rem;
+  font-weight: 650;
+  letter-spacing: -.02em;
+  line-height: 1.2;
 }
 
-.instructions {
+.subtitle {
+  margin: .5rem 0 0;
+  color: var(--cp-text-muted);
+  font-size: .9375rem;
+  line-height: 1.5;
+}
+
+.actions {
   display: flex;
-  flex-direction: column;
-  gap: .72rem;
-  max-width: 39rem;
-  color: var(--gray-11);
-  font-size: 1.05rem;
-  line-height: 1.6;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-top: 1.5rem;
 }
 
-.instruction {
-  margin: 0;
+.buttonKeys {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: .35rem;
+}
+
+.buttonKeys kbd {
+  background: color-mix(in srgb, var(--accent-contrast) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent-contrast) 22%, transparent);
+  box-shadow: none;
+  color: var(--accent-contrast);
+}
+
+.plus {
+  font-size: .7em;
+  margin: 0 1px;
+  opacity: .7;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .75rem;
+  width: 100%;
+  margin-top: 1.5rem;
+  text-align: left;
+}
+
+.step {
+  padding: .9rem 1rem 1rem;
+  border-radius: 16px;
+  border: 1px solid var(--cp-line);
+  background: color-mix(in srgb, var(--cp-panel) 70%, transparent);
+}
+
+.stepIcon {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--cp-radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cp-accent-soft);
+  color: var(--cp-accent-text);
+  font-size: .9rem;
+  margin-bottom: .6rem;
+}
+
+.stepTitle {
+  font-size: .875rem;
+  font-weight: 600;
+  color: var(--cp-text);
+  margin-bottom: .25rem;
+}
+
+.stepText {
+  font-size: .8125rem;
+  line-height: 1.5;
+  color: var(--cp-text-muted);
+}
+
+/* Keycaps in the sentence: short enough to sit on its baseline without making that line taller than the rest,
+   and a monospace face whose capital I has serifs, so the I key can't be read as "|". */
+.stepText kbd {
+  padding: 1px 5px;
+  line-height: 11px;
+  vertical-align: baseline;
+  font-family: var(--cp-font-mono);
 }
 
 @media (max-width: 900px) {
-  .dropzone {
-    margin: 1rem;
-    border-radius: 1.4rem;
+  .steps {
+    grid-template-columns: 1fr;
   }
 
   .content {
-    padding: 1.8rem 1rem;
-    gap: 1.05rem;
-  }
-
-  .instructions {
-    font-size: .96rem;
+    padding: 1.5rem 1rem;
   }
 }

@@ -1,9 +1,11 @@
-/* Shares the text box editor's look (TextOverlayEditor): cyan accent, label tab, round handles. */
+/* A white frame with corner brackets, as in the Photos app and phone editors; the toolbar and focus rings use the
+   accent. */
 .wrapper {
-  --crop-accent: rgba(88, 200, 255, .95);
-  --crop-ink: rgba(5, 12, 20, .9);
+  --crop-accent: rgba(79, 195, 204, .95); /* brand teal, fixed: drawn over the video in both themes */
   position: absolute;
   inset: 0;
+  /* The picture around the crop frame shows up to the preview's edges, no further. */
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -12,19 +14,28 @@
 
 .surface { position: relative; flex-shrink: 0; }
 .viewport { position: absolute; inset: 0; overflow: hidden; background: #000; }
+.viewportEditing { overflow: visible; }
 
-/* Dims the picture outside the crop; lives in the clipped viewport so it stays on the video. */
+/* Dims the picture outside the crop frame (the preview's own place), as far as the preview reaches. */
 .dim {
   position: absolute;
+  inset: 0;
   pointer-events: none;
-  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .62);
+  border-radius: 3px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .6);
 }
 .frame {
   position: absolute;
+  inset: 0;
   box-sizing: border-box;
-  border: 1.5px solid var(--crop-accent);
+  /* For the chip, which fits itself to the frame's width (below). */
+  container-type: inline-size;
+  border: 1.5px solid rgba(255, 255, 255, .92);
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .25);
 }
 .frame[data-dragging="true"] .grid { opacity: 1; }
+.frame[data-dragging="true"] .move { cursor: grabbing; }
 
 .move {
   position: absolute;
@@ -34,85 +45,104 @@
   padding: 0;
   border: 0;
   background: transparent;
-  cursor: move;
+  /* The picture under the frame is what's dragged. */
+  cursor: grab;
   touch-action: none;
 }
 .move:focus-visible { outline: 2px solid var(--crop-accent); outline-offset: -5px; }
 
-/* Rule-of-thirds guides, only while adjusting. */
+/* Rule-of-thirds guides: faint while editing, clearer while adjusting. */
 .grid {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0;
+  opacity: .55;
   transition: opacity 120ms ease;
   background:
     linear-gradient(to right, transparent calc(33.33% - .5px), rgba(255, 255, 255, .35) calc(33.33% - .5px), rgba(255, 255, 255, .35) calc(33.33% + .5px), transparent calc(33.33% + .5px), transparent calc(66.66% - .5px), rgba(255, 255, 255, .35) calc(66.66% - .5px), rgba(255, 255, 255, .35) calc(66.66% + .5px), transparent calc(66.66% + .5px)),
     linear-gradient(to bottom, transparent calc(33.33% - .5px), rgba(255, 255, 255, .35) calc(33.33% - .5px), rgba(255, 255, 255, .35) calc(33.33% + .5px), transparent calc(33.33% + .5px), transparent calc(66.66% - .5px), rgba(255, 255, 255, .35) calc(66.66% - .5px), rgba(255, 255, 255, .35) calc(66.66% + .5px), transparent calc(66.66% + .5px));
 }
 
-/* Matches the text box's move tab. Sits inside the frame when the crop touches the top edge. */
-.tab {
+/* Which clip and the size it makes, quietly inside the frame's top-left corner. */
+.chip {
   position: absolute;
-  /* Clear of the corner handle. */
   left: 10px;
-  bottom: 100%;
+  top: 10px;
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 20px;
-  padding: 0 8px;
-  border-radius: 6px 6px 0 0;
-  background: var(--crop-accent);
-  color: var(--crop-ink);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .04em;
-  text-transform: uppercase;
+  max-width: calc(100% - 20px);
+  padding: 3px 9px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: rgba(10, 12, 16, .62);
+  backdrop-filter: blur(6px);
+  color: rgba(255, 255, 255, .92);
+  font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
-  cursor: move;
+  pointer-events: none;
   user-select: none;
-  touch-action: none;
 }
-.frame[data-tab-inside="true"] .tab { bottom: auto; top: 0; border-radius: 0 0 6px 6px; }
-.tabDetail { font-weight: 600; letter-spacing: 0; text-transform: none; opacity: .72; font-variant-numeric: tabular-nums; }
+/* The clip's own name as written, cut short before the size. */
+.chipClip { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chipClip::after { content: '·'; margin-left: 6px; opacity: .6; }
+.chipSize { flex-shrink: 0; font-variant-numeric: tabular-nums; opacity: .8; }
+/* A small frame (a portrait clip zoomed far in) keeps only the size, and a tiny one no chip at all. */
+@container (max-width: 200px) { .chipClip { display: none; } }
+@container (max-width: 110px) { .chip { display: none; } }
 
-/* Same handle as the text box's resize corner. */
+/* Corner brackets: an L over each corner, drawn inside the frame so the preview's edge never clips them (the frame
+   fills the picture when editing starts). A bigger target than the old dots. */
 .corner {
   position: absolute;
-  width: 14px;
-  height: 14px;
+  /* At most half the frame each way, so two corners never overlap on a tiny frame. */
+  width: min(22px, 50%);
+  height: min(22px, 50%);
   min-width: 0;
   padding: 0;
-  transform: translate(-50%, -50%);
-  border-radius: 999px;
-  border: 2px solid rgba(5, 12, 20, .6);
-  background: var(--crop-accent);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+  border: 0;
+  background: transparent;
   touch-action: none;
-  transition: transform 100ms ease;
 }
-.corner:hover, .corner:focus-visible { transform: translate(-50%, -50%) scale(1.2); outline: none; }
+.corner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 0 solid white;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6));
+  transition: border-color 100ms ease;
+}
+.corner[data-crop-corner="top-left"] { transform: translate(-1.5px, -1.5px); }
+.corner[data-crop-corner="top-left"]::before { border-top-width: 4px; border-left-width: 4px; border-top-left-radius: 8px; }
+.corner[data-crop-corner="top-right"] { transform: translate(calc(-100% + 1.5px), -1.5px); }
+.corner[data-crop-corner="top-right"]::before { border-top-width: 4px; border-right-width: 4px; border-top-right-radius: 8px; }
+.corner[data-crop-corner="bottom-left"] { transform: translate(-1.5px, calc(-100% + 1.5px)); }
+.corner[data-crop-corner="bottom-left"]::before { border-bottom-width: 4px; border-left-width: 4px; border-bottom-left-radius: 8px; }
+.corner[data-crop-corner="bottom-right"] { transform: translate(calc(-100% + 1.5px), calc(-100% + 1.5px)); }
+.corner[data-crop-corner="bottom-right"]::before { border-bottom-width: 4px; border-right-width: 4px; border-bottom-right-radius: 8px; }
+.corner:hover::before, .corner:focus-visible::before { border-color: var(--crop-accent); }
+.corner:focus-visible { outline: none; }
 
-/* One compact control pill over the bottom of the picture. */
+/* One control pill over the bottom of the picture, on the same surface as the app's popovers (the clip volume one),
+   in either theme. */
 .toolbar {
   position: absolute;
   left: 50%;
-  bottom: 12px;
+  bottom: 14px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   max-width: calc(100% - 24px);
-  padding: 5px 5px 5px 8px;
+  padding: 6px 6px 6px 10px;
   box-sizing: border-box;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, .12);
-  background: rgba(10, 14, 22, .84);
-  backdrop-filter: blur(10px);
-  color: rgba(255, 255, 255, .92);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, .45);
-  font-size: 12px;
+  border: 1px solid var(--cp-line-strong);
+  background: var(--cp-raised);
+  color: var(--cp-text);
+  box-shadow: var(--cp-shadow-popover);
+  font-size: 13px;
   transition: opacity 120ms ease;
 }
 /* Get out of the way while the frame is being dragged. */
@@ -131,54 +161,44 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 30px;
+  height: 30px;
+  font-size: 16px;
   padding: 0;
   border-radius: 999px;
   background: transparent;
-  color: inherit;
+  color: var(--cp-text-muted);
 }
-.iconButton:not(:disabled):hover { background: rgba(255, 255, 255, .1); }
+.iconButton:not(:disabled):hover { background: var(--cp-hover); color: var(--cp-text); }
+.iconButton:focus-visible, .textButton:focus-visible, .doneButton:focus-visible { outline: none; box-shadow: var(--cp-focus-ring); }
 
+/* The app's slider, as in the volume popovers. */
 .slider {
-  width: 140px;
+  width: 160px;
   min-width: 60px;
-  height: 4px;
   margin: 0 2px;
-  border-radius: 999px;
-  appearance: none;
-  background: linear-gradient(to right, var(--crop-accent) var(--zoom-fill), rgba(255, 255, 255, .18) var(--zoom-fill));
+  accent-color: var(--cp-accent);
   cursor: pointer;
 }
-.slider::-webkit-slider-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  appearance: none;
-  border: 2px solid rgba(5, 12, 20, .6);
-  background: var(--crop-accent);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
-}
-.slider:focus-visible { outline: 2px solid var(--crop-accent); outline-offset: 4px; }
 
-.zoomValue { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
-.divider { width: 1px; height: 16px; margin: 0 2px; background: rgba(255, 255, 255, .14); }
+.zoomValue { min-width: 46px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.divider { width: 1px; height: 18px; margin: 0 2px; background: var(--cp-line-strong); }
 
 .textButton {
-  height: 26px;
-  padding: 0 10px;
+  height: 30px;
+  padding: 0 12px;
   border-radius: 999px;
   background: transparent;
-  color: rgba(255, 255, 255, .8);
+  color: var(--cp-text-muted);
 }
-.textButton:not(:disabled):hover { background: rgba(255, 255, 255, .1); color: white; }
+.textButton:not(:disabled):hover { background: var(--cp-hover); color: var(--cp-text); }
 
 .doneButton {
-  height: 26px;
-  padding: 0 14px;
+  height: 30px;
+  padding: 0 16px;
   border-radius: 999px;
-  background: var(--crop-accent);
-  color: var(--crop-ink);
+  background: var(--cp-accent);
+  color: var(--accent-contrast);
   font-weight: 700;
 }
-.doneButton:hover { background: rgba(120, 212, 255, 1); }
+.doneButton:hover { background: var(--cp-accent-hover); }

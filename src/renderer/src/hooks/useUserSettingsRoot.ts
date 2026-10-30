@@ -3,9 +3,11 @@ import i18n from 'i18next';
 import type { Transition } from 'motion/react';
 
 import type { Config } from '../../../common/types.js';
+import getEffectiveSimpleMode from '../../../common/interfaceMode.js';
 
 import { errorToast } from '../swal';
 import isDev from '../isDev';
+import mainApi from '../mainApi';
 import { mySpring, emitter as animationsEmitter } from '../animations';
 
 const { configStore } = window.require('@electron/remote').require('./index.js');
@@ -26,12 +28,11 @@ export default function useUserSettingsRoot() {
     if (firstUpdateRef.current) return;
 
     if (isDev) console.log('save', key, value);
-    try {
-      configStore.set(key, value);
-    } catch (err) {
+    // Without waiting: a synchronous write held up the page for as long as the settings file took to write.
+    mainApi.setConfig(key, value).catch((err: unknown) => {
       console.error('Failed to set config', key, err);
       errorToast(i18n.t('Unable to save your preferences. Try to disable any anti-virus'));
-    }
+    });
   }
 
   function safeGetConfig<T extends keyof Config>(key: T) {
@@ -49,6 +50,12 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ captureFormat }), [captureFormat]);
   const [recentCustomOutDirs, setRecentCustomOutDirs] = useState(safeGetConfigInitial('recentCustomOutDirs'));
   useEffect(() => safeSetConfig({ recentCustomOutDirs }), [recentCustomOutDirs]);
+  const [recentFiles, setRecentFiles] = useState(safeGetConfigInitial('recentFiles'));
+  useEffect(() => safeSetConfig({ recentFiles }), [recentFiles]);
+  const [shelfOrder, setShelfOrder] = useState(safeGetConfigInitial('shelfOrder'));
+  useEffect(() => safeSetConfig({ shelfOrder }), [shelfOrder]);
+  const [shelfExports, setShelfExports] = useState(safeGetConfigInitial('shelfExports'));
+  useEffect(() => safeSetConfig({ shelfExports }), [shelfExports]);
   const [enableCustomOutDir, setEnableCustomOutDir] = useState(safeGetConfigInitial('enableCustomOutDir'));
   useEffect(() => safeSetConfig({ enableCustomOutDir }), [enableCustomOutDir]);
   const [keyframeCut, setKeyframeCut] = useState(safeGetConfigInitial('keyframeCut'));
@@ -80,7 +87,17 @@ export default function useUserSettingsRoot() {
   const [enableAskForFileOpenAction, setEnableAskForFileOpenAction] = useState(safeGetConfigInitial('enableAskForFileOpenAction'));
   useEffect(() => safeSetConfig({ enableAskForFileOpenAction }), [enableAskForFileOpenAction]);
   const [playbackVolume, setPlaybackVolume] = useState(safeGetConfigInitial('playbackVolume'));
-  useEffect(() => safeSetConfig({ playbackVolume }), [playbackVolume]);
+  // Saved once it stops changing: a save rewrites the whole settings file in a synchronous call (~30 ms), and the
+  // volume changes many times a second while a key is held or the slider dragged.
+  const savedPlaybackVolumeRef = useRef(playbackVolume);
+  useEffect(() => {
+    if (playbackVolume === savedPlaybackVolumeRef.current) return undefined;
+    const timer = setTimeout(() => {
+      savedPlaybackVolumeRef.current = playbackVolume;
+      safeSetConfig({ playbackVolume });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [playbackVolume]);
   const [autoSaveProjectFile, setAutoSaveProjectFile] = useState(safeGetConfigInitial('autoSaveProjectFile'));
   useEffect(() => safeSetConfig({ autoSaveProjectFile }), [autoSaveProjectFile]);
   const [wheelSensitivity, setWheelSensitivity] = useState(safeGetConfigInitial('wheelSensitivity'));
@@ -103,10 +120,22 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ autoDeleteMergedSegments }), [autoDeleteMergedSegments]);
   const [exportConfirmEnabled, setExportConfirmEnabled] = useState(safeGetConfigInitial('exportConfirmEnabled'));
   useEffect(() => safeSetConfig({ exportConfirmEnabled }), [exportConfirmEnabled]);
+  const [trashSourceAfterExport, setTrashSourceAfterExport] = useState(safeGetConfigInitial('trashSourceAfterExport'));
+  useEffect(() => safeSetConfig({ trashSourceAfterExport }), [trashSourceAfterExport]);
+  const [trashProjectWithSource, setTrashProjectWithSource] = useState(safeGetConfigInitial('trashProjectWithSource'));
+  useEffect(() => safeSetConfig({ trashProjectWithSource }), [trashProjectWithSource]);
+  const [copyAfterExport, setCopyAfterExport] = useState(safeGetConfigInitial('copyAfterExport'));
+  useEffect(() => safeSetConfig({ copyAfterExport }), [copyAfterExport]);
+  const [playOnOpen, setPlayOnOpen] = useState(safeGetConfigInitial('playOnOpen'));
+  useEffect(() => safeSetConfig({ playOnOpen }), [playOnOpen]);
   const [segmentsToChapters, setSegmentsToChapters] = useState(safeGetConfigInitial('segmentsToChapters'));
   useEffect(() => safeSetConfig({ segmentsToChapters }), [segmentsToChapters]);
-  const [simpleMode, setSimpleMode] = useState(safeGetConfigInitial('simpleMode'));
-  useEffect(() => safeSetConfig({ simpleMode }), [simpleMode]);
+  const [savedSimpleMode, setSimpleMode] = useState(safeGetConfigInitial('simpleMode'));
+  useEffect(() => safeSetConfig({ simpleMode: savedSimpleMode }), [savedSimpleMode]);
+  const [enableAdvancedMode, setEnableAdvancedMode] = useState(safeGetConfigInitial('enableAdvancedMode'));
+  useEffect(() => safeSetConfig({ enableAdvancedMode }), [enableAdvancedMode]);
+  // The mode the app runs in. Kept apart from the saved one, so turning advanced mode off and on again restores it.
+  const simpleMode = getEffectiveSimpleMode({ enableAdvancedMode, simpleMode: savedSimpleMode });
   const [cutFileTemplate, setCutFileTemplate] = useState(safeGetConfigInitial('outSegTemplate'));
   useEffect(() => safeSetConfig({ outSegTemplate: cutFileTemplate }), [cutFileTemplate]);
   const [cutMergedFileTemplate, setCutMergedFileTemplate] = useState(safeGetConfigInitial('mergedFileTemplate'));
@@ -141,8 +170,8 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ enableSmartCut }), [enableSmartCut]);
   const [customFfPath, setCustomFfPath] = useState(safeGetConfigInitial('customFfPath'));
   useEffect(() => safeSetConfig({ customFfPath }), [customFfPath]);
-  const [storeProjectInWorkingDir, setStoreProjectInWorkingDir] = useState(safeGetConfigInitial('storeProjectInWorkingDir'));
-  useEffect(() => safeSetConfig({ storeProjectInWorkingDir }), [storeProjectInWorkingDir]);
+  const [projectFileLocation, setProjectFileLocation] = useState(safeGetConfigInitial('projectFileLocation'));
+  useEffect(() => safeSetConfig({ projectFileLocation }), [projectFileLocation]);
   const [enableOverwriteOutput, setEnableOverwriteOutput] = useState(safeGetConfigInitial('enableOverwriteOutput'));
   useEffect(() => safeSetConfig({ enableOverwriteOutput }), [enableOverwriteOutput]);
   const [mouseWheelZoomModifierKey, setMouseWheelZoomModifierKey] = useState(safeGetConfigInitial('mouseWheelZoomModifierKey'));
@@ -153,6 +182,8 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ mouseWheelKeyframeSeekModifierKey }), [mouseWheelKeyframeSeekModifierKey]);
   const [segmentMouseModifierKey, setSegmentMouseModifierKey] = useState(safeGetConfigInitial('segmentMouseModifierKey'));
   useEffect(() => safeSetConfig({ segmentMouseModifierKey }), [segmentMouseModifierKey]);
+  const [extraMouseModifierKeys, setExtraMouseModifierKeys] = useState(safeGetConfigInitial('extraMouseModifierKeys'));
+  useEffect(() => safeSetConfig({ extraMouseModifierKeys }), [extraMouseModifierKeys]);
   const [captureFrameMethod, setCaptureFrameMethod] = useState(safeGetConfigInitial('captureFrameMethod'));
   useEffect(() => safeSetConfig({ captureFrameMethod }), [captureFrameMethod]);
   const [captureFrameQuality, setCaptureFrameQuality] = useState(safeGetConfigInitial('captureFrameQuality'));
@@ -233,6 +264,8 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ sizeLimitCutFileTemplate }), [sizeLimitCutFileTemplate]);
   const [sizeLimitCutMergedFileTemplate, setSizeLimitCutMergedFileTemplate] = useState(safeGetConfigInitial('sizeLimitCutMergedFileTemplate'));
   useEffect(() => safeSetConfig({ sizeLimitCutMergedFileTemplate }), [sizeLimitCutMergedFileTemplate]);
+  const [quickExportPresets, setQuickExportPresets] = useState(safeGetConfigInitial('quickExportPresets'));
+  useEffect(() => safeSetConfig({ quickExportPresets }), [quickExportPresets]);
 
 
   const resetKeyBindings = useCallback(() => {
@@ -310,8 +343,13 @@ export default function useUserSettingsRoot() {
     autoLoadTimecode,
     autoDeleteMergedSegments,
     exportConfirmEnabled,
+    trashSourceAfterExport,
+    trashProjectWithSource,
+    copyAfterExport,
+    playOnOpen,
     segmentsToChapters,
     simpleMode,
+    enableAdvancedMode,
     cutFileTemplate,
     cutMergedFileTemplate,
     mergedFileTemplate,
@@ -328,12 +366,13 @@ export default function useUserSettingsRoot() {
     keyBindings,
     enableSmartCut,
     customFfPath,
-    storeProjectInWorkingDir,
+    projectFileLocation,
     enableOverwriteOutput,
     mouseWheelZoomModifierKey,
     mouseWheelFrameSeekModifierKey,
     mouseWheelKeyframeSeekModifierKey,
     segmentMouseModifierKey,
+    extraMouseModifierKeys,
     captureFrameMethod,
     captureFrameQuality,
     captureFrameFileNameFormat,
@@ -374,6 +413,7 @@ export default function useUserSettingsRoot() {
     sizeLimitMergedNamingMode,
     sizeLimitCutFileTemplate,
     sizeLimitCutMergedFileTemplate,
+    quickExportPresets,
   }), [
     lastAppVersion,
     captureFormat,
@@ -405,8 +445,13 @@ export default function useUserSettingsRoot() {
     autoLoadTimecode,
     autoDeleteMergedSegments,
     exportConfirmEnabled,
+    trashSourceAfterExport,
+    trashProjectWithSource,
+    copyAfterExport,
+    playOnOpen,
     segmentsToChapters,
     simpleMode,
+    enableAdvancedMode,
     cutFileTemplate,
     cutMergedFileTemplate,
     mergedFileTemplate,
@@ -423,12 +468,13 @@ export default function useUserSettingsRoot() {
     keyBindings,
     enableSmartCut,
     customFfPath,
-    storeProjectInWorkingDir,
+    projectFileLocation,
     enableOverwriteOutput,
     mouseWheelZoomModifierKey,
     mouseWheelFrameSeekModifierKey,
     mouseWheelKeyframeSeekModifierKey,
     segmentMouseModifierKey,
+    extraMouseModifierKeys,
     captureFrameMethod,
     captureFrameQuality,
     captureFrameFileNameFormat,
@@ -469,6 +515,7 @@ export default function useUserSettingsRoot() {
     sizeLimitMergedNamingMode,
     sizeLimitCutFileTemplate,
     sizeLimitCutMergedFileTemplate,
+    quickExportPresets,
   ]);
 
   return useMemo(() => ({
@@ -476,6 +523,14 @@ export default function useUserSettingsRoot() {
 
     springAnimation,
     customOutDir,
+
+    // Kept out of `settings`, which is attached to error reports: these are file paths.
+    recentFiles,
+    setRecentFiles,
+    shelfExports,
+    setShelfExports,
+    shelfOrder,
+    setShelfOrder,
 
     // setters
     setLastAppVersion,
@@ -508,8 +563,13 @@ export default function useUserSettingsRoot() {
     setAutoLoadTimecode,
     setAutoDeleteMergedSegments,
     setExportConfirmEnabled,
+    setTrashSourceAfterExport,
+    setTrashProjectWithSource,
+    setCopyAfterExport,
+    setPlayOnOpen,
     setSegmentsToChapters,
     setSimpleMode,
+    setEnableAdvancedMode,
     setCutFileTemplate,
     setCutMergedFileTemplate,
     setMergedFileTemplate,
@@ -527,12 +587,13 @@ export default function useUserSettingsRoot() {
     resetKeyBindings,
     setEnableSmartCut,
     setCustomFfPath,
-    setStoreProjectInWorkingDir,
+    setProjectFileLocation,
     setEnableOverwriteOutput,
     setMouseWheelZoomModifierKey,
     setMouseWheelFrameSeekModifierKey,
     setMouseWheelKeyframeSeekModifierKey,
     setSegmentMouseModifierKey,
+    setExtraMouseModifierKeys,
     setCaptureFrameMethod,
     setCaptureFrameQuality,
     setCaptureFrameFileNameFormat,
@@ -574,7 +635,8 @@ export default function useUserSettingsRoot() {
     setSizeLimitMergedNamingMode,
     setSizeLimitCutFileTemplate,
     setSizeLimitCutMergedFileTemplate,
-  }), [settings, springAnimation, customOutDir, setCustomOutDir, resetKeyBindings, toggleDarkMode, prefersReducedMotion]);
+    setQuickExportPresets,
+  }), [settings, springAnimation, customOutDir, setCustomOutDir, resetKeyBindings, toggleDarkMode, prefersReducedMotion, recentFiles, shelfExports, shelfOrder]);
 }
 
 export type UserSettingsRoot = ReturnType<typeof useUserSettingsRoot>;

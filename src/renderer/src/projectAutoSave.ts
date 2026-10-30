@@ -10,16 +10,29 @@ export interface ProjectSession {
   id: number,
   /** The project file the opened state was loaded from, if any. */
   loadedProjectPath?: string | undefined,
+  /** Other project files found holding exactly what was loaded: the other copy, where the setting keeps two. */
+  sameCopyPaths?: readonly string[] | undefined,
 }
 
 export interface ProjectSnapshot {
   session: ProjectSession,
   /** Where autosave writes the project. */
   path: string,
+  /**
+   * Where it also writes a copy, after `path`: the setting keeps the edits in more than one place. A spare: one that
+   * can't be written while `path` can is only reported (see `ProjectAutoSaveOptions.onCopyError`).
+   */
+  copyPaths?: readonly string[] | undefined,
   /** The project's contents, compared to decide whether a save is needed. */
   project: LlcProject,
   /** What is written to the file for `project`. */
   fileData: LlcProject,
+}
+
+/** A project file that could not be written. */
+export interface ProjectSaveFailure {
+  path: string,
+  error: unknown,
 }
 
 export interface ProjectAutoSaveOptions {
@@ -29,6 +42,11 @@ export interface ProjectAutoSaveOptions {
   /** Reports a failed save. Must not throw: later saves, and opening files, wait on it. */
   onError: (err: unknown) => void,
   /**
+   * Reports a copy (`ProjectSnapshot.copyPaths`) that could not be written while the main place was: once, when it
+   * starts failing, not at every save while it keeps failing. Must not throw. By default, `onError`.
+   */
+  onCopyError?: (failure: ProjectSaveFailure) => void,
+  /**
    * The same key for every path to the same project file (see createProjectFilePathKey), so that a
    * path written differently cannot get around what a save may overwrite. By default, the path.
    * A key that is not resolved yet is asked for again before a save could overwrite a newer open.
@@ -36,19 +54,26 @@ export interface ProjectAutoSaveOptions {
   pathKey?: (path: string) => ProjectFilePathKey,
 }
 
-/** A project file that could not be written. */
-export interface ProjectSaveFailure {
-  path: string,
-  error: unknown,
-}
+/** What `saveTo` resolves with when nothing failed (a write may throw anything, even undefined). */
+const noError = Symbol('noError');
 
 /** Identifies a project file (see `ProjectAutoSaveOptions.pathKey`). Paths are only for writing and reporting. */
 type FileKey = string & { readonly fileKey: unique symbol };
 
+/** What a project file holds, as far as a session knows. */
+interface SavedProject {
+  project: LlcProject,
+  /**
+   * What the session wrote there, if it did. Written again when that is no longer what it would write, though the
+   * contents are the same: the recording's length became known after an early save (a copy made on open, say).
+   */
+  fileData?: LlcProject | undefined,
+}
+
 interface OpenSession {
   id: number,
   /** What each project file holds, as far as this session knows: it loaded or wrote it. */
-  saved: Map<FileKey, LlcProject>,
+  saved: Map<FileKey, SavedProject>,
   /** Whether this media file has a project: one was loaded, or this session wrote one. */
   hasProject: boolean,
   latest: ProjectSnapshot,
@@ -58,6 +83,8 @@ interface OpenSession {
 interface FailedSave {
   session: OpenSession,
   snapshot: ProjectSnapshot,
+  /** The copy that could not be written: `snapshot.path`, or one of its `copyPaths`. */
+  path: string,
   error: unknown,
   /** Increases with every failure, to tell which of two failures of one session is newer. */
   seq: number,
@@ -86,6 +113,15 @@ interface FailedSave {
  *
  * The app must not close while anything is unsaved (`hasUnsavedChanges`): call `flush` first, and
  * do not close if it reports a failure the user has not accepted.
+ *
+ * A snapshot with `copyPaths` is saved to each of its paths in turn. Each copy is a project file of
+ * its own here: saved, failed, owned and tried again on its own. But a copy is a spare: one that
+ * can't be written is reported through `onCopyError`, and doesn't keep the app from closing while
+ * the main place has the edits. A failure of the main place is reported, and kept, as before.
+ *
+ * Only the contents (`project`) decide whether a file needs saving, except for a file this session
+ * wrote: it is written again when its `fileData` changed for the same contents, so a save made
+ * before the recording's length was known gets that length too.
  */
 export default class ProjectAutoSave {
   private session: OpenSession | undefined;
@@ -131,6 +167,16 @@ export default class ProjectAutoSave {
     return known.key as FileKey;
   }
 
+  /** Every project file a snapshot is saved to, the main one first, each file once. */
+  private paths({ path, copyPaths = [] }: ProjectSnapshot) {
+    const all = [path, ...copyPaths];
+    return all.filter((p, index) => all.findIndex((other) => this.key(other) === this.key(p)) === index);
+  }
+
+  private isSavedTo(snapshot: ProjectSnapshot, key: FileKey) {
+    return this.paths(snapshot).some((p) => this.key(p) === key);
+  }
+
   /** Reports the state of the open file. A snapshot of a new session ends the previous one. */
   update(snapshot: ProjectSnapshot | undefined, { enabled }: { enabled: boolean }) {
     this.enabled = enabled;
@@ -139,11 +185,11 @@ export default class ProjectAutoSave {
       return;
     }
 
-    const { id, loadedProjectPath } = snapshot.session;
+    const { id, loadedProjectPath, sameCopyPaths = [] } = snapshot.session;
     if (this.session?.id === id) {
       this.session.latest = snapshot;
       // The project may now be saved elsewhere (the setting for where projects are stored changed).
-      this.claim(snapshot.path, id);
+      for (const p of this.paths(snapshot)) this.claim(p, id);
       this.schedule();
       return;
     }
@@ -154,14 +200,15 @@ export default class ProjectAutoSave {
     // So that the new session supersedes an earlier one's failed save of its file, even one made
     // while that file's folder could not be resolved.
     this.resolveKeys();
+    const loadedPaths = loadedProjectPath != null ? [loadedProjectPath, ...sameCopyPaths] : [];
     this.session = {
       id,
-      saved: new Map(loadedProjectPath != null ? [[this.key(loadedProjectPath), snapshot.project]] : []),
+      saved: new Map(loadedPaths.map((p) => [this.key(p), { project: snapshot.project }])),
       hasProject: loadedProjectPath != null,
       latest: snapshot,
     };
-    if (loadedProjectPath != null) this.claim(loadedProjectPath, id);
-    this.claim(snapshot.path, id);
+    for (const p of loadedPaths) this.claim(p, id);
+    for (const p of this.paths(snapshot)) this.claim(p, id);
     // Usually nothing to save. But a project loaded from elsewhere is copied to where autosave
     // writes, and segments created on open (from chapters) are saved, as before.
     this.schedule();
@@ -199,14 +246,25 @@ export default class ProjectAutoSave {
   }
 
   /**
+   * Whether open session `sessionId` has the project at `path` on disk as it knows it: it wrote it there, or loaded
+   * it from there (or from a copy found the same, `sameCopyPaths`). Not true of a save that failed, nor of a file that
+   * was there before.
+   */
+  hasSaved(sessionId: number, path: string) {
+    const { session } = this;
+    return session != null && session.id === sessionId && session.saved.has(this.key(path));
+  }
+
+  /**
    * Whether anything is not on disk yet: a change waiting for the delay or being written, or a
-   * failed save. While autosave is turned off, nothing is saved, so nothing counts as unsaved.
+   * failed save. While autosave is turned off, nothing is saved, so nothing counts as unsaved; nor
+   * does a copy that can't be written (see `copyPaths`) while the main place has the edits.
    */
   hasUnsavedChanges() {
     if (!this.enabled) return false;
-    if (this.pendingWrites > 0 || this.failed.size > 0) return true;
+    if (this.pendingWrites > 0 || [...this.failed.values()].some((failure) => !this.isCopyFailure(failure))) return true;
     const { session } = this;
-    return session != null && this.needsSave(session, session.latest);
+    return session != null && this.hasUnsavedEdits(session);
   }
 
   /**
@@ -244,9 +302,11 @@ export default class ProjectAutoSave {
         this.failed.delete(key);
       }
       const open = this.session;
-      if (open != null && this.key(open.latest.path) === key) {
+      if (open != null && this.isSavedTo(open.latest, key)) {
         this.cancelTimer();
-        open.saved.set(key, open.latest.project);
+        open.saved.set(key, { project: open.latest.project });
+        // Another copy of the project still waits for that change.
+        if (this.enabled && this.needsSave(open, open.latest)) this.schedule();
       }
     });
     this.queue = deletion.then(() => undefined, () => undefined);
@@ -259,7 +319,8 @@ export default class ProjectAutoSave {
    * That is the open file's latest state, including changes made while saving, every save already
    * started (such as the final save of a file closed just before), and every save that failed
    * earlier, which is tried again. The open file stays open. Failures are only reported here, not
-   * through `onError`.
+   * through `onError`; copies (`copyPaths`) that could not be written only along with a failure of
+   * a main place.
    */
   async flush(): Promise<ProjectSaveFailure[]> {
     this.flushing += 1;
@@ -271,9 +332,9 @@ export default class ProjectAutoSave {
         if (session != null && this.enabled) this.enqueueSave(session, session.latest);
         // eslint-disable-next-line no-await-in-loop
         await this.drain();
-        // Until no change is left, or saving the open file failed (which is reported).
+        // Until no change is left (but for a copy that keeps failing), or saving the open file failed (which is reported).
         const open = this.session;
-        if (open == null || !this.enabled || !this.needsSave(open, open.latest)) break;
+        if (open == null || !this.enabled || !this.hasUnsavedEdits(open)) break;
         if (this.failed.has(this.key(open.latest.path))) {
           // Trying again saves the latest state. Not in the background meanwhile: its error
           // notification would replace the dialog that tells the user about this failure.
@@ -285,7 +346,10 @@ export default class ProjectAutoSave {
       this.flushing -= 1;
     }
     if (!this.enabled) return [];
-    return [...this.failed.values()].map(({ snapshot: { path }, error }) => ({ path, error }));
+    const failures = [...this.failed.values()];
+    // Copies that can't be written don't keep the app from closing while the main places have the edits.
+    if (failures.every((failure) => this.isCopyFailure(failure))) return [];
+    return failures.map(({ path, error }) => ({ path, error }));
   }
 
   /** Waits until no write is queued, including writes queued while waiting. */
@@ -360,13 +424,13 @@ export default class ProjectAutoSave {
       this.owners.set(to, Math.max(owner, this.owners.get(to) ?? -Infinity));
     }
     for (const { saved } of sessions) {
-      const project = saved.get(from);
-      if (project !== undefined) {
+      const known = saved.get(from);
+      if (known !== undefined) {
         saved.delete(from);
         // Two records of what one file holds, and which is newer is unknown: trust neither, which
         // only means saving the session's state once more.
         if (saved.has(to)) saved.delete(to);
-        else saved.set(to, project);
+        else saved.set(to, known);
       }
     }
     const failure = this.failed.get(from);
@@ -387,7 +451,7 @@ export default class ProjectAutoSave {
     for (const [key, failure] of this.failed) {
       const { session } = failure;
       // The open file is now saved elsewhere (a changed setting), its latest state with it.
-      if (session === this.session && key !== this.key(session.latest.path)) this.failed.delete(key);
+      if (session === this.session && !this.isSavedTo(session.latest, key)) this.failed.delete(key);
       else this.enqueueRetry(failure);
     }
   }
@@ -408,9 +472,30 @@ export default class ProjectAutoSave {
     this.timer = undefined;
   }
 
-  private needsSave(session: OpenSession, { path, project }: ProjectSnapshot) {
+  private needsSave(session: OpenSession, snapshot: ProjectSnapshot) {
+    return this.paths(snapshot).some((path) => this.needsSaveTo(session, snapshot, path));
+  }
+
+  /** Whether `path` is one of the snapshot's copies (`copyPaths`) rather than its main place. */
+  private isCopyOf(snapshot: ProjectSnapshot, path: string) {
+    return this.key(path) !== this.key(snapshot.path);
+  }
+
+  /** Whether a failed save is of a copy only: of what the session saves now, if it is the open one. */
+  private isCopyFailure({ session, snapshot, path }: FailedSave) {
+    return this.isCopyOf(session === this.session ? session.latest : snapshot, path);
+  }
+
+  /** Whether the open session's latest state is not on disk yet, but for a copy that is failing (see `copyPaths`). */
+  private hasUnsavedEdits(session: OpenSession) {
+    const { latest } = session;
+    return this.paths(latest).some((path) => this.needsSaveTo(session, latest, path) && !(this.isCopyOf(latest, path) && this.failed.has(this.key(path))));
+  }
+
+  private needsSaveTo(session: OpenSession, { project, fileData }: ProjectSnapshot, path: string) {
     const saved = session.saved.get(this.key(path));
-    return saved != null ? !isEqual(saved, project) : session.hasProject || hasProjectEdits(project);
+    if (saved == null) return session.hasProject || hasProjectEdits(project);
+    return !isEqual(saved.project, project) || (saved.fileData != null && !isEqual(saved.fileData, fileData));
   }
 
   /** Runs `job` after every write queued so far, counting it as a pending write until it has run. */
@@ -437,27 +522,59 @@ export default class ProjectAutoSave {
     this.enqueue(async () => {
       this.resolveKeys();
       if (![...this.failed.values()].includes(failure)) return;
-      const { session } = failure;
-      await this.save(session, session === this.session ? session.latest : failure.snapshot);
+      const { session, path } = failure;
+      const snapshot = session === this.session ? session.latest : failure.snapshot;
+      if (!this.isSavedTo(snapshot, this.key(path))) {
+        // The open file stopped keeping this copy meanwhile (a changed setting).
+        this.failed.delete(this.key(path));
+        return;
+      }
+      const error = await this.saveTo(session, snapshot, path);
+      // A copy that still fails was reported when it started to.
+      if (error !== noError && this.flushing === 0 && !this.isCopyOf(snapshot, path)) this.options.onError(error);
     });
   }
 
+  /**
+   * Saves every copy of `snapshot`, one after the other, the main place first. Reports a failure there, or else each
+   * copy that started failing (see `onCopyError`).
+   */
   private async save(session: OpenSession, snapshot: ProjectSnapshot) {
-    const { path, project, fileData } = snapshot;
+    let mainError: unknown = noError;
+    const copyFailures: ProjectSaveFailure[] = [];
+    for (const path of this.paths(snapshot)) {
+      const isCopy = this.isCopyOf(snapshot, path);
+      const wasFailing = this.failed.has(this.key(path));
+      // eslint-disable-next-line no-await-in-loop
+      const error = await this.saveTo(session, snapshot, path);
+      if (error !== noError) {
+        if (!isCopy) mainError = error;
+        else if (!wasFailing) copyFailures.push({ path, error });
+      }
+    }
+    if (this.flushing > 0) return;
+    const { onError, onCopyError = ({ error }) => onError(error) } = this.options;
+    if (mainError !== noError) onError(mainError);
+    else for (const failure of copyFailures) onCopyError(failure);
+  }
+
+  /** Saves `snapshot` to one of its paths. Resolves with the error if that failed, otherwise with `noError`. */
+  private async saveTo(session: OpenSession, snapshot: ProjectSnapshot, path: string): Promise<unknown> {
+    const { project, fileData } = snapshot;
     // A newer session has read or saved this file since: what it shows must not be replaced by an
     // older state. (Only ever an ended session's save: the open session is the newest.)
     if ((this.owners.get(this.key(path)) ?? -Infinity) > session.id) {
       const key = this.key(path);
       if (this.failed.get(key)?.session === session) this.supersedeOlderFailure(key);
       console.warn('Not saving an older state over a newer open of the project', path);
-      return;
+      return noError;
     }
     try {
-      const needsSave = this.needsSave(session, snapshot);
+      const needsSave = this.needsSaveTo(session, snapshot, path);
       if (needsSave) {
         console.log('Saving project file', path, fileData);
         await this.options.write(path, fileData);
-        session.saved.set(this.key(path), project);
+        session.saved.set(this.key(path), { project, fileData });
         // eslint-disable-next-line no-param-reassign
         session.hasProject = true;
       }
@@ -466,14 +583,15 @@ export default class ProjectAutoSave {
       const key = this.key(path);
       const failure = this.failed.get(key);
       if (failure != null && (needsSave ? failure.session.id <= session.id : failure.session === session)) this.failed.delete(key);
+      return noError;
     } catch (err) {
       const key = this.key(path);
       // Not if a newer session has read or saved the file since: its state must not be replaced by this one.
       if ((this.owners.get(key) ?? -Infinity) <= session.id) {
         this.failureSeq += 1;
-        this.failed.set(key, { session, snapshot, error: err, seq: this.failureSeq });
+        this.failed.set(key, { session, snapshot, path, error: err, seq: this.failureSeq });
       }
-      if (this.flushing === 0) this.options.onError(err);
+      return err;
     }
   }
 }

@@ -1,13 +1,15 @@
+import type { ComponentProps } from 'react';
 import { memo, useCallback, useMemo, useState } from 'react';
-import { IoIosSettings } from 'react-icons/io';
-import { FaFolderOpen, FaList } from 'react-icons/fa';
+import { FiChevronRight, FiEdit2, FiList, FiSettings } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import Button from './components/Button';
+import ShelfButton from './components/ShelfButton';
 
 import ExportButton from './components/ExportButton';
 import SimpleModeButton from './components/SimpleModeButton';
 import useUserSettings from './hooks/useUserSettings';
 import type { SegmentToExport } from './types';
+import { isMac } from './util';
 import styles from './TopMenu.module.css';
 
 function TopMenu({
@@ -19,9 +21,15 @@ function TopMenu({
   setStreamsSelectorShown,
   toggleSettings,
   onOpenFiles,
+  onShelfShown,
+  shelf,
+  nextClipName,
+  nextClipKeys,
+  exportKeys,
+  onOpenNextClip,
   onExportPress,
+  onQuickExportPress,
   segmentsToExport,
-  areWeCutting,
 }: {
   filePath: string | undefined,
   currentClipName: string | undefined,
@@ -31,13 +39,23 @@ function TopMenu({
   setStreamsSelectorShown: (v: boolean) => void,
   toggleSettings: () => void,
   onOpenFiles: () => void,
+  onShelfShown: () => void,
+  shelf: ComponentProps<typeof ShelfButton>['shelf'],
+  /** Simple mode: the clip after this one in the shelf, if any. */
+  nextClipName: string | undefined,
+  /** Next clip's shortcut (the "open next file" one), for its hint. */
+  nextClipKeys: string | undefined,
+  exportKeys: string | undefined,
+  onOpenNextClip: () => void,
   onExportPress: () => void,
+  /** Ctrl+click on Export: export right away with the last settings. */
+  onQuickExportPress: () => void,
   segmentsToExport: SegmentToExport[],
-  areWeCutting: boolean,
 }) {
   const { t } = useTranslation();
-  const { simpleMode } = useUserSettings();
-  const fallbackFileName = filePath ? window.require('path').basename(filePath) : undefined;
+  const { simpleMode, enableAdvancedMode } = useUserSettings();
+  // Without the extension, so it reads as the name exports get, not the recording's file name on disk.
+  const fallbackFileName = filePath ? window.require('path').parse(filePath).name : undefined;
   const fileName = currentClipName ?? fallbackFileName;
   const [renameDraft, setRenameDraft] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
@@ -54,71 +72,74 @@ function TopMenu({
   return (
     <div className={`no-user-select ${styles['wrapper']}`}>
       <div className={styles['primary']}>
-        <Button onClick={onOpenFiles} className={styles['secondaryAction']}>
-          <span className={styles['secondaryActionLabel']}>
-            <FaFolderOpen style={{ fontSize: '.85em' }} />
-            {t('Open another clip')}
-          </span>
-        </Button>
+        <ShelfButton onOpenFiles={onOpenFiles} onShelfShown={onShelfShown} shelf={shelf} />
 
         {fileName != null && (
           <div className={styles['fileChip']}>
-            <div className={styles['fileLabel']}>{t('Export name')}</div>
-            <div className={styles['fileNameShell']}>
-              {isRenaming ? (
-                <input
-                  className={styles['fileNameInput']}
-                  value={draftName}
-                  title={fileName}
-                  onChange={(e) => setRenameDraft(e.target.value)}
-                  onBlur={commitRename}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitRename();
-                    if (e.key === 'Escape') {
-                      setRenameDraft(fileName ?? '');
-                      setIsRenaming(false);
-                    }
-                  }}
-                />
-              ) : (
-                <button
-                  type="button"
-                  className={styles['fileNameButton']}
-                  title={fileName}
-                  onClick={() => {
-                    if (fileName == null) return;
-                    setRenameDraft(fileName);
-                    setIsRenaming(true);
-                  }}
-                >
-                  <span className={styles['fileName']}>{fileName}</span>
-                </button>
-              )}
-            </div>
+            {isRenaming ? (
+              <input
+                // eslint-disable-next-line jsx-a11y/no-autofocus
+                autoFocus
+                className={styles['fileNameInput']}
+                value={draftName}
+                placeholder={t('Export name')}
+                aria-label={t('Export name')}
+                onChange={(e) => setRenameDraft(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') {
+                    setRenameDraft(fileName ?? '');
+                    setIsRenaming(false);
+                  }
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                className={styles['fileNameButton']}
+                title={`${fileName}\n${t('Exports are named after this')}`}
+                onClick={() => {
+                  if (fileName == null) return;
+                  setRenameDraft(fileName);
+                  setIsRenaming(true);
+                }}
+              >
+                <span className={styles['fileName']}>{fileName}</span>
+                <FiEdit2 aria-hidden className={styles['fileNameEdit']} />
+              </button>
+            )}
           </div>
+        )}
+
+        {nextClipName != null && (
+          <Button variant="ghost" onClick={onOpenNextClip} title={t('Next clip: {{name}}', { name: nextClipName })} data-tip-keys={nextClipKeys}>
+            {t('Next clip')}
+            <FiChevronRight aria-hidden />
+          </Button>
         )}
       </div>
 
       <div className={styles['actions']}>
         {!simpleMode && (
-          <Button onClick={() => setStreamsSelectorShown(true)} className={styles['secondaryAction']}>
-            <span className={styles['secondaryActionLabel']}>
-              <FaList style={{ fontSize: '.82em' }} />
-              {t('Tracks kept')} ({numStreamsToCopy}/{numStreamsTotal})
-            </span>
+          <Button onClick={() => setStreamsSelectorShown(true)} title={t('Choose which tracks to keep')}>
+            <FiList aria-hidden />
+            {t('Tracks kept')} ({numStreamsToCopy}/{numStreamsTotal})
           </Button>
         )}
 
-        <SimpleModeButton />
 
-        <Button onClick={toggleSettings} className={styles['settingsAction']}>
-          <span className={styles['secondaryActionLabel']}>
-            <IoIosSettings style={{ fontSize: '1.1em' }} />
-            {t('Settings')}
-          </span>
+        {/* Advanced mode is unfinished, so its switch only shows once it's turned on in Settings. */}
+        {enableAdvancedMode && <SimpleModeButton />}
+
+        {/* The menu bar's Settings item answers to Ctrl+, (an accelerator of the menu, not a rebindable shortcut). */}
+        <Button variant="ghost" onClick={toggleSettings} title={t('Settings')} data-tip-keys={isMac ? 'MetaLeft+Comma' : 'ControlLeft+Comma'}>
+          <FiSettings aria-hidden />
+          {t('Settings')}
         </Button>
 
-        <ExportButton segmentsToExport={segmentsToExport} areWeCutting={areWeCutting} onClick={onExportPress} />
+        <ExportButton segmentsToExport={segmentsToExport} onClick={onExportPress} onQuickExport={onQuickExportPress} exportKeys={exportKeys} />
       </div>
     </div>
   );
