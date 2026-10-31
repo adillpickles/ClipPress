@@ -58,10 +58,11 @@ export function pickExportWaveform({ peaks, bucketSeconds }: AudioPeaks, clips: 
     // The loudest peak over this bar's stretch of the recording (a bar covers more of a sped-up clip).
     const { start, end, outputDuration } = clips[clip]!;
     const halfWidth = ((barSeconds * (end - start)) / Math.max(outputDuration, 1e-6)) / 2;
-    const from = Math.max(0, Math.floor((time - halfWidth) / bucketSeconds));
-    const to = Math.min(peaks.length - 1, Math.ceil((time + halfWidth) / bucketSeconds));
+    // Only the clip's own sound: the buckets from the bar's start up to (not including) the one its end is in.
+    const from = Math.max(0, Math.floor(Math.max(start, time - halfWidth) / bucketSeconds));
+    const to = Math.min(peaks.length, Math.ceil(Math.min(end, time + halfWidth) / bucketSeconds));
     let loudest = 0;
-    for (let bucket = from; bucket <= to; bucket += 1) loudest = Math.max(loudest, peaks[bucket] ?? 0);
+    for (let bucket = from; bucket < to; bucket += 1) loudest = Math.max(loudest, peaks[bucket] ?? 0);
     return loudest;
   });
 }

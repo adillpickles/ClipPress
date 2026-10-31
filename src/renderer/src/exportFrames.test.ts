@@ -41,8 +41,18 @@ describe('pickExportWaveform', () => {
     peaks[10] = 1;
     const bars = pickExportWaveform({ peaks, bucketSeconds: 1 }, [clip(0, 20)], 4);
     expect(bars).toHaveLength(4);
-    expect(bars[1]).toBe(1);
+    // Bars of 5 s: the loud second (10-11 s) is the third bar's.
+    expect(bars[1]).toBeCloseTo(0.1);
+    expect(bars[2]).toBe(1);
     expect(bars[3]).toBeCloseTo(0.1);
+  });
+
+  it('keeps to the clip: sound just past its end does not light its last bar', () => {
+    // Quiet up to 10 s, loud from 10 s on; the clip ends at 10 s.
+    const peaks = new Float32Array(20).fill(0.1);
+    peaks.fill(1, 10);
+    const bars = pickExportWaveform({ peaks, bucketSeconds: 1 }, [clip(0, 10)], 5);
+    expect(Math.max(...bars)).toBeCloseTo(0.1);
   });
 
   it('has nothing without peaks', () => {
