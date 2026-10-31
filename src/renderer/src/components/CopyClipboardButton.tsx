@@ -5,8 +5,7 @@ import type { MotionStyle } from 'motion/react';
 import { motion, useAnimation } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 
-const electron = window.require('electron');
-const { clipboard } = electron;
+import mainApi from '../mainApi';
 
 function CopyClipboardButton({ text, style, children }: {
   text: string,
@@ -18,7 +17,7 @@ function CopyClipboardButton({ text, style, children }: {
   const animation = useAnimation();
 
   const onClick = useCallback(() => {
-    clipboard.writeText(text);
+    mainApi.writeClipboardText(text).catch((err: unknown) => console.error('Could not copy to the clipboard', err));
     animation.start({
       scale: [1, 1.5, 1],
       transition: { duration: 0.2 },

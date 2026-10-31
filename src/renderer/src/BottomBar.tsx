@@ -55,8 +55,8 @@ import type {
 } from './types';
 import type { KeyBinding, WaveformMode } from '../../common/types';
 import type { Frame } from './ffmpeg';
+import mainApi from './mainApi';
 
-const { clipboard } = window.require('electron');
 
 const zoomOptions = Array.from({ length: 13 })
   .fill(undefined)
@@ -263,8 +263,8 @@ const CutTimeInput = memo(
       [parseAndSetCutTime],
     );
 
-    const handleContextMenu = useCallback(() => {
-      const text = clipboard.readText();
+    const handleContextMenu = useCallback(async () => {
+      const text = await mainApi.readClipboardText();
       if (text) {
         try {
           setCutTimeManual(text);

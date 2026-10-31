@@ -90,7 +90,7 @@
     "csv-parse": "^6.1.0",
     "csv-stringify": "^6.6.0",
     "data-uri-to-buffer": "^8.0.0",
-    "electron": "^38.8.6",
+    "electron": "^45.1.0",
     "electron-builder": "26.8.1",
     "electron-devtools-installer": "^4.0.0",
     "electron-vite": "^5.0.0",
@@ -451,10 +451,6 @@
         },
         {
           "arch": "arm64",
-          "target": "tar.bz2"
-        },
-        {
-          "arch": "armv7l",
           "target": "tar.bz2"
         }
       ]

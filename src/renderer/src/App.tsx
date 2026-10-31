@@ -6257,7 +6257,7 @@ function App() {
 
   const copySegmentsToClipboard = useCallback(async () => {
     if (!isFileOpened || selectedSegments.length === 0) return;
-    electron.clipboard.writeText(formatTsvHuman(selectedSegments));
+    await mainApi.writeClipboardText(formatTsvHuman(selectedSegments));
   }, [isFileOpened, selectedSegments]);
 
   const showIncludeExternalStreamsDialog = useCallback(async () => {

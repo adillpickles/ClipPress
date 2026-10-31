@@ -20,21 +20,44 @@ import type { ProjectSaveFailure } from '../projectAutoSave';
 import type { UserCloseChoice } from '../saveBeforeClose';
 
 const { lstat } = window.require('fs/promises');
-const { basename } = window.require('path');
+const { basename, dirname } = window.require('path');
+const { existsSync } = window.require('fs');
 const remote = window.require('@electron/remote');
-const electron = window.require('electron');
-const { clipboard } = electron;
 const { dialog } = remote;
 
+
+// Since Electron 43 an Open dialog given no folder starts in Downloads, and Windows no longer remembers the last one:
+// remember it here (this window's storage), and the very first time start in Videos, where recorders save.
+const lastDialogDirKey = 'lastDialogDir';
+function getDialogStartDir(): string | undefined {
+  try {
+    const remembered = localStorage.getItem(lastDialogDirKey);
+    if (remembered != null && existsSync(remembered)) return remembered;
+    return remote.app.getPath('videos');
+  } catch {
+    return undefined;
+  }
+}
 
 // https://github.com/mifi/lossless-cut/issues/1495
 export const showOpenDialog = async ({
   filters = isWindows ? [{ name: i18n.t('All Files'), extensions: ['*'] }] : undefined,
   title,
+  defaultPath,
   ...props
-}: Omit<Parameters<typeof dialog.showOpenDialog>[0], 'title'> & { title: string }) => (
-  dialog.showOpenDialog({ ...props, title, ...(filters != null ? { filters } : {}) })
-);
+}: Omit<Parameters<typeof dialog.showOpenDialog>[0], 'title'> & { title: string }) => {
+  const startDir = defaultPath ?? getDialogStartDir();
+  const result = await dialog.showOpenDialog({ ...props, title, ...(startDir != null ? { defaultPath: startDir } : {}), ...(filters != null ? { filters } : {}) });
+  const [picked] = result.filePaths;
+  if (!result.canceled && picked != null) {
+    try {
+      localStorage.setItem(lastDialogDirKey, props.properties?.includes('openDirectory') ? picked : dirname(picked));
+    } catch (err) {
+      console.warn('Could not remember the folder', err);
+    }
+  }
+  return result;
+};
 
 export async function askForYouTubeInput({ fileDuration }: { fileDuration?: number | undefined }) {
   const example = i18n.t('YouTube video description\n00:00 Intro\n00:01 Chapter 2\n00:00:02.123 Chapter 3');
@@ -544,7 +567,7 @@ export async function openYouTubeChaptersDialog(text: string) {
   });
 
   if (isConfirmed) {
-    clipboard.writeText(text);
+    await mainApi.writeClipboardText(text);
   }
 }
 

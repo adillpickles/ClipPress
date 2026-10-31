@@ -8,7 +8,7 @@ import i18n from 'i18next';
 
 import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists, moveExportWithRetry, isExecaError, getStdioString } from '../util';
 import { assertOutPathsNotSource } from '../util/sourceProtection';
-import { isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, getDuration, createChaptersFromSegments, readFileFfprobeMeta, getExperimentalArgs, getVideoTimescaleArgs, logStdoutStderr, runFfmpegConcat, RefuseOverwriteError, runFfmpeg } from '../ffmpeg';
+import { decodeText, isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, getDuration, createChaptersFromSegments, readFileFfprobeMeta, getExperimentalArgs, getVideoTimescaleArgs, logStdoutStderr, runFfmpegConcat, RefuseOverwriteError, runFfmpeg } from '../ffmpeg';
 import { attachedPicDisposition, getEffectiveAvoidNegativeTs, getKeyframeCutSeekCompensation, getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
 import type { ClipVolume } from '../util/audioGain';
 import { combineAudioGain, getVolumeFilter } from '../util/audioGain';
@@ -1379,7 +1379,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     appendFfmpegCommandLog(ffmpegArgs);
     const { stdout } = await runFfmpegWithProgress({ ffmpegArgs, duration, onProgress });
 
-    console.log(new TextDecoder().decode(stdout));
+    console.log(decodeText(stdout));
 
     invariant(outPath != null);
     await transferTimestamps({ inPath: filePathArg, outPath, duration, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart });
@@ -1498,7 +1498,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
     appendFfmpegCommandLog(ffmpegArgs);
     const { stdout } = await runFfmpeg(ffmpegArgs);
-    console.log(new TextDecoder().decode(stdout));
+    console.log(decodeText(stdout));
 
     return outPaths;
   }, [appendFfmpegCommandLog, assertOutPathIsNotSource, enableOverwriteOutput, filePath]);
@@ -1540,7 +1540,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     try {
       appendFfmpegCommandLog(ffmpegArgs);
       const { stdout } = await runFfmpeg(ffmpegArgs);
-      console.log(new TextDecoder().decode(stdout));
+      console.log(decodeText(stdout));
     } catch (err) {
       // Unfortunately ffmpeg will exit with code 1 even though it's a success
       // Note: This is kind of hacky:

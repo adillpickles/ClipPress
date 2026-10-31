@@ -3,7 +3,7 @@ process.traceProcessWarnings = true;
 
 /* eslint-disable import/first */
 // eslint-disable-next-line import/no-extraneous-dependencies
-import electron, { BrowserWindow, type BrowserWindowConstructorOptions, nativeTheme, shell, app, ipcMain, Notification, type NotificationConstructorOptions } from 'electron';
+import electron, { BrowserWindow, type BrowserWindowConstructorOptions, nativeTheme, shell, app, ipcMain, Notification, type NotificationConstructorOptions, clipboard } from 'electron';
 import i18n from 'i18next';
 import debounce from 'lodash.debounce/index.js';
 import yargsParser from 'yargs-parser';
@@ -53,8 +53,9 @@ app.commandLine.appendSwitch('enable-blink-features', 'AudioVideoTracks');
 // appendSwitch replaces any value already given, e.g. on the command line, so keep it
 app.commandLine.appendSwitch('disable-features', [app.commandLine.getSwitchValue('disable-features'), 'HardwareMediaKeyHandling', 'MediaSessionService'].filter(Boolean).join(','));
 // Windows 11's thin scroll bars, shown while scrolling and without arrows, wherever the app doesn't draw its own (the
-// open list of a dropdown, which can't be styled).
-if (isWindows) app.commandLine.appendSwitch('enable-features', 'FluentOverlayScrollbar');
+// open list of a dropdown, which can't be styled). Chromium 146 folded FluentOverlayScrollbar into OverlayScrollbar,
+// which also follows Windows' "Always show scrollbars". Merged with what's there, as appendSwitch replaces it.
+if (isWindows) app.commandLine.appendSwitch('enable-features', [app.commandLine.getSwitchValue('enable-features'), 'OverlayScrollbar'].filter(Boolean).join(','));
 
 remote.initialize();
 
@@ -757,6 +758,9 @@ const remoteApi = {
   sendOsNotification,
   canCopyFiles: () => canCopyFiles,
   copyFilesToClipboard,
+  // Text on the clipboard: the page can't reach it itself since Electron 44.
+  writeClipboardText: (text: string) => clipboard.writeText(text),
+  readClipboardText: () => clipboard.readText(),
   // The page's settings writes: asynchronous, so writing the whole settings file never holds up the page (it did on
   // every open, for the recent files). Ordered with the page's other calls, so a later read sees it.
   setConfig: <T extends keyof Config>(key: T, value: Config[T]) => configStore.set(key, value),
