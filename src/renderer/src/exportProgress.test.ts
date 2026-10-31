@@ -28,14 +28,18 @@ describe('createForwardJobProgress', () => {
     expect(show(0.75, 1)).toBeCloseTo(0.675);
   });
 
-  test('progress without an attempt (a lossless copy) is shown as it comes, and an encode after it starts from there', () => {
+  test('progress without an attempt (a lossless copy) is a step like an encode', () => {
     const show = createForwardJobProgress();
-    expect(show(0.4, undefined)).toBeCloseTo(0.4);
-    expect(show(1, undefined)).toBe(1);
-    const fallback = createForwardJobProgress();
-    fallback(0.3, undefined);
-    expect(fallback(0, 1)).toBeCloseTo(0.3);
-    expect(fallback(1, 1)).toBeCloseTo(0.93);
+    expect(show(0.5, undefined)).toBeCloseTo(0.45);
+    expect(show(1, undefined)).toBeCloseTo(0.9);
+  });
+
+  test('a copy that turns out too big after reaching its end still leaves room for the encode after it', () => {
+    const show = createForwardJobProgress();
+    show(1, undefined);
+    expect(show(0, 1)).toBeCloseTo(0.9);
+    expect(show(0.5, 1)).toBeCloseTo(0.945);
+    expect(show(1, 1)).toBeCloseTo(0.99);
   });
 
   test('out-of-range values are clamped', () => {
