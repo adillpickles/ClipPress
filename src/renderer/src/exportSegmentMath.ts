@@ -1,5 +1,6 @@
 import type { DefiniteSegmentBase } from './types';
 import { getAudioTempoFilter, getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from './segmentSpeed';
+import { getGpuFramesFilter } from './gpuEncoders';
 import { getSegmentCropFilter } from './segmentCrop';
 import { getSizeLimitedRotationArgs } from './sizeLimitedFfmpegArgs';
 import { combineAudioGain, getVolumeFilter, isClipVolumeChanged } from './util/audioGain';
@@ -101,20 +102,23 @@ export function buildMergedOverlayFilters({ overlayAssets, segments, outputPlayb
   return { graph, videoOutputLabel: currentLabel };
 }
 
-export function buildSegmentConcatFilters({ segments, videoStreamIndex, audioStreamIndex, outputPlaybackRate, videoWidth, videoHeight }: {
+export function buildSegmentConcatFilters({ segments, videoStreamIndex, audioStreamIndex, outputPlaybackRate, videoWidth, videoHeight, gpuFrames }: {
   segments: DefiniteSegmentBase[],
   videoStreamIndex: number,
   audioStreamIndex: number | undefined,
   outputPlaybackRate: number,
   videoWidth?: number | undefined,
   videoHeight?: number | undefined,
+  /** The inputs' frames stay on the GPU (`getHardwareDecodeArgs`); see `getGpuFramesFilter`. */
+  gpuFrames?: { downloadFormat: string, outputFps: number | undefined } | undefined,
 }) {
   const graph: string[] = [];
   const labels = segments.map((segment, index) => {
     const rate = getSegmentPlaybackRate(segment, outputPlaybackRate);
     const videoLabel = `[segmentv${index}]`;
     const cropFilter = videoWidth != null && videoHeight != null ? getSegmentCropFilter(segment, videoWidth, videoHeight) : undefined;
-    graph.push(`[${index}:${videoStreamIndex}]${[getVideoTimingFilter(rate), cropFilter].filter(Boolean).join(',')}${videoLabel}`);
+    const gpuFramesFilter = gpuFrames != null ? getGpuFramesFilter({ rate, ...gpuFrames }) : undefined;
+    graph.push(`[${index}:${videoStreamIndex}]${[getVideoTimingFilter(rate), gpuFramesFilter, cropFilter].filter(Boolean).join(',')}${videoLabel}`);
     if (audioStreamIndex == null) return videoLabel;
     const audioLabel = `[segmenta${index}]`;
     const tempo = getAudioTempoFilter(rate);

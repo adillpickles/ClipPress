@@ -34,7 +34,7 @@ import { UserFacingError } from '../errors';
 import { assertOutPathsNotSource } from './util/sourceProtection';
 import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } from './textOverlays';
 import createAsyncCache from './util/asyncCache';
-import { getGpuEncoderInfo, getHardwareDecodeArgs, gpuEncoderLabels, gpuEncoders, isGpuEncoderAvailable, runWithGpuFallbacksCore, shouldUseHardwareDecode } from './gpuEncoders';
+import { getGpuEncoderInfo, getGpuFramesDownloadFormat, getGpuFramesFilter, getHardwareDecodeArgs, gpuEncoderLabels, gpuEncoders, isGpuEncoderAvailable, runWithGpuFallbacksCore, shouldUseHardwareDecode } from './gpuEncoders';
 import type { GpuEncoderName } from './gpuEncoders';
 import { getTempWorkDir } from './util/tempFiles';
 
@@ -197,6 +197,43 @@ export function runWithGpuFallbacks<T>(args: Omit<Parameters<typeof runWithGpuFa
     isRetryableFailure: isRetryableEncodeFailure,
     onHardwareDecodeFailed: () => { hardwareDecodeFailed = true; },
   });
+}
+
+/** Sources whose frames couldn't stay on the GPU (a codec it doesn't decode, which FFmpeg then decodes on the CPU). */
+const gpuFramesFailed = new Set<string>();
+
+/**
+ * The format a sped-up export's frames are copied off the GPU in, when they can stay there until `fps` has dropped
+ * the unkept ones (`getGpuFramesFilter`); undefined when they're copied off as they're decoded. A turned video isn't
+ * kept there: FFmpeg turns it with a CPU filter before ours.
+ */
+function getGpuFramesFormat({ videoStream, rates, rotation }: {
+  videoStream: Pick<FFprobeStream, 'codec_name' | 'pix_fmt'>,
+  rates: number[],
+  rotation: number | undefined,
+}) {
+  if (!rates.some((rate) => rate > 1) || ((rotation ?? 0) % 360) !== 0) return undefined;
+  if (gpuFramesFailed.has(`${videoStream.codec_name}/${videoStream.pix_fmt}`)) return undefined;
+  return getGpuFramesDownloadFormat(videoStream.pix_fmt);
+}
+
+/** Runs with the frames on the GPU when they can be, and if FFmpeg fails that way, once more with them copied off. */
+async function runKeepingFramesOnGpu<T>({ videoStream, gpuFramesFormat, run }: {
+  videoStream: Pick<FFprobeStream, 'codec_name' | 'pix_fmt'>,
+  gpuFramesFormat: string | undefined,
+  run: (format: string | undefined) => Promise<T>,
+}) {
+  if (gpuFramesFormat == null) return run(undefined);
+  try {
+    return await run(gpuFramesFormat);
+  } catch (error) {
+    if (!isRetryableEncodeFailure(error)) throw error;
+    console.warn('Export failed with its frames kept on the GPU; retrying with them copied off as they are decoded', error);
+  }
+  const result = await run(undefined);
+  // Only now is it clear the frames on the GPU were the problem (not, say, the encoder).
+  gpuFramesFailed.add(`${videoStream.codec_name}/${videoStream.pix_fmt}`);
+  return result;
 }
 
 export function markGpuEncoderFailed(encoder: GpuEncoderName) {
@@ -394,6 +431,7 @@ function buildSegmentTextOverlayFilter({
   outputPlaybackRate,
   videoFilter,
   cropFilter,
+  gpuFramesFilter,
 }: {
   videoStreamIndex: number,
   overlayAssets: PreparedTextOverlayAsset[],
@@ -403,12 +441,13 @@ function buildSegmentTextOverlayFilter({
   outputPlaybackRate: number,
   videoFilter: string | undefined,
   cropFilter: string | undefined,
+  gpuFramesFilter: string | undefined,
 }) {
   if (overlayAssets.length === 0) return undefined;
 
   const graph: string[] = [];
   let currentLabel = '[v0]';
-  graph.push(`[0:${videoStreamIndex}]${[getVideoTimingFilter(outputPlaybackRate), cropFilter].filter(Boolean).join(',')}${currentLabel}`);
+  graph.push(`[0:${videoStreamIndex}]${[getVideoTimingFilter(outputPlaybackRate), gpuFramesFilter, cropFilter].filter(Boolean).join(',')}${currentLabel}`);
 
   overlayAssets.forEach((overlayAsset, index) => {
     const overlapWindow = getRelativeSegmentOverlapWindow({
@@ -429,14 +468,15 @@ function buildSegmentTextOverlayFilter({
   return { filterComplex: graph.join(';'), videoInputLabel: '[v]' };
 }
 
-function getSegmentInputArgs({ filePath, segment, rotation, hardwareDecode }: {
+function getSegmentInputArgs({ filePath, segment, rotation, hardwareDecode, keepFramesOnGpu }: {
   filePath: string,
   segment: SegmentToExport,
   rotation: number | undefined,
   hardwareDecode: boolean,
+  keepFramesOnGpu: boolean,
 }) {
   return [
-    ...getHardwareDecodeArgs(hardwareDecode),
+    ...getHardwareDecodeArgs(hardwareDecode, keepFramesOnGpu),
     '-ss', segment.start.toFixed(5),
     '-t', (segment.end - segment.start).toFixed(5),
     ...getSizeLimitedRotationArgs(rotation),
@@ -444,13 +484,14 @@ function getSegmentInputArgs({ filePath, segment, rotation, hardwareDecode }: {
   ];
 }
 
-function getMergeInputArgs({ filePath, segments, rotation, hardwareDecode }: {
+function getMergeInputArgs({ filePath, segments, rotation, hardwareDecode, keepFramesOnGpu }: {
   filePath: string,
   segments: SegmentToExport[],
   rotation: number | undefined,
   hardwareDecode: boolean,
+  keepFramesOnGpu: boolean,
 }) {
-  return buildConcatSegmentInputArgs({ filePath, segments, rotation, decodeArgs: getHardwareDecodeArgs(hardwareDecode) });
+  return buildConcatSegmentInputArgs({ filePath, segments, rotation, decodeArgs: getHardwareDecodeArgs(hardwareDecode, keepFramesOnGpu) });
 }
 
 interface ResolvedSizeLimitedPlan { strategy: SizeLimitedResolvedStrategy, plan: ReturnType<typeof planSizeLimitedEncode> }
@@ -473,7 +514,7 @@ async function resolveNextEncoder(strategy: SizeLimitedResolvedStrategy, resolve
   }
 }
 
-function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoProfile, overlayAssets, outputPlaybackRate, audioGainDb, videoWidth, videoHeight }: {
+function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoProfile, overlayAssets, outputPlaybackRate, audioGainDb, videoWidth, videoHeight, gpuFramesFormat }: {
   segments: SegmentToExport[],
   videoStreamIndex: number,
   audioStreamIndex: number | undefined,
@@ -483,6 +524,7 @@ function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoPr
   audioGainDb?: number | undefined,
   videoWidth: number,
   videoHeight: number,
+  gpuFramesFormat: string | undefined,
 }) {
   const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
   const mergedOverlayFilters = buildMergedOverlayFilters({
@@ -493,7 +535,8 @@ function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoPr
     videoInputLabel: '[vconcat]',
     videoOutputLabel: videoFilter != null ? '[voverlay]' : '[v]',
   });
-  const { graph, labels } = buildSegmentConcatFilters({ segments, videoStreamIndex, audioStreamIndex, outputPlaybackRate, videoWidth, videoHeight });
+  const gpuFrames = gpuFramesFormat != null ? { downloadFormat: gpuFramesFormat, outputFps: videoProfile.outputFps } : undefined;
+  const { graph, labels } = buildSegmentConcatFilters({ segments, videoStreamIndex, audioStreamIndex, outputPlaybackRate, videoWidth, videoHeight, gpuFrames });
   const needsVideoPostProcessing = mergedOverlayFilters.graph.length > 0 || videoFilter != null;
   const concatVideoLabel = needsVideoPostProcessing ? '[vconcat]' : '[v]';
   const needsAudioPostProcessing = audioStreamIndex != null && !isNeutralAudioGain(audioGainDb);
@@ -856,7 +899,7 @@ export async function exportSizeLimitedSegment({
   advancedAv1NvencPreset: SizeLimitAdvancedNvencPreset,
   advancedH264CpuPreset: SizeLimitAdvancedH264CpuPreset,
   advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
-  videoStream: Pick<FFprobeStream, 'index' | 'width' | 'height' | 'codec_name'>,
+  videoStream: Pick<FFprobeStream, 'index' | 'width' | 'height' | 'codec_name' | 'pix_fmt'>,
   audioStream: Pick<FFprobeStream, 'index' | 'codec_name'> | undefined,
   enableOverwriteOutput: boolean,
   ffmpegExperimental: boolean,
@@ -966,133 +1009,139 @@ export async function exportSizeLimitedSegment({
         ({ strategy, plan } = next);
         return true;
       },
-      run: (hardwareDecode) => executeWithRetries({
-        outPath,
-        plan,
-        strategy,
-        buildAttempt: async (attempt, tempPath = outPath) => {
-          const attemptOutPath = makeAttemptPath(tempPath, attempt.attemptNumber);
-          const inputArgs = getSegmentInputArgs({ filePath, segment, rotation, hardwareDecode });
-          const outputTrimArgs = ['-t', plannedDuration.toFixed(5)];
-          const videoProfile = resolveSizeLimitedVideoProfile({
-            resolution,
-            fps,
-            sourceWidth: videoStream.width,
-            sourceHeight: videoStream.height,
-            rotation: sourceRotation ?? rotation,
-            sourceFps,
-            plannedVideoBitrate: attempt.videoBitrate,
-          });
-          const baseVideoFilter = buildSizeLimitedVideoFilter({ videoProfile });
-          const dimensions = getRotatedVideoDimensions({ width: videoStream.width!, height: videoStream.height!, rotation: sourceRotation ?? rotation });
-          const cropFilter = getSegmentCropFilter(segment, dimensions.width, dimensions.height);
-          const videoFilter = [getVideoTimingFilter(segmentRate), cropFilter, baseVideoFilter].filter(Boolean).join(',');
-          const segmentOverlayAssets = preparedOverlayAssets.filter((overlayAsset) => overlayAsset.start < segment.end && overlayAsset.end > segment.start);
-          const overlayInputArgs = buildOverlayImageInputArgs(segmentOverlayAssets.map(({ imagePath }) => imagePath));
-          const overlayFilter = buildSegmentTextOverlayFilter({
-            videoStreamIndex: videoStream.index,
-            overlayAssets: segmentOverlayAssets,
-            segmentStart: segment.start,
-            segmentEnd: segment.end,
-            imageInputStartIndex: 1,
-            outputPlaybackRate: segmentRate,
-            videoFilter: baseVideoFilter,
-            cropFilter,
-          });
-          const commonArgs = [
-            ...inputArgs,
-            ...overlayInputArgs,
-            ...(overlayFilter != null ? ['-filter_complex', overlayFilter.filterComplex] : []),
-            ...(overlayFilter == null ? ['-vf', videoFilter] : []),
-          ];
-          const effectiveVideoProfile = { outputWidth: undefined, outputHeight: undefined, outputFps: undefined };
-          const videoInputLabel = overlayFilter?.videoInputLabel ?? `0:${videoStream.index}`;
-
-          if (strategy.executionMode === 'ffmpeg_two_pass') {
-            const passlogFile = makePasslogPath(tempPath, attempt.attemptNumber);
-            const pass1OutPath = makePass1Path(tempPath, attempt.attemptNumber);
-            const pass1Args = [
-              '-hide_banner',
-              ...getSizeLimitedSwsFlagsArgs(),
-              ...commonArgs,
-              ...outputTrimArgs,
-              ...getSizeLimitedTwoPassEncodeArgs({
-                strategy,
-                videoBitrate: attempt.videoBitrate,
-                audioBitrate: attempt.audioBitrate,
-                videoInputLabel,
-                audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
-                videoProfile: effectiveVideoProfile,
-                experimentalArgs: getExperimentalArgs(ffmpegExperimental),
-                passlogFile,
-                outPath: pass1OutPath,
-                passNumber: 1,
-                sourceFps,
-                outputPlaybackRate,
-                audioGainDb,
-                audioPlaybackRate: segmentRate,
-                qualityCapOffset: attempt.qualityCapOffset,
-              }),
-            ];
-
-            const pass2Args = [
-              '-hide_banner',
-              ...getSizeLimitedSwsFlagsArgs(),
-              ...commonArgs,
-              ...outputTrimArgs,
-              ...getSizeLimitedTwoPassEncodeArgs({
-                strategy,
-                videoBitrate: attempt.videoBitrate,
-                audioBitrate: attempt.audioBitrate,
-                videoInputLabel,
-                audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
-                videoProfile: effectiveVideoProfile,
-                experimentalArgs: getExperimentalArgs(ffmpegExperimental),
-                passlogFile,
-                outPath: attemptOutPath,
-                passNumber: 2,
-                sourceFps,
-                outputPlaybackRate,
-                audioGainDb,
-                audioPlaybackRate: segmentRate,
-                qualityCapOffset: attempt.qualityCapOffset,
-              }),
-            ];
-
-            appendFfmpegCommandLog(pass1Args);
-            appendFfmpegCommandLog(pass2Args);
-            return { ffmpegArgs: pass2Args, outPath: attemptOutPath, passlogFile, pass1Args, pass1OutPath };
-          }
-
-          const ffmpegArgs = [
-            '-hide_banner',
-            ...getSizeLimitedSwsFlagsArgs(),
-            ...commonArgs,
-            ...outputTrimArgs,
-            ...getSizeLimitedCommonEncodeArgs({
-              strategy,
-              videoBitrate: attempt.videoBitrate,
-              audioBitrate: attempt.audioBitrate,
-              videoInputLabel,
-              audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
-              videoProfile: effectiveVideoProfile,
-              experimentalArgs: getExperimentalArgs(ffmpegExperimental),
-              outPath: attemptOutPath,
+      run: (hardwareDecode) => runKeepingFramesOnGpu({
+        videoStream,
+        gpuFramesFormat: hardwareDecode ? getGpuFramesFormat({ videoStream, rates: [segmentRate], rotation: sourceRotation ?? rotation }) : undefined,
+        run: (gpuFramesFormat) => executeWithRetries({
+          outPath,
+          plan,
+          strategy,
+          buildAttempt: async (attempt, tempPath = outPath) => {
+            const attemptOutPath = makeAttemptPath(tempPath, attempt.attemptNumber);
+            const inputArgs = getSegmentInputArgs({ filePath, segment, rotation, hardwareDecode, keepFramesOnGpu: gpuFramesFormat != null });
+            const outputTrimArgs = ['-t', plannedDuration.toFixed(5)];
+            const videoProfile = resolveSizeLimitedVideoProfile({
+              resolution,
+              fps,
+              sourceWidth: videoStream.width,
+              sourceHeight: videoStream.height,
+              rotation: sourceRotation ?? rotation,
               sourceFps,
-              outputPlaybackRate,
-              audioGainDb,
-              audioPlaybackRate: segmentRate,
-              qualityCapOffset: attempt.qualityCapOffset,
-            }),
-          ];
+              plannedVideoBitrate: attempt.videoBitrate,
+            });
+            const baseVideoFilter = buildSizeLimitedVideoFilter({ videoProfile });
+            const dimensions = getRotatedVideoDimensions({ width: videoStream.width!, height: videoStream.height!, rotation: sourceRotation ?? rotation });
+            const cropFilter = getSegmentCropFilter(segment, dimensions.width, dimensions.height);
+            const gpuFramesFilter = gpuFramesFormat != null ? getGpuFramesFilter({ rate: segmentRate, downloadFormat: gpuFramesFormat, outputFps: videoProfile.outputFps }) : undefined;
+            const videoFilter = [getVideoTimingFilter(segmentRate), gpuFramesFilter, cropFilter, baseVideoFilter].filter(Boolean).join(',');
+            const segmentOverlayAssets = preparedOverlayAssets.filter((overlayAsset) => overlayAsset.start < segment.end && overlayAsset.end > segment.start);
+            const overlayInputArgs = buildOverlayImageInputArgs(segmentOverlayAssets.map(({ imagePath }) => imagePath));
+            const overlayFilter = buildSegmentTextOverlayFilter({
+              videoStreamIndex: videoStream.index,
+              overlayAssets: segmentOverlayAssets,
+              segmentStart: segment.start,
+              segmentEnd: segment.end,
+              imageInputStartIndex: 1,
+              outputPlaybackRate: segmentRate,
+              videoFilter: baseVideoFilter,
+              cropFilter,
+              gpuFramesFilter,
+            });
+            const commonArgs = [
+              ...inputArgs,
+              ...overlayInputArgs,
+              ...(overlayFilter != null ? ['-filter_complex', overlayFilter.filterComplex] : []),
+              ...(overlayFilter == null ? ['-vf', videoFilter] : []),
+            ];
+            const effectiveVideoProfile = { outputWidth: undefined, outputHeight: undefined, outputFps: undefined };
+            const videoInputLabel = overlayFilter?.videoInputLabel ?? `0:${videoStream.index}`;
 
-          appendFfmpegCommandLog(ffmpegArgs);
-          return { ffmpegArgs, outPath: attemptOutPath };
-        },
-        onProgress: (progress, metadata) => {
-          onStageChange?.(metadata);
-          onProgress(progress, metadata);
-        },
+            if (strategy.executionMode === 'ffmpeg_two_pass') {
+              const passlogFile = makePasslogPath(tempPath, attempt.attemptNumber);
+              const pass1OutPath = makePass1Path(tempPath, attempt.attemptNumber);
+              const pass1Args = [
+                '-hide_banner',
+                ...getSizeLimitedSwsFlagsArgs(),
+                ...commonArgs,
+                ...outputTrimArgs,
+                ...getSizeLimitedTwoPassEncodeArgs({
+                  strategy,
+                  videoBitrate: attempt.videoBitrate,
+                  audioBitrate: attempt.audioBitrate,
+                  videoInputLabel,
+                  audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
+                  videoProfile: effectiveVideoProfile,
+                  experimentalArgs: getExperimentalArgs(ffmpegExperimental),
+                  passlogFile,
+                  outPath: pass1OutPath,
+                  passNumber: 1,
+                  sourceFps,
+                  outputPlaybackRate,
+                  audioGainDb,
+                  audioPlaybackRate: segmentRate,
+                  qualityCapOffset: attempt.qualityCapOffset,
+                }),
+              ];
+
+              const pass2Args = [
+                '-hide_banner',
+                ...getSizeLimitedSwsFlagsArgs(),
+                ...commonArgs,
+                ...outputTrimArgs,
+                ...getSizeLimitedTwoPassEncodeArgs({
+                  strategy,
+                  videoBitrate: attempt.videoBitrate,
+                  audioBitrate: attempt.audioBitrate,
+                  videoInputLabel,
+                  audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
+                  videoProfile: effectiveVideoProfile,
+                  experimentalArgs: getExperimentalArgs(ffmpegExperimental),
+                  passlogFile,
+                  outPath: attemptOutPath,
+                  passNumber: 2,
+                  sourceFps,
+                  outputPlaybackRate,
+                  audioGainDb,
+                  audioPlaybackRate: segmentRate,
+                  qualityCapOffset: attempt.qualityCapOffset,
+                }),
+              ];
+
+              appendFfmpegCommandLog(pass1Args);
+              appendFfmpegCommandLog(pass2Args);
+              return { ffmpegArgs: pass2Args, outPath: attemptOutPath, passlogFile, pass1Args, pass1OutPath };
+            }
+
+            const ffmpegArgs = [
+              '-hide_banner',
+              ...getSizeLimitedSwsFlagsArgs(),
+              ...commonArgs,
+              ...outputTrimArgs,
+              ...getSizeLimitedCommonEncodeArgs({
+                strategy,
+                videoBitrate: attempt.videoBitrate,
+                audioBitrate: attempt.audioBitrate,
+                videoInputLabel,
+                audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
+                videoProfile: effectiveVideoProfile,
+                experimentalArgs: getExperimentalArgs(ffmpegExperimental),
+                outPath: attemptOutPath,
+                sourceFps,
+                outputPlaybackRate,
+                audioGainDb,
+                audioPlaybackRate: segmentRate,
+                qualityCapOffset: attempt.qualityCapOffset,
+              }),
+            ];
+
+            appendFfmpegCommandLog(ffmpegArgs);
+            return { ffmpegArgs, outPath: attemptOutPath };
+          },
+          onProgress: (progress, metadata) => {
+            onStageChange?.(metadata);
+            onProgress(progress, metadata);
+          },
+        }),
       }),
     });
   } finally {
@@ -1163,7 +1212,7 @@ export async function exportSizeLimitedMerge({
   advancedAv1NvencPreset: SizeLimitAdvancedNvencPreset,
   advancedH264CpuPreset: SizeLimitAdvancedH264CpuPreset,
   advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
-  videoStream: Pick<FFprobeStream, 'index' | 'width' | 'height'>,
+  videoStream: Pick<FFprobeStream, 'index' | 'width' | 'height' | 'codec_name' | 'pix_fmt'>,
   audioStream: Pick<FFprobeStream, 'index'> | undefined,
   enableOverwriteOutput: boolean,
   ffmpegExperimental: boolean,
@@ -1241,79 +1290,112 @@ export async function exportSizeLimitedMerge({
         ({ strategy, plan } = next);
         return true;
       },
-      run: (hardwareDecode) => executeWithRetries({
-        outPath,
-        plan,
-        strategy,
-        buildAttempt: async (attempt, tempPath = outPath) => {
-          const attemptOutPath = makeAttemptPath(tempPath, attempt.attemptNumber);
-          const inputArgs = getMergeInputArgs({ filePath, segments, rotation, hardwareDecode });
-          const overlayInputArgs = buildOverlayImageInputArgs(preparedOverlayAssets.map(({ imagePath }) => imagePath));
-          const outputTrimArgs = ['-t', plannedDuration.toFixed(5)];
-          const videoProfile = resolveSizeLimitedVideoProfile({
-            resolution,
-            fps,
-            sourceWidth: videoStream.width,
-            sourceHeight: videoStream.height,
-            rotation: sourceRotation ?? rotation,
-            sourceFps,
-            plannedVideoBitrate: attempt.videoBitrate,
-          });
-          const dimensions = getRotatedVideoDimensions({ width: videoStream.width!, height: videoStream.height!, rotation: sourceRotation ?? rotation });
-          const filterComplex = getConcatFilter({
-            segments,
-            videoStreamIndex: videoStream.index,
-            audioStreamIndex: audioStream?.index,
-            videoProfile,
-            overlayAssets: preparedOverlayAssets,
-            outputPlaybackRate,
-            audioGainDb,
-            videoWidth: dimensions.width,
-            videoHeight: dimensions.height,
-          });
-          const applyAudioGainInFilterGraph = audioStream != null && !isNeutralAudioGain(audioGainDb);
+      run: (hardwareDecode) => runKeepingFramesOnGpu({
+        videoStream,
+        gpuFramesFormat: hardwareDecode ? getGpuFramesFormat({ videoStream, rates: segments.map((segment) => getSegmentPlaybackRate(segment, outputPlaybackRate)), rotation: sourceRotation ?? rotation }) : undefined,
+        run: (gpuFramesFormat) => executeWithRetries({
+          outPath,
+          plan,
+          strategy,
+          buildAttempt: async (attempt, tempPath = outPath) => {
+            const attemptOutPath = makeAttemptPath(tempPath, attempt.attemptNumber);
+            const inputArgs = getMergeInputArgs({ filePath, segments, rotation, hardwareDecode, keepFramesOnGpu: gpuFramesFormat != null });
+            const overlayInputArgs = buildOverlayImageInputArgs(preparedOverlayAssets.map(({ imagePath }) => imagePath));
+            const outputTrimArgs = ['-t', plannedDuration.toFixed(5)];
+            const videoProfile = resolveSizeLimitedVideoProfile({
+              resolution,
+              fps,
+              sourceWidth: videoStream.width,
+              sourceHeight: videoStream.height,
+              rotation: sourceRotation ?? rotation,
+              sourceFps,
+              plannedVideoBitrate: attempt.videoBitrate,
+            });
+            const dimensions = getRotatedVideoDimensions({ width: videoStream.width!, height: videoStream.height!, rotation: sourceRotation ?? rotation });
+            const filterComplex = getConcatFilter({
+              segments,
+              videoStreamIndex: videoStream.index,
+              audioStreamIndex: audioStream?.index,
+              videoProfile,
+              overlayAssets: preparedOverlayAssets,
+              outputPlaybackRate,
+              audioGainDb,
+              videoWidth: dimensions.width,
+              videoHeight: dimensions.height,
+              gpuFramesFormat,
+            });
+            const applyAudioGainInFilterGraph = audioStream != null && !isNeutralAudioGain(audioGainDb);
 
-          const commonArgs = [
-            ...inputArgs,
-            ...overlayInputArgs,
-          ];
-
-          if (strategy.executionMode === 'ffmpeg_two_pass') {
-            const passlogFile = makePasslogPath(tempPath, attempt.attemptNumber);
-            const pass1OutPath = makePass1Path(tempPath, attempt.attemptNumber);
-            const pass1Args = [
-              '-hide_banner',
-              ...getSizeLimitedSwsFlagsArgs(),
-              ...commonArgs,
-              // Pass one writes video only, but every complex-filter output must
-              // be consumed. Keep the concat timing identical and sink its audio.
-              '-filter_complex', audioStream != null ? `${filterComplex};[a]anullsink` : filterComplex,
-              ...outputTrimArgs,
-              ...getSizeLimitedTwoPassEncodeArgs({
-                strategy,
-                videoBitrate: attempt.videoBitrate,
-                audioBitrate: attempt.audioBitrate,
-                videoInputLabel: '[v]',
-                audioInputLabel: audioStream != null ? '[a]' : undefined,
-                videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
-                experimentalArgs: getExperimentalArgs(ffmpegExperimental),
-                passlogFile,
-                outPath: pass1OutPath,
-                passNumber: 1,
-                sourceFps,
-                outputPlaybackRate,
-                audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
-                qualityCapOffset: attempt.qualityCapOffset,
-              }),
+            const commonArgs = [
+              ...inputArgs,
+              ...overlayInputArgs,
             ];
 
-            const pass2Args = [
+            if (strategy.executionMode === 'ffmpeg_two_pass') {
+              const passlogFile = makePasslogPath(tempPath, attempt.attemptNumber);
+              const pass1OutPath = makePass1Path(tempPath, attempt.attemptNumber);
+              const pass1Args = [
+                '-hide_banner',
+                ...getSizeLimitedSwsFlagsArgs(),
+                ...commonArgs,
+                // Pass one writes video only, but every complex-filter output must
+                // be consumed. Keep the concat timing identical and sink its audio.
+                '-filter_complex', audioStream != null ? `${filterComplex};[a]anullsink` : filterComplex,
+                ...outputTrimArgs,
+                ...getSizeLimitedTwoPassEncodeArgs({
+                  strategy,
+                  videoBitrate: attempt.videoBitrate,
+                  audioBitrate: attempt.audioBitrate,
+                  videoInputLabel: '[v]',
+                  audioInputLabel: audioStream != null ? '[a]' : undefined,
+                  videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
+                  experimentalArgs: getExperimentalArgs(ffmpegExperimental),
+                  passlogFile,
+                  outPath: pass1OutPath,
+                  passNumber: 1,
+                  sourceFps,
+                  outputPlaybackRate,
+                  audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
+                  qualityCapOffset: attempt.qualityCapOffset,
+                }),
+              ];
+
+              const pass2Args = [
+                '-hide_banner',
+                ...getSizeLimitedSwsFlagsArgs(),
+                ...commonArgs,
+                '-filter_complex', filterComplex,
+                ...outputTrimArgs,
+                ...getSizeLimitedTwoPassEncodeArgs({
+                  strategy,
+                  videoBitrate: attempt.videoBitrate,
+                  audioBitrate: attempt.audioBitrate,
+                  videoInputLabel: '[v]',
+                  audioInputLabel: audioStream != null ? '[a]' : undefined,
+                  videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
+                  experimentalArgs: getExperimentalArgs(ffmpegExperimental),
+                  passlogFile,
+                  outPath: attemptOutPath,
+                  passNumber: 2,
+                  sourceFps,
+                  outputPlaybackRate,
+                  audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
+                  qualityCapOffset: attempt.qualityCapOffset,
+                }),
+              ];
+
+              appendFfmpegCommandLog(pass1Args);
+              appendFfmpegCommandLog(pass2Args);
+              return { ffmpegArgs: pass2Args, outPath: attemptOutPath, passlogFile, pass1Args, pass1OutPath };
+            }
+
+            const ffmpegArgs = [
               '-hide_banner',
               ...getSizeLimitedSwsFlagsArgs(),
               ...commonArgs,
               '-filter_complex', filterComplex,
               ...outputTrimArgs,
-              ...getSizeLimitedTwoPassEncodeArgs({
+              ...getSizeLimitedCommonEncodeArgs({
                 strategy,
                 videoBitrate: attempt.videoBitrate,
                 audioBitrate: attempt.audioBitrate,
@@ -1321,9 +1403,7 @@ export async function exportSizeLimitedMerge({
                 audioInputLabel: audioStream != null ? '[a]' : undefined,
                 videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
                 experimentalArgs: getExperimentalArgs(ffmpegExperimental),
-                passlogFile,
                 outPath: attemptOutPath,
-                passNumber: 2,
                 sourceFps,
                 outputPlaybackRate,
                 audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
@@ -1331,40 +1411,14 @@ export async function exportSizeLimitedMerge({
               }),
             ];
 
-            appendFfmpegCommandLog(pass1Args);
-            appendFfmpegCommandLog(pass2Args);
-            return { ffmpegArgs: pass2Args, outPath: attemptOutPath, passlogFile, pass1Args, pass1OutPath };
-          }
-
-          const ffmpegArgs = [
-            '-hide_banner',
-            ...getSizeLimitedSwsFlagsArgs(),
-            ...commonArgs,
-            '-filter_complex', filterComplex,
-            ...outputTrimArgs,
-            ...getSizeLimitedCommonEncodeArgs({
-              strategy,
-              videoBitrate: attempt.videoBitrate,
-              audioBitrate: attempt.audioBitrate,
-              videoInputLabel: '[v]',
-              audioInputLabel: audioStream != null ? '[a]' : undefined,
-              videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
-              experimentalArgs: getExperimentalArgs(ffmpegExperimental),
-              outPath: attemptOutPath,
-              sourceFps,
-              outputPlaybackRate,
-              audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
-              qualityCapOffset: attempt.qualityCapOffset,
-            }),
-          ];
-
-          appendFfmpegCommandLog(ffmpegArgs);
-          return { ffmpegArgs, outPath: attemptOutPath };
-        },
-        onProgress: (progress, metadata) => {
-          onStageChange?.(metadata);
-          onProgress(progress, metadata);
-        },
+            appendFfmpegCommandLog(ffmpegArgs);
+            return { ffmpegArgs, outPath: attemptOutPath };
+          },
+          onProgress: (progress, metadata) => {
+            onStageChange?.(metadata);
+            onProgress(progress, metadata);
+          },
+        }),
       }),
     });
   } finally {

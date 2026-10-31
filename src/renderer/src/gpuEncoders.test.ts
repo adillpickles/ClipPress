@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   getAmfQualityPreset,
+  getGpuFramesDownloadFormat,
+  getGpuFramesFilter,
   getHardwareDecodeArgs,
   getQsvPreset,
   getRegularExportVideoArgs,
@@ -63,6 +65,31 @@ describe('shouldUseHardwareDecode', () => {
     expect(shouldUseHardwareDecode({ ...base, inputCount: maxInputs + 1 })).toBe(false);
     expect(shouldUseHardwareDecode({ ...base, width: 3840, height: 2160, inputCount: 2 })).toBe(true);
     expect(shouldUseHardwareDecode({ ...base, width: 3840, height: 2160, inputCount: 3 })).toBe(false);
+  });
+});
+
+describe('frames kept on the GPU', () => {
+  it('asks the decoder to keep them there', () => {
+    expect(getHardwareDecodeArgs(true, true)).toEqual(['-hwaccel', 'd3d11va', '-hwaccel_output_format', 'd3d11']);
+    expect(getHardwareDecodeArgs(false, true)).toEqual([]);
+  });
+
+  it('copies them off in the format D3D11 decodes 8-bit and 10-bit video to', () => {
+    expect(getGpuFramesDownloadFormat('yuv420p')).toBe('nv12');
+    expect(getGpuFramesDownloadFormat('yuvj420p')).toBe('nv12');
+    expect(getGpuFramesDownloadFormat('yuv420p10le')).toBe('p010');
+    expect(getGpuFramesDownloadFormat('yuv444p')).toBeUndefined();
+    expect(getGpuFramesDownloadFormat(undefined)).toBeUndefined();
+  });
+
+  it('drops a sped-up clip to the export frame rate before copying', () => {
+    expect(getGpuFramesFilter({ rate: 4, downloadFormat: 'nv12', outputFps: undefined })).toBe('fps=source_fps,hwdownload,format=nv12');
+    expect(getGpuFramesFilter({ rate: 2, downloadFormat: 'p010', outputFps: 30 })).toBe('fps=30,hwdownload,format=p010');
+  });
+
+  it('copies every frame of a clip at normal speed or slower', () => {
+    expect(getGpuFramesFilter({ rate: 1, downloadFormat: 'nv12', outputFps: 30 })).toBe('hwdownload,format=nv12');
+    expect(getGpuFramesFilter({ rate: 0.5, downloadFormat: 'nv12', outputFps: undefined })).toBe('hwdownload,format=nv12');
   });
 });
 

@@ -79,6 +79,23 @@ describe('buildMergedOverlayFilters', () => {
 });
 
 describe('buildSegmentConcatFilters', () => {
+  it('drops sped-up frames on the GPU, then copies them off before the crop', () => {
+    const { graph } = buildSegmentConcatFilters({
+      segments: [
+        { start: 0, end: 2, speed: 4, crop: { x: 0, y: 0, width: 0.5, height: 0.5 } },
+        { start: 2, end: 4 },
+      ],
+      videoStreamIndex: 0,
+      audioStreamIndex: undefined,
+      outputPlaybackRate: 1,
+      videoWidth: 320,
+      videoHeight: 180,
+      gpuFrames: { downloadFormat: 'nv12', outputFps: undefined },
+    });
+    expect(graph[0]).toBe('[0:0]setpts=(PTS-STARTPTS)/4,fps=source_fps,hwdownload,format=nv12,crop=160:90:0:0,scale=320:180,setsar=1[segmentv0]');
+    expect(graph[1]).toBe('[1:0]setpts=(PTS-STARTPTS)/1,hwdownload,format=nv12[segmentv1]');
+  });
+
   it('crops each segment into a consistent frame before merging and keeps its speed', () => {
     const { graph } = buildSegmentConcatFilters({
       segments: [

@@ -123,8 +123,35 @@ export function shouldUseHardwareDecode({ platform, enabled, inputCount, width, 
 }
 
 /** Input options; place before each video `-i`. */
-export function getHardwareDecodeArgs(useHardwareDecode: boolean) {
-  return useHardwareDecode ? ['-hwaccel', 'd3d11va'] : [];
+export function getHardwareDecodeArgs(useHardwareDecode: boolean, keepFramesOnGpu = false) {
+  if (!useHardwareDecode) return [];
+  return keepFramesOnGpu ? ['-hwaccel', 'd3d11va', '-hwaccel_output_format', 'd3d11'] : ['-hwaccel', 'd3d11va'];
+}
+
+/**
+ * A sped-up clip decoded on the GPU can keep its frames there until `fps` has dropped the ones the export doesn't
+ * keep (at 400%, three in four): `setpts` and `fps` only read timestamps, so only the kept frames are copied to the
+ * CPU for the rest of the filters. That copy was most of a sped-up export's time (`notes/beta6-ux/perf/speedlab4.sh`):
+ * the owner's kind of share (two 1440p30 AV1 clips at 400%, a text, AV1 NVENC) took 3.9 s instead of 6.6 s, two
+ * 1080p60 HEVC clips 5.4 s instead of 9.4 s, 10-bit HEVC 2.7 s instead of 6.5 s, with as many frames and a size
+ * within 1%. It also drops them evenly from the first frame (the encoder's own dropping kept the first three).
+ *
+ * The format to copy the frames into, or undefined for a source D3D11 doesn't decode to one of these.
+ */
+export function getGpuFramesDownloadFormat(pixFmt: string | undefined) {
+  if (pixFmt === 'yuv420p' || pixFmt === 'yuvj420p') return 'nv12';
+  if (pixFmt === 'yuv420p10le') return 'p010';
+  return undefined;
+}
+
+/** Placed right after a clip's `setpts`: the frames to keep at the export's frame rate, copied off the GPU. */
+export function getGpuFramesFilter({ rate, downloadFormat, outputFps }: {
+  rate: number,
+  downloadFormat: string,
+  /** The export's frame rate when it's lowered; otherwise the source's, as FFmpeg sees it. */
+  outputFps: number | undefined,
+}) {
+  return [...(rate > 1 ? [`fps=${outputFps ?? 'source_fps'}`] : []), 'hwdownload', `format=${downloadFormat}`].join(',');
 }
 
 /**
