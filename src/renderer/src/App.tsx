@@ -301,7 +301,7 @@ import { ShelfUpNext } from './components/Shelf';
 import useShelf, { listShelfFolder } from './hooks/useShelf';
 import { useClipsFolder, useRecorderFolderOffer } from './hooks/useClipsFolder';
 import ClipsFolderList from './components/ClipsFolderList';
-import { buildShelfQueue, pickNextClip, rememberShelfExport, shelfThumbnailKey } from './shelf';
+import { buildShelfQueue, pickNextClip, rememberShelfExport, shelfPathKey, shelfThumbnailKey } from './shelf';
 import formatSizeLimitedProgressText, { getSizeLimitedStageTitle } from './sizeLimitedProgressText';
 import { findClipEdge, getEdgeSnapDistance } from './clipEdgeSnap';
 import { isSelfFileDrag } from './selfFileDrag';
@@ -2042,6 +2042,12 @@ function App() {
   // The start screen's newest clips from the clips folder, and the recorder folder to offer while none is linked.
   const onStartScreen = filePath == null && simpleMode;
   const clipsFolderClips = useClipsFolder({ folder: clipsFolder, exports: shelfExports, caseInsensitive: isWindows || isMac, active: onStartScreen });
+  // Recent leaves out a recording exported and then deleted (RecentFiles), from the same export list.
+  const exportedSourceKeys = useMemo(() => new Set(shelfExports.map(({ source }) => shelfPathKey(source, isWindows || isMac))), [shelfExports]);
+  const wasExportedSource = useCallback((path: string) => exportedSourceKeys.has(shelfPathKey(path, isWindows || isMac)), [exportedSourceKeys]);
+  const forgetRecentFiles = useCallback((paths: string[]) => {
+    setRecentFiles((list) => paths.reduce((remaining, path) => removeRecentFile(remaining, path, isWindows || isMac), list));
+  }, [setRecentFiles]);
   const recorderFolderOffer = useRecorderFolderOffer({ enabled: onStartScreen && clipsFolder == null && !clipsFolderOfferDismissed, exports: shelfExports, caseInsensitive: isWindows || isMac });
   // The shelf's next clip gets its filmstrip and waveform made in the background once the open one's are (and the
   // shelf's own thumbnails may be made), so Next clip opens it with them showing at once.
@@ -7412,7 +7418,9 @@ function App() {
                           files={recentFiles}
                           customOutDir={customOutDir}
                           onOpen={openRecentFile}
+                          wasExported={wasExportedSource}
                           onRemove={(path) => setRecentFiles((list) => removeRecentFile(list, path, isWindows || isMac))}
+                          onForget={forgetRecentFiles}
                           onClear={() => setRecentFiles([])}
                         />
                       </NoFileLoaded>

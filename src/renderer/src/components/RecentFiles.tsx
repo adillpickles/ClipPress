@@ -39,11 +39,15 @@ function displayName(path: string) {
  * Recordings opened lately, on the welcome screen. Marks the ones with saved edits (in ClipPress's folder, next to
  * them or in the export folder), so it is easy to pick up where you left off (#64).
  */
-function RecentFiles({ files, customOutDir, onOpen, onRemove, onClear }: {
+function RecentFiles({ files, customOutDir, wasExported, onOpen, onRemove, onForget, onClear }: {
   files: RecentFile[],
   customOutDir: string | undefined,
+  /** ClipPress exported this recording (the shelf's export list). */
+  wasExported: (path: string) => boolean,
   onOpen: (path: string) => void,
   onRemove: (path: string) => void,
+  /** Recordings exported and then deleted: done with, so they leave the list rather than show as Missing. */
+  onForget: (paths: string[]) => void,
   onClear: () => void,
 }) {
   const { t } = useTranslation();
@@ -66,10 +70,15 @@ function RecentFiles({ files, customOutDir, onOpen, onRemove, onClear }: {
         const [mediaExists, ...projectsExist] = await Promise.all([exists(path), ...projectPaths.map((projectPath) => exists(projectPath))]);
         return [path, { missing: !mediaExists, edited: projectsExist.some(Boolean) }] as const;
       }));
-      if (!cancelled) setStates(Object.fromEntries(entries));
+      // Exported, then gone from a folder that's still there: deleted (or moved) after the export. A missing folder
+      // may be a drive that's unplugged, so that one stays, as Missing.
+      const done = await Promise.all(entries.map(async ([path, state]) => (state.missing && wasExported(path) && await exists(dirname(path)) ? [path] : [])));
+      if (cancelled) return;
+      setStates(Object.fromEntries(entries));
+      if (done.flat().length > 0) onForget(done.flat());
     })();
     return () => { cancelled = true; };
-  }, [checkCount, customOutDir, files]);
+  }, [checkCount, customOutDir, files, onForget, wasExported]);
 
   if (files.length === 0) return null;
 
