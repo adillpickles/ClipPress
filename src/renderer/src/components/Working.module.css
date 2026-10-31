@@ -54,6 +54,15 @@
   line-height: 1.3;
 }
 
+/* One line, even for a moment while one line rolls into the next (a long translation ends in "…"). */
+.title > span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 /* What it's doing, under the playful line: clearly the smaller of the two. */
 .detail {
   margin-top: -.3rem;
@@ -95,16 +104,95 @@
   filter: grayscale(1) brightness(.42);
 }
 
-/* Where the light has got to: a thin glowing line in the accent colour. */
-.framesEdge {
+/* A sound-only file: its waveform as bars, dim, then in the accent colour where the export has got to. */
+.waveRow {
+  position: absolute;
+  inset: 0 .3rem;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  transition: clip-path .18s ease-out;
+}
+
+.waveBar {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 2px;
+  background: var(--cp-accent);
+}
+
+.framesDim .waveBar {
+  background: color-mix(in srgb, var(--cp-text-subtle) 40%, transparent);
+}
+
+/* Joined clips: each one's stretch in its timeline colour, faintly. */
+.tint {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 2px;
-  margin-left: -1px;
-  background: var(--cp-accent);
-  box-shadow: 0 0 10px 2px color-mix(in srgb, var(--cp-accent) 55%, transparent);
+  opacity: .2;
+  pointer-events: none;
+}
+
+/* Where the export has got to: a glowing line, a trail of light behind it over the lit pictures, and sparks
+   drifting back off it. Only transform and opacity move (and the edge's place), so the graphics card does it. */
+.edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
   transition: left .18s ease-out;
+}
+
+.trail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 7rem;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--cp-accent) 55%, transparent));
+}
+
+.edgeLine {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: -1.5px;
+  width: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--cp-accent) 55%, white);
+  box-shadow: 0 0 10px 3px color-mix(in srgb, var(--cp-accent) 80%, transparent), 0 0 22px 6px color-mix(in srgb, var(--cp-accent) 30%, transparent);
+  animation: edge-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes edge-pulse {
+  50% { opacity: .75; }
+}
+
+.spark {
+  position: absolute;
+  left: -2px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--cp-accent) 40%, white);
+  box-shadow: 0 0 6px 2px color-mix(in srgb, var(--cp-accent) 85%, transparent);
+  opacity: 0;
+  animation: spark-drift .95s ease-out infinite;
+}
+
+.spark:nth-child(3) { top: 14%; --spark-dy: -7px; animation-delay: 0s; }
+.spark:nth-child(4) { top: 62%; --spark-dy: 6px; animation-delay: .14s; }
+.spark:nth-child(5) { top: 34%; --spark-dy: -4px; animation-delay: .28s; }
+.spark:nth-child(6) { top: 80%; --spark-dy: 5px; animation-delay: .42s; animation-duration: 1.1s; }
+.spark:nth-child(7) { top: 46%; --spark-dy: -6px; animation-delay: .56s; }
+.spark:nth-child(8) { top: 24%; --spark-dy: 4px; animation-delay: .7s; animation-duration: .8s; }
+.spark:nth-child(9) { top: 70%; --spark-dy: -5px; animation-delay: .84s; }
+
+@keyframes spark-drift {
+  0% { opacity: 0; transform: translate(0, 0) scale(1); }
+  15% { opacity: .95; }
+  100% { opacity: 0; transform: translate(-3.2rem, var(--spark-dy, 0)) scale(.4); }
 }
 
 /* A second encode (the bar can't tell how far): a soft light runs across the dim pictures. */
@@ -122,8 +210,13 @@
 }
 
 .frames.still .frameRow,
-.frames.still .framesEdge {
+.frames.still .waveRow,
+.frames.still .edge {
   transition: none;
+}
+
+.frames.still .edgeLine {
+  animation: none;
 }
 
 .frames.still .framesSweep {

@@ -105,25 +105,54 @@ function useExportTitle(phase: ExportPhase | undefined, progress: number | undef
   return shownPhase != null ? line?.text : undefined;
 }
 
-/** Before this much of the bar and time, an estimate of what's left would only guess. */
+/** What an export's card shows as its progress, instead of the bar (Settings > Appearance > Export progress). */
+export interface ExportStrip {
+  /** The clip's own pictures (from the timeline's filmstrip), with the clip each is from. */
+  frames?: readonly { url: string, clip: number }[] | undefined,
+  /** A sound-only file: its waveform, as bars (0..1). */
+  waveform?: readonly number[] | undefined,
+  /** Joined clips: each clip's stretch of the strip, in its colour on the timeline. */
+  tints?: readonly { from: number, to: number, color: string }[] | undefined,
+  sparks: boolean,
+}
+
+/** Sparks drifting back off the leading edge, a fixed few (their paths are in the CSS). */
+const sparkCount = 7;
+
 /**
- * The clip being made: its own pictures (from the timeline's filmstrip), dim, lighting up from left to right as the
- * export goes; a soft light runs across them while the bar can't tell (a second encode).
+ * The clip being made, as the progress: its pictures (or waveform), dim, lighting up from left to right as the
+ * export goes, behind a glowing edge with a trail and sparks; a soft light runs across while there's no progress
+ * to show (the start, a second encode). CSS animations only (transform and opacity), so it costs next to nothing.
  */
-function ClipFrames({ frames, progress, reduceMotion }: { frames: readonly string[], progress: number | undefined, reduceMotion: boolean }) {
-  const lit = progress != null ? `${Math.min(100, Math.max(0, progress * 100))}%` : undefined;
-  const tiles = frames.map((url, index) => (
-    // eslint-disable-next-line react/no-array-index-key
-    <img key={index} src={url} alt="" draggable={false} />
-  ));
+function ExportStripView({ strip, progress, reduceMotion }: { strip: ExportStrip, progress: number | undefined, reduceMotion: boolean }) {
+  const lit = progress != null ? Math.min(100, Math.max(0, progress * 100)) : undefined;
+  const waveform = strip.waveform != null;
+  const row = waveform ? styles['waveRow'] : styles['frameRow'];
+  const content = waveform
+    ? strip.waveform!.map((level, index) => (
+      // eslint-disable-next-line react/no-array-index-key
+      <span key={index} className={styles['waveBar']} style={{ height: `${Math.max(8, level * 100)}%` }} />
+    ))
+    : (strip.frames ?? []).map(({ url }, index) => (
+      // eslint-disable-next-line react/no-array-index-key
+      <img key={index} src={url} alt="" draggable={false} />
+    ));
   return (
     <div className={[styles['frames'], ...(reduceMotion ? [styles['still']] : [])].join(' ')} aria-hidden>
-      <div className={[styles['frameRow'], styles['framesDim']].join(' ')}>{tiles}</div>
+      <div className={[row, styles['framesDim']].join(' ')}>{content}</div>
+      {lit != null && <div className={row} style={{ clipPath: `inset(0 ${100 - lit}% 0 0)` }}>{content}</div>}
+      {strip.tints?.map(({ from, to, color }) => (
+        <div key={from} className={styles['tint']} style={{ left: `${from * 100}%`, width: `${(to - from) * 100}%`, backgroundColor: color }} />
+      ))}
       {lit != null ? (
-        <>
-          <div className={styles['frameRow']} style={{ clipPath: `inset(0 calc(100% - ${lit}) 0 0)` }}>{tiles}</div>
-          <div className={styles['framesEdge']} style={{ left: lit }} />
-        </>
+        <div className={styles['edge']} style={{ left: `${lit}%` }}>
+          <div className={styles['trail']} />
+          <div className={styles['edgeLine']} />
+          {strip.sparks && !reduceMotion && lit < 100 && Array.from({ length: sparkCount }, (_, index) => (
+            // eslint-disable-next-line react/no-array-index-key
+            <span key={index} className={styles['spark']} />
+          ))}
+        </div>
       ) : (
         <div className={styles['framesSweep']} />
       )}
@@ -131,12 +160,12 @@ function ClipFrames({ frames, progress, reduceMotion }: { frames: readonly strin
   );
 }
 
-function WorkingCard({ text, detailText, phase, progress, frames, onAbortClick }: {
+function WorkingCard({ text, detailText, phase, progress, strip, onAbortClick }: {
   text: string,
   detailText?: string | undefined,
   phase?: ExportPhase | undefined,
   progress?: number | undefined,
-  frames?: readonly string[] | undefined,
+  strip?: ExportStrip | undefined,
   onAbortClick: () => void
 }) {
   const { t } = useTranslation();
@@ -191,7 +220,7 @@ function WorkingCard({ text, detailText, phase, progress, frames, onAbortClick }
           </div>
         )}
 
-        {frames != null && frames.length > 0 && <ClipFrames frames={frames} progress={shownProgress} reduceMotion={reduceMotion} />}
+        {strip != null && <ExportStripView strip={strip} progress={shownProgress} reduceMotion={reduceMotion} />}
 
         <div className={styles['metaRow']}>
           {/* The time so far: it moves, so it's clearly not stuck. (A time left was tried in 6.1 and dropped: too far off
@@ -207,14 +236,14 @@ function WorkingCard({ text, detailText, phase, progress, frames, onAbortClick }
         </div>
 
         {/* A soft shimmer runs along the bar, so it's clear work goes on while the percent moves slowly; with no
-            percent yet, a sweep. */}
-        {shownProgress != null ? (
+            percent yet, a sweep. Not with the strip: it's the progress then. */}
+        {strip == null && (shownProgress != null ? (
           <div className={styles['progressTrack']}>
             <div className={[styles['progressFill'], ...(reduceMotion ? [styles['still']] : [])].join(' ')} style={{ width: `${Math.max(shownProgress * 100, 4)}%` }} />
           </div>
         ) : (
           <div className={[styles['indeterminate'], styles['indeterminateTall'], ...(reduceMotion ? [styles['still']] : [])].join(' ')} aria-hidden />
-        )}
+        ))}
 
         <div className={styles['actions']}>
           <Button onClick={onAbortClick}>{t('Cancel')}</Button>
@@ -224,19 +253,19 @@ function WorkingCard({ text, detailText, phase, progress, frames, onAbortClick }
   );
 }
 
-function Working({ text, detailText, phase, progress, frames, quiet = false, onAbortClick }: {
+function Working({ text, detailText, phase, progress, strip, quiet = false, onAbortClick }: {
   text: string,
   detailText?: string | undefined,
   /** An export in the simple editor: its title is a playful line for this phase rather than `text`. */
   phase?: ExportPhase | undefined,
   progress?: number | undefined,
-  /** An export's pictures of the clips being made (exportFrames.ts). */
-  frames?: readonly string[] | undefined,
+  /** An export's strip of the clips being made (exportFrames.ts), in place of the bar. */
+  strip?: ExportStrip | undefined,
   quiet?: boolean | undefined,
   onAbortClick: () => void
 }) {
   if (quiet) return <QuietWorking text={text} onAbortClick={onAbortClick} />;
-  return <WorkingCard text={text} detailText={detailText} phase={phase} progress={progress} frames={frames} onAbortClick={onAbortClick} />;
+  return <WorkingCard text={text} detailText={detailText} phase={phase} progress={progress} strip={strip} onAbortClick={onAbortClick} />;
 }
 
 /**

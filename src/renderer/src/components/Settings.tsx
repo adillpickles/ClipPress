@@ -58,7 +58,7 @@ function Settings({
     window.require('electron').shell.openPath(getProjectsDir(getProjectStoreEnv())).catch?.(() => undefined);
   }, []);
 
-  const { customOutDir, clipsFolder, setClipsFolder, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, waveformHeight, setWaveformHeight, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport, enableAdvancedMode, setEnableAdvancedMode, trashProjectWithSource, setTrashProjectWithSource, copyAfterExport, setCopyAfterExport, playOnOpen, setPlayOnOpen } = useUserSettings();
+  const { customOutDir, clipsFolder, setClipsFolder, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, waveformHeight, setWaveformHeight, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, exportProgressStyle, setExportProgressStyle, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport, enableAdvancedMode, setEnableAdvancedMode, trashProjectWithSource, setTrashProjectWithSource, copyAfterExport, setCopyAfterExport, playOnOpen, setPlayOnOpen } = useUserSettings();
 
   const onLangChange = useCallback<ChangeEventHandler<HTMLSelectElement>>((e) => {
     const { value } = e.target;
@@ -120,6 +120,7 @@ function Settings({
     if (!canceled && folder != null) setClipsFolder(folder);
   }, [clipsFolder, setClipsFolder, t]);
   const reducedMotionId = useId();
+  const exportProgressId = useId();
   const timecodeId = useId();
   const outputDateId = useId();
   const sourceDateId = useId();
@@ -222,6 +223,15 @@ function Settings({
             <SettingRow label={t('Reduce motion')} description={t('Turn off animations.')} controlId={reducedMotionId}>
               <Select id={reducedMotionId} value={reducedMotion} onChange={(e) => setReducedMotion(e.target.value as Config['reducedMotion'])}>
                 {Object.entries({ user: t('System default'), always: t('Yes'), never: t('No') } satisfies Record<Config['reducedMotion'], string>).map(([key, value]) => (
+                  <option key={key} value={key}>{value}</option>
+                ))}
+              </Select>
+            </SettingRow>
+
+            {/* The export card: the clip's own pictures lighting up (a waveform for sound only), or the plain bar. */}
+            <SettingRow label={t('Export progress')} description={t('What the card shows while a clip exports.')} controlId={exportProgressId}>
+              <Select id={exportProgressId} value={exportProgressStyle} onChange={(e) => setExportProgressStyle(e.target.value as Config['exportProgressStyle'])}>
+                {Object.entries({ 'pictures-sparks': t('Clip pictures with sparks'), pictures: t('Clip pictures'), bar: t('Simple bar') } satisfies Record<Config['exportProgressStyle'], string>).map(([key, value]) => (
                   <option key={key} value={key}>{value}</option>
                 ))}
               </Select>

@@ -97,6 +97,7 @@ const defaults: Config = {
   allowMultipleInstances: false,
   darkMode: true,
   preferStrongColors: false,
+  exportProgressStyle: 'pictures-sparks',
   outputFileNameMinZeroPadding: 1,
   cutFromAdjustmentFrames: 0,
   cutToAdjustmentFrames: 0,

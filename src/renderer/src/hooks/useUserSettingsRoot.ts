@@ -208,6 +208,8 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ darkMode }), [darkMode]);
   const [preferStrongColors, setPreferStrongColors] = useState(safeGetConfigInitial('preferStrongColors'));
   useEffect(() => safeSetConfig({ preferStrongColors }), [preferStrongColors]);
+  const [exportProgressStyle, setExportProgressStyle] = useState(safeGetConfigInitial('exportProgressStyle'));
+  useEffect(() => safeSetConfig({ exportProgressStyle }), [exportProgressStyle]);
   const [outputFileNameMinZeroPadding, setOutputFileNameMinZeroPadding] = useState(safeGetConfigInitial('outputFileNameMinZeroPadding'));
   useEffect(() => safeSetConfig({ outputFileNameMinZeroPadding }), [outputFileNameMinZeroPadding]);
   const [cutFromAdjustmentFrames, setCutFromAdjustmentFrames] = useState(safeGetConfigInitial('cutFromAdjustmentFrames'));
@@ -388,6 +390,7 @@ export default function useUserSettingsRoot() {
     allowMultipleInstances,
     darkMode,
     preferStrongColors,
+    exportProgressStyle,
     outputFileNameMinZeroPadding,
     cutFromAdjustmentFrames,
     cutToAdjustmentFrames,
@@ -491,6 +494,7 @@ export default function useUserSettingsRoot() {
     allowMultipleInstances,
     darkMode,
     preferStrongColors,
+    exportProgressStyle,
     outputFileNameMinZeroPadding,
     cutFromAdjustmentFrames,
     cutToAdjustmentFrames,
@@ -613,6 +617,7 @@ export default function useUserSettingsRoot() {
     setAllowMultipleInstances,
     toggleDarkMode,
     setPreferStrongColors,
+    setExportProgressStyle,
     setOutputFileNameMinZeroPadding,
     setCutFromAdjustmentFrames,
     setCutToAdjustmentFrames,

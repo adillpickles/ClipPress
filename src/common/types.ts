@@ -179,6 +179,8 @@ export interface Config {
   allowMultipleInstances: boolean,
   darkMode: boolean,
   preferStrongColors: boolean,
+  /** The export card: the clip's pictures (or waveform) as the progress, with sparks or without, or the plain bar. */
+  exportProgressStyle: 'pictures-sparks' | 'pictures' | 'bar',
   outputFileNameMinZeroPadding: number,
   cutFromAdjustmentFrames: number,
   cutToAdjustmentFrames: number,

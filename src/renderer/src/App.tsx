@@ -58,7 +58,7 @@ import BottomBar from './BottomBar';
 import ExportConfirm from './components/ExportConfirm';
 import TextOverlayEditor from './components/TextOverlayEditor';
 import SegmentSpeedDialog from './components/SegmentSpeedDialog';
-import { getPreviewSegment, getPreviewSegmentSpeed, getSegmentSpeed, isSegmentSpeedValid } from './segmentSpeed';
+import { getPreviewSegment, getPreviewSegmentSpeed, getSegmentOutputDuration, getSegmentSpeed, isSegmentSpeedValid } from './segmentSpeed';
 import SegmentCropPreview from './components/SegmentCropPreview';
 import { getSegmentCrop, hasSegmentCrop } from './segmentCrop';
 import type { SegmentCrop } from './segmentCrop';
@@ -67,6 +67,7 @@ import PlaybackStreamSelector from './components/PlaybackStreamSelector';
 import BatchFilesList from './components/BatchFilesList';
 import ConcatDialog from './components/ConcatDialog';
 import Working from './components/Working';
+import type { ExportStrip } from './components/Working';
 import OutputFormatSelect from './components/OutputFormatSelect';
 import * as Dialog from './components/Dialog';
 
@@ -285,7 +286,7 @@ import useStreamsMeta from './hooks/useStreamsMeta';
 import { bottomStyle, videoStyle } from './styles';
 import PreviewSpinner from './components/PreviewSpinner';
 import useFilmstrip from './hooks/useFilmstrip';
-import pickExportFrames from './exportFrames';
+import pickExportFrames, { getExportClipSpans, pickExportWaveform } from './exportFrames';
 import { getTimelineCacheKey } from './timelineCache';
 import { getVideoDisplayAspect } from './filmstrip';
 import { schedulePruneTimelineCache } from './timelineCacheIo';
@@ -562,6 +563,7 @@ function App() {
     cleanupChoices,
     darkMode,
     preferStrongColors,
+    exportProgressStyle,
     outputFileNameMinZeroPadding,
     cutFromAdjustmentFrames,
     cutToAdjustmentFrames,
@@ -2013,14 +2015,6 @@ function App() {
     aspect: filmstripAspect,
   });
 
-  // An export's card shows the clips being made, from the filmstrip already made: as many pictures as fit its
-  // strip (2.75rem high, ~23rem wide).
-  const exportFrames = useMemo(() => {
-    if (working?.phase == null || filmstrip.aspect == null) return undefined;
-    const count = Math.min(8, Math.max(3, Math.round(23 / (2.75 * filmstrip.aspect))));
-    return pickExportFrames(filmstrip.frames, segmentsToExport, count);
-  }, [filmstrip.aspect, filmstrip.frames, segmentsToExport, working?.phase]);
-
   // Simple mode's audio track under the clips: its waveform, made once per open recording.
   const showAudioLane = simpleMode && hasAudio;
   const { peaks: audioPeaks, done: audioPeaksDone } = useAudioPeaks({
@@ -2031,6 +2025,25 @@ function App() {
     cacheKey: timelineCacheKey,
     whenReady: whenVideoLoaded,
   });
+  // An export's card shows the clips being made as its progress (Settings > Appearance > Export progress), from what
+  // the timeline already made: as many pictures as fit the strip (2.75rem high, ~23rem wide), or for a sound-only
+  // file its waveform; joined clips each in their timeline colour.
+  const exportStrip = useMemo<ExportStrip | undefined>(() => {
+    if (working?.phase == null || exportProgressStyle === 'bar') return undefined;
+    const clips = segmentsToExport.map((segment) => ({ start: segment.start, end: segment.end, outputDuration: getSegmentOutputDuration(segment, outputPlaybackRate) }));
+    const tints = clips.length > 1
+      ? getExportClipSpans(clips).map((span, index) => ({ ...span, color: segColorsContext.getSegColor(cutSegments[segmentsToExport[index]!.originalIndex]).hex() }))
+      : undefined;
+    const sparks = exportProgressStyle === 'pictures-sparks';
+    if (hasVideo) {
+      if (filmstrip.aspect == null) return undefined;
+      const frames = pickExportFrames(filmstrip.frames, clips, Math.min(8, Math.max(3, Math.round(23 / (2.75 * filmstrip.aspect)))));
+      return frames.length > 0 ? { frames, tints, sparks } : undefined;
+    }
+    const waveform = audioPeaks != null ? pickExportWaveform(audioPeaks, clips, 64) : [];
+    return waveform.length > 0 ? { waveform, tints, sparks } : undefined;
+  }, [audioPeaks, cutSegments, exportProgressStyle, filmstrip.aspect, filmstrip.frames, hasVideo, outputPlaybackRate, segColorsContext, segmentsToExport, working?.phase]);
+
   // While the filmstrip and the waveform of a recording that's opening are made, background work waits (keyframes,
   // FFmpeg's self-check, the encoder check).
   const openWorkPending = filePath != null && isDurationValid(openDuration)
@@ -8100,7 +8113,7 @@ function App() {
                     phase={working.phase}
                     quiet={working.quiet}
                     progress={progress}
-                    frames={exportFrames}
+                    strip={exportStrip}
                     onAbortClick={abortWorking}
                   />
                 )}
