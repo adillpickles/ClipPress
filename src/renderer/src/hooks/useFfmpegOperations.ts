@@ -1088,6 +1088,9 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         await cutEncodeSmartPart({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate: encCustomBitrate != null ? encCustomBitrate * 1000 : sourceCodecParams.videoBitrate, videoStreamIndex: videoStream.index, videoTimebase: sourceCodecParams.videoTimebase, allFilesMeta, copyFileStreams: copyFileStreamsFiltered, paramsByStreamId, ffmpegExperimental, hasBFrames: sourceCodecParams.videoStream.has_b_frames, clipVolume, forceAudioEncode: encodeAllAudio });
       }
 
+      // used when the final output file was produced by encoding or concat, because they don't transfer the timestamps of the segment
+      const transferSegmentTimestamps = async () => transferTimestamps({ inPath: filePath, outPath: finalOutPath, cutFrom: desiredCutFrom, cutTo, duration: isDurationValid(fileDuration) ? fileDuration : undefined, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart });
+
       const cutEncodeWholePart = async () => {
         // Through a temporary file like every export, so a cancelled or failed one leaves nothing half written.
         const partialPath = getPartialPath(finalOutPath);
@@ -1097,6 +1100,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         } finally {
           await removePartial(partialPath);
         }
+        await transferSegmentTimestamps();
         onSingleProgress(i, 1);
         return { path: finalOutPath, created: true };
       };
@@ -1157,6 +1161,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         const { streams: streamsAfterCut } = await readFileFfprobeMeta(losslessPartOutPath);
 
         await concatFiles({ paths: smartCutSegmentsToConcat, outDir: outputDir, outPath: finalOutPath, metadataFromPath: losslessPartOutPath, outFormat, includeAllStreams: true, streams: streamsAfterCut, ffmpegExperimental, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge, videoTimebase, onProgress: onConcatProgress, signal });
+        // concatFiles copied the timestamps of the lossless part (which starts at the next keyframe, not at the segment start)
+        await transferSegmentTimestamps();
         onSingleProgress(i, 1);
         return { path: finalOutPath, created: true };
       } finally {
@@ -1187,7 +1193,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     } finally {
       if (chaptersPath) await tryDeleteFiles([chaptersPath]);
     }
-  }, [shouldSkipExistingFile, assertOutPathIsNotSource, isEncoding, filePath, lossyMode, losslessCutSingle, cutEncodeSmartPart, encCustomBitrate, concatFiles, enableOverwriteOutput]);
+  }, [shouldSkipExistingFile, assertOutPathIsNotSource, isEncoding, filePath, lossyMode, losslessCutSingle, cutEncodeSmartPart, encCustomBitrate, concatFiles, enableOverwriteOutput, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   const concatCutSegments = useCallback(async ({ customOutDir, outFormat, segmentPaths, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapterNames, preserveMetadataOnMerge, mergedOutFilePath, signal }: {
     customOutDir: string | undefined,
