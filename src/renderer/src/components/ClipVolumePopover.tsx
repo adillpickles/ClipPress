@@ -17,7 +17,7 @@ export interface ClipVolumeChange {
  * right-clicking the clip on the audio track. It changes the export, on top of the track volume (when that isn't
  * 100%, a line says what the clip really plays at).
  */
-function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, trackGainDb, onChange, onClose }: {
+function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, trackGainDb, onChange, onClose, fallbackFocus }: {
   anchor: HTMLElement | { x: number, y: number },
   clipLabel: string,
   audioGainDb: number | undefined,
@@ -27,10 +27,13 @@ function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, trackGa
   /** `dragId` while the slider moves: changes with the same id are one undo step. */
   onChange: (volume: ClipVolumeChange, dragId: number | undefined) => void,
   onClose: () => void,
+  /** Where focus goes on closing when its opener is gone (the volume badge goes once the clip is back to 100%). */
+  fallbackFocus?: (() => HTMLElement | null | undefined) | undefined,
 }) {
   const { t } = useTranslation();
   const ticksId = useId();
   const pointerDownRef = useRef(false);
+  const sliderRef = useRef<HTMLInputElement>(null);
   // Each press or focus of the slider starts a new undo step.
   const dragIdRef = useRef(0);
   // The level before the slider was dragged down to 0, which un-muting brings back.
@@ -69,7 +72,7 @@ function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, trackGa
 
   return (
     // Opened from the clip's volume badge with the keyboard, focus moves into it (see AnchoredPopover).
-    <AnchoredPopover anchor={anchor} onClose={onClose} label={t('Clip volume')} keyboardFocus>
+    <AnchoredPopover anchor={anchor} side={anchor instanceof HTMLElement ? 'below' : 'above'} onClose={onClose} label={t('Clip volume')} keyboardFocus fallbackFocus={fallbackFocus}>
       <div className={styles['heading']}>
         <span className={styles['title']}>{t('Clip volume')}</span>
         <span className={styles['clipName']}>{clipLabel}</span>
@@ -86,6 +89,7 @@ function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, trackGa
           <MuteIcon aria-hidden />
         </button>
         <input
+          ref={sliderRef}
           className={styles['slider']}
           type="range"
           min={0}
@@ -111,7 +115,11 @@ function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, trackGa
         <button
           type="button"
           className={styles['resetButton']}
-          onClick={() => onChange({ audioGainDb: undefined, audioMuted: false }, undefined)}
+          onClick={() => {
+            onChange({ audioGainDb: undefined, audioMuted: false }, undefined);
+            // The button turns disabled at 100%: keep focus in the popover, on the slider.
+            sliderRef.current?.focus({ preventScroll: true });
+          }}
           disabled={!changed}
           title={t('Back to 100%')}
           aria-label={t('Back to 100%')}

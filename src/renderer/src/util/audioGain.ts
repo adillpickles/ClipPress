@@ -1,3 +1,5 @@
+import type { TFunction } from 'i18next';
+
 /**
  * Audio gain limits and the two predicates that read them.
  *
@@ -48,6 +50,13 @@ export function sliderPercentToTrackGainDb(percent: number) {
 }
 
 export const isClipVolumeChanged = (clip: ClipVolume) => clip.audioMuted === true || !isNeutralAudioGain(clip.audioGainDb);
+
+/** The "Clip volume…" menu item, showing a changed volume (the timeline's and the Clips panel's menus). */
+export function getClipVolumeMenuLabel(clip: ClipVolume, t: TFunction) {
+  if (clip.audioMuted) return t('Clip volume (muted)…');
+  if (isClipVolumeChanged(clip)) return t('Clip volume ({{percent}}%)…', { percent: dbToPercent(clip.audioGainDb ?? 0) });
+  return t('Clip volume…');
+}
 
 /** Saved projects may carry anything; keep a usable value instead of rejecting the project. */
 export function sanitizeClipGainDb(audioGainDb: unknown) {

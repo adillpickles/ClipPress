@@ -22,6 +22,7 @@ import { saveColor, primaryTextColor, darkModeTransition, getSegBadgeStyle, getS
 import { useSegColors } from './contexts';
 import { getSegmentsTotalDuration, getSegmentTags } from './segments';
 import formatClockTime, { formatClipLength } from './util/clockTime';
+import { getClipVolumeMenuLabel } from './util/audioGain';
 import TagEditor from './components/TagEditor';
 import type { ContextMenuTemplate, DefiniteSegmentBase, FormatTimecode, GetFrameCount, InverseCutSegment, SegmentBase, SegmentColorIndex, SegmentTags, StateSegment } from './types';
 import type { UseSegments } from './hooks/useSegments';
@@ -141,7 +142,7 @@ const Segment = memo(({
   onInvertSelectedSegments,
   onDuplicateSegmentClick,
   getSegEstimatedSize,
-  onEditSpeed, onEditCrop, noneTicked = false, renaming = false, onStartRename, onFinishRename, maxLabelLength,
+  onEditSpeed, onEditCrop, onEditVolume, noneTicked = false, renaming = false, onStartRename, onFinishRename, maxLabelLength,
   inPickedGroup = false, onRemovePicked, menuKeys,
 }: {
   seg: StateSegment | InverseCutSegment,
@@ -184,6 +185,8 @@ const Segment = memo(({
   getSegEstimatedSize: UseSegments['getSegEstimatedSize'],
   onEditSpeed: (segmentIndex: number) => void,
   onEditCrop: (segmentIndex: number) => void,
+  /** Opens the clip's volume popover at its card (simple mode). */
+  onEditVolume?: ((segmentIndex: number, anchor: HTMLElement) => void) | undefined,
   /** No clip is ticked, so the export takes all of them. */
   noneTicked?: boolean,
   /** The list keeps track of which clip is being renamed, so its row stays mounted while scrolled out of view. */
@@ -215,6 +218,8 @@ const Segment = memo(({
       return [
         { label: t('Rename clip'), keys: inPickedGroup ? undefined : menuKeys?.rename, click: startRenaming },
         { label: t('Duplicate clip'), keys: inPickedGroup ? undefined : menuKeys?.duplicate, click: () => onDuplicateSegmentClick(seg) },
+        // Also from the keyboard (the menu key on the card): the timeline's clip blocks can't take focus.
+        ...(onEditVolume != null && seg.end != null ? [{ label: getClipVolumeMenuLabel(seg, t), click: () => { if (ref.current != null) onEditVolume(index, ref.current); } }] : []),
 
         { type: 'separator' },
 
@@ -271,7 +276,7 @@ const Segment = memo(({
       { label: t('Segment tags'), click: () => onEditSegmentTags(index) },
       { label: t('Extract frames as image files'), click: () => onExtractSegmentsFramesAsImages([seg]) },
     ];
-  }, [invertCutSegments, simpleMode, startRenaming, inPickedGroup, menuKeys, onRemovePicked, selected, onToggleSegmentSelected, t, addSegment, onLabelSelectedSegments, onRemoveSelected, onExtractSelectedSegmentsFramesAsImages, updateSegOrder, index, jumpSegStart, jumpSegEnd, onLabelPress, onRemovePress, onDuplicateSegmentClick, seg, onSelectSingleSegment, onSelectAllSegments, onDeselectAllSegments, onSelectAllMarkers, onSelectSegmentsByLabel, onSelectSegmentsByExpr, onInvertSelectedSegments, onMutateSegmentsByExpr, onReorderPress, onEditSegmentTags, onExtractSegmentsFramesAsImages, onEditSpeed, onEditCrop]);
+  }, [invertCutSegments, simpleMode, startRenaming, inPickedGroup, menuKeys, onRemovePicked, selected, onToggleSegmentSelected, t, addSegment, onLabelSelectedSegments, onRemoveSelected, onExtractSelectedSegmentsFramesAsImages, updateSegOrder, index, jumpSegStart, jumpSegEnd, onLabelPress, onRemovePress, onDuplicateSegmentClick, seg, onSelectSingleSegment, onSelectAllSegments, onDeselectAllSegments, onSelectAllMarkers, onSelectSegmentsByLabel, onSelectSegmentsByExpr, onInvertSelectedSegments, onMutateSegmentsByExpr, onReorderPress, onEditSegmentTags, onExtractSegmentsFramesAsImages, onEditSpeed, onEditCrop, onEditVolume]);
 
   useContextMenu(ref, contextMenuTemplate);
 
@@ -419,6 +424,8 @@ const Segment = memo(({
       <div
         ref={setRef}
         role="button"
+        // Found by the clip volume popover, to give focus back to this card (App).
+        data-clip-card={seg.segId}
         onClick={handleSegmentClick}
         onDoubleClick={onDoubleClick}
         // As in Explorer: the clip right-clicked is the one selected (picked along with others, they all stay).
@@ -592,7 +599,7 @@ function SegmentList({
   setEditingSegmentTagsSegmentIndex,
   onEditSegmentTags,
   getSegEstimatedSize,
-  onEditSpeed, onEditCrop, maxLabelLength,
+  onEditSpeed, onEditCrop, onEditVolume, maxLabelLength,
   renamingSegId, setRenamingSegId,
   pickedClipIds, onPickClipsInBox, onStartOver, animated, onRemovePicked, menuKeys, togglePanelKeys,
 }: {
@@ -646,6 +653,8 @@ function SegmentList({
   getSegEstimatedSize: UseSegments['getSegEstimatedSize'],
   onEditSpeed: (segmentIndex: number) => void,
   onEditCrop: (segmentIndex: number) => void,
+  /** Opens the clip's volume popover at its card (simple mode). */
+  onEditVolume?: ((segmentIndex: number, anchor: HTMLElement) => void) | undefined,
   maxLabelLength: number,
   /** The clip whose name is being edited in place. Held by the app, so "Rename clip…" in the menu can start it too. */
   renamingSegId: string | undefined,
@@ -991,6 +1000,7 @@ function SegmentList({
         getSegEstimatedSize={getSegEstimatedSize}
         onEditSpeed={onEditSpeed}
         onEditCrop={onEditCrop}
+        onEditVolume={onEditVolume}
         noneTicked={noneTicked}
         renaming={!dragging && seg.segId === renamingSegId}
         onStartRename={setRenamingSegId}

@@ -1455,13 +1455,20 @@ function App() {
     updateSegAtIndex(index, { audioGainDb, audioMuted }, dragId != null ? { coalesceKey: `clip-volume:${segmentId}:${dragId}` } : undefined);
   }, [cutSegments, invertCutSegments, updateSegAtIndex, workingRef]);
 
-  const [clipVolumeEditor, setClipVolumeEditor] = useState<{ segId: string, anchor: { x: number, y: number } }>();
-  const editClipVolume = useCallback((index: number, point: { x: number, y: number }) => {
+  // Opened at the point right-clicked on the timeline, or at the clip's card in the Clips panel.
+  const [clipVolumeEditor, setClipVolumeEditor] = useState<{ segId: string, anchor: HTMLElement | { x: number, y: number } }>();
+  const editClipVolume = useCallback((index: number, anchor: HTMLElement | { x: number, y: number }) => {
     const segment = cutSegments[index];
     if (segment?.end == null || invertCutSegments || workingRef.current) return;
     setCurrentSegIndex(index);
-    setClipVolumeEditor({ segId: segment.segId, anchor: point });
+    setClipVolumeEditor({ segId: segment.segId, anchor });
   }, [cutSegments, invertCutSegments, setCurrentSegIndex, workingRef]);
+  // When its opener (the volume badge) is gone on closing: the clip's card if the panel shows, else the track's speaker.
+  const clipVolumeFallbackFocus = useCallback(() => {
+    const segId = clipVolumeEditor?.segId;
+    const card = segId != null ? document.querySelector<HTMLElement>(`[data-clip-card="${CSS.escape(segId)}"] button`) : null;
+    return card ?? document.querySelector<HTMLElement>('[data-track-volume]');
+  }, [clipVolumeEditor?.segId]);
   const clipVolumeEditorIndex = clipVolumeEditor != null ? cutSegments.findIndex((segment) => segment.segId === clipVolumeEditor.segId) : -1;
   const clipVolumeEditorSegment = cutSegments[clipVolumeEditorIndex];
   const closeClipVolumeEditor = useCallback(() => setClipVolumeEditor(undefined), []);
@@ -7748,6 +7755,7 @@ function App() {
                       getSegEstimatedSize={getSegEstimatedSize}
                       onEditSpeed={editSegmentSpeed}
                       onEditCrop={editSegmentCrop}
+                      onEditVolume={simpleMode ? editClipVolume : undefined}
                       renamingSegId={renamingSegId}
                       setRenamingSegId={setRenamingSegId}
                       pickedClipIds={pickedClips}
@@ -7770,6 +7778,7 @@ function App() {
                   trackGainDb={sharedTrackGainDb}
                   onChange={onClipVolumeChange}
                   onClose={closeClipVolumeEditor}
+                  fallbackFocus={clipVolumeFallbackFocus}
                 />
               )}
 
