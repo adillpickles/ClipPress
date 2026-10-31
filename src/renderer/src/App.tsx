@@ -7228,15 +7228,24 @@ function App() {
     thumbnails: shelf.thumbnails,
     requestThumbnail: shelf.requestThumbnail,
   }), [chooseShelfFolder, filePath, nextClip?.path, openShelfClip, setShelfOrder, shelf.queue, shelf.requestThumbnail, shelf.thumbnails, shelfFolder, shelfOrder]);
+  // The audio track's one Track volume is "the whole recording, in the export": with a second track in the recording
+  // (OBS's game + mic, say) that only plays in the export, it changes that one too, not just the track you hear.
+  const setTrackVolume = useCallback((streamId: number, audioGainDb: number) => {
+    if (previewAudioGainControls.length !== 1) {
+      updateAudioGainForStream(streamId, audioGainDb);
+      return;
+    }
+    for (const stream of audioStreams) updateAudioGainForStream(stream.index, audioGainDb);
+  }, [audioStreams, previewAudioGainControls.length, updateAudioGainForStream]);
   const audioHeader = useMemo(() => (
     <AudioTrackHeader
       previewVolume={playbackVolume}
       onPreviewVolumeChange={setPlaybackVolume}
       onTogglePreviewMuted={toggleMuted}
       gainControls={previewAudioGainControls}
-      onGainChange={updateAudioGainForStream}
+      onGainChange={setTrackVolume}
     />
-  ), [playbackVolume, previewAudioGainControls, setPlaybackVolume, toggleMuted, updateAudioGainForStream]);
+  ), [playbackVolume, previewAudioGainControls, setPlaybackVolume, setTrackVolume, toggleMuted]);
   const editCurrentSegmentCrop = useCallback(() => editSegmentCrop(currentSegIndexSafe), [currentSegIndexSafe, editSegmentCrop]);
   const closeConcatDialog = useCallback(() => setConcatDialogOpen(false), []);
   const closeKeyboardShortcuts = useCallback(() => {
