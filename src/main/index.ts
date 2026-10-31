@@ -48,6 +48,10 @@ electronUnhandled({ showDialog: true, logger: (err) => logger.error('electron-un
 // https://peter.sh/experiments/chromium-command-line-switches/
 // https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/platform/runtime_enabled_features.json5
 app.commandLine.appendSwitch('enable-blink-features', 'AudioVideoTracks');
+// OS media keys and the media session don't work with our player (they play a single frame), and would show an empty
+// entry in the OS media controls, so turn them off (LosslessCut #3028).
+// appendSwitch replaces any value already given, e.g. on the command line, so keep it
+app.commandLine.appendSwitch('disable-features', [app.commandLine.getSwitchValue('disable-features'), 'HardwareMediaKeyHandling', 'MediaSessionService'].filter(Boolean).join(','));
 // Windows 11's thin scroll bars, shown while scrolling and without arrows, wherever the app doesn't draw its own (the
 // open list of a dropdown, which can't be styled).
 if (isWindows) app.commandLine.appendSwitch('enable-features', 'FluentOverlayScrollbar');
