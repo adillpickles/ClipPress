@@ -109,7 +109,8 @@ export interface MixedAudioTrack { index: number, gainDb: number | undefined }
  * Every audio track of a recording mixed into one (game and mic on separate tracks, as OBS can record them, each at
  * its own volume): a Discord export has one track, and players only play the first. Added together as they'd be heard
  * (not averaged, which would make both quieter), with a limiter that only touches peaks above full scale (its delay
- * compensated). `after` runs on the mix; the graph ends at `outputLabel`.
+ * compensated). Each track first starts where it starts in the clip (a mic track that begins late keeps its silence:
+ * `amix` alone would pull it to the start). `after` runs on the mix; the graph ends at `outputLabel`.
  */
 export function buildAudioMixFilter({ inputIndex, tracks, after = [], outputLabel }: {
   inputIndex: number,
@@ -117,7 +118,7 @@ export function buildAudioMixFilter({ inputIndex, tracks, after = [], outputLabe
   after?: readonly string[] | undefined,
   outputLabel: string,
 }) {
-  const graph = tracks.map(({ index, gainDb }, track) => `[${inputIndex}:${index}]${isNeutralAudioGain(gainDb) ? 'anull' : getVolumeFilter(gainDb!)}[mix${inputIndex}t${track}]`);
+  const graph = tracks.map(({ index, gainDb }, track) => `[${inputIndex}:${index}]${['aresample=async=1:first_pts=0', ...(isNeutralAudioGain(gainDb) ? [] : [getVolumeFilter(gainDb!)])].join(',')}[mix${inputIndex}t${track}]`);
   const mix = [`amix=inputs=${tracks.length}:duration=longest:normalize=0`, 'alimiter=limit=1:level=0:latency=1', ...after.filter(Boolean)];
   graph.push(`${tracks.map((_, track) => `[mix${inputIndex}t${track}]`).join('')}${mix.join(',')}${outputLabel}`);
   return graph;
@@ -145,11 +146,15 @@ export function buildSegmentConcatFilters({ segments, videoStreamIndex, audioStr
     if (audioStreamIndex == null) return videoLabel;
     const audioLabel = `[segmenta${index}]`;
     const tempo = getAudioTempoFilter(rate);
+    if (mixedAudioTracks != null && mixedAudioTracks.length > 1) {
+      // Mixed: the clip's volume goes into each track's, before the mix and its limiter (as for one clip).
+      const tracks = mixedAudioTracks.map((track) => ({ ...track, gainDb: combineAudioGain(track.gainDb, segment) }));
+      graph.push(...buildAudioMixFilter({ inputIndex: index, tracks, after: ['asetpts=PTS-STARTPTS', tempo], outputLabel: audioLabel }));
+      return `${videoLabel}${audioLabel}`;
+    }
     // The clip's own volume; the track volume is applied once, after the concat.
     const clipVolume = isClipVolumeChanged(segment) ? getVolumeFilter(combineAudioGain(undefined, segment)) : undefined;
-    const audioFilters = ['asetpts=PTS-STARTPTS', tempo, clipVolume ?? ''].filter(Boolean);
-    if (mixedAudioTracks != null && mixedAudioTracks.length > 1) graph.push(...buildAudioMixFilter({ inputIndex: index, tracks: mixedAudioTracks, after: audioFilters, outputLabel: audioLabel }));
-    else graph.push(`[${index}:${audioStreamIndex}]${audioFilters.join(',')}${audioLabel}`);
+    graph.push(`[${index}:${audioStreamIndex}]${['asetpts=PTS-STARTPTS', tempo, clipVolume].filter(Boolean).join(',')}${audioLabel}`);
     return `${videoLabel}${audioLabel}`;
   });
   return { graph, labels: labels.join('') };

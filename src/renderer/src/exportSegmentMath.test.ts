@@ -205,13 +205,13 @@ describe('buildOverlayImageInputArgs', () => {
 describe('mixing audio tracks', () => {
   it('adds the tracks together at their own volumes, then runs what comes after', () => {
     expect(buildAudioMixFilter({ inputIndex: 0, tracks: [{ index: 1, gainDb: -6 }, { index: 2, gainDb: undefined }], after: ['atempo=2'], outputLabel: '[a]' })).toEqual([
-      '[0:1]volume=-6.00dB[mix0t0]',
-      '[0:2]anull[mix0t1]',
+      '[0:1]aresample=async=1:first_pts=0,volume=-6.00dB[mix0t0]',
+      '[0:2]aresample=async=1:first_pts=0[mix0t1]',
       '[mix0t0][mix0t1]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=1:level=0:latency=1,atempo=2[a]',
     ]);
   });
 
-  it('mixes each joined clip before its speed and its own volume', () => {
+  it('mixes each joined clip at its track volumes, with its own volume in them, then its speed', () => {
     const { graph } = buildSegmentConcatFilters({
       segments: [{ start: 0, end: 2, speed: 2, audioGainDb: -6 }],
       videoStreamIndex: 0,
@@ -220,9 +220,9 @@ describe('mixing audio tracks', () => {
       mixedAudioTracks: [{ index: 1, gainDb: undefined }, { index: 2, gainDb: 3 }],
     });
     expect(graph.slice(1)).toEqual([
-      '[0:1]anull[mix0t0]',
-      '[0:2]volume=3.00dB[mix0t1]',
-      '[mix0t0][mix0t1]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=1:level=0:latency=1,asetpts=PTS-STARTPTS,atempo=2,volume=-6.00dB[segmenta0]',
+      '[0:1]aresample=async=1:first_pts=0,volume=-6.00dB[mix0t0]',
+      '[0:2]aresample=async=1:first_pts=0,volume=-3.00dB[mix0t1]',
+      '[mix0t0][mix0t1]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=1:level=0:latency=1,asetpts=PTS-STARTPTS,atempo=2[segmenta0]',
     ]);
   });
 });
