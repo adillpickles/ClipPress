@@ -508,7 +508,7 @@ export async function generateMergedFileNames({ template: desiredTemplate, fallb
       return [maybeTruncatePath(fileName, safeOutputFileName2)];
     },
     desiredTemplate,
-    defaultTemplate: fallbackTemplate ?? defaultCutMergedFileTemplate,
+    defaultTemplate: fallbackTemplate ?? defaultMergedFileTemplate,
     filePath: firstFile.path,
     protectedPaths: protectedPaths ?? getMergeProtectedPaths({ sourcePaths: sourceFiles.map((file) => file.path) }),
     outputDir,
