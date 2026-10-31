@@ -610,7 +610,8 @@ async function executeAttempts({
 }
 
 async function executeWithRetries(args: Parameters<typeof executeAttempts>[0] & { outPath: string }) {
-  const tempDir = await mkdtemp(join(dirname(args.outPath), '.clippress-'));
+  // In ClipPress's temporary folder, not next to the export: nothing shows in the export's folder until it's finished.
+  const tempDir = await mkdtemp(join(getTempWorkDir(), 'encode-'));
   try {
     return await executeAttempts({ ...args, buildAttempt: (attempt) => args.buildAttempt(attempt, join(tempDir, 'export')) });
   } finally {

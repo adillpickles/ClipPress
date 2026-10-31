@@ -1,4 +1,4 @@
-import { constants, copyFile, link, mkdtemp, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
+import { constants, copyFile, link, mkdtemp, readFile, readdir, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
@@ -25,6 +25,49 @@ it.each([false, true])('never replaces an existing file when overwrite is off (c
     await publishFile(from, to, false, fs);
     await expect(readFile(to, 'utf8')).resolves.toBe('encoded');
     await expect(readFile(from)).rejects.toMatchObject({ code: 'ENOENT' });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+it('replaces a file from another drive in one step, and leaves nothing behind when that fails', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'clippress-publish-'));
+  try {
+    const from = join(dir, 'encoded.mp4');
+    const to = join(dir, 'existing.mp4');
+    await writeFile(from, 'encoded');
+    await writeFile(to, 'original');
+    const crossDevice = Object.assign(new Error('cross-device'), { code: 'EXDEV' });
+    const copyExclusive = (source: string, target: string) => copyFile(source, target, constants.COPYFILE_EXCL);
+    // The staged copy can't replace the file: the old one stays, and the staged copy is removed.
+    const failing = { rename: vi.fn().mockRejectedValueOnce(crossDevice).mockRejectedValueOnce(new Error('locked')), link, unlink, copyExclusive };
+    await expect(publishFile(from, to, true, failing)).rejects.toThrow('locked');
+    await expect(readFile(to, 'utf8')).resolves.toBe('original');
+    await expect(readFile(from, 'utf8')).resolves.toBe('encoded');
+    expect((await readdir(dir)).sort()).toEqual(['encoded.mp4', 'existing.mp4']);
+    // Then it works: the destination has the new file and the temporary one is gone.
+    const working = { rename: vi.fn().mockRejectedValueOnce(crossDevice).mockImplementation(rename), link, unlink, copyExclusive };
+    await publishFile(from, to, true, working);
+    await expect(readFile(to, 'utf8')).resolves.toBe('encoded');
+    await expect(readFile(from)).rejects.toMatchObject({ code: 'ENOENT' });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+it('copies a file from another drive straight to a new name', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'clippress-publish-'));
+  try {
+    const from = join(dir, 'encoded.mp4');
+    const to = join(dir, 'new.mp4');
+    await writeFile(from, 'encoded');
+    const crossDevice = Object.assign(new Error('cross-device'), { code: 'EXDEV' });
+    const renameSpy = vi.fn().mockRejectedValue(crossDevice);
+    await publishFile(from, to, true, { rename: renameSpy, link, unlink, copyExclusive: (source: string, target: string) => copyFile(source, target, constants.COPYFILE_EXCL) });
+    await expect(readFile(to, 'utf8')).resolves.toBe('encoded');
+    // No staged copy was needed, so only the one failed rename.
+    expect(renameSpy).toHaveBeenCalledOnce();
+    expect(await readdir(dir)).toEqual(['new.mp4']);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
