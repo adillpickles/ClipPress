@@ -18,6 +18,7 @@ import styles from './Settings.module.css';
 import Select from './Select';
 import Button from './Button';
 import NumberSettingRow from './NumberSettingRow';
+import OutDirButtons from './OutDirButtons';
 import SettingRow from './SettingRow';
 import QuickExportSettings from './QuickExportSettings';
 import ShortcutSettings from './ShortcutSettings';
@@ -25,7 +26,6 @@ import TextInput from './TextInput';
 import { SettingsSearchContext, matchesSearch } from './settingsSearch';
 import getAfterExportAction from '../afterExportAction';
 import type { AfterExportAction } from '../afterExportAction';
-import { DirectoryAccessDeclinedError } from '../../errors';
 
 export type SettingsCategory = 'general' | 'interface' | 'editing' | 'export' | 'snapshots' | 'shortcuts' | 'projects' | 'updates' | 'advanced';
 type Category = SettingsCategory;
@@ -57,7 +57,7 @@ function Settings({
     window.require('electron').shell.openPath(getProjectsDir(getProjectStoreEnv())).catch?.(() => undefined);
   }, []);
 
-  const { customOutDir, setCustomOutDir, changeOutDir, ensureWritableOutDirWithFilePath, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, waveformHeight, setWaveformHeight, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport, enableAdvancedMode, setEnableAdvancedMode, trashProjectWithSource, setTrashProjectWithSource, copyAfterExport, setCopyAfterExport, playOnOpen, setPlayOnOpen } = useUserSettings();
+  const { customOutDir, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, waveformHeight, setWaveformHeight, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport, enableAdvancedMode, setEnableAdvancedMode, trashProjectWithSource, setTrashProjectWithSource, copyAfterExport, setCopyAfterExport, playOnOpen, setPlayOnOpen } = useUserSettings();
 
   const onLangChange = useCallback<ChangeEventHandler<HTMLSelectElement>>((e) => {
     const { value } = e.target;
@@ -81,17 +81,6 @@ function Settings({
   const clearCustomFfPath = useCallback(() => {
     setCustomFfPath(undefined);
   }, [setCustomFfPath]);
-
-  // Back to saving next to the recording, once that folder can be written to (as the folder dialog does).
-  const saveNextToRecording = useCallback(async () => {
-    try {
-      await ensureWritableOutDirWithFilePath({ outDir: undefined });
-      setCustomOutDir(undefined);
-    } catch (err) {
-      if (err instanceof DirectoryAccessDeclinedError) return;
-      throw err;
-    }
-  }, [ensureWritableOutDirWithFilePath, setCustomOutDir]);
 
   const afterExportLabels = useMemo<Record<AfterExportAction, string>>(() => ({
     nothing: t('Keep the recording open'),
@@ -293,18 +282,10 @@ function Settings({
               label={t('Save exports to')}
               value={customOutDir ?? t('The same folder as the recording.')}
             >
-              {/* Straight to the folder picker; the small x goes back to the recording's folder. */}
-              <div className={styles['controlGroup']}>
-                <Button onClick={changeOutDir}>
-                  <FiFolder aria-hidden />
-                  {t('Change…')}
-                </Button>
-                {customOutDir != null && (
-                  <Button variant="ghost" onClick={saveNextToRecording} title={t('Save next to the recording')} aria-label={t('Save next to the recording')}>
-                    <FiX aria-hidden />
-                  </Button>
-                )}
-              </div>
+              <OutDirButtons>
+                <FiFolder aria-hidden />
+                {t('Change…')}
+              </OutDirButtons>
             </SettingRow>
 
             {/* Files go on the clipboard through Windows (see src/main/fileClipboard.ts). */}

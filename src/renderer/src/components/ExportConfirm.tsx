@@ -70,6 +70,7 @@ import type { Frame } from '../ffmpeg';
 import type { FindNearestKeyframeTime } from '../hooks/useKeyframes';
 import { troubleshootingUrl } from '../../../common/constants';
 import OutDirSelector from './OutDirSelector';
+import OutDirButtons from './OutDirButtons';
 import { shouldWarnAboutTightAdvancedH264Target } from '../sizeLimitedExecutionPolicy';
 import { planSizeLimitedEncode } from '../sizeLimitedPlanner';
 import { getSizeLimitedEncoderCapabilities } from '../sizeLimitedExport';
@@ -1905,9 +1906,7 @@ function ExportConfirm({
                 <div className={styles['metaRow']}>
                   <div className={styles['metaLabel']}>{t('Save to')}</div>
                   <div className={styles['metaValue']} title={outputDir}>{outputDir}</div>
-                  <OutDirSelector>
-                    <Button size="sm">{t('Change')}</Button>
-                  </OutDirSelector>
+                  <OutDirButtons size="sm">{t('Change')}</OutDirButtons>
                 </div>
                 <div className={styles['metaRow']}>
                   <div className={styles['metaLabel']}>{t('Tracks')}</div>
