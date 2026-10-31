@@ -190,7 +190,9 @@ async function tryCreateStore({ customStoragePath }: { customStoragePath: string
   for (let i = 0; i < 5; i += 1) {
     try {
       store = new Store({
-        defaults,
+        // Without the unset ones: a file can't hold `undefined`, so electron-store would find the file missing them
+        // and write it again at every start.
+        defaults: Object.fromEntries(Object.entries(defaults).filter(([, value]) => value !== undefined)),
         clearInvalidConfig: false,
         ...(customStoragePath != null ? { cwd: customStoragePath } : {}),
       });
