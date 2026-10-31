@@ -31,8 +31,8 @@
   font-size: 1rem;
 }
 
-/* An update on its way: the one thing to do next, as a round icon button where the tick is (download, then
-   restart); while it downloads, a ring fills round it. */
+/* An update on its way: the one thing to do next, as a plain icon button where the tick is (download, then
+   restart); a soft tint on hover, and while it downloads a ring fills round it. */
 .action {
   all: unset;
   position: relative;
@@ -43,9 +43,8 @@
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: var(--cp-accent-soft);
   color: var(--cp-accent-text);
-  font-size: .95rem;
+  font-size: 1.05rem;
   transition: background-color .15s ease, transform .15s ease;
 }
 
@@ -54,7 +53,7 @@ button.action {
 }
 
 button.action:hover {
-  background: color-mix(in srgb, var(--accent-9) 26%, transparent);
+  background: var(--cp-accent-soft);
 }
 
 button.action:active {
@@ -63,16 +62,6 @@ button.action:active {
 
 button.action:focus-visible {
   box-shadow: var(--cp-focus-ring);
-}
-
-/* Ready: restart now, in the accent itself. */
-.actionReady {
-  background: var(--cp-accent);
-  color: var(--accent-contrast);
-}
-
-button.actionReady:hover {
-  background: var(--cp-accent-hover);
 }
 
 .ring {

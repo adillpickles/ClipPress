@@ -93,7 +93,7 @@ export default function UpdateNotice({ visible, overClipsPanel = false }: {
         ) : (
           <button
             type="button"
-            className={[styles['action'], ...(isReadyOnQuit ? [styles['actionReady']] : [])].join(' ')}
+            className={styles['action']}
             title={isReadyOnQuit ? t('Restart ClipPress to install it now') : t('Download it')}
             onClick={() => invoke(() => (isReadyOnQuit ? mainApi.restartToUpdate() : mainApi.downloadUpdate()))}
           >
