@@ -300,8 +300,10 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
   // waits for it, so a mouse resting elsewhere doesn't close it).
   const leaveTimer = useRef<ReturnType<typeof setTimeout>>();
   const leaveArmed = useRef(false);
-  // Where the pointer was last seen: away from the menu and its bar, or not.
+  // Where the pointer was last seen: away from the menu and its bar, or not; and where it was (none once it left the
+  // window).
   const pointerWasAway = useRef(false);
+  const lastPointer = useRef<{ x: number, y: number }>();
   // What had focus before the menu opened: it gets it back (a text field, for its edit actions).
   const returnFocus = useRef<HTMLElement | null>(null);
   const optionsRef = useRef<OpenMenuOptions>();
@@ -340,6 +342,19 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
     current.onClose?.();
   }, []);
 
+  // closeOnLeave's timer: closes unless the pointer is on a menu or its bar after all (a menu that has just opened
+  // under a pointer that hasn't moved since).
+  const closeIfAway = useCallback(() => {
+    leaveTimer.current = undefined;
+    const at = lastPointer.current;
+    if (at != null && (document.elementFromPoint(at.x, at.y)?.closest('[data-app-menu] [role=menu]') != null
+      || optionsRef.current?.onOutsidePointer?.({ ...at, type: 'move' }))) {
+      pointerWasAway.current = false;
+      return;
+    }
+    close(false);
+  }, [close]);
+
   useEffect(() => {
     host = (next) => {
       if (next == null) {
@@ -359,7 +374,7 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
       leaveTimer.current = undefined;
       leaveArmed.current = next.keyboard !== true;
       // The pointer already left while this one was on its way (a quick flick across the bar and off it): it goes too.
-      if (next.closeOnLeave && leaveArmed.current && pointerWasAway.current) leaveTimer.current = setTimeout(() => close(false), leaveGraceMs);
+      if (next.closeOnLeave && leaveArmed.current && pointerWasAway.current) leaveTimer.current = setTimeout(closeIfAway, leaveGraceMs);
       setConfirming(undefined);
       const items = visibleItems(next.items);
       const anchor = next.at instanceof HTMLElement ? next.at.getBoundingClientRect() : next.at;
@@ -373,7 +388,7 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
     return () => {
       host = undefined;
     };
-  }, [close]);
+  }, [close, closeIfAway]);
 
   const openSubmenu = useCallback((level: number, index: number, highlightFirst: boolean) => {
     setPanels((current) => {
@@ -583,8 +598,8 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
   const pointerAway = useCallback(() => {
     pointerWasAway.current = true;
     if (!optionsRef.current?.closeOnLeave || !leaveArmed.current || leaveTimer.current != null) return;
-    leaveTimer.current = setTimeout(() => close(false), leaveGraceMs);
-  }, [close]);
+    leaveTimer.current = setTimeout(closeIfAway, leaveGraceMs);
+  }, [closeIfAway]);
   useEffect(() => () => clearTimeout(leaveTimer.current), []);
 
   return (
@@ -602,12 +617,16 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
             if (!optionsRef.current?.onOutsidePointer?.({ x: e.clientX, y: e.clientY, type: 'down' })) close(false);
           }}
           onPointerMove={(e) => {
+            lastPointer.current = { x: e.clientX, y: e.clientY };
             if (e.target !== e.currentTarget) pointerHome();
             else if (optionsRef.current?.onOutsidePointer?.({ x: e.clientX, y: e.clientY, type: 'move' })) pointerHome();
             else pointerAway();
           }}
           // Off the window altogether (past the top of a maximised one, say).
-          onPointerLeave={pointerAway}
+          onPointerLeave={() => {
+            lastPointer.current = undefined;
+            pointerAway();
+          }}
           onContextMenu={(e) => {
             e.preventDefault();
             if (e.target === e.currentTarget) close(false);
