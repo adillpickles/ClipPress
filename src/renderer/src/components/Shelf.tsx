@@ -14,7 +14,7 @@ const { basename, extname } = window.require('path');
 const dateFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 /** The thumbnail's box is always the same size, so nothing moves when it arrives; a soft shimmer until then. */
-function ShelfThumb({ thumbnail }: { thumbnail: ShelfThumbnail | undefined }) {
+export function ShelfThumb({ thumbnail }: { thumbnail: ShelfThumbnail | undefined }) {
   return (
     <span className={[styles['thumb'], ...(thumbnail === undefined ? [styles['thumbLoading']] : [])].join(' ')}>
       {thumbnail != null && <img src={thumbnail} alt="" draggable={false} />}

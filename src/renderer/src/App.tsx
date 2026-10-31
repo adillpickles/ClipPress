@@ -298,6 +298,8 @@ import AudioTrackHeader from './components/AudioTrackHeader';
 import ClipVolumePopover from './components/ClipVolumePopover';
 import { ShelfUpNext } from './components/Shelf';
 import useShelf, { listShelfFolder } from './hooks/useShelf';
+import { useClipsFolder, useRecorderFolderOffer } from './hooks/useClipsFolder';
+import ClipsFolderList from './components/ClipsFolderList';
 import { buildShelfQueue, pickNextClip, rememberShelfExport, shelfThumbnailKey } from './shelf';
 import formatSizeLimitedProgressText, { getSizeLimitedStageTitle } from './sizeLimitedProgressText';
 import { findClipEdge, getEdgeSnapDistance } from './clipEdgeSnap';
@@ -614,7 +616,11 @@ function App() {
     setShelfExports,
     shelfOrder,
     setShelfOrder,
+    clipsFolder,
+    setClipsFolder,
+    setClipsFolderOfferDismissed,
   } = allUserSettings;
+  const { clipsFolderOfferDismissed } = allUserSettings.settings;
 
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(!simpleMode);
 
@@ -2024,6 +2030,10 @@ function App() {
   const shelfPrefetch = !working && (filePath == null || openSettled || (simpleMode && openVisualsIn));
   const shelf = useShelf({ folder: shelfFolder, order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac, currentPath: filePath ?? shelfAnchorPath, prefetch: shelfPrefetch, unopenable: unopenableShelfKeys });
   const { refresh: refreshShelf, nextClip } = shelf;
+  // The start screen's newest clips from the clips folder, and the recorder folder to offer while none is linked.
+  const onStartScreen = filePath == null && simpleMode;
+  const clipsFolderClips = useClipsFolder({ folder: clipsFolder, exports: shelfExports, caseInsensitive: isWindows || isMac, active: onStartScreen });
+  const recorderFolderOffer = useRecorderFolderOffer({ enabled: onStartScreen && clipsFolder == null && !clipsFolderOfferDismissed, exports: shelfExports, caseInsensitive: isWindows || isMac });
   // The shelf's next clip gets its filmstrip and waveform made in the background once the open one's are (and the
   // shelf's own thumbnails may be made), so Next clip opens it with them showing at once.
   const nextClipPath = nextClip?.path;
@@ -7338,7 +7348,7 @@ function App() {
                         onOpenFolderClick={openDirDialog}
                         keyBindingByAction={keyBindingByAction}
                         dragging={fileDragActive && !working}
-                        showSteps={recentFiles.length === 0 && nextClip == null}
+                        showSteps={recentFiles.length === 0 && nextClip == null && !(clipsFolderClips.clips?.length)}
                       >
                         {nextClip != null && (
                           <ShelfUpNext
@@ -7346,6 +7356,18 @@ function App() {
                             thumbnail={shelf.thumbnails.get(shelfThumbnailKey(nextClip))}
                             requestThumbnail={shelf.requestThumbnail}
                             onOpen={openShelfClip}
+                          />
+                        )}
+                        {simpleMode && (
+                          <ClipsFolderList
+                            folder={clipsFolder}
+                            clips={clipsFolderClips.clips}
+                            thumbnails={clipsFolderClips.thumbnails}
+                            requestThumbnail={clipsFolderClips.requestThumbnail}
+                            onOpen={openShelfClip}
+                            offer={recorderFolderOffer}
+                            onTakeOffer={() => { if (recorderFolderOffer != null) setClipsFolder(recorderFolderOffer.path); }}
+                            onDismissOffer={() => setClipsFolderOfferDismissed(true)}
                           />
                         )}
                         <RecentFiles

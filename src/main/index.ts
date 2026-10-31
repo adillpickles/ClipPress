@@ -10,6 +10,7 @@ import yargsParser from 'yargs-parser';
 import JSON5 from 'json5';
 import remote from '@electron/remote/main/index.js';
 import { stat } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import assert from 'node:assert';
 import timers from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -744,8 +745,18 @@ function clickMenuItem(path: number[]) {
   item.click(undefined, mainWindow ?? undefined, mainWindow?.webContents);
 }
 
+/** NVIDIA's capture settings (ShadowPlay), to find where it saves clips: `reg query` output, or '' when there are none. */
+const queryNvidiaCaptureSettings = () => new Promise<string>((resolve) => {
+  if (!isWindows) {
+    resolve('');
+    return;
+  }
+  execFile('reg', ['query', String.raw`HKCU\Software\NVIDIA Corporation\Global\ShadowPlay\NVSPCAPS`, '/v', 'DefaultPathW'], { windowsHide: true, timeout: 5000 }, (error, stdout) => resolve(error != null ? '' : stdout));
+});
+
 const remoteApi = {
   pathExists,
+  queryNvidiaCaptureSettings,
   getMenuBarItems,
   getMenuBarMenu,
   clickMenuItem,

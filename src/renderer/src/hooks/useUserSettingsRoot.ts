@@ -170,6 +170,10 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ enableSmartCut }), [enableSmartCut]);
   const [customFfPath, setCustomFfPath] = useState(safeGetConfigInitial('customFfPath'));
   useEffect(() => safeSetConfig({ customFfPath }), [customFfPath]);
+  const [clipsFolder, setClipsFolder] = useState(safeGetConfigInitial('clipsFolder'));
+  useEffect(() => safeSetConfig({ clipsFolder }), [clipsFolder]);
+  const [clipsFolderOfferDismissed, setClipsFolderOfferDismissed] = useState(safeGetConfigInitial('clipsFolderOfferDismissed'));
+  useEffect(() => safeSetConfig({ clipsFolderOfferDismissed }), [clipsFolderOfferDismissed]);
   const [projectFileLocation, setProjectFileLocation] = useState(safeGetConfigInitial('projectFileLocation'));
   useEffect(() => safeSetConfig({ projectFileLocation }), [projectFileLocation]);
   const [enableOverwriteOutput, setEnableOverwriteOutput] = useState(safeGetConfigInitial('enableOverwriteOutput'));
@@ -366,6 +370,7 @@ export default function useUserSettingsRoot() {
     keyBindings,
     enableSmartCut,
     customFfPath,
+    clipsFolderOfferDismissed,
     projectFileLocation,
     enableOverwriteOutput,
     mouseWheelZoomModifierKey,
@@ -468,6 +473,7 @@ export default function useUserSettingsRoot() {
     keyBindings,
     enableSmartCut,
     customFfPath,
+    clipsFolderOfferDismissed,
     projectFileLocation,
     enableOverwriteOutput,
     mouseWheelZoomModifierKey,
@@ -531,6 +537,7 @@ export default function useUserSettingsRoot() {
     setShelfExports,
     shelfOrder,
     setShelfOrder,
+    clipsFolder,
 
     // setters
     setLastAppVersion,
@@ -587,6 +594,8 @@ export default function useUserSettingsRoot() {
     resetKeyBindings,
     setEnableSmartCut,
     setCustomFfPath,
+    setClipsFolder,
+    setClipsFolderOfferDismissed,
     setProjectFileLocation,
     setEnableOverwriteOutput,
     setMouseWheelZoomModifierKey,
@@ -636,7 +645,7 @@ export default function useUserSettingsRoot() {
     setSizeLimitCutFileTemplate,
     setSizeLimitCutMergedFileTemplate,
     setQuickExportPresets,
-  }), [settings, springAnimation, customOutDir, setCustomOutDir, resetKeyBindings, toggleDarkMode, prefersReducedMotion, recentFiles, shelfExports, shelfOrder]);
+  }), [settings, springAnimation, customOutDir, setCustomOutDir, resetKeyBindings, toggleDarkMode, prefersReducedMotion, recentFiles, shelfExports, shelfOrder, clipsFolder]);
 }
 
 export type UserSettingsRoot = ReturnType<typeof useUserSettingsRoot>;

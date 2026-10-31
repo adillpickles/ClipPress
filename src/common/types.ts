@@ -155,6 +155,10 @@ export interface Config {
   enableAutoHtml5ify: boolean,
   keyBindings: KeyBinding[],
   customFfPath: string | undefined,
+  /** The folder a recorder saves to, whose newest clips the start screen shows (Beta 6.1). */
+  clipsFolder: string | undefined,
+  /** "Not now" on the start screen's offer to show a recorder's folder found on this PC. */
+  clipsFolderOfferDismissed: boolean,
   projectFileLocation: ProjectFileLocation,
   enableOverwriteOutput: boolean,
   mouseWheelZoomModifierKey: ModifierKey,

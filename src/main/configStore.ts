@@ -76,6 +76,8 @@ const defaults: Config = {
   enableAutoHtml5ify: true,
   keyBindings: defaultKeyBindings,
   customFfPath: undefined,
+  clipsFolder: undefined,
+  clipsFolderOfferDismissed: false,
   projectFileLocation: 'app',
   enableOverwriteOutput: true,
   mouseWheelZoomModifierKey: defaultMouseModifierKeys.zoom,
