@@ -7,7 +7,7 @@ export interface UpdateBackend {
   download: () => Promise<void>,
   cancel: () => void,
   installOnQuit: (enabled: boolean) => void,
-  /** Closes the app, installs the downloaded update and opens the new version. */
+  /** Installs the downloaded update when the app has quit, and opens the new version (the app then closes itself). */
   installNow: () => void,
 }
 

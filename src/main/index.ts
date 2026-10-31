@@ -787,7 +787,12 @@ const remoteApi = {
   checkForUpdates,
   downloadUpdate,
   approveUpdateInstall,
-  restartToUpdate: async () => (await getAutoUpdates()).restartToInstall(),
+  // Closed the usual way (saving edits, asking first if set to), and the update installs once it has.
+  restartToUpdate: async () => {
+    if (!(await getAutoUpdates()).restartToInstall()) return false;
+    mainWindow?.close();
+    return true;
+  },
   acknowledgeAppVersion,
   /** For what the window does in the background and should be in the file log (its own console isn't kept). */
   log: (level: 'info' | 'warn', message: string) => (level === 'warn' ? logger.warn(message) : logger.info(message)),

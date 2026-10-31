@@ -58,6 +58,15 @@ export default function createAutoUpdates({ offline, storeBuild, onChange }: {
       autoUpdater.on('error', (error: Error) => logger.warn('Updater error', error.message));
       autoUpdater.signals.progress(({ percent }) => controller.progress(percent));
       let token: CancellationToken | undefined;
+      // Restart: once ClipPress has really quit (its window closed through the usual guard, edits saved), install
+      // and open the new version. Installing earlier would let the installer close the app mid-save. Registered before
+      // electron-updater's own quit handler (added at download), which installs without reopening and so stands
+      // aside once this has started it. A restart cancelled at the close (and a quit much later) installs as usual.
+      let restartRequestedAt: number | undefined;
+      app.once('quit', () => {
+        if (restartRequestedAt == null || Date.now() - restartRequestedAt > 60_000) return;
+        autoUpdater.quitAndInstall(true, true);
+      });
       return {
         check: async () => {
           const result = await autoUpdater.checkForUpdates();
@@ -69,8 +78,7 @@ export default function createAutoUpdates({ offline, storeBuild, onChange }: {
         },
         cancel: () => token?.cancel(),
         installOnQuit: (enabled) => { autoUpdater.autoInstallOnAppQuit = enabled; },
-        // Silent, and the new version opens by itself afterwards.
-        installNow: () => autoUpdater.quitAndInstall(true, true),
+        installNow: () => { restartRequestedAt = Date.now(); },
       };
     },
   });
