@@ -9,7 +9,7 @@ import i18n from 'i18next';
 import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists, moveExportWithRetry } from '../util';
 import { assertOutPathsNotSource } from '../util/sourceProtection';
 import { isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, getDuration, createChaptersFromSegments, readFileFfprobeMeta, getExperimentalArgs, getVideoTimescaleArgs, logStdoutStderr, runFfmpegConcat, RefuseOverwriteError, runFfmpeg } from '../ffmpeg';
-import { getKeyframeCutSeekCompensation, getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
+import { getEffectiveAvoidNegativeTs, getKeyframeCutSeekCompensation, getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
 import type { ClipVolume } from '../util/audioGain';
 import { combineAudioGain, getVolumeFilter } from '../util/audioGain';
 import { needsSmartCut, getCodecParams } from '../smartcut';
@@ -467,7 +467,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     const cutToArgs = cuttingEnd ? ['-t', formatFfmpegNumber(cutDuration)] : [];
 
     // remove -avoid_negative_ts make_zero when not cutting start (no -ss), or else some videos get blank first frame in QuickLook
-    const avoidNegativeTsArgs = cuttingStart && avoidNegativeTs && ssBeforeInput ? ['-avoid_negative_ts', String(avoidNegativeTs)] : [];
+    // note: `make_zero`/`make_non_negative` get downgraded to `auto` when copying a cover art stream, or else the
+    // output gets the segment's end time as its duration, see https://github.com/mifi/lossless-cut/issues/3009
+    const effectiveAvoidNegativeTs = getEffectiveAvoidNegativeTs({ avoidNegativeTs, allFilesMeta, copyFileStreams: copyFileStreamsFiltered });
+    const avoidNegativeTsArgs = cuttingStart && effectiveAvoidNegativeTs && ssBeforeInput ? ['-avoid_negative_ts', String(effectiveAvoidNegativeTs)] : [];
 
     // If cutting multiple files, `-ss` must be before `-i`, regardless of `ssBeforeInput` choice
     // and it seems that `-t` must be after `-i` #896
