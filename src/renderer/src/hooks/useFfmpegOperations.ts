@@ -9,7 +9,7 @@ import i18n from 'i18next';
 import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists, moveExportWithRetry } from '../util';
 import { assertOutPathsNotSource } from '../util/sourceProtection';
 import { isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, getDuration, createChaptersFromSegments, readFileFfprobeMeta, getExperimentalArgs, getVideoTimescaleArgs, logStdoutStderr, runFfmpegConcat, RefuseOverwriteError, runFfmpeg } from '../ffmpeg';
-import { getEffectiveAvoidNegativeTs, getKeyframeCutSeekCompensation, getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
+import { attachedPicDisposition, getEffectiveAvoidNegativeTs, getKeyframeCutSeekCompensation, getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
 import type { ClipVolume } from '../util/audioGain';
 import { combineAudioGain, getVolumeFilter } from '../util/audioGain';
 import { needsSmartCut, getCodecParams } from '../smartcut';
@@ -475,7 +475,15 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     // If cutting multiple files, `-ss` must be before `-i`, regardless of `ssBeforeInput` choice
     // and it seems that `-t` must be after `-i` #896
     const inputFilesArgs = copyFileStreamsFiltered.length > 1
-      ? flatMap(copyFileStreamsFiltered, ({ path }) => [...cutFromArgs, '-i', path, ...cutToArgs])
+      ? flatMap(copyFileStreamsFiltered, ({ streamIds, path }) => {
+        // don't seek cover art or images attached by users, it loses them, see https://github.com/mifi/lossless-cut/issues/2884
+        // `-t` stays: it applies to the next input or, after the last one, to the output
+        if (streamIds.length === 1 && paramsByStreamId.get(path)?.get(streamIds[0]!)?.disposition === attachedPicDisposition) {
+          return ['-i', path, ...cutToArgs];
+        }
+
+        return [...cutFromArgs, '-i', path, ...cutToArgs];
+      })
       : [
         ...(ssBeforeInput ? [...cutFromArgs, ...seekCompensationArgs] : []),
         '-i', copyFileStreamsFiltered[0]!.path,
