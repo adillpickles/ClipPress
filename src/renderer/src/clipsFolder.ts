@@ -1,3 +1,5 @@
+import pMap from 'p-map';
+
 import type { ShelfExport } from '../../common/types';
 import { isShelfVideo, shelfPathKey } from './shelf';
 import type { ShelfFile } from './shelf';
@@ -12,17 +14,20 @@ const { join } = window.require('path');
  */
 
 /** How deep to look: the folder, its subfolders (NVIDIA keeps one per game), and theirs. */
-const maxDepth = 2;
+export const clipsFolderDepth = 2;
 
 /** ClipPress's own size-limited exports by their default names ("19.8MB Quality …"); recorders' folders collect them too. */
 export function isClipPressExportName(name: string) {
   return /^\d+(\.\d+)?MB (Max Quality|Quality|Fast|Original|Advanced) /i.test(name) || / clippress-export(-\d+)?\.mp4$/i.test(name);
 }
 
-/** The newest videos in a folder and the two levels under it, newest first, leaving out ClipPress's own exports. */
+/**
+ * The newest videos in a folder and the two levels under it, newest first, leaving out ClipPress's own exports. A big
+ * library (all of Videos, for OBS) is read a few files at a time, one folder after another, keeping only the newest.
+ */
 export async function listNewestClips(folder: string, { limit, exports, caseInsensitive }: { limit: number, exports: readonly ShelfExport[], caseInsensitive: boolean }) {
   const outputs = new Set(exports.flatMap((entry) => entry.outputs.map((output) => shelfPathKey(output, caseInsensitive))));
-  const found: ShelfFile[] = [];
+  let newest: ShelfFile[] = [];
   const walk = async (dir: string, depth: number): Promise<void> => {
     let entries: { name: string, isFile: () => boolean, isDirectory: () => boolean }[];
     try {
@@ -30,23 +35,25 @@ export async function listNewestClips(folder: string, { limit, exports, caseInse
     } catch {
       return;
     }
-    await Promise.all(entries.map(async (entry) => {
+    const videos = entries.filter((entry) => entry.isFile() && isShelfVideo(entry.name) && !isClipPressExportName(entry.name) && !outputs.has(shelfPathKey(join(dir, entry.name), caseInsensitive)));
+    const found = await pMap(videos, async (entry): Promise<ShelfFile[]> => {
       const path: string = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (depth < maxDepth && !entry.name.startsWith('.')) await walk(path, depth + 1);
-        return;
-      }
-      if (!entry.isFile() || !isShelfVideo(entry.name) || isClipPressExportName(entry.name) || outputs.has(shelfPathKey(path, caseInsensitive))) return;
       try {
         const info = await stat(path);
-        found.push({ path, name: entry.name, modifiedAt: info.mtimeMs, size: info.size });
+        return [{ path, name: entry.name, modifiedAt: info.mtimeMs, size: info.size }];
       } catch {
-        // Gone meanwhile.
+        return []; // Gone meanwhile.
       }
-    }));
+    }, { concurrency: 8 });
+    newest = [...newest, ...found.flat()].sort((a, b) => b.modifiedAt - a.modifiedAt).slice(0, limit);
+    if (depth >= clipsFolderDepth) return;
+    for (const entry of entries) {
+      // eslint-disable-next-line no-await-in-loop
+      if (entry.isDirectory() && !entry.name.startsWith('.')) await walk(join(dir, entry.name), depth + 1);
+    }
   };
   await walk(folder, 0);
-  return found.sort((a, b) => b.modifiedAt - a.modifiedAt).slice(0, limit);
+  return newest;
 }
 
 /** NVIDIA's save folder from `reg query` output: `DefaultPathW` is UTF-16LE text stored as binary, ending in a NUL. */
@@ -123,15 +130,17 @@ export async function findRecorderFolders({ videosFolder, appDataFolder, exports
     { recorder: 'AMD', path: join(videosFolder, 'Radeon ReLive') },
   );
 
+  // One after the other: Videos (OBS) holds the others' folders, so reading them at once would read it all twice.
   const seen = new Set<string>();
-  const withClips = await Promise.all(candidates.filter(({ path }) => {
-    const key = shelfPathKey(path, caseInsensitive).replace(/\/+$/, '');
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).map(async (candidate) => ({ candidate, newest: (await listNewestClips(candidate.path, { limit: 1, exports, caseInsensitive }))[0] })));
-  return withClips
-    .filter((entry): entry is { candidate: RecorderFolder, newest: ShelfFile } => entry.newest != null)
-    .sort((a, b) => b.newest.modifiedAt - a.newest.modifiedAt)
-    .map(({ candidate }) => candidate);
+  const withClips: { candidate: RecorderFolder, newest: ShelfFile }[] = [];
+  for (const candidate of candidates) {
+    const key = shelfPathKey(candidate.path, caseInsensitive).replace(/\/+$/, '');
+    if (!seen.has(key)) {
+      seen.add(key);
+      // eslint-disable-next-line no-await-in-loop
+      const [newest] = await listNewestClips(candidate.path, { limit: 1, exports, caseInsensitive });
+      if (newest != null) withClips.push({ candidate, newest });
+    }
+  }
+  return withClips.sort((a, b) => b.newest.modifiedAt - a.newest.modifiedAt).map(({ candidate }) => candidate);
 }

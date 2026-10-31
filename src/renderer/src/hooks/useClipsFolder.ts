@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { ShelfExport } from '../../../common/types';
-import { findRecorderFolders, listNewestClips } from '../clipsFolder';
+import { clipsFolderDepth, findRecorderFolders, listNewestClips } from '../clipsFolder';
 import type { RecorderFolder } from '../clipsFolder';
 import { shelfThumbnailKey } from '../shelf';
 import type { ShelfFile } from '../shelf';
@@ -17,6 +17,8 @@ export const clipsFolderLimit = 5;
 
 /** After a change in the folder: a recorder saving a clip writes for a moment, so wait for it to settle. */
 const settleMs = 1500;
+/** But not for ever: a recording being written into the folder (OBS) changes it all the time. */
+const maxSettleMs = 5000;
 
 /**
  * The clips folder's newest clips while the start screen shows them: listed again when the folder changes (a clip
@@ -32,20 +34,25 @@ export function useClipsFolder({ folder, exports, caseInsensitive, active }: {
 }) {
   const [listing, setListing] = useState<{ folder: string, clips: ShelfFile[] }>();
   const [listCount, setListCount] = useState(0);
+  // Listings run one at a time; one asked for again meanwhile skips the outdated one.
+  const listQueueRef = useRef(Promise.resolve());
+  // A watch that failed (a drive unplugged) is tried again when the window comes back to the front.
+  const [watchAttempt, setWatchAttempt] = useState(0);
+  const watchFailedRef = useRef(false);
   const [thumbnails, setThumbnails] = useState<ReadonlyMap<string, ShelfThumbnail>>(new Map());
   const thumbnailsRef = useRef<ShelfThumbnails>();
 
   useEffect(() => {
     if (folder == null || !active) return undefined;
     let cancelled = false;
-    listNewestClips(folder, { limit: clipsFolderLimit, exports, caseInsensitive })
-      .catch((err) => {
+    listQueueRef.current = listQueueRef.current.then(async () => {
+      if (cancelled) return;
+      const clips = await listNewestClips(folder, { limit: clipsFolderLimit, exports, caseInsensitive }).catch((err) => {
         console.warn('Could not list the clips folder', err);
         return [];
-      })
-      .then((clips) => {
-        if (!cancelled) setListing({ folder, clips });
       });
+      if (!cancelled) setListing({ folder, clips });
+    });
     return () => {
       cancelled = true;
     };
@@ -54,26 +61,42 @@ export function useClipsFolder({ folder, exports, caseInsensitive, active }: {
   useEffect(() => {
     if (folder == null || !active) return undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const listAgain = () => {
+    let firstChangeAt: number | undefined;
+    const listAgain = (_event: string, fileName: string | null) => {
+      // Deeper than the listing looks: nothing it shows changed.
+      if (fileName != null && fileName.split(/[\\/]/).length > clipsFolderDepth + 1) return;
+      const now = Date.now();
+      firstChangeAt ??= now;
       clearTimeout(timer);
-      timer = setTimeout(() => setListCount((count) => count + 1), settleMs);
+      timer = setTimeout(() => {
+        firstChangeAt = undefined;
+        setListCount((count) => count + 1);
+      }, Math.min(settleMs, Math.max(0, firstChangeAt + maxSettleMs - now)));
     };
     let watcher: { close: () => void } | undefined;
+    watchFailedRef.current = false;
     try {
       watcher = watch(folder, { recursive: true }, listAgain);
-      // A folder that goes away (a drive unplugged) stops the watch; focusing the window lists it again.
-      (watcher as unknown as { on: (event: string, listener: () => void) => void }).on('error', () => watcher?.close());
+      // A folder that goes away (a drive unplugged) stops the watch; it's tried again when the window is focused.
+      (watcher as unknown as { on: (event: string, listener: () => void) => void }).on('error', () => {
+        watcher?.close();
+        watchFailedRef.current = true;
+      });
     } catch (err) {
       console.warn('Could not watch the clips folder', err);
+      watchFailedRef.current = true;
     }
-    const onFocus = () => setListCount((count) => count + 1);
+    const onFocus = () => {
+      setListCount((count) => count + 1);
+      if (watchFailedRef.current) setWatchAttempt((attempt) => attempt + 1);
+    };
     window.addEventListener('focus', onFocus);
     return () => {
       clearTimeout(timer);
       watcher?.close();
       window.removeEventListener('focus', onFocus);
     };
-  }, [active, folder]);
+  }, [active, folder, watchAttempt]);
 
   useEffect(() => {
     const store = new ShelfThumbnails({

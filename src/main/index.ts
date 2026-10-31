@@ -751,7 +751,9 @@ const queryNvidiaCaptureSettings = () => new Promise<string>((resolve) => {
     resolve('');
     return;
   }
-  execFile('reg', ['query', String.raw`HKCU\Software\NVIDIA Corporation\Global\ShadowPlay\NVSPCAPS`, '/v', 'DefaultPathW'], { windowsHide: true, timeout: 5000 }, (error, stdout) => resolve(error != null ? '' : stdout));
+  // Windows' own reg.exe by its full path: by name, a reg.exe in the current folder could run instead.
+  const regExe = String.raw`${process.env['SystemRoot'] ?? String.raw`C:\Windows`}\System32\reg.exe`;
+  execFile(regExe, ['query', String.raw`HKCU\Software\NVIDIA Corporation\Global\ShadowPlay\NVSPCAPS`, '/v', 'DefaultPathW'], { windowsHide: true, timeout: 5000 }, (error, stdout) => resolve(error != null ? '' : stdout));
 });
 
 const remoteApi = {

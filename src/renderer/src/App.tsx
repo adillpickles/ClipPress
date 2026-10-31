@@ -7375,7 +7375,12 @@ function App() {
                             requestThumbnail={clipsFolderClips.requestThumbnail}
                             onOpen={openShelfClip}
                             offer={recorderFolderOffer}
-                            onTakeOffer={() => { if (recorderFolderOffer != null) setClipsFolder(recorderFolderOffer.path); }}
+                            // Taken once is enough: unlinking it later in Settings doesn't bring the offer back.
+                            onTakeOffer={() => {
+                              if (recorderFolderOffer == null) return;
+                              setClipsFolder(recorderFolderOffer.path);
+                              setClipsFolderOfferDismissed(true);
+                            }}
                             onDismissOffer={() => setClipsFolderOfferDismissed(true)}
                           />
                         )}
