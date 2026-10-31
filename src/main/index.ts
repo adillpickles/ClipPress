@@ -32,6 +32,7 @@ import type { ApiActionRequest, Config } from '../common/types.js';
 import { isSafeKey } from './objectKeys.js';
 import { isAllowedAppNavigation, isExternallyOpenableUrl } from './navigation.js';
 import { cleanUpdaterCacheOnce } from './updaterCache.js';
+import { getInstallationDir } from './installation.js';
 import * as ffmpeg from './ffmpeg.js';
 import * as compatPlayer from './compatPlayer.js';
 import { canCopyFiles, copyFilesToClipboard, startFileDrag, warmCopyHelper } from './fileClipboard.js';
@@ -551,7 +552,8 @@ async function init() {
       if (filesToOpen.length > 0) openFiles(filesToOpen);
       // An installed copy cleans up after its last update (updaterCache.ts) a moment after the start, whether or not
       // it checks for updates.
-      if (app.isPackaged && isWindows && !isStoreBuild) {
+      // Only an installed copy: a portable one shares the folder and mustn't delete the installed copy's update.
+      if (app.isPackaged && isWindows && !isStoreBuild && getInstallationDir() != null) {
         setTimeout(() => {
           cleanUpdaterCacheOnce({ resourcesPath: process.resourcesPath, appName: app.getName(), runningVersion: app.getVersion() })
             .then((cleaned) => { if (cleaned.length > 0) logger.info('Removed what the last update left behind', cleaned); })
