@@ -144,6 +144,24 @@ export function getGpuFramesDownloadFormat(pixFmt: string | undefined) {
   return undefined;
 }
 
+/**
+ * Joined clips can drop their frames on the GPU only up to this many. Each clip's frames then sit on the export's own
+ * frame grid, and concat takes each clip's length from them, so every join can land up to half a frame from where
+ * it's planned (`notes/beta6-ux/perf/speedlab6.sh`: +12.5 ms per join at 30 fps). With up to two joins that stays
+ * within one frame; longer merges take the old path, whose joins are exact.
+ */
+export const maxGpuFramesClips = 3;
+
+/** Whether an export's sped-up clips can keep their frames on the GPU (given a source format it can copy off). */
+export function shouldKeepFramesOnGpu({ rates, rotation }: {
+  /** Each clip's playback rate, in the order they're joined. */
+  rates: number[],
+  rotation: number | undefined,
+}) {
+  // A turned video isn't kept there: FFmpeg turns it with a CPU filter before ours.
+  return rates.some((rate) => rate > 1) && rates.length <= maxGpuFramesClips && ((rotation ?? 0) % 360) === 0;
+}
+
 /** Placed right after a clip's `setpts`: the frames to keep at the export's frame rate, copied off the GPU. */
 export function getGpuFramesFilter({ rate, downloadFormat, outputFps }: {
   rate: number,

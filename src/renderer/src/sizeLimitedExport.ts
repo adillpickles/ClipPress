@@ -34,7 +34,7 @@ import { UserFacingError } from '../errors';
 import { assertOutPathsNotSource } from './util/sourceProtection';
 import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } from './textOverlays';
 import createAsyncCache from './util/asyncCache';
-import { getGpuEncoderInfo, getGpuFramesDownloadFormat, getGpuFramesFilter, getHardwareDecodeArgs, gpuEncoderLabels, gpuEncoders, isGpuEncoderAvailable, runWithGpuFallbacksCore, shouldUseHardwareDecode } from './gpuEncoders';
+import { getGpuEncoderInfo, getGpuFramesDownloadFormat, getGpuFramesFilter, getHardwareDecodeArgs, gpuEncoderLabels, gpuEncoders, isGpuEncoderAvailable, runWithGpuFallbacksCore, shouldKeepFramesOnGpu, shouldUseHardwareDecode } from './gpuEncoders';
 import type { GpuEncoderName } from './gpuEncoders';
 import { getTempWorkDir } from './util/tempFiles';
 
@@ -204,15 +204,14 @@ const gpuFramesFailed = new Set<string>();
 
 /**
  * The format a sped-up export's frames are copied off the GPU in, when they can stay there until `fps` has dropped
- * the unkept ones (`getGpuFramesFilter`); undefined when they're copied off as they're decoded. A turned video isn't
- * kept there: FFmpeg turns it with a CPU filter before ours.
+ * the unkept ones (`getGpuFramesFilter`); undefined when they're copied off as they're decoded.
  */
 function getGpuFramesFormat({ videoStream, rates, rotation }: {
   videoStream: Pick<FFprobeStream, 'codec_name' | 'pix_fmt'>,
   rates: number[],
   rotation: number | undefined,
 }) {
-  if (!rates.some((rate) => rate > 1) || ((rotation ?? 0) % 360) !== 0) return undefined;
+  if (!shouldKeepFramesOnGpu({ rates, rotation })) return undefined;
   if (gpuFramesFailed.has(`${videoStream.codec_name}/${videoStream.pix_fmt}`)) return undefined;
   return getGpuFramesDownloadFormat(videoStream.pix_fmt);
 }

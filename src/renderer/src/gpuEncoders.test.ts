@@ -6,10 +6,12 @@ import {
   getGpuFramesFilter,
   getHardwareDecodeArgs,
   getQsvPreset,
+  maxGpuFramesClips,
   getRegularExportVideoArgs,
   maxHardwareDecodePixels,
   pickGpuEncoder,
   runWithGpuFallbacksCore,
+  shouldKeepFramesOnGpu,
   shouldUseHardwareDecode,
 } from './gpuEncoders';
 
@@ -85,6 +87,16 @@ describe('frames kept on the GPU', () => {
   it('drops a sped-up clip to the export frame rate before copying', () => {
     expect(getGpuFramesFilter({ rate: 4, downloadFormat: 'nv12', outputFps: undefined })).toBe('fps=source_fps,hwdownload,format=nv12');
     expect(getGpuFramesFilter({ rate: 2, downloadFormat: 'p010', outputFps: 30 })).toBe('fps=30,hwdownload,format=p010');
+  });
+
+  it('is for sped-up exports of up to three clips, not turned', () => {
+    expect(shouldKeepFramesOnGpu({ rates: [4], rotation: undefined })).toBe(true);
+    expect(shouldKeepFramesOnGpu({ rates: [4, 1, 0.5], rotation: 0 })).toBe(true);
+    expect(shouldKeepFramesOnGpu({ rates: [1], rotation: undefined })).toBe(false);
+    expect(shouldKeepFramesOnGpu({ rates: [0.5, 1], rotation: undefined })).toBe(false);
+    expect(shouldKeepFramesOnGpu({ rates: Array.from({ length: maxGpuFramesClips + 1 }, () => 4), rotation: undefined })).toBe(false);
+    expect(shouldKeepFramesOnGpu({ rates: [4], rotation: 90 })).toBe(false);
+    expect(shouldKeepFramesOnGpu({ rates: [4], rotation: 360 })).toBe(true);
   });
 
   it('copies every frame of a clip at normal speed or slower', () => {
