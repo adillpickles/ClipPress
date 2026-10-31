@@ -1,5 +1,8 @@
-/** The parts of an export that the progress card has its own lines for. */
-export type ExportPhase = 'starting' | 'cutting' | 'encoding' | 'sharper' | 'smaller' | 'finishing';
+/**
+ * The parts of an export that the progress card has its own lines for. A second encode (sharper, or smaller) has
+ * none: it's more of the same work as far as anyone can tell (6.1 round 4: nothing gives it away).
+ */
+export type ExportPhase = 'starting' | 'cutting' | 'encoding' | 'finishing';
 
 type Translate = (key: string) => string;
 
@@ -17,15 +20,6 @@ const linesByPhase: Record<ExportPhase, (t: Translate) => string[]> = {
   encoding: (t) => [
     t('Polishing pixels'), t('Sharpening the frames'), t('Packing it tight'), t('Dialing it in'), t('Cooking the clip'), t('Buffing the edges'),
     t('Crunching the frames'), t('Smoothing it out'), t('Tuning the picture'), t('Getting it crisp'), t('Fine-tuning'), t('Rendering the play'),
-  ],
-  // A second encode because the first came out well under the size: it's making the clip better, not fixing a failure.
-  sharper: (t) => [
-    t('One more pass'), t('Making it a bit sharper'), t('Refining it'), t('Getting it just right'), t('Adding more detail'), t('Sharpening it up'),
-  ],
-  // Again because the first came out too big.
-  smaller: (t) => [
-    t('Squeezing a little more'), t('Tightening it up'), t('Shaving off a little'), t('Finding a better fit'),
-    t('Taking another shot'), t('Running it back'), t('Second take'), t('Another go'),
   ],
   finishing: (t) => [
     t('Final touches'), t('Locking it in'), t('Almost there'), t('Wrapping up'), t('Saving your clip'), t('Sealing it up'),

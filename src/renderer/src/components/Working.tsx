@@ -122,7 +122,7 @@ const sparkCount = 7;
 /**
  * The clip being made, as the progress: its pictures (or waveform), dim, lighting up from left to right as the
  * export goes, behind a glowing edge with a trail and sparks; a soft light runs across while there's no progress
- * to show (the start, a second encode). CSS animations only (transform and opacity), so it costs next to nothing.
+ * to show yet. CSS animations only (transform and opacity), so it costs next to nothing.
  */
 function ExportStripView({ strip, progress, reduceMotion }: { strip: ExportStrip, progress: number | undefined, reduceMotion: boolean }) {
   const lit = progress != null ? Math.min(100, Math.max(0, progress * 100)) : undefined;
@@ -174,9 +174,8 @@ function WorkingCard({ text, detailText, phase, progress, strip, onAbortClick }:
   const [startedAt] = useState(() => new Date());
   const [elapsedMs, setElapsedMs] = useState(0);
   const title = useExportTitle(phase, progress, elapsedMs) ?? text;
-  // A second encode starts its own progress from 0: the bar sweeps instead of jumping back, and the line says why.
-  // So does the start, until FFmpeg's first report (it sets up for a moment): moving, not stuck at 0%.
-  const shownProgress = phase === 'sharper' || phase === 'smaller' || progress === 0 ? undefined : progress;
+  // Until FFmpeg's first report (it sets up for a moment), a sweep: moving, not stuck at 0%.
+  const shownProgress = progress === 0 ? undefined : progress;
   // Whole percents: a decimal changing several times a second only flickers. Rounded down, so it never reads
   // 100% before it's done.
   const progressPercent = shownProgress != null ? `${Math.floor(shownProgress * 100)}%` : undefined;

@@ -339,6 +339,7 @@ import useHtml5ify from './hooks/useHtml5ify';
 import WhatsNew from './components/WhatsNew';
 import UpdateNotice from './components/UpdateNotice';
 import mainApi from './mainApi.js';
+import createForwardJobProgress from './exportProgress';
 import type { AppEvent } from '../../main/index.js';
 
 import {
@@ -3953,17 +3954,21 @@ function App() {
           metadata: SizeLimitedProgressMetadata | undefined;
           detailText?: string | undefined;
         }) => {
-          const text = getStageTitle(metadata);
+          // The simple editor never says it's encoding again, not even in the window's title on the taskbar.
+          const text = getStageTitle(simpleMode ? undefined : metadata);
           if (
             currentWorkingText === text
             && currentWorkingDetailText === detailText
           ) return;
           currentWorkingText = text;
           currentWorkingDetailText = detailText;
-          setExportWorking({ text, detailText: withQuickExportLabel(detailText), phase: metadata?.retryReason ?? 'encoding' });
+          setExportWorking({ text, detailText: withQuickExportLabel(detailText), phase: 'encoding' });
         };
         // A job's last tick (done) comes without its stage: keep the stage it was at.
         let lastStage: { jobIndex: number, metadata: SizeLimitedProgressMetadata } | undefined;
+        // The simple editor's strip only moves forward, a second encode included (exportProgress.ts). Advanced mode
+        // shows each attempt's own progress, as its counters say which attempt it is.
+        const forwardJobProgress = new Map<number, ReturnType<typeof createForwardJobProgress>>();
         const updateJobProgress = ({
           jobIndex,
           jobProgress,
@@ -3974,7 +3979,13 @@ function App() {
           metadata?: SizeLimitedProgressMetadata | undefined;
         }) => {
           const safeTotalJobs = Math.max(totalJobs, 1);
-          setProgress((jobIndex + jobProgress) / safeTotalJobs);
+          let shownJobProgress = jobProgress;
+          if (simpleMode) {
+            const forward = forwardJobProgress.get(jobIndex) ?? createForwardJobProgress();
+            forwardJobProgress.set(jobIndex, forward);
+            shownJobProgress = forward(jobProgress, reported?.attemptNumber);
+          }
+          setProgress((jobIndex + shownJobProgress) / safeTotalJobs);
           if (reported != null) lastStage = { jobIndex, metadata: reported };
           const metadata = reported ?? (lastStage?.jobIndex === jobIndex ? lastStage.metadata : undefined);
           updateWorkingState({
