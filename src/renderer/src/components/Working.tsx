@@ -146,7 +146,8 @@ function WorkingCard({ text, detailText, phase, progress, frames, onAbortClick }
   const [elapsedMs, setElapsedMs] = useState(0);
   const title = useExportTitle(phase, progress, elapsedMs) ?? text;
   // A second encode starts its own progress from 0: the bar sweeps instead of jumping back, and the line says why.
-  const shownProgress = phase === 'sharper' || phase === 'smaller' ? undefined : progress;
+  // So does the start, until FFmpeg's first report (it sets up for a moment): moving, not stuck at 0%.
+  const shownProgress = phase === 'sharper' || phase === 'smaller' || progress === 0 ? undefined : progress;
   // Whole percents: a decimal changing several times a second only flickers. Rounded down, so it never reads
   // 100% before it's done.
   const progressPercent = shownProgress != null ? `${Math.floor(shownProgress * 100)}%` : undefined;

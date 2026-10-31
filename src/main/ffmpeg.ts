@@ -204,7 +204,9 @@ export async function runFfmpegWithProgress({ ffmpegArgs, duration, onProgress }
   onProgress: (a: number) => void,
 }) {
   await loadExeca();
-  const process = runFfmpegProcess(ffmpegArgs);
+  // FFmpeg reports how far it is every 0.5 s by default, so a bar sat at 0% for most of a second at the start of every
+  // export; every 0.1 s, the first report comes ~0.3 s sooner and the bar fills smoothly (no slower to run).
+  const process = runFfmpegProcess(['-stats_period', '0.1', ...ffmpegArgs]);
   assert(process.stderr != null);
   handleProgress(process, duration, onProgress);
   return process;
