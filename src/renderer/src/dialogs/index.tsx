@@ -47,7 +47,8 @@ export const showOpenDialog = async ({
   ...props
 }: Omit<Parameters<typeof dialog.showOpenDialog>[0], 'title'> & { title: string }) => {
   const startDir = defaultPath ?? getDialogStartDir();
-  const result = await dialog.showOpenDialog({ ...props, title, ...(startDir != null ? { defaultPath: startDir } : {}), ...(filters != null ? { filters } : {}) });
+  // Owned by the app's window, so it opens over ClipPress (on its monitor), not where Windows last put a picker.
+  const result = await dialog.showOpenDialog(remote.getCurrentWindow(), { ...props, title, ...(startDir != null ? { defaultPath: startDir } : {}), ...(filters != null ? { filters } : {}) });
   const [picked] = result.filePaths;
   if (!result.canceled && picked != null) {
     try {
