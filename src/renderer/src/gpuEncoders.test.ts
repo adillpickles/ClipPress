@@ -38,7 +38,7 @@ describe('vendor presets', () => {
 });
 
 describe('shouldUseHardwareDecode', () => {
-  const base = { platform: 'win32', enabled: true, inputCount: 1, width: 1920, height: 1080, cpuThreads: 4 };
+  const base = { platform: 'win32', enabled: true, inputCount: 1, width: 1920, height: 1080 };
 
   it('decodes on the GPU on Windows when enabled', () => {
     expect(shouldUseHardwareDecode(base)).toBe(true);
@@ -52,10 +52,9 @@ describe('shouldUseHardwareDecode', () => {
     expect(shouldUseHardwareDecode({ ...base, width: undefined })).toBe(false);
   });
 
-  it('keeps merges on the CPU when the CPU is large enough to be faster', () => {
-    expect(shouldUseHardwareDecode({ ...base, inputCount: 3, cpuThreads: 16 })).toBe(false);
-    expect(shouldUseHardwareDecode({ ...base, inputCount: 1, cpuThreads: 16 })).toBe(true);
-    expect(shouldUseHardwareDecode({ ...base, inputCount: 3, cpuThreads: 4 })).toBe(true);
+  it('decodes merges on the GPU too', () => {
+    expect(shouldUseHardwareDecode({ ...base, inputCount: 2 })).toBe(true);
+    expect(shouldUseHardwareDecode({ ...base, inputCount: 3 })).toBe(true);
   });
 
   it('limits how many decoders a merged export opens at once', () => {

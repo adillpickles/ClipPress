@@ -180,7 +180,7 @@ export function canUseHardwareDecode({ enabled, inputCount, width, height }: {
   width: number | undefined,
   height: number | undefined,
 }) {
-  return shouldUseHardwareDecode({ platform: process.platform, enabled: enabled && !hardwareDecodeFailed, inputCount, width, height, cpuThreads: navigator.hardwareConcurrency || undefined });
+  return shouldUseHardwareDecode({ platform: process.platform, enabled: enabled && !hardwareDecodeFailed, inputCount, width, height });
 }
 
 /** FFmpeg exited with an error that was not a user cancel: worth one more try another way. */

@@ -94,9 +94,14 @@ export const gpuEncoderLabels: Record<SizeLimitedEncoderName, string> = {
  * GPU cannot decode fall back to software inside FFmpeg.
  *
  * Measured with 1440p60 HEVC and NVENC: a single-input export went from 12.4 s to 7.2 s on 4 CPU
- * threads and 6.8 s to 6.0 s on 8, and was unchanged on 16. A 3-input merge went from 7.8 s to
- * 5.0 s on 4 threads but was 8-25% slower on 8 or more, where several GPU decoders copying frames
- * back costs more than the CPU saves. So merges only decode on the GPU on smaller CPUs.
+ * threads and 6.8 s to 6.0 s on 8, and was unchanged on 16.
+ *
+ * Merges decode on the GPU too, whatever the CPU (Beta 6.1, the owner's kind of share: AV1 NVENC
+ * recordings, a 16-thread Ryzen and an RTX 5060 Ti, `notes/beta6-ux/perf/speedlab*.sh`). Two 1440p30
+ * AV1 clips at 400% took 8.6 s instead of 21 s, the same pair at 100% 2.9 s instead of 5.2 s, two
+ * 1080p60 HEVC clips 14 s instead of 36-44 s at 400% and 6.0 s instead of 12.2 s at 100%, and
+ * three of them 6.5 s instead of 11.4 s, every output byte-for-byte the same size. (Beta 6 kept
+ * merges on the CPU above 8 threads, from an older HEVC measurement this didn't reproduce.)
  *
  * Every input of a merged export gets its own decoder, all open at once, and each holds a pool
  * of GPU frames (about 250 MB for 1440p). Above this many source pixels across inputs we decode
@@ -104,16 +109,14 @@ export const gpuEncoderLabels: Record<SizeLimitedEncoderName, string> = {
  */
 export const maxHardwareDecodePixels = 17_000_000;
 
-export function shouldUseHardwareDecode({ platform, enabled, inputCount, width, height, cpuThreads }: {
+export function shouldUseHardwareDecode({ platform, enabled, inputCount, width, height }: {
   platform: string,
   enabled: boolean,
   inputCount: number,
   width: number | undefined,
   height: number | undefined,
-  cpuThreads: number | undefined,
 }) {
   if (!enabled || platform !== 'win32' || inputCount < 1) return false;
-  if (inputCount > 1 && cpuThreads != null && cpuThreads >= minCpuThreadsForCpuAv1) return false;
   const pixels = (width ?? 0) * (height ?? 0);
   if (!(pixels > 0)) return false;
   return pixels * inputCount <= maxHardwareDecodePixels;
