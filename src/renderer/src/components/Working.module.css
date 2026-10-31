@@ -43,10 +43,14 @@
   box-shadow: var(--cp-shadow-dialog);
 }
 
+/* Exactly one line high, whatever the line: the lines rolling in and out (the one leaving is lifted out of the flow,
+   so it's positioned against this box) are clipped here and never reach the strip. */
 .title {
+  position: relative;
+  flex: none;
   display: flex;
   align-items: center;
-  min-height: 1.3em;
+  height: 1.3em;
   overflow: hidden;
   color: var(--cp-text);
   font-size: 1.1875rem;
