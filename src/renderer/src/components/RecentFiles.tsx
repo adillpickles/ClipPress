@@ -1,9 +1,13 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FiFilm, FiX } from 'react-icons/fi';
+import { FiX } from 'react-icons/fi';
 
 import type { RecentFile } from '../../../common/types';
 import { getProjectLookupPaths, getProjectStoreEnv } from '../projectStore';
+import { shelfThumbnailKey } from '../shelf';
+import type { ShelfFile } from '../shelf';
+import type { ShelfThumbnail } from '../shelfThumbnails';
+import { ShelfThumb } from './Shelf';
 import formatRelativeTime from '../util/relativeTime';
 import styles from './RecentFiles.module.css';
 
@@ -19,7 +23,30 @@ async function exists(path: string) {
   }
 }
 
-interface FileState { missing: boolean, edited: boolean }
+async function statFile(path: string): Promise<{ size: number, mtimeMs: number } | undefined> {
+  try {
+    return await stat(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/** `file`: the recording as the clip lists know it (its picture's key), while it's there. */
+interface FileState { missing: boolean, edited: boolean, file?: ShelfFile | undefined }
+
+/** A row's picture from the app's one store (useThumbnailStore), asked for when the row shows. */
+function RecentThumb({ file, thumbnails, requestThumbnail }: {
+  file: ShelfFile | undefined,
+  thumbnails: ReadonlyMap<string, ShelfThumbnail>,
+  requestThumbnail: (forFile: ShelfFile) => void,
+}) {
+  // A recording that's gone has no picture to make: the film icon.
+  const thumbnail = file != null ? thumbnails.get(shelfThumbnailKey(file)) : null;
+  useEffect(() => {
+    if (file != null && thumbnail === undefined) requestThumbnail(file);
+  }, [file, requestThumbnail, thumbnail]);
+  return <ShelfThumb thumbnail={thumbnail} />;
+}
 
 function useRelativeTime() {
   const { t, i18n } = useTranslation();
@@ -39,14 +66,16 @@ function displayName(path: string) {
  * Recordings opened lately, on the welcome screen. Marks the ones with saved edits (in ClipPress's folder, next to
  * them or in the export folder), so it is easy to pick up where you left off (#64).
  */
-function RecentFiles({ files, customOutDir, wasExported, onOpen, onRemove, onForget, onClear }: {
+function RecentFiles({ files, customOutDir, wasExported, thumbnails, requestThumbnail, onOpen, onRemove, onForget, onClear }: {
   files: RecentFile[],
   customOutDir: string | undefined,
   /** ClipPress exported this recording (the shelf's export list). */
   wasExported: (path: string) => boolean,
+  thumbnails: ReadonlyMap<string, ShelfThumbnail>,
+  requestThumbnail: (file: ShelfFile) => void,
   onOpen: (path: string) => void,
   onRemove: (path: string) => void,
-  /** Recordings exported and then deleted: done with, so they leave the list rather than show as Missing. */
+  /** Recordings gone with nothing left to come back for: they leave the list rather than show as Missing. */
   onForget: (paths: string[]) => void,
   onClear: () => void,
 }) {
@@ -67,15 +96,17 @@ function RecentFiles({ files, customOutDir, wasExported, onOpen, onRemove, onFor
     (async () => {
       const entries = await Promise.all(files.map(async ({ path }) => {
         const projectPaths = getProjectLookupPaths(path, 'app', customOutDir, getProjectStoreEnv());
-        const [mediaExists, ...projectsExist] = await Promise.all([exists(path), ...projectPaths.map((projectPath) => exists(projectPath))]);
-        return [path, { missing: !mediaExists, edited: projectsExist.some(Boolean) }] as const;
+        const [media, ...projectsExist] = await Promise.all([statFile(path), ...projectPaths.map((projectPath) => exists(projectPath))]);
+        const edited = projectsExist.some(Boolean);
+        const file = media != null ? { path, name: basename(path), modifiedAt: media.mtimeMs, size: media.size, edited } : undefined;
+        return [path, { missing: media == null, edited, file }] as const;
       }));
-      // Exported, then gone from a folder that's still there: deleted (or moved) after the export. A missing folder
-      // may be a drive that's unplugged, so that one stays, as Missing.
-      const done = await Promise.all(entries.map(async ([path, state]) => (state.missing && wasExported(path) && await exists(dirname(path)) ? [path] : [])));
+      // Recent keeps a recording that's gone only when there's something to come back for: edits never exported
+      // (shown as Missing, to find it again). Gone and exported, or gone without edits, it leaves the list.
+      const done = entries.filter(([path, state]) => state.missing && (wasExported(path) || !state.edited)).map(([path]) => path);
       if (cancelled) return;
       setStates(Object.fromEntries(entries));
-      if (done.flat().length > 0) onForget(done.flat());
+      if (done.length > 0) onForget(done);
     })();
     return () => { cancelled = true; };
   }, [checkCount, customOutDir, files, onForget, wasExported]);
@@ -102,7 +133,7 @@ function RecentFiles({ files, customOutDir, wasExported, onOpen, onRemove, onFor
                 onClick={() => onOpen(path)}
                 title={missing ? `${t('This file has been moved or deleted: {{path}}', { path })}\n${t('Click to find it.')}` : path}
               >
-                <FiFilm aria-hidden className={styles['icon']} />
+                <RecentThumb file={state?.file} thumbnails={thumbnails} requestThumbnail={requestThumbnail} />
                 <span className={styles['text']}>
                   <span className={styles['name']}>{displayName(path)}</span>
                   <span className={styles['meta']}>

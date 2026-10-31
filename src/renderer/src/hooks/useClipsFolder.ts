@@ -1,13 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { ShelfExport } from '../../../common/types';
 import { clipsFolderDepth, findRecorderFolders, listNewestClips } from '../clipsFolder';
 import type { RecorderFolder } from '../clipsFolder';
-import { shelfThumbnailKey } from '../shelf';
 import type { ShelfFile } from '../shelf';
-import { renderShelfThumbnail } from '../ffmpeg';
-import ShelfThumbnails from '../shelfThumbnails';
-import type { ShelfThumbnail } from '../shelfThumbnails';
 
 const { watch } = window.require('fs');
 const remote = window.require('@electron/remote');
@@ -22,8 +18,8 @@ const maxSettleMs = 5000;
 
 /**
  * The clips folder's newest clips while the start screen shows them: listed again when the folder changes (a clip
- * saved while ClipPress is open joins at once) and when the window comes back to the front. Thumbnails as the
- * shelf makes them, in memory only.
+ * saved while ClipPress is open joins at once) and when the window comes back to the front. Thumbnails come from the
+ * app's one store (useThumbnailStore).
  */
 export function useClipsFolder({ folder, exports, caseInsensitive, active }: {
   folder: string | undefined,
@@ -42,8 +38,6 @@ export function useClipsFolder({ folder, exports, caseInsensitive, active }: {
   // A watch that failed (a drive unplugged) is tried again when the window comes back to the front.
   const [watchAttempt, setWatchAttempt] = useState(0);
   const watchFailedRef = useRef(false);
-  const [thumbnails, setThumbnails] = useState<ReadonlyMap<string, ShelfThumbnail>>(new Map());
-  const thumbnailsRef = useRef<ShelfThumbnails>();
 
   useEffect(() => {
     if (folder == null || !active) return;
@@ -99,23 +93,8 @@ export function useClipsFolder({ folder, exports, caseInsensitive, active }: {
     };
   }, [active, folder, watchAttempt]);
 
-  useEffect(() => {
-    const store = new ShelfThumbnails({
-      render: renderShelfThumbnail,
-      revoke: (url) => URL.revokeObjectURL(url),
-      onChange: () => setThumbnails(store.snapshot()),
-    });
-    thumbnailsRef.current = store;
-    return () => {
-      store.dispose();
-      setThumbnails(new Map());
-    };
-  }, [folder]);
-
-  const requestThumbnail = useCallback((file: ShelfFile) => thumbnailsRef.current?.request({ key: shelfThumbnailKey(file), path: file.path }), []);
-
   const clips = listing != null && listing.folder === folder ? listing.clips : undefined;
-  return { clips, thumbnails, requestThumbnail };
+  return { clips };
 }
 
 /**

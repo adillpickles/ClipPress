@@ -299,6 +299,7 @@ import AudioTrackHeader from './components/AudioTrackHeader';
 import ClipVolumePopover from './components/ClipVolumePopover';
 import { ShelfUpNext } from './components/Shelf';
 import useShelf, { listShelfFolder } from './hooks/useShelf';
+import useThumbnailStore from './hooks/useThumbnailStore';
 import { useClipsFolder, useRecorderFolderOffer } from './hooks/useClipsFolder';
 import ClipsFolderList from './components/ClipsFolderList';
 import { buildShelfQueue, pickNextClip, rememberShelfExport, shelfPathKey, shelfThumbnailKey } from './shelf';
@@ -2047,7 +2048,9 @@ function App() {
     return () => clearTimeout(timer);
   }, [filePath, simpleMode]);
   const shelfPrefetch = !working && (filePath == null || openSettled || (simpleMode && openVisualsIn));
-  const shelf = useShelf({ folder: shelfFolder, order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac, currentPath: filePath ?? shelfAnchorPath, prefetch: shelfPrefetch, unopenable: unopenableShelfKeys });
+  // Clip pictures for the clips panel and the start screen's lists, each made once (useThumbnailStore).
+  const thumbnailStore = useThumbnailStore();
+  const shelf = useShelf({ folder: shelfFolder, order: shelfOrder, exports: shelfExports, caseInsensitive: isWindows || isMac, currentPath: filePath ?? shelfAnchorPath, prefetch: shelfPrefetch, unopenable: unopenableShelfKeys, thumbnailStore });
   const { refresh: refreshShelf, nextClip } = shelf;
   // The start screen's newest clips from the clips folder, and the recorder folder to offer while none is linked.
   const onStartScreen = filePath == null && simpleMode;
@@ -7415,8 +7418,8 @@ function App() {
                           <ClipsFolderList
                             folder={clipsFolder}
                             clips={clipsFolderClips.clips}
-                            thumbnails={clipsFolderClips.thumbnails}
-                            requestThumbnail={clipsFolderClips.requestThumbnail}
+                            thumbnails={thumbnailStore.thumbnails}
+                            requestThumbnail={thumbnailStore.requestThumbnail}
                             onOpen={openShelfClip}
                             offer={recorderFolderOffer}
                             // Taken once is enough: unlinking it later in Settings doesn't bring the offer back.
@@ -7433,6 +7436,8 @@ function App() {
                           customOutDir={customOutDir}
                           onOpen={openRecentFile}
                           wasExported={wasExportedSource}
+                          thumbnails={thumbnailStore.thumbnails}
+                          requestThumbnail={thumbnailStore.requestThumbnail}
                           onRemove={(path) => setRecentFiles((list) => removeRecentFile(list, path, isWindows || isMac))}
                           onForget={forgetRecentFiles}
                           onClear={() => setRecentFiles([])}
