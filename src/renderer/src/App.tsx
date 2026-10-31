@@ -7231,12 +7231,24 @@ function App() {
   // The audio track's one Track volume is "the whole recording, in the export": with a second track in the recording
   // (OBS's game + mic, say) that only plays in the export, it changes that one too, not just the track you hear.
   const setTrackVolume = useCallback((streamId: number, audioGainDb: number) => {
+    if (filePath == null) return;
     if (previewAudioGainControls.length !== 1) {
       updateAudioGainForStream(streamId, audioGainDb);
       return;
     }
-    for (const stream of audioStreams) updateAudioGainForStream(stream.index, audioGainDb);
-  }, [audioStreams, previewAudioGainControls.length, updateAudioGainForStream]);
+    // Every track in one change, so a drag is one undo step and Ctrl+Z puts them all back together.
+    setParamsByStreamId(produce((draft: ParamsByStreamId) => {
+      if (!draft.has(filePath)) draft.set(filePath, new Map());
+      const fileMap = draft.get(filePath);
+      invariant(fileMap != null);
+      for (const stream of audioStreams) {
+        if (!fileMap.has(stream.index)) fileMap.set(stream.index, {});
+        const params = fileMap.get(stream.index);
+        invariant(params != null);
+        params.audioGainDb = audioGainDb === defaultAudioGainDb ? undefined : audioGainDb;
+      }
+    }), { coalesceKey: `stream:${filePath}:track-volume` });
+  }, [audioStreams, filePath, previewAudioGainControls.length, setParamsByStreamId, updateAudioGainForStream]);
   const audioHeader = useMemo(() => (
     <AudioTrackHeader
       previewVolume={playbackVolume}
