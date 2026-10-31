@@ -49,17 +49,86 @@
   min-height: 1.3em;
   overflow: hidden;
   color: var(--cp-text);
-  font-size: 1rem;
+  font-size: 1.1875rem;
   font-weight: 700;
   line-height: 1.3;
 }
 
+/* What it's doing, under the playful line: clearly the smaller of the two. */
 .detail {
-  color: var(--cp-text-muted);
-  font-size: .8125rem;
+  margin-top: -.3rem;
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
   line-height: 1.45;
   max-width: 100%;
   word-break: break-word;
+}
+
+/* The clip being made (ClipFrames): its pictures dim, lit from the left as the export goes. */
+.frames {
+  position: relative;
+  height: 2.75rem;
+  margin-top: .3rem;
+  border-radius: var(--cp-radius-sm);
+  overflow: hidden;
+  background: var(--cp-hover);
+}
+
+.frameRow {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  gap: 2px;
+  transition: clip-path .18s ease-out;
+}
+
+.frameRow img {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  user-select: none;
+}
+
+.framesDim img {
+  filter: grayscale(1) brightness(.42);
+}
+
+/* Where the light has got to: a thin glowing line in the accent colour. */
+.framesEdge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--cp-accent);
+  box-shadow: 0 0 10px 2px color-mix(in srgb, var(--cp-accent) 55%, transparent);
+  transition: left .18s ease-out;
+}
+
+/* A second encode (the bar can't tell how far): a soft light runs across the dim pictures. */
+.framesSweep {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0, rgb(255 255 255 / 16%) 50%, transparent 100%) no-repeat;
+  background-size: 35% 100%;
+  animation: frames-sweep 1.8s ease-in-out infinite;
+}
+
+@keyframes frames-sweep {
+  from { background-position: -60% 0; }
+  to { background-position: 160% 0; }
+}
+
+.frames.still .frameRow,
+.frames.still .framesEdge {
+  transition: none;
+}
+
+.frames.still .framesSweep {
+  animation: none;
+  background: none;
 }
 
 .metaRow {

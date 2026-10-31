@@ -285,6 +285,7 @@ import useStreamsMeta from './hooks/useStreamsMeta';
 import { bottomStyle, videoStyle } from './styles';
 import PreviewSpinner from './components/PreviewSpinner';
 import useFilmstrip from './hooks/useFilmstrip';
+import pickExportFrames from './exportFrames';
 import { getTimelineCacheKey } from './timelineCache';
 import { getVideoDisplayAspect } from './filmstrip';
 import { schedulePruneTimelineCache } from './timelineCacheIo';
@@ -2000,6 +2001,14 @@ function App() {
     cacheKey: timelineCacheKey,
     aspect: filmstripAspect,
   });
+
+  // An export's card shows the clips being made, from the filmstrip already made: as many pictures as fit its
+  // strip (2.75rem high, ~23rem wide).
+  const exportFrames = useMemo(() => {
+    if (working?.phase == null || filmstrip.aspect == null) return undefined;
+    const count = Math.min(8, Math.max(3, Math.round(23 / (2.75 * filmstrip.aspect))));
+    return pickExportFrames(filmstrip.frames, segmentsToExport, count);
+  }, [filmstrip.aspect, filmstrip.frames, segmentsToExport, working?.phase]);
 
   // Simple mode's audio track under the clips: its waveform, made once per open recording.
   const showAudioLane = simpleMode && hasAudio;
@@ -8061,6 +8070,7 @@ function App() {
                     phase={working.phase}
                     quiet={working.quiet}
                     progress={progress}
+                    frames={exportFrames}
                     onAbortClick={abortWorking}
                   />
                 )}
