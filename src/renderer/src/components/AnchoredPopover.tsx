@@ -14,7 +14,7 @@ const focusableSelector = 'input:not(:disabled), button:not(:disabled), select:n
  * A small floating panel next to a point or element (above it when there's room), portalled to the app root.
  * Closes on a click outside it or Escape.
  */
-export default function AnchoredPopover({ anchor, onClose, children, label, className, align = 'center', side = 'above', dataShelf, keyboardFocus = false, fallbackFocus, onPointerEnter, onPointerLeave }: {
+export default function AnchoredPopover({ anchor, onClose, children, label, className, align = 'center', side = 'above', dataShelf, keyboardFocus = false, fallbackFocus, opener: givenOpener, onPointerEnter, onPointerLeave }: {
   /** Where to open: an element, or a point (e.g. where the user right-clicked). */
   anchor: HTMLElement | { x: number, y: number },
   onClose: () => void,
@@ -35,6 +35,11 @@ export default function AnchoredPopover({ anchor, onClose, children, label, clas
   keyboardFocus?: boolean | undefined,
   /** Where focus goes back to when what opened it is gone by the time it closes. */
   fallbackFocus?: (() => HTMLElement | null | undefined) | undefined,
+  /**
+   * What opened it, when that isn't what has focus (opened from a menu, which has closed): focus moves into the
+   * popover as for a keyboard opening, and goes back to this.
+   */
+  opener?: HTMLElement | undefined,
   onPointerEnter?: (() => void) | undefined,
   onPointerLeave?: (() => void) | undefined,
 }) {
@@ -51,6 +56,7 @@ export default function AnchoredPopover({ anchor, onClose, children, label, clas
 
   // What had focus when it opened, if that was from the keyboard (its focus ring showing).
   const [opener] = useState(() => {
+    if (givenOpener != null) return givenOpener;
     const active = document.activeElement;
     return keyboardFocus && active instanceof HTMLElement && active.matches(':focus-visible') ? active : undefined;
   });

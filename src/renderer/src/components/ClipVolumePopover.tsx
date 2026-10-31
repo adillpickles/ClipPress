@@ -72,7 +72,16 @@ function ClipVolumePopover({ anchor, clipLabel, audioGainDb, audioMuted, trackGa
 
   return (
     // Opened from the clip's volume badge with the keyboard, focus moves into it (see AnchoredPopover).
-    <AnchoredPopover anchor={anchor} side={anchor instanceof HTMLElement ? 'below' : 'above'} onClose={onClose} label={t('Clip volume')} keyboardFocus fallbackFocus={fallbackFocus}>
+    <AnchoredPopover
+      anchor={anchor}
+      // From a clip card's menu: below the card, with focus in it and back to the card after.
+      side={anchor instanceof HTMLElement ? 'below' : 'above'}
+      opener={anchor instanceof HTMLElement ? (anchor.querySelector<HTMLElement>('button') ?? undefined) : undefined}
+      onClose={onClose}
+      label={t('Clip volume')}
+      keyboardFocus
+      fallbackFocus={fallbackFocus}
+    >
       <div className={styles['heading']}>
         <span className={styles['title']}>{t('Clip volume')}</span>
         <span className={styles['clipName']}>{clipLabel}</span>

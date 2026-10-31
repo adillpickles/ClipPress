@@ -9,7 +9,7 @@ import type {
   SizeLimitSimpleFps,
   SizeLimitSimpleResolution,
 } from '../../common/types.js';
-import { getExperimentalArgs, getFfmpegPath, logStdoutStderr, readPackets, runFfmpeg, runFfmpegWithProgress } from './ffmpeg';
+import { decodeText, getDuration, getExperimentalArgs, getFfmpegPath, logStdoutStderr, readPackets, runFfmpeg, runFfmpegWithProgress } from './ffmpeg';
 import { canCopyLosslessly, estimateLosslessCopy, maxLosslessLeadIn } from './losslessFit';
 import { hasSegmentCrop, getSegmentCropFilter } from './segmentCrop';
 import mainApi from './mainApi';
@@ -39,7 +39,8 @@ import type { GpuEncoderName } from './gpuEncoders';
 import { getTempWorkDir } from './util/tempFiles';
 
 const { access, constants: { W_OK }, mkdir, mkdtemp, rmdir, stat, writeFile } = window.require('fs/promises');
-const { dirname, join } = window.require('path');
+const { basename, dirname, join } = window.require('path');
+const remote = window.require('@electron/remote');
 
 const retryTempSuffix = 'clippress-size-limit';
 // 1280x720 satisfies every vendor's alignment rules (AMD AV1 pads to 64x16 blocks).
@@ -49,7 +50,7 @@ const gpuProbeFrames = '3';
 const gpuProbeTimeoutMs = 15_000;
 
 function decodeProcessOutput({ stdout, stderr }: { stdout: Uint8Array, stderr: Uint8Array }) {
-  return `${new TextDecoder().decode(stdout)}\n${new TextDecoder().decode(stderr)}`;
+  return `${decodeText(stdout)}\n${decodeText(stderr)}`;
 }
 
 /**
@@ -259,6 +260,34 @@ async function assertOutPathIsNotSource({ outPath, filePath }: { outPath: string
 }
 
 /**
+ * A finished export that couldn't take its name is made in ClipPress's temporary folder, which is emptied once this
+ * run has ended: moved beside its destination under a temporary name, else into ClipPress's own folder, so it
+ * survives. Where it stays if both fail.
+ */
+async function keepFinishedExport(path: string, outPath: string) {
+  const stamp = `${process.pid}-${Date.now()}`;
+  const candidates = [
+    join(dirname(outPath), `${basename(outPath, '.mp4')} (kept ${stamp}).mp4`),
+    join(remote.app.getPath('userData'), 'Kept exports', `${basename(outPath, '.mp4')} (${stamp}).mp4`),
+  ];
+  for (const candidate of candidates) {
+    try {
+      // One after the other: the second only if the first can't be used.
+      // eslint-disable-next-line no-await-in-loop
+      await mkdir(dirname(candidate), { recursive: true });
+      // eslint-disable-next-line no-await-in-loop
+      await moveExportWithRetry(path, candidate, false);
+      // eslint-disable-next-line no-await-in-loop
+      await rmdir(dirname(path)).catch(() => undefined);
+      return candidate;
+    } catch (err) {
+      console.warn('Could not keep the finished export at', candidate, err);
+    }
+  }
+  return path;
+}
+
+/**
  * Moves the finished encode into place.
  *
  * The encode itself is complete and usable by this point, so a failure here is a
@@ -281,8 +310,9 @@ async function finalizeEncodedOutput({ result, outPath, filePath, enableOverwrit
     return { result: { ...result, path: outPath } };
   } catch (err) {
     console.warn('Failed to move the finished export into place', result.path, outPath, err);
+    const keptPath = await keepFinishedExport(result.path, outPath);
     return {
-      result,
+      result: { ...result, path: keptPath },
       postProcessingWarning: 'The export finished, but ClipPress could not give it the final file name. The file was kept under a temporary name.',
     };
   }
@@ -625,8 +655,9 @@ async function executeWithRetries(args: Parameters<typeof executeAttempts>[0] & 
  * Lossless when it fits: copies [start, end) as it is, from the keyframe before start, when its bytes already fit the
  * target. Undefined, with nothing left behind, when they don't (the export then encodes as usual).
  */
-async function copyLosslesslyIfItFits({ filePath, start, end, videoStream, audioStream, targetBytes, strategy, appendFfmpegCommandLog, onProgress }: {
+async function copyLosslesslyIfItFits({ filePath, sourceDuration, start, end, videoStream, audioStream, targetBytes, strategy, appendFfmpegCommandLog, onProgress }: {
   filePath: string,
+  sourceDuration: number | undefined,
   start: number,
   end: number,
   videoStream: Pick<FFprobeStream, 'index'>,
@@ -636,9 +667,21 @@ async function copyLosslesslyIfItFits({ filePath, start, end, videoStream, audio
   appendFfmpegCommandLog: (args: string[]) => void,
   onProgress: (progress: number) => void,
 }): Promise<SizeLimitedExecutionResult | undefined> {
-  // Read from a little before the earliest keyframe the copy may start on, so it's among the packets.
-  const packets = await readPackets({ filePath, from: Math.max(0, start - maxLosslessLeadIn - 1), to: end });
-  const estimate = estimateLosslessCopy({ packets, videoStreamIndex: videoStream.index, audioStreamIndex: audioStream?.index, start, end });
+  // Far too big at the recording's average rate: not worth reading its packets.
+  if (sourceDuration != null && sourceDuration > 0) {
+    const averageBytes = ((await stat(filePath)).size / sourceDuration) * (end - start);
+    if (averageBytes > targetBytes * 2) return undefined;
+  }
+  let estimate: ReturnType<typeof estimateLosslessCopy>;
+  try {
+    // Read from a little before the earliest keyframe the copy may start on, so it's among the packets.
+    const packets = await readPackets({ filePath, from: Math.max(0, start - maxLosslessLeadIn - 1), to: end });
+    estimate = estimateLosslessCopy({ packets, videoStreamIndex: videoStream.index, audioStreamIndex: audioStream?.index, start, end });
+  } catch (err) {
+    // Only a shortcut: if the recording can't be read this way (or not in time), it's encoded as usual.
+    console.warn('Could not read the clip to see if a copy fits, encoding instead', err);
+    return undefined;
+  }
   if (estimate == null || estimate.bytes > targetBytes) return undefined;
 
   // In ClipPress's temporary folder, like an encode's attempts, so nothing shows next to the export until it's done.
@@ -662,8 +705,10 @@ async function copyLosslesslyIfItFits({ filePath, start, end, videoStream, audio
     const result = await runFfmpegWithProgress({ ffmpegArgs, duration: end - estimate.copyStart, onProgress });
     logStdoutStderr(result);
     const size = await readFileSize(copyPath);
-    // The estimate leaves room for MP4's index, but the file itself decides.
-    if (size > targetBytes) {
+    // The file itself decides: the estimate leaves room for MP4's index, and FFmpeg may have started on an earlier
+    // keyframe than the one read (e.g. an MKV with B-frames, whose seek steps back a little), making it too long.
+    const copiedDuration = await getDuration(copyPath).catch(() => undefined);
+    if (size > targetBytes || copiedDuration == null || copiedDuration > end - start + maxLosslessLeadIn + 0.05) {
       await deleteIfExists(copyPath);
       await rmdir(tempDir).catch(() => undefined);
       return undefined;
@@ -885,6 +930,7 @@ export async function exportSizeLimitedSegment({
   });
   const copied = copyable ? await copyLosslesslyIfItFits({
     filePath,
+    sourceDuration,
     start: segment.start,
     end: segment.end,
     videoStream,

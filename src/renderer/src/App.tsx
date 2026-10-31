@@ -4113,7 +4113,8 @@ function App() {
           cleanupAfter: newCleanupChoices,
           sourcePath: filePath,
           sourceIdentity,
-          allPlannedCreated: finalizedResults.length > 0 && finalizedResults.every((result) => result.created),
+          // An export kept under a temporary name (it couldn't be put in place) doesn't count: the original stays.
+          allPlannedCreated: finalizedResults.length > 0 && finalizedResults.every((result) => result.created && result.postProcessingWarning == null),
           exportedPaths,
           notices,
           warnings,
