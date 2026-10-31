@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FiArrowLeft, FiCopy, FiMinus, FiSquare, FiX } from 'react-icons/fi';
 
-import ClipPressMark from './components/ClipPressMark';
 import { openMenu } from './components/Menu';
 import type { MenuEntry } from './components/Menu';
 import mainApi from './mainApi';
@@ -156,30 +155,22 @@ function AppChrome({ keyBindingByAction, onGoHome }: {
     <div className={[styles['wrapper'], ...(!isFocused ? [styles['wrapperInactive']] : []), ...(isMaximized ? [styles['wrapperMaximized']] : [])].join(' ')}>
       <div className={styles['left']}>
         {onGoHome != null ? (
-          // With a recording open, the logo goes back to the start screen (as File > Close does); hovered, the name
-          // turns into where it goes.
+          // With a recording open, the name goes back to the start screen (as File > Close does); hovered, it turns
+          // into where it goes.
           <button
             type="button"
-            className={[styles['brand'], styles['brandButton']].join(' ')}
+            className={styles['brandButton']}
             onClick={onGoHome}
             title={t('Close this clip')}
             data-tip-keys={homeKeys}
           >
-            <span className={styles['brandMark']}>
-              <ClipPressMark />
-            </span>
             <span className={styles['brandText']}>
               <span className={styles['brandName']}>ClipPress</span>
               <span className={styles['brandHome']} aria-hidden><FiArrowLeft />{t('Home')}</span>
             </span>
           </button>
         ) : (
-          <div className={styles['brand']}>
-            <div className={styles['brandMark']}>
-              <ClipPressMark />
-            </div>
-            <span className={styles['brandText']}>ClipPress</span>
-          </div>
+          <div className={styles['brand']}>ClipPress</div>
         )}
 
         <div className={styles['menuBar']}>

@@ -6,7 +6,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0 .35rem 0 .8rem;
+  padding: 0 .35rem 0 .3rem;
   background: transparent;
   color: var(--cp-text);
   flex-shrink: 0;
@@ -26,55 +26,45 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: .95rem;
+  gap: .18rem;
 }
 
+/* The app's name, first in the bar: the menu words' size, padding and baseline, a little bolder (6.1 round 3: no logo
+   mark, so it lines up with File, Edit…). */
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: .55rem;
   min-width: 0;
-}
-
-.brandMark {
-  width: 1.4rem;
-  height: 1.4rem;
-  border-radius: 7px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(180deg, #4ccad4, #2b8e97);
-  color: #0b1417;
-  font-size: 1.4rem;
-  flex-shrink: 0;
-}
-
-.brandText {
-  font-family: var(--cp-font-display);
-  font-size: .9rem;
-  font-weight: 750;
-  letter-spacing: -.02em;
+  padding: .42rem .66rem;
+  border-radius: .7rem;
+  font-size: .8rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -.01em;
   color: var(--cp-text);
 }
 
-/* The logo as the way home (a recording open): hovered, "ClipPress" rolls away and "← Home" rolls in, in the same
-   place (both in one grid cell, so nothing moves). */
+/* With a recording open it's the way home: hovered, "ClipPress" rolls away and "← Home" rolls in, in the same place
+   (both in one grid cell, as wide as the wider word, so nothing in the bar moves). */
 .brandButton {
   all: unset;
   display: inline-flex;
   align-items: center;
-  gap: .55rem;
-  margin: 0 -.45rem;
-  padding: .2rem .45rem;
-  border-radius: var(--cp-radius-sm);
+  padding: .42rem .66rem;
+  border-radius: .7rem;
+  font-size: .8rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -.01em;
+  color: var(--cp-text);
   cursor: pointer;
   -webkit-app-region: no-drag;
-  transition: background-color .15s ease;
+  transition: background-color .14s ease;
 }
 
 .brandButton:hover,
 .brandButton:focus-visible {
-  background: var(--cp-hover);
+  background: color-mix(in srgb, var(--gray-4) 55%, transparent);
 }
 
 .brandButton:focus-visible {
@@ -82,7 +72,7 @@
   outline-offset: 1px;
 }
 
-.brandButton .brandText {
+.brandText {
   display: inline-grid;
   overflow: hidden;
 }
@@ -96,9 +86,13 @@
 .brandHome {
   display: inline-flex;
   align-items: center;
-  gap: .3rem;
+  gap: .25rem;
   opacity: 0;
   transform: translateY(70%);
+}
+
+.brandHome svg {
+  font-size: .95em;
 }
 
 .brandButton:hover .brandName,
