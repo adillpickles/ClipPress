@@ -24,7 +24,7 @@ import runCancellable from './util/ffmpegCancel';
 
 const { ffmpeg } = window.require('@electron/remote').require('./index.js');
 
-const { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, getFfmpegPath, setCustomFfPath } = ffmpeg;
+const { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, getFfmpegPath, setCustomFfPath, checkFfExists } = ffmpeg;
 
 type Runners = typeof ffmpeg.runWithCallbacks;
 type RunnerName = Parameters<Runners>[0];
@@ -729,6 +729,10 @@ const ffprobeVersionSchema = z.object({
 });
 
 export async function runFfmpegStartupCheck() {
+  // will throw ENOENT if the executables don't exist (e.g. a custom FFmpeg folder without them)
+  await checkFfExists('ffmpeg');
+  await checkFfExists('ffprobe');
+
   // will throw if exit code != 0
   const { stderr: ffmpegStderr } = await runFfmpeg(['-f', 'lavfi', '-i', 'nullsrc=s=256x256:d=1', '-f', 'null', '-']);
   console.log('FFmpeg startup check output:', new TextDecoder().decode(ffmpegStderr));

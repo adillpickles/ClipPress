@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { stat } from 'node:fs/promises';
+import { access, stat } from 'node:fs/promises';
 import readline from 'node:readline';
 import { constants as osConstants, setPriority } from 'node:os';
 import type { Options as ExecaOptions, ResultPromise } from 'execa';
@@ -63,6 +63,13 @@ function getFfPath(cmd: string) {
   if (isWindows || isLinux) components.push('lib');
   components.push(exeName);
   return join(...components);
+}
+
+// Used by the startup check to fail fast with a proper ENOENT if the executable doesn't exist.
+// On Windows, cross-spawn (used by execa) otherwise runs the command through cmd.exe when it can't find the executable
+// (e.g. a custom FFmpeg folder without ffmpeg.exe), which fails with a confusing exit code 1 instead
+export async function checkFfExists(cmd: 'ffmpeg' | 'ffprobe') {
+  await access(getFfPath(cmd)); // throws with code ENOENT if it doesn't exist
 }
 
 const getFfprobePath = () => getFfPath('ffprobe');
