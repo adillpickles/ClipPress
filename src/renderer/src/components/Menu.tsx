@@ -300,6 +300,8 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
   // waits for it, so a mouse resting elsewhere doesn't close it).
   const leaveTimer = useRef<ReturnType<typeof setTimeout>>();
   const leaveArmed = useRef(false);
+  // Where the pointer was last seen: away from the menu and its bar, or not.
+  const pointerWasAway = useRef(false);
   // What had focus before the menu opened: it gets it back (a text field, for its edit actions).
   const returnFocus = useRef<HTMLElement | null>(null);
   const optionsRef = useRef<OpenMenuOptions>();
@@ -346,6 +348,9 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
       }
       // One menu at a time: another one opening replaces it (its owner hears that it closed).
       const previous = optionsRef.current;
+      // A menu opened afresh is under the pointer (or opened from the keyboard); one replacing another keeps what's
+      // known of where the pointer is.
+      if (previous == null) pointerWasAway.current = false;
       if (previous != null) previous.onClose?.();
       else returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       clearTimeout(submenuTimer.current);
@@ -353,6 +358,8 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
       clearTimeout(leaveTimer.current);
       leaveTimer.current = undefined;
       leaveArmed.current = next.keyboard !== true;
+      // The pointer already left while this one was on its way (a quick flick across the bar and off it): it goes too.
+      if (next.closeOnLeave && leaveArmed.current && pointerWasAway.current) leaveTimer.current = setTimeout(() => close(false), leaveGraceMs);
       setConfirming(undefined);
       const items = visibleItems(next.items);
       const anchor = next.at instanceof HTMLElement ? next.at.getBoundingClientRect() : next.at;
@@ -568,11 +575,13 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
 
   // closeOnLeave: the pointer on the menu (or its bar) keeps it; away from both for leaveGraceMs, it closes.
   const pointerHome = useCallback(() => {
+    pointerWasAway.current = false;
     leaveArmed.current = true;
     clearTimeout(leaveTimer.current);
     leaveTimer.current = undefined;
   }, []);
   const pointerAway = useCallback(() => {
+    pointerWasAway.current = true;
     if (!optionsRef.current?.closeOnLeave || !leaveArmed.current || leaveTimer.current != null) return;
     leaveTimer.current = setTimeout(() => close(false), leaveGraceMs);
   }, [close]);
