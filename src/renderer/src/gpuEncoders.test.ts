@@ -90,13 +90,24 @@ describe('frames kept on the GPU', () => {
   });
 
   it('is for sped-up exports of up to three clips, not turned', () => {
-    expect(shouldKeepFramesOnGpu({ rates: [4], rotation: undefined })).toBe(true);
-    expect(shouldKeepFramesOnGpu({ rates: [4, 1, 0.5], rotation: 0 })).toBe(true);
-    expect(shouldKeepFramesOnGpu({ rates: [1], rotation: undefined })).toBe(false);
-    expect(shouldKeepFramesOnGpu({ rates: [0.5, 1], rotation: undefined })).toBe(false);
-    expect(shouldKeepFramesOnGpu({ rates: Array.from({ length: maxGpuFramesClips + 1 }, () => 4), rotation: undefined })).toBe(false);
-    expect(shouldKeepFramesOnGpu({ rates: [4], rotation: 90 })).toBe(false);
-    expect(shouldKeepFramesOnGpu({ rates: [4], rotation: 360 })).toBe(true);
+    const clip = (rate: number, duration = 5) => ({ rate, duration });
+    const keep = (clips: { rate: number, duration: number }[], rotation?: number) => shouldKeepFramesOnGpu({ clips, rotation, lowestFps: 30 });
+    expect(keep([clip(4)])).toBe(true);
+    expect(keep([clip(4), clip(1), clip(0.5)], 0)).toBe(true);
+    expect(keep([clip(1)])).toBe(false);
+    expect(keep([clip(0.5), clip(1)])).toBe(false);
+    expect(keep(Array.from({ length: maxGpuFramesClips + 1 }, () => clip(4)))).toBe(false);
+    expect(keep([clip(4)], 90)).toBe(false);
+    expect(keep([clip(4)], 360)).toBe(true);
+  });
+
+  it('leaves joins with a sped-up clip under two frames long to the old path', () => {
+    const clips = [{ rate: 4, duration: 1 / 30 }, { rate: 1, duration: 5 }];
+    expect(shouldKeepFramesOnGpu({ clips, rotation: undefined, lowestFps: 30 })).toBe(false);
+    expect(shouldKeepFramesOnGpu({ clips: [{ rate: 4, duration: 2 / 30 }, { rate: 1, duration: 1 / 30 }], rotation: undefined, lowestFps: 30 })).toBe(true);
+    // One clip has no join to move.
+    expect(shouldKeepFramesOnGpu({ clips: [{ rate: 4, duration: 1 / 30 }], rotation: undefined, lowestFps: 30 })).toBe(true);
+    expect(shouldKeepFramesOnGpu({ clips: [{ rate: 4, duration: 5 }, { rate: 4, duration: 5 }], rotation: undefined, lowestFps: undefined })).toBe(false);
   });
 
   it('copies every frame of a clip at normal speed or slower', () => {

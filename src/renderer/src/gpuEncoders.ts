@@ -153,13 +153,19 @@ export function getGpuFramesDownloadFormat(pixFmt: string | undefined) {
 export const maxGpuFramesClips = 3;
 
 /** Whether an export's sped-up clips can keep their frames on the GPU (given a source format it can copy off). */
-export function shouldKeepFramesOnGpu({ rates, rotation }: {
-  /** Each clip's playback rate, in the order they're joined. */
-  rates: number[],
+export function shouldKeepFramesOnGpu({ clips, rotation, lowestFps }: {
+  /** Each clip's playback rate and length in the export, in the order they're joined. */
+  clips: { rate: number, duration: number }[],
   rotation: number | undefined,
+  /** The lowest frame rate the export may have. */
+  lowestFps: number | undefined,
 }) {
   // A turned video isn't kept there: FFmpeg turns it with a CPU filter before ours.
-  return rates.some((rate) => rate > 1) && rates.length <= maxGpuFramesClips && ((rotation ?? 0) % 360) === 0;
+  if (!clips.some(({ rate }) => rate > 1) || clips.length > maxGpuFramesClips || ((rotation ?? 0) % 360) !== 0) return false;
+  if (clips.length === 1) return true;
+  // concat needs two frames to know a clip's length (one counts as no time), so a sped-up clip shorter than that
+  // would move the next join by more.
+  return lowestFps != null && lowestFps > 0 && clips.every(({ rate, duration }) => rate <= 1 || duration * lowestFps >= 2);
 }
 
 /** Placed right after a clip's `setpts`: the frames to keep at the export's frame rate, copied off the GPU. */

@@ -20,7 +20,7 @@ import {
   getSizeLimitedSwsFlagsArgs,
   getSizeLimitedTwoPassEncodeArgs,
 } from './sizeLimitedFfmpegArgs';
-import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile } from './sizeLimitedResolution';
+import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile, targetLowFps } from './sizeLimitedResolution';
 import { planSizeLimitedEncode, relaxQualityCapForGenerousBudget } from './sizeLimitedPlanner';
 import { hasQualityCap } from './sizeLimitedEncoderArgs';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
@@ -206,12 +206,15 @@ const gpuFramesFailed = new Set<string>();
  * The format a sped-up export's frames are copied off the GPU in, when they can stay there until `fps` has dropped
  * the unkept ones (`getGpuFramesFilter`); undefined when they're copied off as they're decoded.
  */
-function getGpuFramesFormat({ videoStream, rates, rotation }: {
+function getGpuFramesFormat({ videoStream, clips, rotation, sourceFps }: {
   videoStream: Pick<FFprobeStream, 'codec_name' | 'pix_fmt'>,
-  rates: number[],
+  clips: { rate: number, duration: number }[],
   rotation: number | undefined,
+  sourceFps: number | undefined,
 }) {
-  if (!shouldKeepFramesOnGpu({ rates, rotation })) return undefined;
+  // The export's frame rate is the source's, or lowered to 30 for some sizes.
+  const lowestFps = sourceFps != null ? Math.min(sourceFps, targetLowFps) : undefined;
+  if (!shouldKeepFramesOnGpu({ clips, rotation, lowestFps })) return undefined;
   if (gpuFramesFailed.has(`${videoStream.codec_name}/${videoStream.pix_fmt}`)) return undefined;
   return getGpuFramesDownloadFormat(videoStream.pix_fmt);
 }
@@ -1010,7 +1013,7 @@ export async function exportSizeLimitedSegment({
       },
       run: (hardwareDecode) => runKeepingFramesOnGpu({
         videoStream,
-        gpuFramesFormat: hardwareDecode ? getGpuFramesFormat({ videoStream, rates: [segmentRate], rotation: sourceRotation ?? rotation }) : undefined,
+        gpuFramesFormat: hardwareDecode ? getGpuFramesFormat({ videoStream, clips: [{ rate: segmentRate, duration: plannedDuration }], rotation: sourceRotation ?? rotation, sourceFps }) : undefined,
         run: (gpuFramesFormat) => executeWithRetries({
           outPath,
           plan,
@@ -1291,7 +1294,12 @@ export async function exportSizeLimitedMerge({
       },
       run: (hardwareDecode) => runKeepingFramesOnGpu({
         videoStream,
-        gpuFramesFormat: hardwareDecode ? getGpuFramesFormat({ videoStream, rates: segments.map((segment) => getSegmentPlaybackRate(segment, outputPlaybackRate)), rotation: sourceRotation ?? rotation }) : undefined,
+        gpuFramesFormat: hardwareDecode ? getGpuFramesFormat({
+          videoStream,
+          clips: segments.map((segment) => ({ rate: getSegmentPlaybackRate(segment, outputPlaybackRate), duration: getSegmentOutputDuration(segment, outputPlaybackRate) })),
+          rotation: sourceRotation ?? rotation,
+          sourceFps,
+        }) : undefined,
         run: (gpuFramesFormat) => executeWithRetries({
           outPath,
           plan,

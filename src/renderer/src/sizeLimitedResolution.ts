@@ -3,7 +3,8 @@ import type { SizeLimitControlMode, SizeLimitPreset, SizeLimitSimpleFps, SizeLim
 const simpleResolutionSteps = [1440, 1080, 720] as const;
 const maxAutoDisplayHeight = 1440;
 const autoBitratePerPixelFrameThreshold = 0.035;
-const targetLowFps = 30;
+/** The frame rate a size-limited export is lowered to when its bitrate is low. */
+export const targetLowFps = 30;
 export const sizeLimitedSwsFlags = 'lanczos+accurate_rnd';
 
 export type SizeLimitedResolutionDecision = 'keep_source' | 'scale_to_720p' | 'scale_to_1080p' | 'scale_to_1440p';
