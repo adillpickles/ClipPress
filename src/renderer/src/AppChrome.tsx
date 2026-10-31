@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FiCopy, FiMinus, FiSquare, FiX } from 'react-icons/fi';
+import { FiArrowLeft, FiCopy, FiMinus, FiSquare, FiX } from 'react-icons/fi';
 
 import ClipPressMark from './components/ClipPressMark';
 import { openMenu } from './components/Menu';
@@ -69,8 +69,14 @@ async function showBarMenu(context: BarMenuContext, index: number, keyboard: boo
   });
 }
 
-function AppChrome({ keyBindingByAction }: { keyBindingByAction: Record<string, KeyBinding> }) {
+function AppChrome({ keyBindingByAction, onGoHome }: {
+  keyBindingByAction: Record<string, KeyBinding>,
+  /** A recording is open in the simple editor: the logo closes it. */
+  onGoHome?: (() => void) | undefined,
+}) {
   const { t } = useTranslation();
+  // File > Close's keys: a key binding when there is one, else the menu's own Ctrl+W.
+  const homeKeys = keyBindingByAction['closeCurrentFile']?.keys ?? 'ControlLeft+KeyW';
   const [isMaximized, setIsMaximized] = useState(false);
   const [isFocused, setIsFocused] = useState(() => document.hasFocus());
   // The menu buttons, fetched in one call now and whenever the main process rebuilds the menu (language or
@@ -149,12 +155,32 @@ function AppChrome({ keyBindingByAction }: { keyBindingByAction: Record<string, 
   return (
     <div className={[styles['wrapper'], ...(!isFocused ? [styles['wrapperInactive']] : []), ...(isMaximized ? [styles['wrapperMaximized']] : [])].join(' ')}>
       <div className={styles['left']}>
-        <div className={styles['brand']}>
-          <div className={styles['brandMark']}>
-            <ClipPressMark />
+        {onGoHome != null ? (
+          // With a recording open, the logo goes back to the start screen (as File > Close does); hovered, the name
+          // turns into where it goes.
+          <button
+            type="button"
+            className={[styles['brand'], styles['brandButton']].join(' ')}
+            onClick={onGoHome}
+            title={t('Close this clip')}
+            data-tip-keys={homeKeys}
+          >
+            <span className={styles['brandMark']}>
+              <ClipPressMark />
+            </span>
+            <span className={styles['brandText']}>
+              <span className={styles['brandName']}>ClipPress</span>
+              <span className={styles['brandHome']} aria-hidden><FiArrowLeft />{t('Home')}</span>
+            </span>
+          </button>
+        ) : (
+          <div className={styles['brand']}>
+            <div className={styles['brandMark']}>
+              <ClipPressMark />
+            </div>
+            <span className={styles['brandText']}>ClipPress</span>
           </div>
-          <span className={styles['brandText']}>ClipPress</span>
-        </div>
+        )}
 
         <div className={styles['menuBar']}>
           {menuItems.map((item) => (

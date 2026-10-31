@@ -2548,6 +2548,9 @@ function App() {
     clearSegments,
   ]);
 
+  // The title bar's logo, with a recording open: back to the start screen, as File > Close does.
+  const goHome = useCallback(() => { closeFileWithConfirm(); }, [closeFileWithConfirm]);
+
   const closeBatch = useCallback(async () => {
     if (
       askBeforeClose
@@ -7324,7 +7327,7 @@ function App() {
         <SegColorsContext.Provider value={segColorsContext}>
           <UserSettingsContext.Provider value={userSettingsContext}>
             <div ref={appDropRef} className={rootClass} style={rootStyle} id="app-root">
-              <AppChrome keyBindingByAction={keyBindingByAction} />
+              <AppChrome keyBindingByAction={keyBindingByAction} onGoHome={simpleMode && isFileOpened ? goHome : undefined} />
 
               {isFileOpened && (
                 <TopMenu

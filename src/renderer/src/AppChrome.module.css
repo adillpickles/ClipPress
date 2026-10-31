@@ -57,6 +57,70 @@
   color: var(--cp-text);
 }
 
+/* The logo as the way home (a recording open): hovered, "ClipPress" rolls away and "← Home" rolls in, in the same
+   place (both in one grid cell, so nothing moves). */
+.brandButton {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
+  margin: 0 -.45rem;
+  padding: .2rem .45rem;
+  border-radius: var(--cp-radius-sm);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background-color .15s ease;
+}
+
+.brandButton:hover,
+.brandButton:focus-visible {
+  background: var(--cp-hover);
+}
+
+.brandButton:focus-visible {
+  outline: 2px solid var(--cp-accent);
+  outline-offset: 1px;
+}
+
+.brandButton .brandText {
+  display: inline-grid;
+  overflow: hidden;
+}
+
+.brandName,
+.brandHome {
+  grid-area: 1 / 1;
+  transition: opacity .18s ease, transform .22s cubic-bezier(.2, 0, 0, 1);
+}
+
+.brandHome {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  opacity: 0;
+  transform: translateY(70%);
+}
+
+.brandButton:hover .brandName,
+.brandButton:focus-visible .brandName {
+  opacity: 0;
+  transform: translateY(-70%);
+}
+
+.brandButton:hover .brandHome,
+.brandButton:focus-visible .brandHome {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brandName,
+  .brandHome {
+    transition: opacity .12s ease;
+    transform: none !important;
+  }
+}
+
 .menuBar {
   display: flex;
   align-items: center;
