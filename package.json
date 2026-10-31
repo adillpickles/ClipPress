@@ -162,6 +162,11 @@
     "zod": "^4.3.5"
   },
   "build": {
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false
+    },
     "directories": {
       "buildResources": "build-resources"
     },
