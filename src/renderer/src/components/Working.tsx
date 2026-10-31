@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotionConfig } from 'motion/react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import useInterval from 'react-use/lib/useInterval';
 
 import Button from './Button';
@@ -105,6 +106,32 @@ function useExportTitle(phase: ExportPhase | undefined, progress: number | undef
   return shownPhase != null ? line?.text : undefined;
 }
 
+/** Before this much of the bar and time, an estimate of what's left would only guess. */
+const timeLeftFromProgress = 0.05;
+const timeLeftFromMs = 2000;
+
+/**
+ * "About 0:15 left", as video editors and HandBrake say it: from how fast the bar has filled, eased toward each new
+ * reading so it doesn't jump about (shown in round numbers). Undefined while the bar can't tell (too early, or a second
+ * encode starting over).
+ */
+function getNextTimeLeft(previousMs: number | undefined, progress: number | undefined, elapsedMs: number) {
+  // The bar full while the file is put in place: still a few seconds left, not back to the time so far.
+  if (progress != null && progress >= 1) return previousMs != null ? 0 : undefined;
+  if (progress == null || progress < timeLeftFromProgress || elapsedMs < timeLeftFromMs) return undefined;
+  const estimate = (elapsedMs * (1 - progress)) / progress;
+  // Read ten times a second: a tenth of the way to each new reading, so one slow step doesn't swing it.
+  return previousMs == null ? estimate : previousMs + (estimate - previousMs) * 0.1;
+}
+
+function formatTimeLeft(timeLeftMs: number, t: TFunction) {
+  const seconds = Math.ceil(timeLeftMs / 1000);
+  if (seconds <= 5) return t('A few seconds left');
+  // Steps of 5 s under a minute, 10 s above: closer than that only flickers.
+  const step = seconds < 60 ? 5 : 10;
+  return t('About {{time}} left', { time: formatClockTime(Math.ceil(seconds / step) * step) });
+}
+
 function WorkingCard({ text, detailText, phase, progress, onAbortClick }: {
   text: string,
   detailText?: string | undefined,
@@ -123,13 +150,21 @@ function WorkingCard({ text, detailText, phase, progress, onAbortClick }: {
   // Whole percents: a decimal changing several times a second only flickers. Rounded down, so it never reads
   // 100% before it's done.
   const progressPercent = shownProgress != null ? `${Math.floor(shownProgress * 100)}%` : undefined;
+  const [timeLeftMs, setTimeLeftMs] = useState<number>();
+  // Read by the clock below, which works out the time left on each tick.
+  const shownProgressRef = useRef(shownProgress);
+  useEffect(() => {
+    shownProgressRef.current = shownProgress;
+  }, [shownProgress]);
 
   // Reassure the user that the app is not frozen
   // This is because some ffmpeg operations can take a long time without giving any progress updates, which might make the user think that the app is frozen
   // https://github.com/mifi/lossless-cut/issues/2746
 
   useInterval(() => {
-    setElapsedMs(Date.now() - startedAt.getTime());
+    const elapsed = Date.now() - startedAt.getTime();
+    setElapsedMs(elapsed);
+    setTimeLeftMs((previous) => getNextTimeLeft(previous, shownProgressRef.current, elapsed));
   }, 100);
 
   return (
@@ -164,8 +199,9 @@ function WorkingCard({ text, detailText, phase, progress, onAbortClick }: {
         )}
 
         <div className={styles['metaRow']}>
+          {/* Time left once the bar can tell, else the time so far (either way it moves, so it's clearly not stuck). */}
           <div className={styles['elapsed']}>
-            {t('{{time}} elapsed', { time: formatClockTime(elapsedMs / 1000) })}
+            {timeLeftMs != null ? formatTimeLeft(timeLeftMs, t) : t('{{time}} elapsed', { time: formatClockTime(elapsedMs / 1000) })}
           </div>
           {progressPercent != null && (
             <div className={styles['progressValue']}>
