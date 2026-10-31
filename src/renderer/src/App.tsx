@@ -322,6 +322,7 @@ import type { RelocatedRecording } from './hooks/useRelocateRecording';
 import type { ProjectFileLocation } from '../../common/types';
 import type { ClipVolumeChange } from './components/ClipVolumePopover';
 import { combineAudioGain, isClipVolumeChanged, sanitizeClipGainDb } from './util/audioGain';
+import type { ClipVolume } from './util/audioGain';
 import { recycleOriginal, verifyExportedFiles } from './originalRecycling';
 import type { FileIdentity } from './originalRecycling';
 import { shouldRecycleEditsWithOriginal, shouldRecycleOriginalAfterExport } from './afterExportAction';
@@ -1586,6 +1587,15 @@ function App() {
     () => pickSizeLimitedStreams(mainCopiedStreams),
     [mainCopiedStreams],
   );
+  // Game and mic on separate tracks (an OBS recording): a Discord export mixes them into its one track, each at its
+  // track volume, so the mic is never left out.
+  const sizeLimitedAudioTracks = useMemo(() => mainCopiedStreams.filter((stream) => stream.codec_type === 'audio'), [mainCopiedStreams]);
+  const getMixedAudioTracks = useCallback((clip?: ClipVolume) => (sizeLimitedAudioTracks.length > 1
+    ? sizeLimitedAudioTracks.map((stream) => {
+      const trackGainDb = filePath != null ? paramsByStreamId.get(filePath)?.get(stream.index)?.audioGainDb : undefined;
+      return { index: stream.index, gainDb: clip != null ? combineAudioGain(trackGainDb, clip) : trackGainDb };
+    })
+    : undefined), [filePath, paramsByStreamId, sizeLimitedAudioTracks]);
   const sizeLimitedSourceFps = useMemo(
     () => (sizeLimitedStreams.videoStream != null
       ? getStreamFps(sizeLimitedStreams.videoStream)
@@ -4021,6 +4031,7 @@ function App() {
               rotation: isRotationSet ? effectiveRotation : undefined,
               appendFfmpegCommandLog,
               audioGainDb: combineAudioGain(sizeLimitedAudioGainDb, segment),
+              mixedAudioTracks: getMixedAudioTracks(segment),
               overlayClips: hasOverlayClips ? overlayClips : undefined,
               overlayVideoWidth: sizeLimitedVideoStream.width,
               overlayVideoHeight: sizeLimitedVideoStream.height,
@@ -4092,6 +4103,8 @@ function App() {
             rotation: isRotationSet ? effectiveRotation : undefined,
             appendFfmpegCommandLog,
             audioGainDb: sizeLimitedAudioGainDb,
+            // Each clip's own volume is applied after its mix (exportSegmentMath.ts).
+            mixedAudioTracks: getMixedAudioTracks(),
             overlayClips: hasOverlayClips ? overlayClips : undefined,
             overlayVideoWidth: sizeLimitedVideoStream.width,
             overlayVideoHeight: sizeLimitedVideoStream.height,
@@ -4690,6 +4703,7 @@ function App() {
   }, [
     cutFileTemplate,
     finishExport,
+    getMixedAudioTracks,
     activeVideoStream,
     recycleOriginalAfterExport,
     trashSourceAfterExport,

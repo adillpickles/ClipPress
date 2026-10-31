@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
+import { buildAudioMixFilter, buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
 
 describe('buildConcatSegmentInputArgs', () => {
   it('applies rotation before each input so the filter graph crops the displayed frame', () => {
@@ -199,5 +199,30 @@ describe('getRelativeSegmentOverlapWindow', () => {
 describe('buildOverlayImageInputArgs', () => {
   it('reads each text image once instead of looping it for every frame', () => {
     expect(buildOverlayImageInputArgs(['a.png', 'b.png'])).toEqual(['-i', 'a.png', '-i', 'b.png']);
+  });
+});
+
+describe('mixing audio tracks', () => {
+  it('adds the tracks together at their own volumes, then runs what comes after', () => {
+    expect(buildAudioMixFilter({ inputIndex: 0, tracks: [{ index: 1, gainDb: -6 }, { index: 2, gainDb: undefined }], after: ['atempo=2'], outputLabel: '[a]' })).toEqual([
+      '[0:1]volume=-6.00dB[mix0t0]',
+      '[0:2]anull[mix0t1]',
+      '[mix0t0][mix0t1]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=1:level=0:latency=1,atempo=2[a]',
+    ]);
+  });
+
+  it('mixes each joined clip before its speed and its own volume', () => {
+    const { graph } = buildSegmentConcatFilters({
+      segments: [{ start: 0, end: 2, speed: 2, audioGainDb: -6 }],
+      videoStreamIndex: 0,
+      audioStreamIndex: 1,
+      outputPlaybackRate: 1,
+      mixedAudioTracks: [{ index: 1, gainDb: undefined }, { index: 2, gainDb: 3 }],
+    });
+    expect(graph.slice(1)).toEqual([
+      '[0:1]anull[mix0t0]',
+      '[0:2]volume=3.00dB[mix0t1]',
+      '[mix0t0][mix0t1]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=1:level=0:latency=1,asetpts=PTS-STARTPTS,atempo=2,volume=-6.00dB[segmenta0]',
+    ]);
   });
 });

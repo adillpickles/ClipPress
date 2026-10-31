@@ -3,7 +3,7 @@ import { getAudioTempoFilter, getSegmentOutputDuration, getSegmentPlaybackRate, 
 import { getGpuFramesFilter } from './gpuEncoders';
 import { getSegmentCropFilter } from './segmentCrop';
 import { getSizeLimitedRotationArgs } from './sizeLimitedFfmpegArgs';
-import { combineAudioGain, getVolumeFilter, isClipVolumeChanged } from './util/audioGain';
+import { combineAudioGain, getVolumeFilter, isClipVolumeChanged, isNeutralAudioGain } from './util/audioGain';
 
 export function getRelativeSegmentOverlapWindow({
   overlayStart,
@@ -102,7 +102,28 @@ export function buildMergedOverlayFilters({ overlayAssets, segments, outputPlayb
   return { graph, videoOutputLabel: currentLabel };
 }
 
-export function buildSegmentConcatFilters({ segments, videoStreamIndex, audioStreamIndex, outputPlaybackRate, videoWidth, videoHeight, gpuFrames }: {
+/** An audio track mixed into an export's one track, at its own volume (dB; undefined for as recorded). */
+export interface MixedAudioTrack { index: number, gainDb: number | undefined }
+
+/**
+ * Every audio track of a recording mixed into one (game and mic on separate tracks, as OBS can record them, each at
+ * its own volume): a Discord export has one track, and players only play the first. Added together as they'd be heard
+ * (not averaged, which would make both quieter), with a limiter that only touches peaks above full scale (its delay
+ * compensated). `after` runs on the mix; the graph ends at `outputLabel`.
+ */
+export function buildAudioMixFilter({ inputIndex, tracks, after = [], outputLabel }: {
+  inputIndex: number,
+  tracks: readonly MixedAudioTrack[],
+  after?: readonly string[] | undefined,
+  outputLabel: string,
+}) {
+  const graph = tracks.map(({ index, gainDb }, track) => `[${inputIndex}:${index}]${isNeutralAudioGain(gainDb) ? 'anull' : getVolumeFilter(gainDb!)}[mix${inputIndex}t${track}]`);
+  const mix = [`amix=inputs=${tracks.length}:duration=longest:normalize=0`, 'alimiter=limit=1:level=0:latency=1', ...after.filter(Boolean)];
+  graph.push(`${tracks.map((_, track) => `[mix${inputIndex}t${track}]`).join('')}${mix.join(',')}${outputLabel}`);
+  return graph;
+}
+
+export function buildSegmentConcatFilters({ segments, videoStreamIndex, audioStreamIndex, outputPlaybackRate, videoWidth, videoHeight, gpuFrames, mixedAudioTracks }: {
   segments: DefiniteSegmentBase[],
   videoStreamIndex: number,
   audioStreamIndex: number | undefined,
@@ -111,6 +132,8 @@ export function buildSegmentConcatFilters({ segments, videoStreamIndex, audioStr
   videoHeight?: number | undefined,
   /** The inputs' frames stay on the GPU (`getHardwareDecodeArgs`); see `getGpuFramesFilter`. */
   gpuFrames?: { downloadFormat: string, outputFps: number | undefined } | undefined,
+  /** Two or more audio tracks, each with its track volume, mixed into one before the clip's speed and volume. */
+  mixedAudioTracks?: readonly MixedAudioTrack[] | undefined,
 }) {
   const graph: string[] = [];
   const labels = segments.map((segment, index) => {
@@ -124,7 +147,9 @@ export function buildSegmentConcatFilters({ segments, videoStreamIndex, audioStr
     const tempo = getAudioTempoFilter(rate);
     // The clip's own volume; the track volume is applied once, after the concat.
     const clipVolume = isClipVolumeChanged(segment) ? getVolumeFilter(combineAudioGain(undefined, segment)) : undefined;
-    graph.push(`[${index}:${audioStreamIndex}]${['asetpts=PTS-STARTPTS', tempo, clipVolume].filter(Boolean).join(',')}${audioLabel}`);
+    const audioFilters = ['asetpts=PTS-STARTPTS', tempo, clipVolume ?? ''].filter(Boolean);
+    if (mixedAudioTracks != null && mixedAudioTracks.length > 1) graph.push(...buildAudioMixFilter({ inputIndex: index, tracks: mixedAudioTracks, after: audioFilters, outputLabel: audioLabel }));
+    else graph.push(`[${index}:${audioStreamIndex}]${audioFilters.join(',')}${audioLabel}`);
     return `${videoLabel}${audioLabel}`;
   });
   return { graph, labels: labels.join('') };

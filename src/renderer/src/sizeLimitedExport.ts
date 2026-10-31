@@ -24,8 +24,9 @@ import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile, targetLowF
 import { planSizeLimitedEncode, relaxQualityCapForGenerousBudget } from './sizeLimitedPlanner';
 import { hasQualityCap } from './sizeLimitedEncoderArgs';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
-import { buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
-import { getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from './segmentSpeed';
+import { buildAudioMixFilter, buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
+import type { MixedAudioTrack } from './exportSegmentMath';
+import { getAudioTempoFilter, getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from './segmentSpeed';
 import type { OverlayClip, SegmentToExport, SizeLimitedEncoderCapabilities, SizeLimitedExecutionResult, SizeLimitedProgressMetadata, SizeLimitedResolvedStrategy, SizeLimitedRetryStep } from './types';
 import type { SizeLimitedVideoTransformProfile } from './sizeLimitedResolution';
 import { isMutedAudioGain, isNeutralAudioGain } from './util/streams';
@@ -516,7 +517,7 @@ async function resolveNextEncoder(strategy: SizeLimitedResolvedStrategy, resolve
   }
 }
 
-function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoProfile, overlayAssets, outputPlaybackRate, audioGainDb, videoWidth, videoHeight, gpuFramesFormat }: {
+function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoProfile, overlayAssets, outputPlaybackRate, audioGainDb, videoWidth, videoHeight, gpuFramesFormat, mixedAudioTracks }: {
   segments: SegmentToExport[],
   videoStreamIndex: number,
   audioStreamIndex: number | undefined,
@@ -527,6 +528,8 @@ function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoPr
   videoWidth: number,
   videoHeight: number,
   gpuFramesFormat: string | undefined,
+  /** Two or more audio tracks mixed into one, each at its own track volume (instead of `audioGainDb`). */
+  mixedAudioTracks: readonly MixedAudioTrack[] | undefined,
 }) {
   const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
   const mergedOverlayFilters = buildMergedOverlayFilters({
@@ -538,10 +541,11 @@ function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoPr
     videoOutputLabel: videoFilter != null ? '[voverlay]' : '[v]',
   });
   const gpuFrames = gpuFramesFormat != null ? { downloadFormat: gpuFramesFormat, outputFps: videoProfile.outputFps } : undefined;
-  const { graph, labels } = buildSegmentConcatFilters({ segments, videoStreamIndex, audioStreamIndex, outputPlaybackRate, videoWidth, videoHeight, gpuFrames });
+  const { graph, labels } = buildSegmentConcatFilters({ segments, videoStreamIndex, audioStreamIndex, outputPlaybackRate, videoWidth, videoHeight, gpuFrames, mixedAudioTracks });
   const needsVideoPostProcessing = mergedOverlayFilters.graph.length > 0 || videoFilter != null;
   const concatVideoLabel = needsVideoPostProcessing ? '[vconcat]' : '[v]';
-  const needsAudioPostProcessing = audioStreamIndex != null && !isNeutralAudioGain(audioGainDb);
+  // Mixed tracks had their volumes applied one by one, before the mix.
+  const needsAudioPostProcessing = audioStreamIndex != null && mixedAudioTracks == null && !isNeutralAudioGain(audioGainDb);
   const concatAudioLabel = needsAudioPostProcessing ? '[aconcat]' : '[a]';
 
   if (audioStreamIndex == null) {
@@ -869,6 +873,7 @@ export async function exportSizeLimitedSegment({
   advancedH264NvencPreset,
   videoStream,
   audioStream,
+  mixedAudioTracks,
   enableOverwriteOutput,
   ffmpegExperimental,
   treatInputFileModifiedTimeAsStart,
@@ -920,6 +925,8 @@ export async function exportSizeLimitedSegment({
   overlayVideoHeight?: number | undefined,
   /** Decode on the GPU when it is safe to; falls back to the CPU on failure. */
   gpuAcceleration?: boolean | undefined,
+  /** The recording's audio tracks when it has two or more: mixed into the export's one track (exportSegmentMath.ts). */
+  mixedAudioTracks?: readonly MixedAudioTrack[] | undefined,
 }) {
   await assertFileExists(filePath);
   await assertOutPathIsNotSource({ outPath, filePath });
@@ -962,7 +969,9 @@ export async function exportSizeLimitedSegment({
   const segmentOverlayClips = overlayClips?.filter((overlayClip) => overlayClip.start < segment.end && overlayClip.end > segment.start);
 
   // Lossless when it fits: a clip with nothing to re-encode whose own bytes already fit is copied as it is.
-  const copyable = canCopyLosslessly({
+  // Two or more audio tracks are mixed into one (encoded), so a straight copy won't do.
+  const mixing = audioStream != null && mixedAudioTracks != null && mixedAudioTracks.length > 1;
+  const copyable = !mixing && canCopyLosslessly({
     playbackRate: segmentRate,
     cropped: hasSegmentCrop(segment),
     hasText: segmentOverlayClips != null && segmentOverlayClips.length > 0,
@@ -1000,6 +1009,10 @@ export async function exportSizeLimitedSegment({
       rotation: sourceRotation ?? rotation,
     })
     : [];
+
+  // The tracks mixed into one, then the clip's speed (each track's volume already has the clip's in it).
+  const audioMixGraph = mixing ? buildAudioMixFilter({ inputIndex: 0, tracks: mixedAudioTracks!, after: [getAudioTempoFilter(segmentRate)], outputLabel: '[amixed]' }).join(';') : undefined;
+  const audioInputLabel = audioStream == null ? undefined : (mixing ? '[amixed]' : `0:${audioStream.index}`);
 
   let result: SizeLimitedExecutionResult;
   try {
@@ -1049,12 +1062,18 @@ export async function exportSizeLimitedSegment({
               cropFilter,
               gpuFramesFilter,
             });
-            const commonArgs = [
-              ...inputArgs,
-              ...overlayInputArgs,
-              ...(overlayFilter != null ? ['-filter_complex', overlayFilter.filterComplex] : []),
-              ...(overlayFilter == null ? ['-vf', videoFilter] : []),
-            ];
+            // The audio mix is a graph of its own, beside the text's (or the video's simple -vf); a first pass writes no
+            // audio, so it sinks the mix there.
+            const getCommonArgs = ({ sinkAudio }: { sinkAudio: boolean }) => {
+              const graph = [overlayFilter?.filterComplex, audioMixGraph, ...(sinkAudio && audioMixGraph != null ? ['[amixed]anullsink'] : [])].filter(Boolean).join(';');
+              return [
+                ...inputArgs,
+                ...overlayInputArgs,
+                ...(graph !== '' ? ['-filter_complex', graph] : []),
+                ...(overlayFilter == null ? ['-vf', videoFilter] : []),
+              ];
+            };
+            const commonArgs = getCommonArgs({ sinkAudio: false });
             const effectiveVideoProfile = { outputWidth: undefined, outputHeight: undefined, outputFps: undefined };
             const videoInputLabel = overlayFilter?.videoInputLabel ?? `0:${videoStream.index}`;
 
@@ -1064,14 +1083,14 @@ export async function exportSizeLimitedSegment({
               const pass1Args = [
                 '-hide_banner',
                 ...getSizeLimitedSwsFlagsArgs(),
-                ...commonArgs,
+                ...getCommonArgs({ sinkAudio: true }),
                 ...outputTrimArgs,
                 ...getSizeLimitedTwoPassEncodeArgs({
                   strategy,
                   videoBitrate: attempt.videoBitrate,
                   audioBitrate: attempt.audioBitrate,
                   videoInputLabel,
-                  audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
+                  audioInputLabel,
                   videoProfile: effectiveVideoProfile,
                   experimentalArgs: getExperimentalArgs(ffmpegExperimental),
                   passlogFile,
@@ -1079,8 +1098,8 @@ export async function exportSizeLimitedSegment({
                   passNumber: 1,
                   sourceFps,
                   outputPlaybackRate,
-                  audioGainDb,
-                  audioPlaybackRate: segmentRate,
+                  audioGainDb: mixing ? undefined : audioGainDb,
+                  audioPlaybackRate: mixing ? 1 : segmentRate,
                   qualityCapOffset: attempt.qualityCapOffset,
                 }),
               ];
@@ -1095,7 +1114,7 @@ export async function exportSizeLimitedSegment({
                   videoBitrate: attempt.videoBitrate,
                   audioBitrate: attempt.audioBitrate,
                   videoInputLabel,
-                  audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
+                  audioInputLabel,
                   videoProfile: effectiveVideoProfile,
                   experimentalArgs: getExperimentalArgs(ffmpegExperimental),
                   passlogFile,
@@ -1103,8 +1122,8 @@ export async function exportSizeLimitedSegment({
                   passNumber: 2,
                   sourceFps,
                   outputPlaybackRate,
-                  audioGainDb,
-                  audioPlaybackRate: segmentRate,
+                  audioGainDb: mixing ? undefined : audioGainDb,
+                  audioPlaybackRate: mixing ? 1 : segmentRate,
                   qualityCapOffset: attempt.qualityCapOffset,
                 }),
               ];
@@ -1124,14 +1143,14 @@ export async function exportSizeLimitedSegment({
                 videoBitrate: attempt.videoBitrate,
                 audioBitrate: attempt.audioBitrate,
                 videoInputLabel,
-                audioInputLabel: audioStream != null ? `0:${audioStream.index}` : undefined,
+                audioInputLabel,
                 videoProfile: effectiveVideoProfile,
                 experimentalArgs: getExperimentalArgs(ffmpegExperimental),
                 outPath: attemptOutPath,
                 sourceFps,
                 outputPlaybackRate,
-                audioGainDb,
-                audioPlaybackRate: segmentRate,
+                audioGainDb: mixing ? undefined : audioGainDb,
+                audioPlaybackRate: mixing ? 1 : segmentRate,
                 qualityCapOffset: attempt.qualityCapOffset,
               }),
             ];
@@ -1183,6 +1202,7 @@ export async function exportSizeLimitedMerge({
   advancedH264NvencPreset,
   videoStream,
   audioStream,
+  mixedAudioTracks,
   enableOverwriteOutput,
   ffmpegExperimental,
   treatInputFileModifiedTimeAsStart,
@@ -1233,11 +1253,14 @@ export async function exportSizeLimitedMerge({
   overlayVideoHeight?: number | undefined,
   /** Decode on the GPU when it is safe to; falls back to the CPU on failure. */
   gpuAcceleration?: boolean | undefined,
+  /** The recording's audio tracks when it has two or more: mixed into the export's one track (exportSegmentMath.ts). */
+  mixedAudioTracks?: readonly MixedAudioTrack[] | undefined,
 }) {
   await assertFileExists(filePath);
   await assertOutPathIsNotSource({ outPath, filePath });
   await ensureOutputDir(outPath);
 
+  const mixing = audioStream != null && mixedAudioTracks != null && mixedAudioTracks.length > 1;
   const plannedDuration = segments.reduce((sum, segment) => sum + getSegmentOutputDuration(segment, outputPlaybackRate), 0);
   const resolvePlan = () => resolveSizeLimitedPlan({
     controlMode,
@@ -1330,8 +1353,9 @@ export async function exportSizeLimitedMerge({
               videoWidth: dimensions.width,
               videoHeight: dimensions.height,
               gpuFramesFormat,
+              mixedAudioTracks: mixing ? mixedAudioTracks : undefined,
             });
-            const applyAudioGainInFilterGraph = audioStream != null && !isNeutralAudioGain(audioGainDb);
+            const applyAudioGainInFilterGraph = audioStream != null && (mixing || !isNeutralAudioGain(audioGainDb));
 
             const commonArgs = [
               ...inputArgs,
