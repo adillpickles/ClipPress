@@ -5,6 +5,8 @@ import { FiCheckCircle, FiX } from 'react-icons/fi';
 import useUpdateStatus from '../hooks/useUpdateStatus';
 import { isStoreBuild } from '../util';
 import UpdateControls from './UpdateControls';
+import Button from './Button';
+import mainApi from '../mainApi';
 import Spinner from './Spinner';
 import styles from './UpdateNotice.module.css';
 import formatVersion from '../../../common/formatVersion';
@@ -13,8 +15,8 @@ const { ipcRenderer } = window.require('electron');
 
 /** How long "ClipPress is up to date" stays after a manual check. */
 const upToDateDisplayMs = 4000;
-/** How long "… installs when you close the app" stays: there is nothing to do about it. */
-const readyDisplayMs = 8000;
+/** How long "… installs when you close the app" stays (with its Restart; Settings > Updates has it too). */
+const readyDisplayMs = 12_000;
 
 export default function UpdateNotice({ visible, overClipsPanel = false }: {
   visible: boolean,
@@ -59,6 +61,12 @@ export default function UpdateNotice({ visible, overClipsPanel = false }: {
       <div className={`${styles['toast']}${placement}`} role="status" aria-live="polite">
         {status.phase === 'checking' ? <Spinner /> : <FiCheckCircle aria-hidden className={styles['ok']} />}
         {message}
+        {/* Now instead of at the next close: ClipPress closes, installs and opens the new version by itself. */}
+        {isReadyOnQuit && (
+          <Button size="sm" className={styles['restart']} onClick={() => { mainApi.restartToUpdate().catch((error: unknown) => console.error('Could not restart to update', error)); }}>
+            {t('Restart')}
+          </Button>
+        )}
       </div>
     );
   }

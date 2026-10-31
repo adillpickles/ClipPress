@@ -9,6 +9,7 @@ function setup(preferences?: UpdatePreferences, supported = true) {
     download: vi.fn<() => Promise<void>>(async () => undefined),
     cancel: vi.fn(),
     installOnQuit: vi.fn(),
+    installNow: vi.fn(),
   };
   const onChange = vi.fn<(status: UpdateStatus) => void>();
   const onError = vi.fn();
@@ -17,6 +18,26 @@ function setup(preferences?: UpdatePreferences, supported = true) {
 }
 
 describe('update policy', () => {
+  it('restarts into a downloaded update only, and not while installation is held', async () => {
+    const { controller, backend } = setup({ enabled: true, mode: 'ask' });
+    expect(controller.restartToInstall()).toBe(false);
+    await controller.check();
+    // Found, not downloaded yet.
+    expect(controller.restartToInstall()).toBe(false);
+    await controller.download();
+    expect(controller.getStatus().phase).toBe('ready');
+    controller.holdInstallation();
+    expect(controller.restartToInstall()).toBe(false);
+    expect(backend.installNow).not.toHaveBeenCalled();
+  });
+
+  it('restarts into the downloaded update when asked', async () => {
+    const { controller, backend } = setup();
+    await controller.check();
+    expect(controller.restartToInstall()).toBe(true);
+    expect(backend.installNow).toHaveBeenCalledOnce();
+  });
+
   it('downloads in the background and arms normal-quit installation only for a verified result', async () => {
     const { controller, backend } = setup();
     await controller.check();

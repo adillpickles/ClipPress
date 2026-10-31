@@ -7,6 +7,8 @@ export interface UpdateBackend {
   download: () => Promise<void>,
   cancel: () => void,
   installOnQuit: (enabled: boolean) => void,
+  /** Closes the app, installs the downloaded update and opens the new version. */
+  installNow: () => void,
 }
 
 export function isApplicableUpdate(currentVersion: string, version: string) {
@@ -192,5 +194,15 @@ export default class UpdateController {
       this.publish({ installOnQuit: true });
     }
     return this.getStatus();
+  }
+
+  /**
+   * The update notice's Restart: close now, install and open the new version, as VS Code and Discord do, so nobody
+   * starts the old version while the installer runs. Only a downloaded update this run may install.
+   */
+  restartToInstall() {
+    if (this.state.phase !== 'ready' || !this.state.supported || this.held || this.backend == null) return false;
+    this.backend.installNow();
+    return true;
   }
 }

@@ -42,6 +42,7 @@ export default function createAutoUpdates({ offline, storeBuild, onChange }: {
           download: async () => undefined,
           cancel: () => undefined,
           installOnQuit: () => undefined,
+          installNow: () => undefined,
         };
       }
       const { default: electronUpdater } = await import('electron-updater');
@@ -68,6 +69,8 @@ export default function createAutoUpdates({ offline, storeBuild, onChange }: {
         },
         cancel: () => token?.cancel(),
         installOnQuit: (enabled) => { autoUpdater.autoInstallOnAppQuit = enabled; },
+        // Silent, and the new version opens by itself afterwards.
+        installNow: () => autoUpdater.quitAndInstall(true, true),
       };
     },
   });

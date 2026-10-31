@@ -15,6 +15,12 @@
   box-shadow: var(--cp-shadow-popover);
 }
 
+/* Restart, on the "installs when you close the app" toast. */
+.restart {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .toast {
   display: flex;
   align-items: center;
