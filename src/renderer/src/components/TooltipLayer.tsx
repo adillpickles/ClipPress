@@ -5,9 +5,8 @@ import renderKeys from './renderKeys';
 import { splitKeyboardKeys } from '../util';
 import styles from './TooltipLayer.module.css';
 
-/** Hovering waits this long; moving on to another hint soon after one shows it at once. */
-const showDelayMs = 450;
-const skipDelayMs = 400;
+/** Hovering waits this long, every time (6.1 round 4: hints that showed at once after another one felt jumpy). */
+const showDelayMs = 500;
 const margin = 8;
 const gap = 6;
 /** How long a hint follows its element after showing, for one still sliding in (the Clips panel's slide is 0.28 s). */
@@ -103,20 +102,23 @@ export default function TooltipLayer() {
     let target: HTMLElement | undefined;
     // Pressed: its hint stays away until the pointer leaves it.
     let pressed: HTMLElement | undefined;
-    let hiddenAt = 0;
 
     const hide = () => {
       clearTimeout(timer);
-      if (tipRef.current != null) hiddenAt = Date.now();
       target = undefined;
       setTip(undefined);
     };
+    // Straight from one hint to the next, the old one goes and the new one waits its turn like any other.
     const showFor = (el: HTMLElement, immediately: boolean) => {
       clearTimeout(timer);
       target = el;
       const show = () => setTip(readTip(el));
-      if (immediately || tipRef.current != null || Date.now() - hiddenAt < skipDelayMs) show();
-      else timer = setTimeout(show, showDelayMs);
+      if (immediately) {
+        show();
+      } else {
+        setTip(undefined);
+        timer = setTimeout(show, showDelayMs);
+      }
     };
     const findTip = (node: EventTarget | null) => (node instanceof Element ? node.closest<HTMLElement>('[data-tip]') ?? undefined : undefined);
 
