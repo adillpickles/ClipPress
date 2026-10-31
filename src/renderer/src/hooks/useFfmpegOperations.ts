@@ -6,7 +6,7 @@ import pMap from 'p-map';
 import invariant from 'tiny-invariant';
 import i18n from 'i18next';
 
-import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists, moveExportWithRetry } from '../util';
+import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists, moveExportWithRetry, isExecaError, getStdioString } from '../util';
 import { assertOutPathsNotSource } from '../util/sourceProtection';
 import { isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, getDuration, createChaptersFromSegments, readFileFfprobeMeta, getExperimentalArgs, getVideoTimescaleArgs, logStdoutStderr, runFfmpegConcat, RefuseOverwriteError, runFfmpeg } from '../ffmpeg';
 import { attachedPicDisposition, getEffectiveAvoidNegativeTs, getKeyframeCutSeekCompensation, getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
@@ -1541,7 +1541,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     } catch (err) {
       // Unfortunately ffmpeg will exit with code 1 even though it's a success
       // Note: This is kind of hacky:
-      if (err instanceof Error && 'exitCode' in err && 'stderr' in err && err.exitCode === 1 && typeof err.stderr === 'string' && err.stderr.includes('At least one output file must be specified')) return outPaths;
+      // (stderr arrives as a Uint8Array, not a string)
+      if (isExecaError(err) && err.exitCode === 1 && getStdioString(err.stderr)?.includes('At least one output file must be specified')) return outPaths;
       throw err;
     }
     return outPaths;
