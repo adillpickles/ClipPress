@@ -396,6 +396,10 @@ type EditDomain = 'segments' | 'overlays' | 'streamParams' | 'speedControls';
 // Loaded the first time the shortcuts open, not at every start.
 const KeyboardShortcuts = lazy(() => import('./components/KeyboardShortcuts'));
 
+// How often the shown progress can change at most (setProgress). The card's strip glides over the same time
+// (Working.module.css, --progress-glide).
+const progressStepMs = 250;
+
 // The export card's title while the clips are cut from the recording.
 const getCuttingText = (clipCount: number) => (clipCount > 1 ? i18n.t('Cutting your clips') : i18n.t('Cutting your clip'));
 
@@ -411,7 +415,28 @@ function App() {
     [],
   );
   const [rotation, setRotation] = useState(360);
-  const [progress, setProgress] = useState<number>();
+  const [progress, setProgressNow] = useState<number>();
+  // FFmpeg reports progress ten times a second, and each new value re-renders the whole editor, the window title and
+  // the taskbar: a few a second is all the card needs, its strip gliding between them (6.1 round 4, CPU while
+  // exporting). A start, an end or a reset shows at once; in between, the latest value at most every progressStepMs.
+  const progressThrottle = useRef<{ at: number, timer?: ReturnType<typeof setTimeout> | undefined }>({ at: 0 });
+  const setProgress = useCallback((value: number | undefined) => {
+    const throttle = progressThrottle.current;
+    clearTimeout(throttle.timer);
+    throttle.timer = undefined;
+    const wait = throttle.at + progressStepMs - Date.now();
+    if (value == null || value <= 0 || value >= 1 || wait <= 0) {
+      throttle.at = Date.now();
+      setProgressNow(value);
+      return;
+    }
+    throttle.timer = setTimeout(() => {
+      throttle.timer = undefined;
+      throttle.at = Date.now();
+      setProgressNow(value);
+    }, wait);
+  }, []);
+  useEffect(() => () => clearTimeout(progressThrottle.current.timer), []);
   const [startTimeOffset, setStartTimeOffset] = useState(0);
   const [filePath, setFilePath] = useState<string>();
   // The open of filePath, for autosave. Set and cleared together with filePath.
@@ -2314,6 +2339,7 @@ function App() {
     editHistoryOrder,
     endProjectSession,
     overlayClipsHistory,
+    setProgress,
     streamParamsHistory,
     videoRef,
     setCommandedTime,
@@ -3047,6 +3073,7 @@ function App() {
       }
     },
     [
+      setProgress,
       simpleMode,
       workingRef,
       ensureWritableOutDir,
@@ -4733,6 +4760,7 @@ function App() {
     getMixedAudioTracks,
     activeVideoStream,
     recycleOriginalAfterExport,
+    setProgress,
     trashSourceAfterExport,
     allFilesMeta,
     appendFfmpegCommandLog,
@@ -5057,6 +5085,7 @@ function App() {
     [
       filePath,
       detectedFps,
+      setProgress,
       workingRef,
       getFrameCount,
       setWorking,
@@ -5906,6 +5935,7 @@ function App() {
     fileFormat,
     fixInvalidDuration,
     loadMedia,
+    setProgress,
     setWorking,
     showNotification,
     withErrorHandling,

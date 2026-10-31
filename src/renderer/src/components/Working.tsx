@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotionConfig } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import useInterval from 'react-use/lib/useInterval';
@@ -116,41 +116,57 @@ export interface ExportStrip {
   sparks: boolean,
 }
 
-/** Sparks drifting back off the leading edge, a fixed few (their paths are in the CSS). */
-const sparkCount = 7;
+/** Sparks thrown back off the leading edge: groups of three (one moving layer each) and streaks; paths in the CSS. */
+const sparkGroupCount = 8;
+const streakCount = 3;
 
 /**
  * The clip being made, as the progress: its pictures (or waveform), dim, lighting up from left to right as the
- * export goes, behind a glowing edge with a trail and sparks; a soft light runs across while there's no progress
- * to show yet. CSS animations only (transform and opacity), so it costs next to nothing.
+ * export goes, behind a glowing edge with a trail; with sparks on, surges of light run along the lit part into the
+ * edge and sparks fly back off it. A soft light runs across until there's progress to show. Everything that moves is
+ * a transform or an opacity, so the graphics card does it without redrawing anything.
  */
-function ExportStripView({ strip, progress, reduceMotion }: { strip: ExportStrip, progress: number | undefined, reduceMotion: boolean }) {
+function ExportStripViewInner({ strip, progress, reduceMotion }: { strip: ExportStrip, progress: number | undefined, reduceMotion: boolean }) {
   const lit = progress != null ? Math.min(100, Math.max(0, progress * 100)) : undefined;
   const waveform = strip.waveform != null;
   const row = waveform ? styles['waveRow'] : styles['frameRow'];
-  const content = waveform
-    ? strip.waveform!.map((level, index) => (
+  const content = useMemo(() => (strip.waveform != null
+    ? strip.waveform.map((level, index) => (
       // eslint-disable-next-line react/no-array-index-key
       <span key={index} className={styles['waveBar']} style={{ height: `${Math.max(8, level * 100)}%` }} />
     ))
     : (strip.frames ?? []).map(({ url }, index) => (
       // eslint-disable-next-line react/no-array-index-key
       <img key={index} src={url} alt="" draggable={false} />
-    ));
+    ))), [strip.frames, strip.waveform]);
+  const lively = strip.sparks && !reduceMotion;
   return (
     <div className={[styles['frames'], ...(reduceMotion ? [styles['still']] : [])].join(' ')} aria-hidden>
       <div className={[row, styles['framesDim']].join(' ')}>{content}</div>
-      {lit != null && <div className={row} style={{ clipPath: `inset(0 ${100 - lit}% 0 0)` }}>{content}</div>}
+      {lit != null && (
+        // The lit part: a window sliding open over the strip while what's in it slides back the other way, so the
+        // pictures stay put.
+        <div className={styles['litWindow']} style={{ transform: `translateX(${lit - 100}%)` }}>
+          <div className={styles['litContent']} style={{ transform: `translateX(${100 - lit}%)` }}>
+            <div className={row}>{content}</div>
+            {lively && <div className={styles['surges']} />}
+          </div>
+        </div>
+      )}
       {strip.tints?.map(({ from, to, color }) => (
         <div key={from} className={styles['tint']} style={{ left: `${from * 100}%`, width: `${(to - from) * 100}%`, backgroundColor: color }} />
       ))}
       {lit != null ? (
-        <div className={styles['edge']} style={{ left: `${lit}%` }}>
+        <div className={styles['edgeTrack']} style={{ transform: `translateX(${lit}%)` }}>
           <div className={styles['trail']} />
           <div className={styles['edgeLine']} />
-          {strip.sparks && !reduceMotion && lit < 100 && Array.from({ length: sparkCount }, (_, index) => (
+          {lively && lit < 100 && Array.from({ length: sparkGroupCount }, (_, index) => (
             // eslint-disable-next-line react/no-array-index-key
-            <span key={index} className={styles['spark']} />
+            <span key={`sparks${index}`} className={styles['sparks']} />
+          ))}
+          {lively && lit < 100 && Array.from({ length: streakCount }, (_, index) => (
+            // eslint-disable-next-line react/no-array-index-key
+            <span key={`streak${index}`} className={styles['streak']} />
           ))}
         </div>
       ) : (
@@ -158,6 +174,19 @@ function ExportStripView({ strip, progress, reduceMotion }: { strip: ExportStrip
       )}
     </div>
   );
+}
+// Not redrawn by the card's clock: only by the progress.
+const ExportStripView = memo(ExportStripViewInner);
+
+/** Whether the window is minimised or hidden: the card's animations pause meanwhile (nobody can see them). */
+function useDocumentHidden() {
+  const [hidden, setHidden] = useState(() => document.hidden);
+  useEffect(() => {
+    const onChange = () => setHidden(document.hidden);
+    document.addEventListener('visibilitychange', onChange);
+    return () => document.removeEventListener('visibilitychange', onChange);
+  }, []);
+  return hidden;
 }
 
 function WorkingCard({ text, detailText, phase, progress, strip, onAbortClick }: {
@@ -171,6 +200,7 @@ function WorkingCard({ text, detailText, phase, progress, strip, onAbortClick }:
   const { t } = useTranslation();
   // The app's own Reduce motion setting as well as Windows': the bar's shimmer stops.
   const reduceMotion = useReducedMotionConfig() === true;
+  const hidden = useDocumentHidden();
   const [startedAt] = useState(() => new Date());
   const [elapsedMs, setElapsedMs] = useState(0);
   const title = useExportTitle(phase, progress, elapsedMs) ?? text;
@@ -184,14 +214,15 @@ function WorkingCard({ text, detailText, phase, progress, strip, onAbortClick }:
   // This is because some ffmpeg operations can take a long time without giving any progress updates, which might make the user think that the app is frozen
   // https://github.com/mifi/lossless-cut/issues/2746
 
+  // Whole seconds are all it shows, so once a second (it was ten times: each a render of the card).
   useInterval(() => {
     setElapsedMs(Date.now() - startedAt.getTime());
-  }, 100);
+  }, 1000);
 
   return (
     <div className={styles['wrapper']} style={{ position: 'absolute', bottom: 0, top: 0, left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
       <motion.div
-        className={styles['card']}
+        className={[styles['card'], ...(hidden ? [styles['paused']] : [])].join(' ')}
         data-working-card=""
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -238,7 +269,7 @@ function WorkingCard({ text, detailText, phase, progress, strip, onAbortClick }:
             percent yet, a sweep. Not with the strip: it's the progress then. */}
         {strip == null && (shownProgress != null ? (
           <div className={styles['progressTrack']}>
-            <div className={[styles['progressFill'], ...(reduceMotion ? [styles['still']] : [])].join(' ')} style={{ width: `${Math.max(shownProgress * 100, 4)}%` }} />
+            <div className={[styles['progressFill'], ...(reduceMotion ? [styles['still']] : [])].join(' ')} style={{ transform: `translateX(${Math.max(shownProgress * 100, 4) - 100}%)` }} />
           </div>
         ) : (
           <div className={[styles['indeterminate'], styles['indeterminateTall'], ...(reduceMotion ? [styles['still']] : [])].join(' ')} aria-hidden />
