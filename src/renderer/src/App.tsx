@@ -2741,7 +2741,8 @@ function App() {
         template,
         isCustomFormatSelected: isFormatForced ? true : isCustomFormatSelected,
         fileFormat: outputFormat,
-        sourceFile: { path: exportNamingSourcePath },
+        // with its probe data and stats, as for the clips' names, or `FILES[0].size` etc. are missing
+        sourceFile: { path: exportNamingSourcePath, ...mainFileMeta },
         protectedPaths: [filePath, exportNamingSourcePath],
         outputDir,
         safeOutputFileName,
@@ -2759,6 +2760,7 @@ function App() {
       fileFormat,
       filePath,
       isCustomFormatSelected,
+      mainFileMeta,
       maxLabelLength,
       outputDir,
       safeOutputFileName,
