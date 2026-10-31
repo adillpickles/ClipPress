@@ -87,12 +87,26 @@ describe('shelf', () => {
     // c, a, d, then b (exported)
     expect(pickNextClip(queue, c.path, true)).toBe(a);
     expect(pickNextClip(queue, d.path, true)).toBe(c);
-    // Just exported: back to the top of the queue.
+    // Just exported, and the oldest: the one after it, at the top.
     expect(pickNextClip(queue, b.path, true)).toBe(c);
     expect(pickNextClip(queue, undefined, true)).toBe(c);
     expect(pickNextClip(queue, 'C:/Elsewhere/x.mp4', true)).toBe(c);
     const allDone = buildShelfQueue([b], { order: 'date', exports, caseInsensitive: true });
     expect(pickNextClip(allDone, b.path, true)).toBeUndefined();
+  });
+
+  it('after exporting a clip from the middle, goes on to the one after it, not back to the top', () => {
+    // Oldest first: b, c, a, d. The owner exported a (third) and Next went to b, the oldest.
+    const exports = [{ source: a.path, outputs: [], exportedAt: 1 }];
+    const queue = buildShelfQueue(files, { order: 'date', exports, caseInsensitive: true });
+    expect(queue.map((item) => item.file)).toEqual([b, c, d, a]);
+    expect(pickNextClip(queue, a.path, true)).toBe(d);
+    // Newest first: d, a, c, b. Exporting a goes on to c.
+    const newestFirst = buildShelfQueue(files, { order: 'date-desc', exports, caseInsensitive: true });
+    expect(pickNextClip(newestFirst, a.path, true)).toBe(c);
+    // The last one in the order wraps round to the top.
+    const lastExported = buildShelfQueue(files, { order: 'date', exports: [{ source: d.path, outputs: [], exportedAt: 1 }], caseInsensitive: true });
+    expect(pickNextClip(lastExported, d.path, true)).toBe(b);
   });
 
   it('passes by a recording that could not be opened, until it changes', () => {
