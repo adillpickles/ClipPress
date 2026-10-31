@@ -5,6 +5,8 @@
   z-index: 10002;
   /* A modal dialog turns pointer events off for the rest of the page: a menu over it (a text field's) still takes them. */
   pointer-events: auto;
+  /* Over the title bar too: there Windows would take a click as a window drag, and the menu would stay open. */
+  -webkit-app-region: no-drag;
 }
 
 /* As wide as its items: one with a shortcut adds room for the keys. */
