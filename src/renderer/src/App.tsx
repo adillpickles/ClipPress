@@ -6080,6 +6080,8 @@ function App() {
 
           let openFileResponse: string | undefined;
           if (inputOptionsKeys.length === 1) [openFileResponse] = inputOptionsKeys;
+          // Without asking, several files go to the batch list, as they do when no file is open (LosslessCut #2894)
+          if (!enableAskForFileOpenAction && newFilePaths.length > 1) openFileResponse = 'addToBatch';
           if (enableAskForFileOpenAction && inputOptionsKeys.length > 1 && simpleMode && inputOptions.open != null) {
             // Open or cancel, the rest under "More options": its audio, its video or both added to this recording, or
             // the other choices in plain words.
