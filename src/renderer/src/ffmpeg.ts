@@ -539,8 +539,14 @@ export async function renderShelfThumbnail(filePath: string, signal: AbortSignal
     return stdout.length > 0 ? URL.createObjectURL(safeCreateBlob(stdout, { type: 'image/jpeg' })) : undefined;
   };
   // With no keyframe after 1 s (a clip shorter than its keyframe interval, or one keyframe at the start), FFmpeg
-  // fails having found nothing to encode: then the first frame.
-  return firstShelfThumbnail([attempt(['-skip_frame', 'nokey', '-ss', '1']), attempt([])], signal);
+  // fails having found nothing to encode: then the first frame. A recording damaged at the start fails both: then a
+  // frame 80% of the way in (an instant replay's action is near its end anyway).
+  // Its length is read only then.
+  const lateTry = async () => {
+    const duration: number | undefined = await getDuration(filePath);
+    return duration != null && duration > 2 ? attempt(['-ss', (duration * 0.8).toFixed(3)])() : undefined;
+  };
+  return firstShelfThumbnail([attempt(['-skip_frame', 'nokey', '-ss', '1']), attempt([]), lateTry], signal);
 }
 
 export async function extractSubtitleTrack(filePath: string, streamId: number) {
