@@ -122,7 +122,7 @@
   gap: .5rem;
 }
 
-/* Where Your clips has its time too; on the row's hover the remove button takes its place. */
+/* Where Your clips has its time too; on hover, a row with a remove button (Recent's) shows it in the time's place. */
 .when {
   color: var(--cp-text-subtle);
   font-size: .75rem;
@@ -130,7 +130,7 @@
   transition: opacity .12s ease;
 }
 
-.item:hover .when,
+.item:has(.remove):hover .when,
 .item:has(.remove:focus-visible) .when {
   opacity: 0;
 }
