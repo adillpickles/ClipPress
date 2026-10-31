@@ -7,6 +7,7 @@ import * as configStore from './configStore.js';
 import { getInstallationDir } from './installation.js';
 import logger from './logger.js';
 import UpdateController from './updateController.js';
+import { cleanUpdaterCacheOnce } from './updaterCache.js';
 import type { UpdateStatus } from '../common/updates.js';
 
 export default function createAutoUpdates({ offline, storeBuild, onChange }: {
@@ -44,9 +45,14 @@ export default function createAutoUpdates({ offline, storeBuild, onChange }: {
           installOnQuit: () => undefined,
         };
       }
+      // What the last update left behind goes first, so it can't touch a new download.
+      const cleaned = await cleanUpdaterCacheOnce({ resourcesPath: process.resourcesPath, appName: app.getName(), runningVersion: app.getVersion() });
+      if (cleaned.length > 0) logger.info('Removed what the last update left behind', cleaned);
       const { default: electronUpdater } = await import('electron-updater');
       const { autoUpdater, CancellationToken: Token } = electronUpdater;
       autoUpdater.logger = logger;
+      // Whole downloads: a differential one needs the last installer kept beside it (~150 MB, for ever).
+      autoUpdater.disableDifferentialDownload = true;
       autoUpdater.autoDownload = false;
       autoUpdater.autoInstallOnAppQuit = false;
       autoUpdater.autoRunAppAfterInstall = false;

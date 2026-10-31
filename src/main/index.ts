@@ -31,6 +31,7 @@ import './i18n.js';
 import type { ApiActionRequest, Config } from '../common/types.js';
 import { isSafeKey } from './objectKeys.js';
 import { isAllowedAppNavigation, isExternallyOpenableUrl } from './navigation.js';
+import { cleanUpdaterCacheOnce } from './updaterCache.js';
 import * as ffmpeg from './ffmpeg.js';
 import * as compatPlayer from './compatPlayer.js';
 import { canCopyFiles, copyFilesToClipboard, startFileDrag, warmCopyHelper } from './fileClipboard.js';
@@ -548,6 +549,15 @@ async function init() {
     ipcMain.on('renderer-ready', () => {
       rendererReady = true;
       if (filesToOpen.length > 0) openFiles(filesToOpen);
+      // An installed copy cleans up after its last update (updaterCache.ts) a moment after the start, whether or not
+      // it checks for updates.
+      if (app.isPackaged && isWindows && !isStoreBuild) {
+        setTimeout(() => {
+          cleanUpdaterCacheOnce({ resourcesPath: process.resourcesPath, appName: app.getName(), runningVersion: app.getVersion() })
+            .then((cleaned) => { if (cleaned.length > 0) logger.info('Removed what the last update left behind', cleaned); })
+            .catch(() => undefined);
+        }, 5000).unref();
+      }
       if (!updateCheckScheduled && !disableNetworking && !isStoreBuild && !isDev && configStore.get('enableUpdateCheck')) {
         updateCheckScheduled = true;
         setTimeout(() => {
