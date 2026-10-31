@@ -8035,7 +8035,9 @@ function App() {
 
               {/* This should probably be last, so that it's always on top */}
               <AnimatePresence>
-                {working && (
+                {/* A quiet task (opening a clip) that stops to ask something ("Can't find the recording") is waiting
+                    for you, not working: its card goes while the question is up. */}
+                {working && !(working.quiet && genericDialog != null) && (
                   <Working
                     text={working.text}
                     detailText={working.detailText}
