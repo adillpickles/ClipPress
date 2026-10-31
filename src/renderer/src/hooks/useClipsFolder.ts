@@ -34,8 +34,11 @@ export function useClipsFolder({ folder, exports, caseInsensitive, active }: {
 }) {
   const [listing, setListing] = useState<{ folder: string, clips: ShelfFile[] }>();
   const [listCount, setListCount] = useState(0);
-  // Listings run one at a time; one asked for again meanwhile skips the outdated one.
+  // Listings run one at a time, and only the latest asked for runs (the ones before it are outdated). One that
+  // finishes always shows, even while the next is asked for: a long listing during a recording (refreshes every 5 s)
+  // would otherwise never show. A listing of another folder is never shown for this one (`listing.folder`).
   const listQueueRef = useRef(Promise.resolve());
+  const latestListRef = useRef(0);
   // A watch that failed (a drive unplugged) is tried again when the window comes back to the front.
   const [watchAttempt, setWatchAttempt] = useState(0);
   const watchFailedRef = useRef(false);
@@ -43,19 +46,17 @@ export function useClipsFolder({ folder, exports, caseInsensitive, active }: {
   const thumbnailsRef = useRef<ShelfThumbnails>();
 
   useEffect(() => {
-    if (folder == null || !active) return undefined;
-    let cancelled = false;
+    if (folder == null || !active) return;
+    latestListRef.current += 1;
+    const asked = latestListRef.current;
     listQueueRef.current = listQueueRef.current.then(async () => {
-      if (cancelled) return;
+      if (asked !== latestListRef.current) return;
       const clips = await listNewestClips(folder, { limit: clipsFolderLimit, exports, caseInsensitive }).catch((err) => {
         console.warn('Could not list the clips folder', err);
         return [];
       });
-      if (!cancelled) setListing({ folder, clips });
+      setListing({ folder, clips });
     });
-    return () => {
-      cancelled = true;
-    };
   }, [active, caseInsensitive, exports, folder, listCount]);
 
   useEffect(() => {
