@@ -1556,6 +1556,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     customOutDir: string | undefined, streams: FFprobeStream[],
   }) => {
     invariant(filePath != null);
+    await assertFileExists(filePath);
 
     const attachmentStreams = streams.filter((s) => s.codec_type === 'attachment');
     const nonAttachmentStreams = streams.filter((s) => s.codec_type !== 'attachment');
