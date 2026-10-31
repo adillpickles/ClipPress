@@ -4,12 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { FiZoomIn, FiZoomOut } from 'react-icons/fi';
 
 import type { CropCorner, SegmentCrop } from '../segmentCrop';
-import { fullFrameCrop, getSegmentCropPixels, isSameSegmentCrop, minCropSize, moveSegmentCrop, resizeSegmentCrop, zoomSegmentCrop } from '../segmentCrop';
+import { cropZoomSliderSteps, cropZoomToSlider, fullFrameCrop, getSegmentCropPixels, isSameSegmentCrop, minCropSize, moveSegmentCrop, resizeSegmentCrop, sliderToCropZoom, stepCropZoom, zoomSegmentCrop } from '../segmentCrop';
 import { getRotatedVideoDimensions } from '../textOverlays';
 import styles from './SegmentCrop.module.css';
 
 const maxZoom = 1 / minCropSize;
-const zoomButtonStep = 0.25;
 /** Wheel zooming commits once the wheel goes quiet, so a scroll is one undo step. */
 const wheelCommitDelayMs = 350;
 
@@ -292,24 +291,24 @@ export default function SegmentCropPreview({ children, frameContent, videoWidth,
 
         {editing && (
           <div className={styles['toolbar']} role="group" aria-label={t('Zoom and crop controls')} data-dragging={dragging}>
-            <button type="button" className={styles['iconButton']} onClick={() => setZoom((current) => current - zoomButtonStep, true)} disabled={zoom <= 1.001} title={t('Zoom out')} aria-label={t('Zoom out')}><FiZoomOut aria-hidden /></button>
+            <button type="button" className={styles['iconButton']} onClick={() => setZoom((current) => stepCropZoom(current, -1), true)} disabled={zoom <= 1.001} title={t('Zoom out')} aria-label={t('Zoom out')}><FiZoomOut aria-hidden /></button>
             <input
               className={styles['slider']}
               type="range"
-              min={100}
-              max={maxZoom * 100}
+              min={0}
+              max={cropZoomSliderSteps}
               step={1}
-              value={Math.round(zoom * 100)}
+              value={cropZoomToSlider(zoom)}
               aria-label={t('Zoom')}
               aria-valuetext={`${Math.round(zoom * 100)}%`}
               onPointerDown={settleZoom}
-              onChange={(event) => { const value = Number(event.target.value) / 100; setZoom(() => value, false); }}
+              onChange={(event) => { const value = sliderToCropZoom(Number(event.target.value)); setZoom(() => value, false); }}
               onPointerUp={settleZoom}
               onKeyUp={settleZoom}
               onBlur={settleZoom}
               onKeyDown={(event) => event.stopPropagation()}
             />
-            <button type="button" className={styles['iconButton']} onClick={() => setZoom((current) => current + zoomButtonStep, true)} disabled={zoom >= maxZoom - 0.001} title={t('Zoom in')} aria-label={t('Zoom in')}><FiZoomIn aria-hidden /></button>
+            <button type="button" className={styles['iconButton']} onClick={() => setZoom((current) => stepCropZoom(current, 1), true)} disabled={zoom >= maxZoom - 0.001} title={t('Zoom in')} aria-label={t('Zoom in')}><FiZoomIn aria-hidden /></button>
             <output className={styles['zoomValue']}>{Math.round(zoom * 100)}%</output>
             <span className={styles['divider']} />
             <button type="button" className={styles['textButton']} onClick={() => { cancelGesture(); onChange(fullFrameCrop); }} disabled={zoom <= 1.001}>{t('Reset')}</button>
