@@ -36,7 +36,9 @@ export default async function publishFile(fromPath: string, toPath: string, over
   }
   // From another drive (exports are made in ClipPress's temporary folder): copied beside the destination under a
   // temporary name first, so its real name only ever holds a whole file, then published from there in one step.
-  const stagedPath = `${toPath}.clippress-${process.pid}-${Date.now()}.tmp`;
+  // A short name of its own, so a long export name doesn't push it past Windows' 255 characters.
+  const folderEnd = Math.max(toPath.lastIndexOf('/'), toPath.lastIndexOf('\\')) + 1;
+  const stagedPath = `${toPath.slice(0, folderEnd)}.clippress-${process.pid}-${Date.now()}.tmp`;
   try {
     await fs.copyExclusive(fromPath, stagedPath);
     await publishOnSameDrive(stagedPath, toPath, overwrite, fs);

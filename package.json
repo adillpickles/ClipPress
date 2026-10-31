@@ -23,7 +23,7 @@
     "check": "yarn tsc && yarn lint && yarn test run && yarn build && yarn check-licenses && yarn scan-i18n && yarn dedupe --check && yarn generate-docs",
     "pack-mac": "yarn build && yarn generate-licenses && electron-builder --mac dmg && yarn check-package",
     "pack-win": "yarn build && yarn generate-licenses && electron-builder --win --x64 --publish never && yarn check-package && node script/verifyUpdateArtifacts.ts",
-    "postinstall": "electron-builder install-app-deps",
+    "postinstall": "install-electron && electron-builder install-app-deps",
     "version": "node script/postversion.ts && git add com.clippress.app.appdata.xml",
     "pack-linux": "yarn build && yarn generate-licenses && electron-builder --linux && yarn check-package",
     "scan-i18n": "i18next-cli -c i18next.config.scan.ts extract",

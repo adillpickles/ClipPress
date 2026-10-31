@@ -266,9 +266,11 @@ async function assertOutPathIsNotSource({ outPath, filePath }: { outPath: string
  */
 async function keepFinishedExport(path: string, outPath: string) {
   const stamp = `${process.pid}-${Date.now()}`;
+  // Shortened, so the added words don't push a long name past Windows' 255 characters.
+  const name = basename(outPath, '.mp4').slice(0, 180);
   const candidates = [
-    join(dirname(outPath), `${basename(outPath, '.mp4')} (kept ${stamp}).mp4`),
-    join(remote.app.getPath('userData'), 'Kept exports', `${basename(outPath, '.mp4')} (${stamp}).mp4`),
+    join(dirname(outPath), `${name} (kept ${stamp}).mp4`),
+    join(remote.app.getPath('userData'), 'Kept exports', `${name} (${stamp}).mp4`),
   ];
   for (const candidate of candidates) {
     try {

@@ -77,7 +77,9 @@ it.each([true, false])('copies a file from another drive under a temporary name,
     await expect(readFile(to, 'utf8')).resolves.toBe('encoded');
     // Never copied to the real name itself, where a stopped copy would leave half a file.
     expect(copied).toHaveLength(1);
-    expect(copied[0]).toMatch(/new\.mp4\.clippress-\d+-\d+\.tmp$/);
+    // Beside the destination, under a short name of its own.
+    expect(copied[0]).toMatch(/^.+[\\/]\.clippress-\d+-\d+\.tmp$/);
+    expect(copied[0]!.startsWith(dir)).toBe(true);
     expect(await readdir(dir)).toEqual(['new.mp4']);
   } finally {
     await rm(dir, { recursive: true, force: true });
