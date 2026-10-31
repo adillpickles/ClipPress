@@ -14,7 +14,7 @@ import type { FFprobeFormat } from '../common/ffprobe.js';
 import isDev from './isDev.js';
 import logger from './logger.js';
 import { parseFfmpegProgressLine } from './progress.js';
-import { getHwaccelArgs, parseFfprobeDuration } from '../common/util.js';
+import { formatFfmpegNumber, getHwaccelArgs, parseFfprobeDuration } from '../common/util.js';
 import { getFfmpegJpegQuality } from './ffmpegUtil.js';
 import { withCancelId } from './ffmpegCancel.js';
 import findSourceFileCollision from '../common/sourceFileIdentity.js';
@@ -347,9 +347,9 @@ export const renderWaveformPng = ({ cancelId, ...rest }: Omit<Parameters<typeof 
 );
 
 const getInputSeekArgs = ({ filePath, from, to }: { filePath: string, from?: number | undefined, to?: number | undefined }) => [
-  ...(from != null ? ['-ss', from.toFixed(5)] : []),
+  ...(from != null ? ['-ss', formatFfmpegNumber(from)] : []),
   '-i', filePath,
-  ...(from != null && to != null ? ['-t', (to - from).toFixed(5)] : []),
+  ...(from != null && to != null ? ['-t', formatFfmpegNumber(to - from)] : []),
 ];
 
 export function mapTimesToSegments(times: number[], includeLast: boolean) {
