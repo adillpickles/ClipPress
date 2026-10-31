@@ -6,6 +6,7 @@ import { FaArrowRight, FaExclamationTriangle, FaInfoCircle, FaQuestionCircle } f
 import pMap from 'p-map';
 
 import { formatDuration } from '../util/duration';
+import { parseRatio } from '../../../common/util';
 import { parseYouTube } from '../edlFormats';
 import { isMasBuild, isWindows, trashFile, unlinkWithRetry } from '../util';
 import type { ParseTimecode } from '../types';
@@ -597,8 +598,9 @@ export async function askForPlaybackRate({ detectedFps, outputPlaybackRate }: { 
   function parseValue(v: string) {
     if (v.trim() === '') return 1; // default to 1 if empty
 
-    const newFps = parseFloat(v);
-    if (!Number.isNaN(newFps)) {
+    // allow e.g. 30000/1001, which parseFloat read as 30000 (a 1000 times faster export)
+    const newFps = v.includes('/') ? parseRatio(v) : parseFloat(v);
+    if (newFps != null && !Number.isNaN(newFps) && newFps > 0) {
       return newFps / fps;
     }
     return undefined;
