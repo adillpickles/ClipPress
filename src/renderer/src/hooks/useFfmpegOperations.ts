@@ -9,7 +9,7 @@ import i18n from 'i18next';
 import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists, moveExportWithRetry } from '../util';
 import { assertOutPathsNotSource } from '../util/sourceProtection';
 import { isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, getDuration, createChaptersFromSegments, readFileFfprobeMeta, getExperimentalArgs, getVideoTimescaleArgs, logStdoutStderr, runFfmpegConcat, RefuseOverwriteError, runFfmpeg } from '../ffmpeg';
-import { getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
+import { getKeyframeCutSeekCompensation, getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
 import type { ClipVolume } from '../util/audioGain';
 import { combineAudioGain, getVolumeFilter } from '../util/audioGain';
 import { needsSmartCut, getCodecParams } from '../smartcut';
@@ -452,11 +452,19 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     let cutDuration = cutToWithAdjustment - cutFromWithAdjustment;
     if (detectedFps != null) cutDuration = Math.max(cutDuration, frameDuration); // ensure at least one frame duration
 
-    // Don't cut if no need: https://github.com/mifi/lossless-cut/issues/50
-    const cutFromArgs = cuttingStart ? ['-ss', cutFromWithAdjustment.toFixed(5)] : [];
-    const cutToArgs = cuttingEnd ? ['-t', cutDuration.toFixed(5)] : [];
-
     const copyFileStreamsFiltered = copyFileStreams.filter(({ streamIds }) => streamIds.length > 0);
+
+    // Undo ffmpeg's earlier seek for Matroska with B-frames, so the cut doesn't start one keyframe too early (#1216)
+    // `-itsoffset` keeps the output's zero point (and so `-t`) at the original cut start. Only for a single input with `-ss` before `-i`.
+    const singleInputMeta = copyFileStreamsFiltered.length === 1 ? allFilesMeta[copyFileStreamsFiltered[0]!.path] : undefined;
+    const seekCompensation = ssBeforeInput && cuttingStart && singleInputMeta != null
+      ? getKeyframeCutSeekCompensation({ formatName: singleInputMeta.format.format_name, streams: singleInputMeta.streams, cutFrom: cutFromWithAdjustment })
+      : 0;
+
+    // Don't cut if no need: https://github.com/mifi/lossless-cut/issues/50
+    const cutFromArgs = cuttingStart ? ['-ss', (cutFromWithAdjustment + seekCompensation).toFixed(5)] : [];
+    const seekCompensationArgs = seekCompensation > 0 ? ['-itsoffset', seekCompensation.toFixed(5)] : [];
+    const cutToArgs = cuttingEnd ? ['-t', cutDuration.toFixed(5)] : [];
 
     // remove -avoid_negative_ts make_zero when not cutting start (no -ss), or else some videos get blank first frame in QuickLook
     const avoidNegativeTsArgs = cuttingStart && avoidNegativeTs && ssBeforeInput ? ['-avoid_negative_ts', String(avoidNegativeTs)] : [];
@@ -466,7 +474,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     const inputFilesArgs = copyFileStreamsFiltered.length > 1
       ? flatMap(copyFileStreamsFiltered, ({ path }) => [...cutFromArgs, '-i', path, ...cutToArgs])
       : [
-        ...(ssBeforeInput ? cutFromArgs : []),
+        ...(ssBeforeInput ? [...cutFromArgs, ...seekCompensationArgs] : []),
         '-i', copyFileStreamsFiltered[0]!.path,
         ...(!ssBeforeInput ? cutFromArgs : []),
         ...cutToArgs,

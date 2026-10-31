@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 
-import { getMapStreamsArgs, getStreamIdsToCopy } from './streams';
+import { getKeyframeCutSeekCompensation, getMapStreamsArgs, getStreamIdsToCopy } from './streams';
 import type { FFprobeStreamDisposition } from '../../../common/ffprobe';
 import type { LiteFFprobeStream } from '../types';
 
@@ -163,4 +163,20 @@ test('ass output', () => {
   })).toEqual([
     '-map', '0:0', '-c:0', 'ass',
   ]);
+});
+
+test('getKeyframeCutSeekCompensation', () => {
+  const bFrames = [{ has_b_frames: 2 }, {}];
+  const compensation = 3 / 23 + 0.001;
+
+  expect(getKeyframeCutSeekCompensation({ formatName: 'matroska,webm', streams: bFrames, cutFrom: 6 })).toBe(compensation);
+  // no B-frames
+  expect(getKeyframeCutSeekCompensation({ formatName: 'matroska,webm', streams: [{ has_b_frames: 0 }, {}], cutFrom: 6 })).toBe(0);
+  // formats with AVFMT_SEEK_TO_PTS, or not handled
+  expect(getKeyframeCutSeekCompensation({ formatName: 'mov,mp4,m4a,3gp,3g2,mj2', streams: bFrames, cutFrom: 6 })).toBe(0);
+  expect(getKeyframeCutSeekCompensation({ formatName: undefined, streams: bFrames, cutFrom: 6 })).toBe(0);
+  // MPEG-TS seeks differently: the compensation would start its cut one keyframe late
+  expect(getKeyframeCutSeekCompensation({ formatName: 'mpegts', streams: bFrames, cutFrom: 6 })).toBe(0);
+  // not cutting start
+  expect(getKeyframeCutSeekCompensation({ formatName: 'matroska,webm', streams: bFrames, cutFrom: 0 })).toBe(0);
 });
