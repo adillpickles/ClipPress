@@ -13,6 +13,8 @@ const remote = window.require('@electron/remote');
 
 const shouldUseCustomChrome = process.platform !== 'darwin';
 
+const brandName = <>Clip<span className={styles['brandPress']}>Press</span></>;
+
 /** The menu bar's items as the app's menu shows them: an item running an app action shows that action's real keys. */
 const toMenuEntries = (items: AppMenuItem[], keyBindingByAction: Record<string, KeyBinding>): MenuEntry[] => items.map((item) => ({
   label: item.label,
@@ -165,12 +167,12 @@ function AppChrome({ keyBindingByAction, onGoHome }: {
             data-tip-keys={homeKeys}
           >
             <span className={styles['brandText']}>
-              <span className={styles['brandName']}>ClipPress</span>
+              <span className={styles['brandName']}>{brandName}</span>
               <span className={styles['brandHome']} aria-hidden><FiArrowLeft />{t('Home')}</span>
             </span>
           </button>
         ) : (
-          <div className={styles['brand']}>ClipPress</div>
+          <div className={styles['brand']}>{brandName}</div>
         )}
 
         <div className={styles['menuBar']}>

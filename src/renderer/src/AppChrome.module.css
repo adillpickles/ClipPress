@@ -29,19 +29,25 @@
   gap: .18rem;
 }
 
-/* The app's name, first in the bar: the menu words' size, padding and baseline, a little bolder (6.1 round 3: no logo
-   mark, so it lines up with File, Edit…). */
+/* The app's name, first in the bar, on the menu words' line: a little bigger, in the display font (rounder, roomier
+   letters than the UI font's at this weight), "Press" in the accent (6.1 round 4). Less padding than the menu words,
+   so the bar keeps its height. */
 .brand {
   display: inline-flex;
   align-items: center;
   min-width: 0;
-  padding: .42rem .66rem;
+  padding: .36rem .66rem;
   border-radius: .7rem;
-  font-size: .8rem;
-  font-weight: 800;
+  font-family: var(--cp-font-display);
+  font-size: 1.02rem;
+  font-weight: 700;
   line-height: 1;
-  letter-spacing: -.01em;
+  letter-spacing: 0;
   color: var(--cp-text);
+}
+
+.brandPress {
+  color: var(--cp-accent-text);
 }
 
 /* With a recording open it's the way home: hovered, "ClipPress" rolls away and "← Home" rolls in, in the same place
@@ -50,12 +56,13 @@
   all: unset;
   display: inline-flex;
   align-items: center;
-  padding: .42rem .66rem;
+  padding: .36rem .66rem;
   border-radius: .7rem;
-  font-size: .8rem;
-  font-weight: 800;
+  font-family: var(--cp-font-display);
+  font-size: 1.02rem;
+  font-weight: 700;
   line-height: 1;
-  letter-spacing: -.01em;
+  letter-spacing: 0;
   color: var(--cp-text);
   cursor: pointer;
   -webkit-app-region: no-drag;
