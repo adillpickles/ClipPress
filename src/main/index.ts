@@ -321,6 +321,8 @@ function createWindow() {
     },
     canAskRenderer: () => rendererReady && !window.webContents.isDestroyed() && !window.webContents.isCrashed(),
     askRenderer: (id) => window.webContents.send('close-requested', id),
+    // A Restart whose close was called off doesn't restart at a later quit.
+    onCancelled: () => { getAutoUpdates().then((updates) => updates.cancelRestart()).catch(() => undefined); },
     showNotResponding: async (signal, reason) => {
       logger.warn('Offering to quit without saving', { reason });
       const { response } = await electron.dialog.showMessageBox(window, {

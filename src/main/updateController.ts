@@ -7,8 +7,6 @@ export interface UpdateBackend {
   download: () => Promise<void>,
   cancel: () => void,
   installOnQuit: (enabled: boolean) => void,
-  /** Installs the downloaded update when the app has quit, and opens the new version (the app then closes itself). */
-  installNow: () => void,
 }
 
 export function isApplicableUpdate(currentVersion: string, version: string) {
@@ -27,6 +25,9 @@ export default class UpdateController {
 
   /** This run must not install an update when it quits (see holdInstallation). */
   private held = false;
+
+  /** Restart was pressed: when the app has quit, install and open the new version (see restartToInstall). */
+  private restartRequested = false;
 
   private backend: UpdateBackend | undefined;
 
@@ -71,6 +72,7 @@ export default class UpdateController {
    * downloaded, and a later run installs it.
    */
   holdInstallation() {
+    this.restartRequested = false;
     if (this.held) return;
     this.held = true;
     this.backend?.installOnQuit(false);
@@ -197,12 +199,29 @@ export default class UpdateController {
   }
 
   /**
-   * The update notice's Restart: close now, install and open the new version, as VS Code and Discord do, so nobody
-   * starts the old version while the installer runs. Only a downloaded update this run may install.
+   * The update notice's Restart, as VS Code and Discord do it, so nobody starts the old version while the installer
+   * runs: the app closes the usual way (saving, asking first if set to), and once it has quit the update installs and
+   * the new version opens (takeRestart). Only a downloaded update this run may install.
    */
   restartToInstall() {
-    if (this.state.phase !== 'ready' || !this.state.supported || this.held || this.backend == null) return false;
-    this.backend.installNow();
+    if (!this.mayInstall()) return false;
+    this.restartRequested = true;
     return true;
+  }
+
+  /** The close Restart began was cancelled: no restart (a later quit installs as it would have). */
+  cancelRestart() {
+    this.restartRequested = false;
+  }
+
+  /** As the app quits: whether to install now and open the new version. Not once installation is held (Windows ending the session). */
+  takeRestart() {
+    const restart = this.restartRequested && this.mayInstall();
+    this.restartRequested = false;
+    return restart;
+  }
+
+  private mayInstall() {
+    return this.state.phase === 'ready' && this.state.supported && !this.held && this.backend != null;
   }
 }

@@ -58,6 +58,24 @@ afterEach(() => {
 });
 
 describe('CloseGuard', () => {
+  it('says when a close is called off, and only then (an update Restart forgets itself)', async () => {
+    const onCancelled = vi.fn();
+    const said = setup({ shouldConfirm: () => true, confirm: async () => false, onCancelled });
+    expect(said.close()).toBe(false);
+    await said.wait(0);
+    expect(onCancelled).toHaveBeenCalledOnce();
+    expect(said.closed()).toBe(0);
+
+    const closing = vi.fn();
+    const { guard, requests, close, wait, closed } = setup({ onCancelled: closing });
+    expect(close()).toBe(false);
+    await wait(0);
+    guard.onDecision(requests[0]!, 'close');
+    await wait(0);
+    expect(closed()).toBe(1);
+    expect(closing).not.toHaveBeenCalled();
+  });
+
   it('holds the close until the renderer has saved and agrees, then closes once', async () => {
     const t = setup();
     expect(t.close()).toBe(false);

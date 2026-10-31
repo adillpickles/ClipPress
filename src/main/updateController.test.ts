@@ -9,7 +9,6 @@ function setup(preferences?: UpdatePreferences, supported = true) {
     download: vi.fn<() => Promise<void>>(async () => undefined),
     cancel: vi.fn(),
     installOnQuit: vi.fn(),
-    installNow: vi.fn(),
   };
   const onChange = vi.fn<(status: UpdateStatus) => void>();
   const onError = vi.fn();
@@ -19,7 +18,7 @@ function setup(preferences?: UpdatePreferences, supported = true) {
 
 describe('update policy', () => {
   it('restarts into a downloaded update only, and not while installation is held', async () => {
-    const { controller, backend } = setup({ enabled: true, mode: 'ask' });
+    const { controller } = setup({ enabled: true, mode: 'ask' });
     expect(controller.restartToInstall()).toBe(false);
     await controller.check();
     // Found, not downloaded yet.
@@ -28,14 +27,28 @@ describe('update policy', () => {
     expect(controller.getStatus().phase).toBe('ready');
     controller.holdInstallation();
     expect(controller.restartToInstall()).toBe(false);
-    expect(backend.installNow).not.toHaveBeenCalled();
+    expect(controller.takeRestart()).toBe(false);
   });
 
-  it('restarts into the downloaded update when asked', async () => {
-    const { controller, backend } = setup();
+  it('restarts into the downloaded update when the app quits after Restart', async () => {
+    const { controller } = setup();
     await controller.check();
+    expect(controller.takeRestart()).toBe(false);
     expect(controller.restartToInstall()).toBe(true);
-    expect(backend.installNow).toHaveBeenCalledOnce();
+    expect(controller.takeRestart()).toBe(true);
+    // Once.
+    expect(controller.takeRestart()).toBe(false);
+  });
+
+  it('forgets a Restart whose close was cancelled, or held since (Windows ending the session)', async () => {
+    const { controller } = setup();
+    await controller.check();
+    controller.restartToInstall();
+    controller.cancelRestart();
+    expect(controller.takeRestart()).toBe(false);
+    controller.restartToInstall();
+    controller.holdInstallation();
+    expect(controller.takeRestart()).toBe(false);
   });
 
   it('downloads in the background and arms normal-quit installation only for a verified result', async () => {
