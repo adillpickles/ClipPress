@@ -12,7 +12,7 @@ import formatRelativeTime from '../util/relativeTime';
 import styles from './RecentFiles.module.css';
 
 const { stat } = window.require('fs/promises');
-const { basename, dirname, extname } = window.require('path');
+const { basename, dirname, extname, parse } = window.require('path');
 
 async function exists(path: string) {
   try {
@@ -102,8 +102,11 @@ function RecentFiles({ files, customOutDir, wasExported, thumbnails, requestThum
         return [path, { missing: media == null, edited, file }] as const;
       }));
       // Recent keeps a recording that's gone only when there's something to come back for: edits never exported
-      // (shown as Missing, to find it again). Gone and exported, or gone without edits, it leaves the list.
-      const done = entries.filter(([path, state]) => state.missing && (wasExported(path) || !state.edited)).map(([path]) => path);
+      // (shown as Missing, to find it again). Gone and exported, or gone without edits, it leaves the list. A drive
+      // that isn't there (unplugged; its edits may be on it too) isn't a deletion: those stay, as Missing.
+      const done = (await Promise.all(entries.map(async ([path, state]) => (
+        state.missing && (wasExported(path) || !state.edited) && await exists(parse(path).root) ? [path] : []
+      )))).flat();
       if (cancelled) return;
       setStates(Object.fromEntries(entries));
       if (done.length > 0) onForget(done);
