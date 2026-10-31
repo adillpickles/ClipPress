@@ -30,11 +30,11 @@ function ClipRow({ clip, folder, thumbnail, requestThumbnail, onOpen, formatRela
   return (
     <li className={recentStyles['item']}>
       {/* No remove button on these rows, so no room kept for one on the right. */}
-      <button type="button" className={recentStyles['open']} style={{ paddingRight: '.8rem' }} onClick={() => onOpen(clip.path)} title={clip.path}>
+      <button type="button" className={recentStyles['open']} style={{ paddingRight: '.8rem' }} onClick={() => onOpen(clip.path)} title={clip.path} data-tip-if-cut="">
         <ShelfThumb thumbnail={thumbnail} />
         <span className={recentStyles['text']}>
-          <span className={recentStyles['name']}>{basename(clip.name, extname(clip.name))}</span>
-          {subfolder !== '' && <span className={recentStyles['meta']}>{subfolder}</span>}
+          <span className={recentStyles['name']} data-cuttable="">{basename(clip.name, extname(clip.name))}</span>
+          {subfolder !== '' && <span className={recentStyles['meta']} data-cuttable="">{subfolder}</span>}
         </span>
         <span className={recentStyles['side']}>
           <span className={recentStyles['when']}>{formatRelative(clip.modifiedAt)}</span>

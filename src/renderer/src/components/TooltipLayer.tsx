@@ -20,6 +20,9 @@ const followMs = 400;
  * moves to `data-tip` and the attribute stays, empty (React then still changes or removes it, and that's followed).
  * Its text stays readable to screen readers: as the element's name if the title was its only one, else as its
  * description.
+ *
+ * `data-tip-if-cut` on the element: its hint only spells out text cut short with "…" (a list row's full name or
+ * path), so it shows only while one of its `data-cuttable` parts actually is.
  */
 /** Whether the element has a name of its own, so a title only describes it. */
 function hasOwnName(el: HTMLElement | SVGElement) {
@@ -65,9 +68,12 @@ function adoptTree(node: Node) {
 
 interface Tip { el: HTMLElement, text: string, keys: string | undefined }
 
+const isCut = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('[data-cuttable]')].some((part) => part.scrollWidth > part.clientWidth);
+
 const readTip = (el: HTMLElement): Tip | undefined => {
   const text = el.dataset['tip'];
-  return text ? { el, text, keys: el.dataset['tipKeys'] || undefined } : undefined;
+  if (!text || (el.dataset['tipIfCut'] != null && !isCut(el))) return undefined;
+  return { el, text, keys: el.dataset['tipKeys'] || undefined };
 };
 
 export default function TooltipLayer() {

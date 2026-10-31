@@ -135,11 +135,13 @@ function RecentFiles({ files, customOutDir, wasExported, thumbnails, requestThum
                 className={[styles['open'], ...(missing ? [styles['missing']] : [])].join(' ')}
                 onClick={() => onOpen(path)}
                 title={missing ? `${t('This file has been moved or deleted: {{path}}', { path })}\n${t('Click to find it.')}` : path}
+                // The path only when the name or folder is cut short; a missing one always says what's wrong.
+                data-tip-if-cut={missing ? undefined : ''}
               >
                 <RecentThumb file={state?.file} thumbnails={thumbnails} requestThumbnail={requestThumbnail} />
                 <span className={styles['text']}>
-                  <span className={styles['name']}>{displayName(path)}</span>
-                  <span className={styles['meta']}>
+                  <span className={styles['name']} data-cuttable="">{displayName(path)}</span>
+                  <span className={styles['meta']} data-cuttable="">
                     {dirname(path)}
                   </span>
                 </span>
