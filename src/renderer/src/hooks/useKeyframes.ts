@@ -42,7 +42,7 @@ function useKeyframes({ keyframesEnabled, filePath, commandedTime, videoStream, 
     return map;
   }, [detectedFps, neighbouringKeyFrames]);
 
-  const findNearestKeyFrameTime = useCallback(({ time, direction }: { time: number, direction: number }) => ffmpegFindNearestKeyFrameTime({ frames: neighbouringKeyFrames, time, direction, fps: detectedFps }), [neighbouringKeyFrames, detectedFps]);
+  const findNearestKeyFrameTime = useCallback(({ time, direction }: { time: number, direction: number }) => ffmpegFindNearestKeyFrameTime({ frames: neighbouringKeyFrames, time, direction }), [neighbouringKeyFrames]);
 
   // Stretches already read: seeking around inside them needs no new ffprobe run (each one takes ~150 ms).
   const coveredRef = useRef<{ from: number, to: number }[]>([]);

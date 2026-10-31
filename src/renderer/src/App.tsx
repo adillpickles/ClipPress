@@ -2748,7 +2748,8 @@ function App() {
         template,
         isCustomFormatSelected: isFormatForced ? true : isCustomFormatSelected,
         fileFormat: outputFormat,
-        sourceFile: { path: exportNamingSourcePath },
+        // with its probe data and stats, as for the clips' names, or `FILES[0].size` etc. are missing
+        sourceFile: { path: exportNamingSourcePath, ...mainFileMeta },
         protectedPaths: [filePath, exportNamingSourcePath],
         outputDir,
         safeOutputFileName,
@@ -2766,6 +2767,7 @@ function App() {
       fileFormat,
       filePath,
       isCustomFormatSelected,
+      mainFileMeta,
       maxLabelLength,
       outputDir,
       safeOutputFileName,
@@ -5483,14 +5485,16 @@ function App() {
 
   const seekClosestKeyframe = useCallback(
     (direction: number) => {
+      // Look from one frame on, so a jump doesn't find the keyframe we're already at
+      const step = detectedFps ? 1 / detectedFps : 0.1;
       const time = findNearestKeyFrameTime({
-        time: getRelevantTime(),
+        time: getRelevantTime() + direction * step,
         direction,
       });
       if (time == null) return;
       seekAbs(time);
     },
-    [findNearestKeyFrameTime, getRelevantTime, seekAbs],
+    [detectedFps, findNearestKeyFrameTime, getRelevantTime, seekAbs],
   );
 
   // Alt+← / → in the simple editor, which shows no keyframes: the clip edge before or after.
@@ -5753,6 +5757,8 @@ function App() {
 
       if (err instanceof RefuseOverwriteError) {
         showRefuseToOverwrite();
+      } else if (err instanceof UserFacingError) {
+        errorToast(err.message);
       } else {
         errorToast(i18n.t('Failed to extract all streams'));
         console.error('Failed to extract all streams', err);
@@ -6088,6 +6094,8 @@ function App() {
 
           let openFileResponse: string | undefined;
           if (inputOptionsKeys.length === 1) [openFileResponse] = inputOptionsKeys;
+          // Without asking, several files go to the batch list, as they do when no file is open (LosslessCut #2894)
+          if (!enableAskForFileOpenAction && newFilePaths.length > 1) openFileResponse = 'addToBatch';
           if (enableAskForFileOpenAction && inputOptionsKeys.length > 1 && simpleMode && inputOptions.open != null) {
             // Open or cancel, the rest under "More options": its audio, its video or both added to this recording, or
             // the other choices in plain words.
@@ -6716,6 +6724,8 @@ function App() {
 
         if (err instanceof RefuseOverwriteError) {
           showRefuseToOverwrite();
+        } else if (err instanceof UserFacingError) {
+          errorToast(err.message);
         } else {
           errorToast(i18n.t('Failed to extract track'));
           console.error('Failed to extract track', err);

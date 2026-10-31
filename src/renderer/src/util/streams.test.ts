@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 
-import { getMapStreamsArgs, getStreamIdsToCopy } from './streams';
+import { getEffectiveAvoidNegativeTs, getKeyframeCutSeekCompensation, getMapStreamsArgs, getStreamIdsToCopy } from './streams';
 import type { FFprobeStreamDisposition } from '../../../common/ffprobe';
 import type { LiteFFprobeStream } from '../types';
 
@@ -163,4 +163,58 @@ test('ass output', () => {
   })).toEqual([
     '-map', '0:0', '-c:0', 'ass',
   ]);
+});
+
+test('getKeyframeCutSeekCompensation', () => {
+  const bFrames = [{ has_b_frames: 2 }, {}];
+  const compensation = 3 / 23 + 0.001;
+
+  expect(getKeyframeCutSeekCompensation({ formatName: 'matroska,webm', streams: bFrames, cutFrom: 6 })).toBe(compensation);
+  // no B-frames
+  expect(getKeyframeCutSeekCompensation({ formatName: 'matroska,webm', streams: [{ has_b_frames: 0 }, {}], cutFrom: 6 })).toBe(0);
+  // formats with AVFMT_SEEK_TO_PTS, or not handled
+  expect(getKeyframeCutSeekCompensation({ formatName: 'mov,mp4,m4a,3gp,3g2,mj2', streams: bFrames, cutFrom: 6 })).toBe(0);
+  expect(getKeyframeCutSeekCompensation({ formatName: undefined, streams: bFrames, cutFrom: 6 })).toBe(0);
+  // MPEG-TS seeks differently: the compensation would start its cut one keyframe late
+  expect(getKeyframeCutSeekCompensation({ formatName: 'mpegts', streams: bFrames, cutFrom: 6 })).toBe(0);
+  // not cutting start
+  expect(getKeyframeCutSeekCompensation({ formatName: 'matroska,webm', streams: bFrames, cutFrom: 0 })).toBe(0);
+});
+
+// stream 0 of `streams1` is an attached_pic (cover art) mjpeg stream
+// https://github.com/mifi/lossless-cut/issues/3009
+test('getEffectiveAvoidNegativeTs, downgrades to auto when copying cover art', () => {
+  expect(getEffectiveAvoidNegativeTs({
+    avoidNegativeTs: 'make_zero',
+    allFilesMeta,
+    copyFileStreams: [{ path, streamIds: [0, 1] }],
+  })).toBe('auto');
+
+  expect(getEffectiveAvoidNegativeTs({
+    avoidNegativeTs: 'make_non_negative',
+    allFilesMeta,
+    copyFileStreams: [{ path, streamIds: [0, 1] }],
+  })).toBe('auto');
+});
+
+test('getEffectiveAvoidNegativeTs, passes through when not copying cover art', () => {
+  expect(getEffectiveAvoidNegativeTs({
+    avoidNegativeTs: 'make_zero',
+    allFilesMeta,
+    copyFileStreams: [{ path, streamIds: [1, 2] }],
+  })).toBe('make_zero');
+
+  expect(getEffectiveAvoidNegativeTs({
+    avoidNegativeTs: 'make_non_negative',
+    allFilesMeta,
+    copyFileStreams: [{ path, streamIds: [1, 2] }],
+  })).toBe('make_non_negative');
+});
+
+test('getEffectiveAvoidNegativeTs, leaves other values alone', () => {
+  const copyFileStreams = [{ path, streamIds: [0, 1] }];
+
+  expect(getEffectiveAvoidNegativeTs({ avoidNegativeTs: 'auto', allFilesMeta, copyFileStreams })).toBe('auto');
+  expect(getEffectiveAvoidNegativeTs({ avoidNegativeTs: 'disabled', allFilesMeta, copyFileStreams })).toBe('disabled');
+  expect(getEffectiveAvoidNegativeTs({ avoidNegativeTs: undefined, allFilesMeta, copyFileStreams })).toBe(undefined);
 });

@@ -112,7 +112,8 @@ function ConcatDialog({ isShown, onHide, paths, mergedFileTemplate, generateMerg
           return;
         }
         // check all these parameters
-        (['codec_name', 'width', 'height', 'pix_fmt', 'level', 'profile', 'sample_fmt', 'avg_frame_rate', 'r_frame_rate', 'time_base'] as const).forEach((key) => {
+        // avg_frame_rate is not checked: it often differs slightly between files that join fine, e.g. variable frame rate recordings (LosslessCut #2759)
+        (['codec_name', 'width', 'height', 'pix_fmt', 'level', 'profile', 'sample_fmt', 'r_frame_rate', 'time_base'] as const).forEach((key) => {
           const val = stream[key];
           const referenceVal = referenceStream[key];
           if (val !== referenceVal) {

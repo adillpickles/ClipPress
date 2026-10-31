@@ -50,6 +50,8 @@ function useTimelineScroll({ wheelSensitivity, mouseWheelZoomModifierKey, mouseW
     if (isGestureModifierHeld(wheelEvent, mouseWheelZoomModifierKey, extraMouseModifierKeys, 'zoom')) {
       // Scrolling up zooms in, as in other editors and maps (see also https://github.com/mifi/lossless-cut/issues/2703)
       zoomRel(-pixelY * wheelSensitivity * 0.4);
+    } else if (pixelX + pixelY === 0) {
+      // No net movement (e.g. the end of a trackpad's momentum): a frame or keyframe step would go backwards by itself
     } else if (isGestureModifierHeld(wheelEvent, mouseWheelFrameSeekModifierKey, extraMouseModifierKeys, 'frameSeek')) {
       shortStep(makeUnit(pixelX + pixelY));
     } else if (isGestureModifierHeld(wheelEvent, mouseWheelKeyframeSeekModifierKey, extraMouseModifierKeys, 'keyframeSeek')) {

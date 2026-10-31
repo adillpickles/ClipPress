@@ -24,7 +24,7 @@ import runCancellable from './util/ffmpegCancel';
 
 const { ffmpeg } = window.require('@electron/remote').require('./index.js');
 
-const { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, getFfmpegPath, setCustomFfPath } = ffmpeg;
+const { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, getFfmpegPath, setCustomFfPath, checkFfExists } = ffmpeg;
 
 type Runners = typeof ffmpeg.runWithCallbacks;
 type RunnerName = Parameters<Runners>[0];
@@ -240,13 +240,13 @@ export function getSafeCutTime(frames: Frame[], cutTime: number, nextMode: boole
   return frames[index - 1]!.time;
 }
 
-export function findNearestKeyFrameTime({ frames, time, direction, fps }: { frames: Frame[], time: number, direction: number, fps: number | undefined }) {
-  const sigma = fps ? (1 / fps) : 0.1;
+// A keyframe exactly at `time` counts as the nearest one, so a clip starting on a keyframe finds that keyframe.
+export function findNearestKeyFrameTime({ frames, time, direction }: { frames: Frame[], time: number, direction: number }) {
   // One pass, no copies or sorting: this runs for every clip, over thousands of frames.
   let nearest: number | undefined;
   let nearestDistance = Infinity;
   for (const f of frames) {
-    if (f.keyframe && (direction > 0 ? f.time > time + sigma : f.time < time - sigma)) {
+    if (f.keyframe && (direction > 0 ? f.time >= time : f.time <= time)) {
       const distance = direction > 0 ? f.time - time : time - f.time;
       if (distance < nearestDistance) {
         nearestDistance = distance;
@@ -745,6 +745,10 @@ const ffprobeVersionSchema = z.object({
 });
 
 export async function runFfmpegStartupCheck() {
+  // will throw ENOENT if the executables don't exist (e.g. a custom FFmpeg folder without them)
+  await checkFfExists('ffmpeg');
+  await checkFfExists('ffprobe');
+
   // will throw if exit code != 0
   const { stderr: ffmpegStderr } = await runFfmpeg(['-f', 'lavfi', '-i', 'nullsrc=s=256x256:d=1', '-f', 'null', '-']);
   console.log('FFmpeg startup check output:', new TextDecoder().decode(ffmpegStderr));

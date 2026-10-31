@@ -6,10 +6,10 @@ import pMap from 'p-map';
 import invariant from 'tiny-invariant';
 import i18n from 'i18next';
 
-import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists, moveExportWithRetry } from '../util';
+import { getSuffixedOutPath, transferTimestamps, getOutFileExtension, getOutDir, deleteDispositionValue, getHtml5ifiedPath, unlinkWithRetry, getFrameDuration, isMac, html5ifiedPrefix, html5dummySuffix, assertFileExists, moveExportWithRetry, isExecaError, getStdioString } from '../util';
 import { assertOutPathsNotSource } from '../util/sourceProtection';
 import { isCuttingStart, isCuttingEnd, runFfmpegWithProgress, getFfCommandLine, getDuration, createChaptersFromSegments, readFileFfprobeMeta, getExperimentalArgs, getVideoTimescaleArgs, logStdoutStderr, runFfmpegConcat, RefuseOverwriteError, runFfmpeg } from '../ffmpeg';
-import { getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
+import { attachedPicDisposition, getEffectiveAvoidNegativeTs, getKeyframeCutSeekCompensation, getMapStreamsArgs, getStreamIdsToCopy, isNeutralAudioGain } from '../util/streams';
 import type { ClipVolume } from '../util/audioGain';
 import { combineAudioGain, getVolumeFilter } from '../util/audioGain';
 import { needsSmartCut, getCodecParams } from '../smartcut';
@@ -27,7 +27,7 @@ import type { AllFilesMeta, Chapter, CopyfileStreams, CustomTagsByFile, LiteFFpr
 import type { LossyMode } from '../../../main';
 import { UserFacingError } from '../../errors';
 import mainApi from '../mainApi';
-import { getHwaccelArgs } from '../../../common/util';
+import { formatFfmpegNumber, getHwaccelArgs } from '../../../common/util';
 import { getTempWorkDir } from '../util/tempFiles';
 
 const { join, resolve, dirname, extname } = window.require('path');
@@ -452,21 +452,40 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     let cutDuration = cutToWithAdjustment - cutFromWithAdjustment;
     if (detectedFps != null) cutDuration = Math.max(cutDuration, frameDuration); // ensure at least one frame duration
 
-    // Don't cut if no need: https://github.com/mifi/lossless-cut/issues/50
-    const cutFromArgs = cuttingStart ? ['-ss', cutFromWithAdjustment.toFixed(5)] : [];
-    const cutToArgs = cuttingEnd ? ['-t', cutDuration.toFixed(5)] : [];
-
     const copyFileStreamsFiltered = copyFileStreams.filter(({ streamIds }) => streamIds.length > 0);
 
+    // Undo ffmpeg's earlier seek for Matroska with B-frames, so the cut doesn't start one keyframe too early (#1216)
+    // `-itsoffset` keeps the output's zero point (and so `-t`) at the original cut start. Only for a single input with `-ss` before `-i`.
+    const singleInputMeta = copyFileStreamsFiltered.length === 1 ? allFilesMeta[copyFileStreamsFiltered[0]!.path] : undefined;
+    const seekCompensation = ssBeforeInput && cuttingStart && singleInputMeta != null
+      ? getKeyframeCutSeekCompensation({ formatName: singleInputMeta.format.format_name, streams: singleInputMeta.streams, cutFrom: cutFromWithAdjustment })
+      : 0;
+
+    // Don't cut if no need: https://github.com/mifi/lossless-cut/issues/50
+    const cutFromArgs = cuttingStart ? ['-ss', formatFfmpegNumber(cutFromWithAdjustment + seekCompensation)] : [];
+    const seekCompensationArgs = seekCompensation > 0 ? ['-itsoffset', formatFfmpegNumber(seekCompensation)] : [];
+    const cutToArgs = cuttingEnd ? ['-t', formatFfmpegNumber(cutDuration)] : [];
+
     // remove -avoid_negative_ts make_zero when not cutting start (no -ss), or else some videos get blank first frame in QuickLook
-    const avoidNegativeTsArgs = cuttingStart && avoidNegativeTs && ssBeforeInput ? ['-avoid_negative_ts', String(avoidNegativeTs)] : [];
+    // note: `make_zero`/`make_non_negative` get downgraded to `auto` when copying a cover art stream, or else the
+    // output gets the segment's end time as its duration, see https://github.com/mifi/lossless-cut/issues/3009
+    const effectiveAvoidNegativeTs = getEffectiveAvoidNegativeTs({ avoidNegativeTs, allFilesMeta, copyFileStreams: copyFileStreamsFiltered });
+    const avoidNegativeTsArgs = cuttingStart && effectiveAvoidNegativeTs && ssBeforeInput ? ['-avoid_negative_ts', String(effectiveAvoidNegativeTs)] : [];
 
     // If cutting multiple files, `-ss` must be before `-i`, regardless of `ssBeforeInput` choice
     // and it seems that `-t` must be after `-i` #896
     const inputFilesArgs = copyFileStreamsFiltered.length > 1
-      ? flatMap(copyFileStreamsFiltered, ({ path }) => [...cutFromArgs, '-i', path, ...cutToArgs])
+      ? flatMap(copyFileStreamsFiltered, ({ streamIds, path }) => {
+        // don't seek cover art or images attached by users, it loses them, see https://github.com/mifi/lossless-cut/issues/2884
+        // `-t` stays: it applies to the next input or, after the last one, to the output
+        if (streamIds.length === 1 && paramsByStreamId.get(path)?.get(streamIds[0]!)?.disposition === attachedPicDisposition) {
+          return ['-i', path, ...cutToArgs];
+        }
+
+        return [...cutFromArgs, '-i', path, ...cutToArgs];
+      })
       : [
-        ...(ssBeforeInput ? cutFromArgs : []),
+        ...(ssBeforeInput ? [...cutFromArgs, ...seekCompensationArgs] : []),
         '-i', copyFileStreamsFiltered[0]!.path,
         ...(!ssBeforeInput ? cutFromArgs : []),
         ...cutToArgs,
@@ -934,10 +953,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
       // No progress if we set loglevel warning :(
       // '-loglevel', 'warning',
 
-      '-ss', cutFrom.toFixed(5), // if we don't -ss before -i, seeking will be slow for long files, see https://github.com/mifi/lossless-cut/issues/126#issuecomment-1135451043
+      '-ss', formatFfmpegNumber(cutFrom), // if we don't -ss before -i, seeking will be slow for long files, see https://github.com/mifi/lossless-cut/issues/126#issuecomment-1135451043
       '-i', filePath,
       '-ss', '0', // If we don't do this, the output seems to start with an empty black after merging with the encoded part
-      '-t', (cutTo - cutFrom).toFixed(5),
+      '-t', formatFfmpegNumber(cutTo - cutFrom),
 
       ...mapStreamsArgs,
 
@@ -1069,6 +1088,9 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         await cutEncodeSmartPart({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate: encCustomBitrate != null ? encCustomBitrate * 1000 : sourceCodecParams.videoBitrate, videoStreamIndex: videoStream.index, videoTimebase: sourceCodecParams.videoTimebase, allFilesMeta, copyFileStreams: copyFileStreamsFiltered, paramsByStreamId, ffmpegExperimental, hasBFrames: sourceCodecParams.videoStream.has_b_frames, clipVolume, forceAudioEncode: encodeAllAudio });
       }
 
+      // used when the final output file was produced by encoding or concat, because they don't transfer the timestamps of the segment
+      const transferSegmentTimestamps = async () => transferTimestamps({ inPath: filePath, outPath: finalOutPath, cutFrom: desiredCutFrom, cutTo, duration: isDurationValid(fileDuration) ? fileDuration : undefined, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart });
+
       const cutEncodeWholePart = async () => {
         // Through a temporary file like every export, so a cancelled or failed one leaves nothing half written.
         const partialPath = getPartialPath(finalOutPath);
@@ -1078,6 +1100,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         } finally {
           await removePartial(partialPath);
         }
+        await transferSegmentTimestamps();
         onSingleProgress(i, 1);
         return { path: finalOutPath, created: true };
       };
@@ -1138,6 +1161,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         const { streams: streamsAfterCut } = await readFileFfprobeMeta(losslessPartOutPath);
 
         await concatFiles({ paths: smartCutSegmentsToConcat, outDir: outputDir, outPath: finalOutPath, metadataFromPath: losslessPartOutPath, outFormat, includeAllStreams: true, streams: streamsAfterCut, ffmpegExperimental, preserveMovData, movFastStart, chapters, preserveMetadataOnMerge, videoTimebase, onProgress: onConcatProgress, signal });
+        // concatFiles copied the timestamps of the lossless part (which starts at the next keyframe, not at the segment start)
+        await transferSegmentTimestamps();
         onSingleProgress(i, 1);
         return { path: finalOutPath, created: true };
       } finally {
@@ -1168,7 +1193,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     } finally {
       if (chaptersPath) await tryDeleteFiles([chaptersPath]);
     }
-  }, [shouldSkipExistingFile, assertOutPathIsNotSource, isEncoding, filePath, lossyMode, losslessCutSingle, cutEncodeSmartPart, encCustomBitrate, concatFiles, enableOverwriteOutput]);
+  }, [shouldSkipExistingFile, assertOutPathIsNotSource, isEncoding, filePath, lossyMode, losslessCutSingle, cutEncodeSmartPart, encCustomBitrate, concatFiles, enableOverwriteOutput, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
   const concatCutSegments = useCallback(async ({ customOutDir, outFormat, segmentPaths, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapterNames, preserveMetadataOnMerge, mergedOutFilePath, signal }: {
     customOutDir: string | undefined,
@@ -1487,9 +1512,12 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     console.log('Extracting', streams.length, 'attachment streams');
 
     let streamArgs: string[] = [];
-    const outPaths = await pMap(streams, async ({ index, codec_name: codec, codec_type: type }) => {
-      const ext = codec || 'bin';
-      const outPath = getSuffixedOutPath({ customOutDir, filePath, nameSuffix: `stream-${index}-${type}-${codec}.${ext}` });
+    const outPaths = await pMap(streams, async ({ index, codec_name: codec, codec_type: type, tags }) => {
+      // Attachments like XML files have no codec_name, so take the extension from the attachment's file name
+      // (it comes from the file, so only accept a plain extension, e.g. not `tt:f` on Windows)
+      const nameExt = extname(tags?.['filename'] ?? '').slice(1).toLowerCase();
+      const ext = codec || (/^[\da-z]{1,10}$/.test(nameExt) ? nameExt : 'bin');
+      const outPath = getSuffixedOutPath({ customOutDir, filePath, nameSuffix: `stream-${index}-${type}${codec ? `-${codec}` : ''}.${ext}` });
       invariant(outPath != null);
       await assertOutPathIsNotSource(outPath);
       if (!enableOverwriteOutput && await mainApi.pathExists(outPath)) throw new RefuseOverwriteError();
@@ -1516,7 +1544,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     } catch (err) {
       // Unfortunately ffmpeg will exit with code 1 even though it's a success
       // Note: This is kind of hacky:
-      if (err instanceof Error && 'exitCode' in err && 'stderr' in err && err.exitCode === 1 && typeof err.stderr === 'string' && err.stderr.includes('At least one output file must be specified')) return outPaths;
+      // (stderr arrives as a Uint8Array, not a string)
+      if (isExecaError(err) && err.exitCode === 1 && getStdioString(err.stderr)?.includes('At least one output file must be specified')) return outPaths;
       throw err;
     }
     return outPaths;
@@ -1527,6 +1556,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     customOutDir: string | undefined, streams: FFprobeStream[],
   }) => {
     invariant(filePath != null);
+    await assertFileExists(filePath);
 
     const attachmentStreams = streams.filter((s) => s.codec_type === 'attachment');
     const nonAttachmentStreams = streams.filter((s) => s.codec_type !== 'attachment');

@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { stat } from 'node:fs/promises';
+import { access, stat } from 'node:fs/promises';
 import readline from 'node:readline';
 import { constants as osConstants, setPriority } from 'node:os';
 import type { Options as ExecaOptions, ResultPromise } from 'execa';
@@ -14,7 +14,7 @@ import type { FFprobeFormat } from '../common/ffprobe.js';
 import isDev from './isDev.js';
 import logger from './logger.js';
 import { parseFfmpegProgressLine } from './progress.js';
-import { getHwaccelArgs, parseFfprobeDuration } from '../common/util.js';
+import { formatFfmpegNumber, getHwaccelArgs, parseFfprobeDuration } from '../common/util.js';
 import { getFfmpegJpegQuality } from './ffmpegUtil.js';
 import { withCancelId } from './ffmpegCancel.js';
 import findSourceFileCollision from '../common/sourceFileIdentity.js';
@@ -63,6 +63,13 @@ function getFfPath(cmd: string) {
   if (isWindows || isLinux) components.push('lib');
   components.push(exeName);
   return join(...components);
+}
+
+// Used by the startup check to fail fast with a proper ENOENT if the executable doesn't exist.
+// On Windows, cross-spawn (used by execa) otherwise runs the command through cmd.exe when it can't find the executable
+// (e.g. a custom FFmpeg folder without ffmpeg.exe), which fails with a confusing exit code 1 instead
+export async function checkFfExists(cmd: 'ffmpeg' | 'ffprobe') {
+  await access(getFfPath(cmd)); // throws with code ENOENT if it doesn't exist
 }
 
 const getFfprobePath = () => getFfPath('ffprobe');
@@ -347,9 +354,9 @@ export const renderWaveformPng = ({ cancelId, ...rest }: Omit<Parameters<typeof 
 );
 
 const getInputSeekArgs = ({ filePath, from, to }: { filePath: string, from?: number | undefined, to?: number | undefined }) => [
-  ...(from != null ? ['-ss', from.toFixed(5)] : []),
+  ...(from != null ? ['-ss', formatFfmpegNumber(from)] : []),
   '-i', filePath,
-  ...(from != null && to != null ? ['-t', (to - from).toFixed(5)] : []),
+  ...(from != null && to != null ? ['-t', formatFfmpegNumber(to - from)] : []),
 ];
 
 export function mapTimesToSegments(times: number[], includeLast: boolean) {
@@ -584,7 +591,7 @@ export async function captureFrames({ from, to, videoPath, outPathTemplate, qual
           '-vf', filter,
           // https://superuser.com/questions/1336285/use-ffmpeg-for-thumbnail-selections
           ...(framePts ? ['-frame_pts', '1'] : []),
-          '-vsync', '0', // else we get a ton of duplicates (thumbnail filter)
+          '-fps_mode', 'passthrough', // else we get a ton of duplicates (thumbnail filter). `-vsync` is removed in FFmpeg 9
         ] : [])
     ),
     ...getCodecOpts(captureFormat),
@@ -605,17 +612,18 @@ export async function captureFrames({ from, to, videoPath, outPathTemplate, qual
   return args;
 }
 
-function getCaptureFrameArgs({ timestamp, videoPath, quality }: {
+function getCaptureFrameArgs({ timestamp, videoPath, quality, captureFormat }: {
   timestamp: number,
   videoPath: string,
   quality: number,
+  captureFormat: CaptureFormat,
 }) {
-  const ffmpegQuality = getFfmpegJpegQuality(quality);
   return [
     '-ss', String(timestamp),
     '-i', videoPath,
     '-frames:v', '1',
-    '-q:v', String(ffmpegQuality),
+    // each format has its own quality scale (JPEG's 2-31 made a WebP capture very low quality)
+    ...getQualityOpts({ captureFormat, quality }),
   ];
 }
 
@@ -626,7 +634,7 @@ export async function captureFrameToClipboard({ timestamp, videoPath, quality }:
 }) {
   await loadExeca();
   const args = [
-    ...getCaptureFrameArgs({ timestamp, videoPath, quality }),
+    ...getCaptureFrameArgs({ timestamp, videoPath, quality, captureFormat: 'jpeg' }),
     '-c:v', 'mjpeg',
     '-f', 'image2',
     '-',
@@ -636,17 +644,18 @@ export async function captureFrameToClipboard({ timestamp, videoPath, quality }:
   clipboard.writeImage(nativeImage.createFromBuffer(Buffer.from(stdout)));
 }
 
-export async function captureFrameToFile({ timestamp, videoPath, outPath, quality }: {
+export async function captureFrameToFile({ timestamp, videoPath, outPath, quality, captureFormat }: {
   timestamp: number,
   videoPath: string,
   outPath: string,
   quality: number,
+  captureFormat: CaptureFormat,
 }) {
   await loadExeca();
   const collision = await findSourceFileCollision({ outPaths: [outPath], protectedPaths: [videoPath], stat: (path) => stat(path, { bigint: true }) });
   if (collision != null) throw new Error('ClipPress will not save a frame onto its source file.');
   const args = [
-    ...getCaptureFrameArgs({ timestamp, videoPath, quality }),
+    ...getCaptureFrameArgs({ timestamp, videoPath, quality, captureFormat }),
     '-y', outPath,
   ];
   await runFfmpegProcess(args);
