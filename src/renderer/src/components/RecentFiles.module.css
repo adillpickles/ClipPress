@@ -67,7 +67,7 @@
   display: flex;
   align-items: center;
   gap: .7rem;
-  padding: .55rem 2.6rem .55rem .8rem;
+  padding: .55rem .8rem;
   cursor: pointer;
   transition: background-color .12s ease;
 }
@@ -122,10 +122,17 @@
   gap: .5rem;
 }
 
+/* Where Your clips has its time too; on the row's hover the remove button takes its place. */
 .when {
   color: var(--cp-text-subtle);
   font-size: .75rem;
   white-space: nowrap;
+  transition: opacity .12s ease;
+}
+
+.item:hover .when,
+.item:has(.remove:focus-visible) .when {
+  opacity: 0;
 }
 
 .badge,

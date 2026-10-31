@@ -166,10 +166,11 @@
   opacity: .55;
 }
 
+/* 64×36, or wider where the start screen's column has grown (--shelf-thumb-width). */
 .thumb {
   flex-shrink: 0;
-  width: 64px;
-  height: 36px;
+  width: var(--shelf-thumb-width, 64px);
+  height: calc(var(--shelf-thumb-width, 64px) * 9 / 16);
   border-radius: 6px;
   overflow: hidden;
   display: grid;
