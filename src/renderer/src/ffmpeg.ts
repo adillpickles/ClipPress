@@ -224,13 +224,13 @@ export function getSafeCutTime(frames: Frame[], cutTime: number, nextMode: boole
   return frames[index - 1]!.time;
 }
 
-export function findNearestKeyFrameTime({ frames, time, direction, fps }: { frames: Frame[], time: number, direction: number, fps: number | undefined }) {
-  const sigma = fps ? (1 / fps) : 0.1;
+// A keyframe exactly at `time` counts as the nearest one, so a clip starting on a keyframe finds that keyframe.
+export function findNearestKeyFrameTime({ frames, time, direction }: { frames: Frame[], time: number, direction: number }) {
   // One pass, no copies or sorting: this runs for every clip, over thousands of frames.
   let nearest: number | undefined;
   let nearestDistance = Infinity;
   for (const f of frames) {
-    if (f.keyframe && (direction > 0 ? f.time > time + sigma : f.time < time - sigma)) {
+    if (f.keyframe && (direction > 0 ? f.time >= time : f.time <= time)) {
       const distance = direction > 0 ? f.time - time : time - f.time;
       if (distance < nearestDistance) {
         nearestDistance = distance;

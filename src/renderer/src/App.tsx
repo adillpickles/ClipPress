@@ -5471,14 +5471,16 @@ function App() {
 
   const seekClosestKeyframe = useCallback(
     (direction: number) => {
+      // Look from one frame on, so a jump doesn't find the keyframe we're already at
+      const step = detectedFps ? 1 / detectedFps : 0.1;
       const time = findNearestKeyFrameTime({
-        time: getRelevantTime(),
+        time: getRelevantTime() + direction * step,
         direction,
       });
       if (time == null) return;
       seekAbs(time);
     },
-    [findNearestKeyFrameTime, getRelevantTime, seekAbs],
+    [detectedFps, findNearestKeyFrameTime, getRelevantTime, seekAbs],
   );
 
   // Alt+← / → in the simple editor, which shows no keyframes: the clip edge before or after.
