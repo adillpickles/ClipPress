@@ -179,6 +179,8 @@ export interface SizeLimitedExecutionResult {
   metTarget: boolean,
   created: boolean,
   strategy: SizeLimitedResolvedStrategy,
+  /** A copy of the recording's own bytes, as they already fit (lossless when it fits), not an encode. */
+  copied?: boolean | undefined,
   /**
    * Set when the encode succeeded but a step after it (renaming the file into place)
    * did not. The file at `path` is complete and usable; only its name or location is

@@ -9,7 +9,9 @@ import type {
   SizeLimitSimpleFps,
   SizeLimitSimpleResolution,
 } from '../../common/types.js';
-import { getExperimentalArgs, getFfmpegPath, logStdoutStderr, runFfmpeg, runFfmpegWithProgress } from './ffmpeg';
+import { getExperimentalArgs, getFfmpegPath, logStdoutStderr, readPackets, runFfmpeg, runFfmpegWithProgress } from './ffmpeg';
+import { canCopyLosslessly, estimateLosslessCopy, maxLosslessLeadIn } from './losslessFit';
+import { hasSegmentCrop, getSegmentCropFilter } from './segmentCrop';
 import mainApi from './mainApi';
 import runSizeLimitedAttempts from './sizeLimitedAttempts';
 import {
@@ -24,7 +26,6 @@ import { hasQualityCap } from './sizeLimitedEncoderArgs';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import { buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
 import { getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from './segmentSpeed';
-import { getSegmentCropFilter } from './segmentCrop';
 import type { OverlayClip, SegmentToExport, SizeLimitedEncoderCapabilities, SizeLimitedExecutionResult, SizeLimitedProgressMetadata, SizeLimitedResolvedStrategy, SizeLimitedRetryStep } from './types';
 import type { SizeLimitedVideoTransformProfile } from './sizeLimitedResolution';
 import { isMutedAudioGain, isNeutralAudioGain } from './util/streams';
@@ -620,6 +621,64 @@ async function executeWithRetries(args: Parameters<typeof executeAttempts>[0] & 
   }
 }
 
+/**
+ * Lossless when it fits: copies [start, end) as it is, from the keyframe before start, when its bytes already fit the
+ * target. Undefined, with nothing left behind, when they don't (the export then encodes as usual).
+ */
+async function copyLosslesslyIfItFits({ filePath, start, end, videoStream, audioStream, targetBytes, strategy, appendFfmpegCommandLog, onProgress }: {
+  filePath: string,
+  start: number,
+  end: number,
+  videoStream: Pick<FFprobeStream, 'index'>,
+  audioStream: Pick<FFprobeStream, 'index'> | undefined,
+  targetBytes: number,
+  strategy: SizeLimitedResolvedStrategy,
+  appendFfmpegCommandLog: (args: string[]) => void,
+  onProgress: (progress: number) => void,
+}): Promise<SizeLimitedExecutionResult | undefined> {
+  // Read from a little before the earliest keyframe the copy may start on, so it's among the packets.
+  const packets = await readPackets({ filePath, from: Math.max(0, start - maxLosslessLeadIn - 1), to: end });
+  const estimate = estimateLosslessCopy({ packets, videoStreamIndex: videoStream.index, audioStreamIndex: audioStream?.index, start, end });
+  if (estimate == null || estimate.bytes > targetBytes) return undefined;
+
+  // In ClipPress's temporary folder, like an encode's attempts, so nothing shows next to the export until it's done.
+  const tempDir = await mkdtemp(join(getTempWorkDir(), 'copy-'));
+  const copyPath = join(tempDir, 'export.mp4');
+  const ffmpegArgs = [
+    '-hide_banner',
+    // Before the input: the copy starts on the keyframe before the clip, never after it.
+    '-ss', start.toFixed(5),
+    '-i', filePath,
+    '-t', (end - start).toFixed(5),
+    '-map', `0:${videoStream.index}`,
+    ...(audioStream != null ? ['-map', `0:${audioStream.index}`] : []),
+    '-c', 'copy',
+    '-avoid_negative_ts', 'make_zero',
+    '-movflags', '+faststart',
+    '-f', 'mp4', '-y', copyPath,
+  ];
+  appendFfmpegCommandLog(ffmpegArgs);
+  try {
+    const result = await runFfmpegWithProgress({ ffmpegArgs, duration: end - estimate.copyStart, onProgress });
+    logStdoutStderr(result);
+    const size = await readFileSize(copyPath);
+    // The estimate leaves room for MP4's index, but the file itself decides.
+    if (size > targetBytes) {
+      await deleteIfExists(copyPath);
+      await rmdir(tempDir).catch(() => undefined);
+      return undefined;
+    }
+    return { path: copyPath, size, targetBytes, attemptCount: 1, metTarget: true, created: true, strategy, copied: true };
+  } catch (err) {
+    await deleteIfExists(copyPath);
+    await rmdir(tempDir).catch(() => undefined);
+    // A cancel stops the export; anything else falls back to encoding, which reads the recording its own way.
+    if (isAbortedError(err)) throw err;
+    console.warn('Lossless copy failed, encoding instead', err);
+    return undefined;
+  }
+}
+
 function makeAttemptPath(outPath: string, attemptNumber: number) {
   return `${outPath}.${retryTempSuffix}.${attemptNumber}.mp4`;
 }
@@ -750,8 +809,8 @@ export async function exportSizeLimitedSegment({
   advancedAv1NvencPreset: SizeLimitAdvancedNvencPreset,
   advancedH264CpuPreset: SizeLimitAdvancedH264CpuPreset,
   advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
-  videoStream: Pick<FFprobeStream, 'index' | 'width' | 'height'>,
-  audioStream: Pick<FFprobeStream, 'index'> | undefined,
+  videoStream: Pick<FFprobeStream, 'index' | 'width' | 'height' | 'codec_name'>,
+  audioStream: Pick<FFprobeStream, 'index' | 'codec_name'> | undefined,
   enableOverwriteOutput: boolean,
   ffmpegExperimental: boolean,
   treatInputFileModifiedTimeAsStart: boolean,
@@ -809,7 +868,35 @@ export async function exportSizeLimitedSegment({
 
   // Only the texts this clip shows are drawn (each clip of an export gets them all).
   const segmentOverlayClips = overlayClips?.filter((overlayClip) => overlayClip.start < segment.end && overlayClip.end > segment.start);
-  const preparedOverlayAssets = segmentOverlayClips != null
+
+  // Lossless when it fits: a clip with nothing to re-encode whose own bytes already fit is copied as it is.
+  const copyable = canCopyLosslessly({
+    playbackRate: segmentRate,
+    cropped: hasSegmentCrop(segment),
+    hasText: segmentOverlayClips != null && segmentOverlayClips.length > 0,
+    audioGainDb,
+    hasAudio: audioStream != null,
+    rotation,
+    controlMode,
+    resolution,
+    fps,
+    videoCodec: videoStream.codec_name,
+    audioCodec: audioStream?.codec_name,
+  });
+  const copied = copyable ? await copyLosslesslyIfItFits({
+    filePath,
+    start: segment.start,
+    end: segment.end,
+    videoStream,
+    audioStream,
+    targetBytes: plan.hardTargetBytes,
+    strategy,
+    appendFfmpegCommandLog,
+    onProgress: (progress) => onProgress(progress),
+  }) : undefined;
+
+  const preparedOverlayAssets = copied == null
+    && segmentOverlayClips != null
     && segmentOverlayClips.length > 0
     && overlayVideoWidth != null
     && overlayVideoHeight != null
@@ -823,7 +910,7 @@ export async function exportSizeLimitedSegment({
 
   let result: SizeLimitedExecutionResult;
   try {
-    result = await runWithGpuFallbacks({
+    result = copied ?? await runWithGpuFallbacks({
       hardwareDecode: canUseHardwareDecode({ enabled: gpuAcceleration, inputCount: 1, width: videoStream.width, height: videoStream.height }),
       onGpuEncoderFailed: async () => {
         const next = await resolveNextEncoder(strategy, resolvePlan);

@@ -125,6 +125,22 @@ export async function readFrames({ filePath, from, to, streamIndex }: {
   return sortBy(packetsFiltered, 'time');
 }
 
+export interface Packet {
+  streamIndex: number,
+  time: number,
+  size: number,
+  keyframe: boolean,
+}
+
+/** Every stream's packets between two times (from the keyframe before `from`): their time, size and keyframe flag, without decoding. */
+export async function readPackets({ filePath, from, to }: { filePath: string, from: number, to: number }) {
+  const { stdout } = await runFfprobe(['-v', 'error', '-read_intervals', `${from}%${to}`, '-show_entries', 'packet=stream_index,pts_time,size,flags', '-of', 'json', filePath], { logCli: false });
+  const packets = (JSON.parse(new TextDecoder().decode(stdout)).packets ?? []) as { stream_index: number, pts_time?: string, size?: string, flags?: string }[];
+  return packets
+    .map((p): Packet => ({ streamIndex: p.stream_index, time: parseFloat(p.pts_time ?? ''), size: Number(p.size ?? 0), keyframe: p.flags?.[0] === 'K' }))
+    .filter((p) => Number.isFinite(p.time) && Number.isFinite(p.size));
+}
+
 export async function readFramesAroundTime({ filePath, streamIndex, aroundTime, window }: { filePath: string, streamIndex: number, aroundTime: number, window: number }) {
   invariant(aroundTime != null);
   const { from, to } = getIntervalAroundTime(aroundTime, window);

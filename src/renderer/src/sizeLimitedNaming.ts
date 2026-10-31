@@ -14,6 +14,8 @@ export interface SizeLimitedAutoNameItem {
   suffixLabel?: string | undefined,
   /** A named clip in the simple editor: its file is just that name ("Adil.mp4", then "Adil (2).mp4"). */
   clipName?: string | undefined,
+  /** Copied as it was, as it already fitted (lossless when it fits): "Original" in place of the preset's name. */
+  original?: boolean | undefined,
 }
 
 function sanitizeAutoNamePart(value: string, safeOutputFileName: boolean) {
@@ -78,7 +80,7 @@ function buildAutoName({
   const disambiguatorSuffix = disambiguator != null ? `-${disambiguator}` : '';
   const parts = [
     formatAutoSizeLabel(item.sizeLabel),
-    getModeLabel({ controlMode, preset }),
+    item.original ? 'Original' : getModeLabel({ controlMode, preset }),
     sanitizeAutoNamePart(sourceBaseName, safeOutputFileName),
     sanitizeAutoNamePart(item.suffixLabel ?? '', safeOutputFileName),
   ].filter((part) => part.length > 0);

@@ -3438,6 +3438,7 @@ function App() {
         sizeLabel: number;
         suffixLabel: string;
         clipName?: string | undefined;
+        original: boolean;
       }
 
       const candidates: RenameCandidate[] = [];
@@ -3456,6 +3457,7 @@ function App() {
               ),
               // The simple editor names a clip's file after it ("Adil.mp4").
               clipName: simpleMode ? segment.name : undefined,
+              original: result.copied === true,
             });
           }
         }
@@ -3472,6 +3474,7 @@ function App() {
             suffixLabel: getSizeLimitedMergedSuffixLabel({
               hasSeparateOutputs: shouldDecorateSeparateOutputs,
             }),
+            original: mergedResult.copied === true,
           });
         }
       }
@@ -3490,6 +3493,7 @@ function App() {
               sizeLabel: candidate.sizeLabel,
               suffixLabel: candidate.suffixLabel,
               clipName: candidate.clipName,
+              original: candidate.original,
             },
             isReserved: (fileName) => reservedFileNames.has(fileName),
           });
@@ -3515,6 +3519,7 @@ function App() {
                 sizeLabel: candidate.sizeLabel,
                 suffixLabel: candidate.suffixLabel,
                 clipName: candidate.clipName,
+                original: candidate.original,
               },
               isReserved: (fileName) => reservedFileNames.has(fileName),
             });
