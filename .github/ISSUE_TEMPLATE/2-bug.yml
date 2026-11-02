@@ -10,7 +10,7 @@ body:
           required: true
         - label: I read the README and installation notes.
           required: true
-        - label: I searched existing issues and discussions in this repository.
+        - label: I searched existing issues in this repository.
           required: true
         - label: This problem happens with multiple kinds of files, not just one source file or format.
           required: true
@@ -20,19 +20,8 @@ body:
       label: Operating system
       description: Which operating system are you running?
       options:
-        - MacOS 15
-        - MacOS 14
-        - MacOS 13
-        - MacOS 12
-        - MacOS 11
-        - MacOS 10
         - Windows 11
         - Windows 10
-        - Windows 8.1
-        - Windows 8
-        - Windows 7
-        - Windows Vista
-        - Linux
         - Other (please specify)
     validations:
       required: true

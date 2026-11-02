@@ -4,7 +4,7 @@ import { Trans } from 'react-i18next';
 import CopyClipboardButton from './components/CopyClipboardButton';
 import { isStoreBuild, isMasBuild, isWindowsStoreBuild, isExecaError, appVersion, appPath } from './util';
 import getSwal from './swal';
-import { discussionsUrl, githubUrl, publicBugReportUrl } from '../../common/constants';
+import { publicBugReportUrl, troubleshootingUrl } from '../../common/constants';
 
 const electron = window.require('electron');
 
@@ -24,9 +24,9 @@ export function openSendReportDialog({ err, message, state }: {
     ? (
       <p><Trans>Please report the issue in the <span className="link-button" role="button" onClick={() => electron.shell.openExternal(publicBugReportUrl)}>ClipPress repository</span> and describe what you were doing.</Trans></p>
     ) : (
-      <Trans i18nKey="Non-store problem report instructions">
+      <Trans i18nKey="Problem report instructions">
         <p>
-          If you&apos;re having a problem or question about ClipPress, please first check the links in the <b>Help</b> menu. If you still need help, you can ask a question in <span className="link-button" role="button" onClick={() => electron.shell.openExternal(discussionsUrl)}>GitHub discussions</span> or review the <span className="link-button" role="button" onClick={() => electron.shell.openExternal(githubUrl)}>project repository</span>.
+          If you&apos;re having a problem or question about ClipPress, please first check the links in the <b>Help</b> menu. If you still need help, look through the <span className="link-button" role="button" onClick={() => electron.shell.openExternal(troubleshootingUrl)}>known problems</span> on GitHub.
         </p>
         <p>
           If you believe that you found a bug in ClipPress, you may <span className="link-button" role="button" onClick={() => electron.shell.openExternal(publicBugReportUrl)}>report a bug</span>.

@@ -16,7 +16,7 @@ body:
           required: true
         - label: I checked the README and installation notes before opening this report.
           required: true
-        - label: I searched existing issues and discussions in this repository.
+        - label: I searched existing issues in this repository.
           required: true
   - type: textarea
     id: steps-to-reproduce

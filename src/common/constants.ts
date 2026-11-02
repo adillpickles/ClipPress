@@ -4,9 +4,8 @@ export const getReleaseUrl = (version: string) => `https://github.com/adillpickl
 export const compareReleasesUrl = (fromVersion: string, toVersion: string) => `https://github.com/adillpickles/ClipPress/compare/v${fromVersion}...v${toVersion}`;
 export const licensesUrl = 'https://github.com/adillpickles/ClipPress/blob/master/LICENSE';
 export const thanksUrl = 'https://ko-fi.com/adillpickles';
-export const discussionsUrl = 'https://github.com/adillpickles/ClipPress/discussions';
 export const usageUrl = 'https://github.com/adillpickles/ClipPress#readme';
-export const faqUrl = 'https://github.com/adillpickles/ClipPress#readme';
+export const websiteUrl = 'https://www.clippress.app/';
 export const featureRequestUrl = 'https://github.com/adillpickles/ClipPress/issues/new';
 export const publicBugReportUrl = 'https://github.com/adillpickles/ClipPress/issues/new';
 export const troubleshootingUrl = 'https://github.com/adillpickles/ClipPress/issues';
