@@ -497,8 +497,12 @@ export function buildSizeLimitedScaleFilter(outputWidth: number | undefined, out
   return `scale=${outputWidth}:${outputHeight}:flags=${sizeLimitedSwsFlags}`;
 }
 
-/** At most this share of the picture's height (or width) is cropped to fit an encoder's size rules. */
-const maxEncoderFitCrop = 0.01;
+/** Up to this share of the picture's height (or width) is cropped to fit an encoder's size rules without a smaller size. */
+const preferredEncoderFitCrop = 0.01;
+/** Never more than this: a tiny picture keeps its size (and the encoder its padding) rather than lose more. */
+const maxEncoderFitCrop = 0.03;
+/** Nor a size below this share of the width. */
+const minEncoderFitScale = 0.9;
 
 /**
  * The video profile with a size the encoder takes as it is: within its longest side, and on its block alignment. The
@@ -527,16 +531,18 @@ export function fitVideoProfileToEncoder<T extends SizeLimitedVideoTransformProf
   }
 
   let best: { width: number, height: number, crop: number } | undefined;
-  for (let step = 0; step < 4; step += 1) {
+  for (let step = 0; ; step += 1) {
     const candidateWidth = (Math.floor(width / alignWidth) - step) * alignWidth;
-    if (candidateWidth < alignWidth) break;
+    if (candidateWidth < alignWidth || candidateWidth < width * minEncoderFitScale) break;
     const exactHeight = (candidateWidth * height) / width;
-    const candidateHeight = Math.max(alignHeight, Math.min(Math.floor(height / alignHeight) * alignHeight, Math.round(exactHeight / alignHeight) * alignHeight));
-    const crop = Math.abs(candidateHeight - exactHeight) / exactHeight;
-    if (best == null || crop < best.crop) best = { width: candidateWidth, height: candidateHeight, crop };
-    if (crop <= maxEncoderFitCrop) break;
+    const candidateHeight = Math.min(Math.floor(height / alignHeight) * alignHeight, Math.round(exactHeight / alignHeight) * alignHeight);
+    if (candidateHeight >= alignHeight) {
+      const crop = Math.abs(candidateHeight - exactHeight) / exactHeight;
+      if (best == null || crop < best.crop) best = { width: candidateWidth, height: candidateHeight, crop };
+      if (crop <= preferredEncoderFitCrop) break;
+    }
   }
-  if (best == null) return videoProfile;
+  if (best == null || best.crop > maxEncoderFitCrop) return resized ? { ...videoProfile, outputWidth: width, outputHeight: height } : videoProfile;
   return { ...videoProfile, outputWidth: best.width, outputHeight: best.height, fillOutput: true };
 }
 

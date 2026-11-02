@@ -422,6 +422,16 @@ describe('fitVideoProfileToEncoder', () => {
     expect(fitVideoProfileToEncoder({ videoProfile: keepSource, displayDimensions: { width: 1440, height: 1080 }, rules: undefined })).toBe(keepSource);
   });
 
+  it('keeps a tiny picture as it is rather than crop much of it', () => {
+    expect(fitVideoProfileToEncoder({ videoProfile: keepSource, displayDimensions: { width: 128, height: 72 }, rules: amdAv1 })).toBe(keepSource);
+  });
+
+  it('never shrinks a picture by more than a tenth to fit', () => {
+    const fitted = fitVideoProfileToEncoder({ videoProfile: keepSource, displayDimensions: { width: 640, height: 360 }, rules: amdAv1 });
+    expect(fitted.outputWidth).toBeGreaterThanOrEqual(576);
+    expect(fitted.outputHeight! % 16).toBe(0);
+  });
+
   it('scales a super-ultrawide recording down to the 4096 GPU H.264 takes', () => {
     expect(fitVideoProfileToEncoder({ videoProfile: keepSource, displayDimensions: { width: 5120, height: 1440 }, rules: gpuH264 }))
       .toEqual({ ...keepSource, outputWidth: 4096, outputHeight: 1152 });

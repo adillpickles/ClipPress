@@ -400,6 +400,16 @@ async function finalizeEncodedOutput({ result, outPath, filePath, enableOverwrit
   }
 }
 
+/** A Cancel that came as the last run finished: the finished file doesn't take its place, nor stay in the temporary folder. */
+async function discardIfCancelled({ result, outPath, signal }: { result: SizeLimitedExecutionResult, outPath: string, signal: AbortSignal | undefined }) {
+  if (signal?.aborted !== true) return;
+  if (result.path !== outPath) {
+    await deleteIfExists(result.path);
+    await rmdir(dirname(result.path)).catch(() => undefined);
+  }
+  signal.throwIfAborted();
+}
+
 async function deletePassArtifacts(basePath: string | undefined) {
   if (basePath == null) return;
   const artifacts = [
@@ -652,6 +662,7 @@ async function runTwoPassEncode({
   onProgress,
   pass1ProgressMetadata,
   pass2ProgressMetadata,
+  signal,
 }: {
   pass1Args: string[],
   pass2Args: string[],
@@ -659,6 +670,7 @@ async function runTwoPassEncode({
   onProgress: (progress: number, metadata?: SizeLimitedProgressMetadata) => void,
   pass1ProgressMetadata: SizeLimitedProgressMetadata,
   pass2ProgressMetadata: SizeLimitedProgressMetadata,
+  signal?: AbortSignal | undefined,
 }) {
   const pass1Result = await runFfmpegWithProgress({
     ffmpegArgs: pass1Args,
@@ -667,6 +679,8 @@ async function runTwoPassEncode({
   });
   logStdoutStderr(pass1Result);
 
+  // A Cancel that came as the first pass ended.
+  signal?.throwIfAborted();
   const pass2Result = await runFfmpegWithProgress({
     ffmpegArgs: pass2Args,
     duration,
@@ -707,6 +721,7 @@ async function executeAttempts({
         const { pass1Args } = attemptFiles;
         if (pass1Args == null) throw new UserFacingError('2-pass encoding was not configured correctly');
         await runTwoPassEncode({
+          signal,
           pass1Args,
           pass2Args: attemptFiles.ffmpegArgs,
           duration: plan.duration,
@@ -1233,8 +1248,7 @@ export async function exportSizeLimitedSegment({
     await Promise.all(preparedOverlayAssets.map((asset) => deleteIfExists(asset.imagePath)));
   }
 
-  // A Cancel that came as the last run finished: the export doesn't take its place.
-  signal?.throwIfAborted();
+  await discardIfCancelled({ result, outPath, signal });
   const { result: finalResult, postProcessingWarning } = await finalizeEncodedOutput({ result, outPath, filePath, enableOverwriteOutput });
 
   await transferTimestamps({
@@ -1526,8 +1540,7 @@ export async function exportSizeLimitedMerge({
     await Promise.all(preparedOverlayAssets.map((asset) => deleteIfExists(asset.imagePath)));
   }
 
-  // A Cancel that came as the last run finished: the export doesn't take its place.
-  signal?.throwIfAborted();
+  await discardIfCancelled({ result, outPath, signal });
   const { result: finalResult, postProcessingWarning } = await finalizeEncodedOutput({ result, outPath, filePath, enableOverwriteOutput });
 
   const mergedDuration = segments.reduce((sum, segment) => sum + (segment.end - segment.start), 0);
