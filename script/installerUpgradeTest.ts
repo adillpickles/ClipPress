@@ -116,13 +116,10 @@ async function registryVersion() {
 }
 
 /** A registry value under HKCU\Software\Classes, or undefined when it (or its key) isn't there. */
-async function classesValue(key: string, valueName?: string) {
-  try {
-    const { stdout } = await execFileAsync('reg', ['query', `HKCU\\Software\\Classes\\${key}`, ...(valueName != null ? ['/v', valueName] : ['/ve'])], { windowsHide: true });
-    return /REG_\w+\s*(.*)$/m.exec(stdout)?.[1]?.trim() ?? '';
-  } catch {
-    return undefined;
-  }
+async function classesValue(key: string, valueName = '') {
+  // Through .NET: `reg query /ve` prints "(value not set)" for a key without a default, which reads as a value.
+  const output = await powershell(`$k = Get-Item -LiteralPath 'HKCU:\\Software\\Classes\\${key}' -ErrorAction SilentlyContinue; if ($k -and ($k.GetValueNames() -contains '${valueName}')) { 'VALUE:' + [string]$k.GetValue('${valueName}') }`);
+  return output.startsWith('VALUE:') ? output.slice('VALUE:'.length) : undefined;
 }
 
 /** Installer and uninstaller processes, including the copies NSIS runs from temporary folders. */

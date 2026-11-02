@@ -70,7 +70,8 @@
   ${If} $R1 == "Video"
   ${OrIf} $R1 == "Audio"
     ClearErrors
-    ReadRegStr $R2 SHELL_CONTEXT "Software\Classes\$R1\shell\open\command" ""
+    ; Through the merged view Windows itself resolves (a per-machine app may own the class).
+    ReadRegStr $R2 HKCR "$R1\shell\open\command" ""
     ${If} ${Errors}
       DeleteRegValue SHELL_CONTEXT "Software\Classes\.${EXT}" ""
     ${EndIf}
@@ -179,8 +180,11 @@
 !macroend
 
 !macro customUnInstall
-  !insertmacro clippressWithdrawFileTypes
-  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+  ; Not for an update: if it fails, the installation it leaves must still open files; one that works registers them again.
+  ${ifNot} ${isUpdated}
+    !insertmacro clippressWithdrawFileTypes
+    System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+  ${endIf}
 !macroend
 
 !macro clippressTwoDigits VAR
