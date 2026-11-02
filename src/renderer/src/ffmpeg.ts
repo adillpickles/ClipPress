@@ -24,7 +24,7 @@ import runCancellable from './util/ffmpegCancel';
 
 const { ffmpeg } = window.require('@electron/remote').require('./index.js');
 
-const { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, getFfmpegPath, setCustomFfPath, checkFfExists } = ffmpeg;
+const { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, getFfmpegPath, getFfprobePath, setCustomFfPath, checkFfExists } = ffmpeg;
 
 type Runners = typeof ffmpeg.runWithCallbacks;
 type RunnerName = Parameters<Runners>[0];
@@ -756,10 +756,30 @@ const ffprobeVersionSchema = z.object({
   }),
 });
 
+/** FFmpeg or FFprobe isn't where ClipPress looks for it (e.g. a custom FFmpeg folder without one of them). */
+export class FfExecutableNotFoundError extends Error {
+  readonly path: string;
+
+  constructor(path: string) {
+    super(`Not found: ${path}`);
+    this.name = 'FfExecutableNotFoundError';
+    this.path = path;
+  }
+}
+
+async function assertFfExists(cmd: 'ffmpeg' | 'ffprobe') {
+  try {
+    await checkFfExists(cmd);
+  } catch (err) {
+    // Named after the one that's missing, not always ffmpeg.exe.
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') throw new FfExecutableNotFoundError(cmd === 'ffmpeg' ? getFfmpegPath() : getFfprobePath());
+    throw err;
+  }
+}
+
 export async function runFfmpegStartupCheck() {
-  // will throw ENOENT if the executables don't exist (e.g. a custom FFmpeg folder without them)
-  await checkFfExists('ffmpeg');
-  await checkFfExists('ffprobe');
+  await assertFfExists('ffmpeg');
+  await assertFfExists('ffprobe');
 
   // will throw if exit code != 0
   const { stderr: ffmpegStderr } = await runFfmpeg(['-f', 'lavfi', '-i', 'nullsrc=s=256x256:d=1', '-f', 'null', '-']);

@@ -14,6 +14,7 @@ import { execFile } from 'node:child_process';
 import assert from 'node:assert';
 import timers from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { resolve as resolvePath } from 'node:path';
 import electronUnhandled from 'electron-unhandled';
 import type { Asyncify } from 'type-fest';
 import mitt from 'mitt';
@@ -66,10 +67,10 @@ remote.initialize();
 app.name = appName;
 
 if (isWindows) {
-  // in order to set the title on OS notifications on Windows, this needs to be set to app.name
-  // https://github.com/mifi/lossless-cut/pull/2139
+  // An installed copy takes the id its Start menu and desktop shortcuts carry (the appId), so a pinned ClipPress is
+  // the button that lights up and notifications show its icon. A portable copy has no shortcut: its name titles them.
   // https://stackoverflow.com/a/65863174/6519037
-  app.setAppUserModelId(app.name);
+  app.setAppUserModelId(getInstallationDir() != null ? 'com.clippress.app' : app.name);
 }
 
 let filesToOpen: string[] = [];
@@ -193,7 +194,8 @@ async function onAwaitAppEvent(awaitEventName: string, signal: AbortSignal) {
 
 // https://github.com/electron/electron/issues/526#issuecomment-563010533
 function getSavedBounds() {
-  const bounds = configStore.get('windowBounds');
+  // With "Remember window size and position" off, the last saved place isn't used either.
+  const bounds = configStore.get('storeWindowBounds') ? configStore.get('windowBounds') : undefined;
   const options: BrowserWindowConstructorOptions = {};
   const primaryWorkArea = electron.screen.getPrimaryDisplay().workArea;
   if (bounds) {
@@ -282,9 +284,11 @@ function createWindow() {
     event.preventDefault();
   });
 
-  if (isDev) mainWindow.loadURL('http://localhost:3001');
+  // A load cut short (a quick close) is only logged, not shown as an error dialog.
+  const logLoadError = (err: unknown) => logger.warn('The page did not finish loading', err);
+  if (isDev) mainWindow.loadURL('http://localhost:3001').catch(logLoadError);
   // Need to useloadFile for special characters https://github.com/mifi/lossless-cut/issues/40
-  else mainWindow.loadFile('out/renderer/index.html');
+  else mainWindow.loadFile('out/renderer/index.html').catch(logLoadError);
 
   // Open the DevTools.
   // mainWindow.webContents.openDevTools()
@@ -313,7 +317,7 @@ function createWindow() {
     confirm: async () => {
       const { response } = await electron.dialog.showMessageBox(window, {
         type: 'question',
-        buttons: ['Yes', 'No'],
+        buttons: [i18n.t('Quit'), i18n.t('Cancel')],
         defaultId: 0,
         cancelId: 1,
         title: i18n.t('Confirm quit'),
@@ -421,7 +425,8 @@ async function changeLanguage(language: string | null) {
 
 function openFilesEventually(paths: string[]) {
   if (rendererReady) openFiles(paths);
-  else filesToOpen = paths;
+  // Several files opened from Explorer arrive one launch each: keep them all.
+  else filesToOpen = [...new Set([...filesToOpen, ...paths])];
 }
 
 // https://github.com/electron/electron/issues/3657
@@ -517,7 +522,7 @@ async function init() {
     // However when users start your app in command line, the system's single instance mechanism will be bypassed, and you have to use this method to ensure single instance.
     // This can be tested with one terminal: npx electron .
     // and another terminal: npx electron . path/to/file.mp4
-    app.on('second-instance', (_event, _commandLine, _workingDirectory, additionalData) => {
+    app.on('second-instance', (_event, _commandLine, workingDirectory, additionalData) => {
       // Someone tried to run a second instance, we should focus our window.
       if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore();
@@ -530,8 +535,16 @@ async function init() {
 
       logger.info('second-instance', argv2);
 
-      if (argv2['keyboardAction']) sendApiAction(argv2['keyboardAction'], argv2._.map((arg) => JSON.parse(String(arg))));
-      else if (argv2._ && argv2._.length > 0) openFilesEventually(argv2._.map(String));
+      if (argv2['keyboardAction']) {
+        try {
+          sendApiAction(argv2['keyboardAction'], argv2._.map((arg) => JSON.parse(String(arg))));
+        } catch (err) {
+          logger.warn('Ignored a keyboard action with arguments that are not JSON', err);
+        }
+      } else if (argv2._ && argv2._.length > 0) {
+        // A relative path is relative to where that launch started, not to this one.
+        openFilesEventually(argv2._.map((arg) => resolvePath(workingDirectory, String(arg))));
+      }
     });
 
     // Quit when all windows are closed.
@@ -614,8 +627,8 @@ async function init() {
     await readyPromise;
 
     logger.info('CLI arguments', argv);
-    // Only if no files to open already (open-file might have already added some files)
-    if (filesToOpen.length === 0) filesToOpen = argv._.map(String);
+    // This launch's own files first, then any that other launches (or open-file) passed on meanwhile.
+    filesToOpen = [...new Set([...argv._.map(String), ...filesToOpen])];
     const { settingsJson } = argv;
 
     ({ disableNetworking } = argv);
@@ -681,7 +694,6 @@ function quitApp() {
   timers.setTimeout(1000).then(() => electron.app.quit());
 }
 
-const hasDisabledNetworking = () => !!disableNetworking;
 
 const setProgressBar = (v: number) => mainWindow?.setProgressBar(v);
 
@@ -834,7 +846,6 @@ const remoteApiLegacy = {
   isDev,
   lossyMode,
   pathToFileURL,
-  hasDisabledNetworking,
 };
 
 export type RemoteApiLegacy = typeof remoteApiLegacy;

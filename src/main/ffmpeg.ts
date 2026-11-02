@@ -72,7 +72,7 @@ export async function checkFfExists(cmd: 'ffmpeg' | 'ffprobe') {
   await access(getFfPath(cmd)); // throws with code ENOENT if it doesn't exist
 }
 
-const getFfprobePath = () => getFfPath('ffprobe');
+export const getFfprobePath = () => getFfPath('ffprobe');
 /**
  * Do not use directly when running ffmpeg, because we need to add certain options before running, like `LD_LIBRARY_PATH` on linux.
  */
@@ -300,8 +300,8 @@ async function renderWaveformPngProcesses({ filePath, start, duration, resample,
     '-i', filePath,
     '-vn',
     '-map', `0:${streamIndex}`,
-    ...(start != null ? ['-ss', String(start)] : []),
-    ...(duration != null ? ['-t', String(duration)] : []),
+    ...(start != null ? ['-ss', formatFfmpegNumber(start)] : []),
+    ...(duration != null ? ['-t', formatFfmpegNumber(duration)] : []),
     ...(resample != null ? [
       // the operation is faster if we resample
       // the higher the resample rate, the faster the resample
@@ -579,9 +579,9 @@ export async function captureFrames({ from, to, videoPath, outPathTemplate, qual
 }) {
   await loadExeca();
   const args = [
-    '-ss', String(from),
+    '-ss', formatFfmpegNumber(from),
     '-i', videoPath,
-    ...(to != null ? ['-t', String(Math.max(0, to - from))] : []),
+    ...(to != null ? ['-t', formatFfmpegNumber(Math.max(0, to - from))] : []),
     ...getQualityOpts({ captureFormat, quality }),
     // only apply filter for non-markers
     ...(to == null
@@ -621,7 +621,7 @@ function getCaptureFrameArgs({ timestamp, videoPath, quality, captureFormat }: {
   captureFormat: CaptureFormat,
 }) {
   return [
-    '-ss', String(timestamp),
+    '-ss', formatFfmpegNumber(timestamp),
     '-i', videoPath,
     '-frames:v', '1',
     // each format has its own quality scale (JPEG's 2-31 made a WebP capture very low quality)
@@ -807,7 +807,7 @@ export function createMediaSourceProcess({ path, videoStreamIndex, audioStreamIn
     // '-flags', 'low_delay', // this seems to ironically give a *higher* delay
     '-flush_packets', '1',
 
-    '-ss', String(seekTo),
+    '-ss', formatFfmpegNumber(seekTo),
 
     ...(rotate != null ? [
       '-display_rotation', '0',

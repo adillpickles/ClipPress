@@ -3,8 +3,9 @@ import type { AboutPanelOptionsOptions } from 'electron';
 import { app } from 'electron';
 import { t } from 'i18next';
 
+import formatVersion from '../common/formatVersion.js';
 import { copyrightYear } from './common.js';
-import { isLinux } from './util.js';
+import { isLinux, isWindows } from './util.js';
 import isStoreBuild from './isStoreBuild.js';
 
 
@@ -34,6 +35,9 @@ export function getAboutPanelOptions() {
   // https://github.com/mifi/lossless-cut/issues/1537
   if (isLinux) {
     aboutPanelOptions.applicationVersion = appVersion;
+  } else if (isWindows && !isStoreBuild) {
+    // "Beta 6", as the rest of the app names its releases, not "0.1.0-beta.6".
+    aboutPanelOptions.applicationVersion = formatVersion(appVersion);
   } else if (isStoreBuild) {
     // https://github.com/mifi/lossless-cut/issues/1882
     aboutPanelOptions.applicationVersion = t('{{appStoreType}} edition, based on GitHub v{{appVersion}}', { appStoreType: process.windowsStore ? 'Microsoft Store' : 'App Store', appVersion });

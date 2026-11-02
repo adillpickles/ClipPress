@@ -480,6 +480,17 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
 
   // const configVersion: number = store.get('version');
 
+  // A hand-edited settings file (Help > Configuration file) mustn't stop ClipPress from starting: only well-formed
+  // shortcuts are kept, and the default ones if the list itself is broken.
+  const storedBindings: unknown = store.get('keyBindings');
+  const validBindings = Array.isArray(storedBindings)
+    ? storedBindings.filter((binding: unknown): binding is KeyBinding => binding != null && typeof binding === 'object' && typeof (binding as KeyBinding).keys === 'string' && (binding as KeyBinding).keys.length > 0 && typeof (binding as KeyBinding).action === 'string')
+    : defaultKeyBindings;
+  if (!Array.isArray(storedBindings) || validBindings.length !== storedBindings.length) {
+    logger.warn('Dropped malformed keyboard shortcuts from the settings file');
+    set('keyBindings', validBindings);
+  }
+
   const keyBindings = (store.get('keyBindings') as KeyBinding[]).map(({ keys, action }) => ({ keysStr: keys, keys: keys.split('+'), action }));
 
   // assume that if there is one binding with ctrl, then it's the old format where keys were stored as strings like "Ctrl+Shift+S". We want to migrate to the new format where keys are stored as "ControlLeft+ShiftLeft+KeyS"
