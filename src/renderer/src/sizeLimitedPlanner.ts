@@ -23,27 +23,29 @@ interface StrategyProfile {
 
 type StrategyTargetingProfile = Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 
+// AV1 retries follow how far the last try went over (SVT-AV1's one-pass VBR overshoots a 5 s clip by 22-34%, measured),
+// so the floor only stops a wild jump; a third try catches what's still over instead of failing the export.
 const av1TwoPassRetryProfile = {
   firstAttemptTargetFactor: 0.95,
   retryTargetFactor: 0.92,
-  maxAttempts: 2,
-  retryMinFactor: 0.9,
+  maxAttempts: 3,
+  retryMinFactor: 0.6,
   retryMaxFactor: 0.97,
 } satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 
 const av1SinglePassRetryProfile = {
   firstAttemptTargetFactor: 0.93,
   retryTargetFactor: 0.9,
-  maxAttempts: 2,
-  retryMinFactor: 0.88,
+  maxAttempts: 3,
+  retryMinFactor: 0.6,
   retryMaxFactor: 0.97,
 } satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 
 const fastSinglePassRetryProfile = {
   firstAttemptTargetFactor: 0.9,
   retryTargetFactor: 0.87,
-  maxAttempts: 2,
-  retryMinFactor: 0.85,
+  maxAttempts: 3,
+  retryMinFactor: 0.6,
   retryMaxFactor: 0.97,
 } satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 

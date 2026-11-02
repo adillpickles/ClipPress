@@ -42,7 +42,7 @@ describe('planSizeLimitedEncode', () => {
     });
 
     expect(plan.initialAttempt.attemptNumber).toBe(1);
-    expect(plan.maxAttempts).toBe(2);
+    expect(plan.maxAttempts).toBe(3);
     expect(plan.initialAttempt.videoBitrate).toBeGreaterThan(0);
   });
 
@@ -127,7 +127,7 @@ describe('planSizeLimitedEncode', () => {
     expect(strategy.id).toBe('fast_av1_nvenc');
     expect(plan.firstAttemptTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.9));
     expect(plan.retryTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.87));
-    expect(plan.maxAttempts).toBe(2);
+    expect(plan.maxAttempts).toBe(3);
   });
 
   it('gives H.264 two-pass strategies extra bounded retries', () => {
@@ -230,11 +230,31 @@ describe('getNextSizeLimitedRetryStep', () => {
       strategy: maxQualityStrategy,
     });
 
-    expect(maxQualityPlan.maxAttempts).toBe(2);
+    expect(maxQualityPlan.maxAttempts).toBe(3);
     expect(maxQualityPlan.firstAttemptTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.95));
     expect(maxQualityPlan.retryTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.92));
     expect(maxQualityPlan.targetZoneMinBytes).toBe(Math.floor(maxQualityPlan.hardTargetBytes * 0.95));
     expect(maxQualityPlan.targetZoneMaxBytes).toBe(Math.floor(maxQualityPlan.hardTargetBytes * 0.98));
+  });
+
+  it('follows a short clip’s big overshoot on the retry instead of trimming only 10%', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'max_quality',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: allCapabilities,
+    });
+    const plan = planSizeLimitedEncode({ targetSizeMb: 3, duration: 5, hasAudio: true, strategy });
+    // SVT-AV1 overshoots a 5 s clip by about a quarter (measured), so the first try lands well over the cap.
+    const previousOutputSize = Math.floor(plan.firstAttemptTargetBytes * 1.25);
+    const retry = getNextSizeLimitedRetryStep({ plan, previousAttempt: plan.initialAttempt, previousOutputSize });
+
+    expect(retry?.attemptNumber).toBe(2);
+    const expectedSize = previousOutputSize * (retry!.totalBitrate / plan.initialAttempt.totalBitrate);
+    expect(expectedSize).toBeLessThanOrEqual(plan.hardTargetBytes * 0.93);
+    expect(expectedSize).toBeGreaterThan(plan.hardTargetBytes * 0.85);
   });
 
   it('plans quality mode at the locked 93% first-attempt target', () => {
