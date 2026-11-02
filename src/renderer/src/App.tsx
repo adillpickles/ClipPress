@@ -4540,9 +4540,7 @@ function App() {
         preserveMetadataOnMerge,
         preserveMovData,
         preserveChapters,
-        // Parts that are only joined and then deleted don't need their index moved to the front: one rewrite less
-        // of each (the joined file still gets it).
-        movFastStart: movFastStart && !(willMerge && autoDeleteMergedSegments),
+        movFastStart,
         avoidNegativeTs,
         customTagsByFile,
         paramsByStreamId,

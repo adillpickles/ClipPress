@@ -24,6 +24,7 @@ import runCancellable from './util/ffmpegCancel';
 import { loadProbeFromDisk, saveProbe } from './timelineCacheIo';
 
 const { ffmpeg } = window.require('@electron/remote').require('./index.js');
+const { stat } = window.require('fs/promises');
 
 const { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, getFfmpegPath, getFfprobePath, setCustomFfPath, checkFfExists } = ffmpeg;
 
@@ -487,8 +488,21 @@ function isSavedProbe(value: unknown): value is FileFfprobeMeta {
 }
 
 /** The probe saved with the timeline cache by an earlier run (same recording, FFmpeg and format), else ffprobe's. */
+// The ffprobe that answers, by path, size and modified time: a replaced one (a new FFmpeg, in place or chosen in
+// Settings) doesn't get an older one's answers.
+const ffprobeIdentities = new Map<string, Promise<string>>();
+function getFfprobeIdentity() {
+  const path: string = getFfprobePath();
+  let identity = ffprobeIdentities.get(path);
+  if (identity == null) {
+    identity = stat(path).then(({ size, mtimeMs }: { size: number, mtimeMs: number }) => `${path}|${size}|${Math.round(mtimeMs)}`, () => path);
+    ffprobeIdentities.set(path, identity);
+  }
+  return identity;
+}
+
 async function readFileFfprobeMetaSaved(filePath: string, key: string) {
-  const savedKey = `probe-v${savedProbeVersion}|${getFfmpegPath()}|${key}`;
+  const savedKey = `probe-v${savedProbeVersion}|${key}`;
   const saved = await loadProbeFromDisk(savedKey).catch(() => undefined);
   if (isSavedProbe(saved)) return saved;
   const probe = await readFileFfprobeMeta(filePath);
@@ -498,7 +512,7 @@ async function readFileFfprobeMetaSaved(filePath: string, key: string) {
 
 /** readFileFfprobeMeta, kept for a recording that hasn't changed since (`stats` from a stat of it just now). */
 export async function readFileFfprobeMetaCached(filePath: string, stats: { size: number, mtimeMs: number }) {
-  const key = `${filePath}|${stats.size}|${Math.round(stats.mtimeMs)}`;
+  const key = `${await getFfprobeIdentity()}|${filePath}|${stats.size}|${Math.round(stats.mtimeMs)}`;
   let probing = probedRecordings.get(key);
   if (probing != null) {
     // The most recently used last, so the oldest goes first.
