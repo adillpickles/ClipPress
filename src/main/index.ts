@@ -407,9 +407,17 @@ function createWindow() {
 // The renderer reports the interface mode (setSimpleMode); until then, the one the saved settings give.
 let menuSimpleMode: boolean | undefined;
 
+// What the menu was last built from: the page re-sends the language and mode it started with, which needn't build it
+// (and have the title bar read it) again.
+let builtMenuKey: string | undefined;
+
 function updateMenu() {
   assert(mainWindow);
-  menu({ app, mainWindow, newVersion, isStoreBuild, simpleMode: menuSimpleMode ?? getEffectiveSimpleMode({ enableAdvancedMode: configStore.get('enableAdvancedMode'), simpleMode: configStore.get('simpleMode') }), onCheckForUpdates: () => { checkForUpdates().catch((error: unknown) => logger.warn('Update check failed', error)); } });
+  const simpleMode = menuSimpleMode ?? getEffectiveSimpleMode({ enableAdvancedMode: configStore.get('enableAdvancedMode'), simpleMode: configStore.get('simpleMode') });
+  const key = JSON.stringify([mainWindow.id, i18n.language, simpleMode, newVersion ?? null]);
+  if (key === builtMenuKey) return;
+  builtMenuKey = key;
+  menu({ app, mainWindow, newVersion, isStoreBuild, simpleMode, onCheckForUpdates: () => { checkForUpdates().catch((error: unknown) => logger.warn('Update check failed', error)); } });
 }
 
 async function changeLanguage(language: string | null) {
@@ -667,6 +675,8 @@ async function init() {
     // Needed for the first FFmpeg run, but not to show the window.
     ffmpeg.loadExeca().catch((err: unknown) => logger.error('Failed to load execa', err));
     loadFileLogger().catch((err: unknown) => logger.error('Failed to load the file log', err));
+    // Every MP4 open asks it before its first picture: loaded now, not on the first open.
+    import('file-type/node').catch((err: unknown) => logger.warn('Failed to load file-type', err));
     // will also updateMenu and set about panel options
     await changeLanguage(language);
 

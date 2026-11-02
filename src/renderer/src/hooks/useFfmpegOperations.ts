@@ -300,7 +300,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
     console.log('Merging files', { paths }, 'to', outPath);
 
-    const durations = await pMap(paths, async (path) => (await getDuration(path)) ?? 0, { concurrency: 1 });
+    // Only for the progress bar: read side by side, not one after another before the join can start.
+    const durations = await pMap(paths, async (path) => (await getDuration(path)) ?? 0, { concurrency: 4 });
     const totalDuration = sum(durations);
 
     let chaptersPath: string | undefined;
@@ -1144,7 +1145,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
       // for smart cut we need to use keyframe cut here, and no avoid_negative_ts
       await losslessCutSingle({
-        cutFrom: losslessCutFrom, cutTo, chaptersPath, outPath: losslessPartOutPath, copyFileStreams: copyFileStreamsFiltered, keyframeCut: true, avoidNegativeTs: undefined, fileDuration, rotation, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMovData, preserveChapters, movFastStart, customTagsByFile, paramsByStreamId, videoTimebase, clipVolume, forceAudioEncode: encodeAllAudio, onProgress,
+        // The copied part of a smart cut is joined and deleted: no index move for it.
+        cutFrom: losslessCutFrom, cutTo, chaptersPath, outPath: losslessPartOutPath, copyFileStreams: copyFileStreamsFiltered, keyframeCut: true, avoidNegativeTs: undefined, fileDuration, rotation, allFilesMeta, outFormat, shortestFlag, ffmpegExperimental, preserveMetadata, preserveMovData, preserveChapters, movFastStart: movFastStart && !segmentNeedsSmartCut, customTagsByFile, paramsByStreamId, videoTimebase, clipVolume, forceAudioEncode: encodeAllAudio, onProgress,
       });
 
       // We don't need to concat, just return the single cut file (we may need smart cut in other segments though)

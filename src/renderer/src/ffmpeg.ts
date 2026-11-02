@@ -21,6 +21,7 @@ import { UnsupportedFileError, UserFacingError } from '../errors';
 import mainApi from './mainApi';
 import { firstShelfThumbnail } from './shelfThumbnails';
 import runCancellable from './util/ffmpegCancel';
+import { loadProbeFromDisk, saveProbe } from './timelineCacheIo';
 
 const { ffmpeg } = window.require('@electron/remote').require('./index.js');
 
@@ -476,6 +477,24 @@ export type FileFfprobeMeta = Awaited<ReturnType<typeof readFileFfprobeMeta>>;
 // background preparation already probed, or a reopen) skips ffprobe, most of the wait before its first frame.
 const probedRecordings = new Map<string, Promise<FileFfprobeMeta>>();
 const maxProbedRecordings = 8;
+/** Changed whenever what `readFileFfprobeMeta` returns changes, so older saved probes aren't used. */
+const savedProbeVersion = 1;
+
+function isSavedProbe(value: unknown): value is FileFfprobeMeta {
+  if (value == null || typeof value !== 'object') return false;
+  const { format, streams, chapters } = value as Record<string, unknown>;
+  return format != null && typeof format === 'object' && Array.isArray(streams) && Array.isArray(chapters);
+}
+
+/** The probe saved with the timeline cache by an earlier run (same recording, FFmpeg and format), else ffprobe's. */
+async function readFileFfprobeMetaSaved(filePath: string, key: string) {
+  const savedKey = `probe-v${savedProbeVersion}|${getFfmpegPath()}|${key}`;
+  const saved = await loadProbeFromDisk(savedKey).catch(() => undefined);
+  if (isSavedProbe(saved)) return saved;
+  const probe = await readFileFfprobeMeta(filePath);
+  saveProbe(savedKey, probe).catch((err: unknown) => console.warn('Could not save the probe', err));
+  return probe;
+}
 
 /** readFileFfprobeMeta, kept for a recording that hasn't changed since (`stats` from a stat of it just now). */
 export async function readFileFfprobeMetaCached(filePath: string, stats: { size: number, mtimeMs: number }) {
@@ -485,7 +504,7 @@ export async function readFileFfprobeMetaCached(filePath: string, stats: { size:
     // The most recently used last, so the oldest goes first.
     probedRecordings.delete(key);
   } else {
-    probing = readFileFfprobeMeta(filePath);
+    probing = readFileFfprobeMetaSaved(filePath, key);
     // Only a probe that worked is kept.
     probing.catch(() => { if (probedRecordings.get(key) === probing) probedRecordings.delete(key); });
   }
