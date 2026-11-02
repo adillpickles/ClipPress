@@ -22,10 +22,12 @@
   padding-right: 0;
 }
 
+/* On a shared baseline, not centred: the name is bigger than the menu words (and in another font), so centring their
+   boxes dropped its letters below theirs (6.1 round 5). */
 .left {
   min-width: 0;
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: .18rem;
 }
 
