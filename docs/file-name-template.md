@@ -13,10 +13,10 @@ so you can use JavaScript inside `${…}` (see [JavaScript expressions](expressi
 | Merge cuts | Merge files | Variable | Type | Output |
 | - | - | - | - | - |
 | ✅ | ✅ | `${FILENAME}` | `string` | The original file name without its extension (`Beach Trip` for `Beach Trip.mp4`). When merging files, the first file's name. |
-| ✅ | ✅ | `${FILES}` | `SourceFile[]` | The original file(s), each with `name`, `path`, `size` (bytes) and `atime`, `mtime`, `ctime`, `birthtime` (milliseconds since 1970). Example: `${new Date(FILES[0].mtime).toISOString().slice(0, 10)}` |
+| ✅ | ✅ | `${FILES}` | `SourceFile[]` | The original file(s), each with `name`, `path`, `size` (bytes) and `atime`, `mtime`, `ctime`, `birthtime` (milliseconds since 1970). When merging files, only the first file has the size and times unless **Check compatibility** is on. Example: `${new Date(FILES[0].mtime).toISOString().slice(0, 10)}` |
 | ✅ | ✅ | `${EXT}` | `string` | The output extension, such as `.mp4` or `.mkv`. |
 | ✅ | ✅ | `${EPOCH_MS}` | `number` | Milliseconds since 1970: a new value for every export, so an export never takes an earlier one's name. |
-| ✅ | ✅ | `${EXPORT_COUNT}` | `number` | Exports since ClipPress started, counting from 1. |
+| ✅ | ✅ | `${EXPORT_COUNT}` | `number` | Exports since ClipPress started, counting from 1. Merging files doesn't count up, so two merges in a row get the same number. |
 | ✅ | | `${FILE_EXPORT_COUNT}` | `number` | Exports since the current file was opened, counting from 1. |
 | ✅ | ✅ | `${SEG_LABEL}` | `string` / `string[]` | The segment's label. For Merge cuts, an array of every segment's label: `${SEG_LABEL.filter(label => label).join(',')}`. When merging files, each file's name. |
 | | | `${SEG_NUM}` | `string` | The segment's number, padded with zeros to the same width for all (`01` … `42`). |
