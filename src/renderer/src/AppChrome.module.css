@@ -81,9 +81,13 @@
   outline-offset: 1px;
 }
 
+/* The clip that hides the word rolling out reaches a little below the line (padding taken back by the margin), so the
+   tail of the p in "Clip" isn't cut and nothing moves (6.1 round 5). */
 .brandText {
   display: inline-grid;
   overflow: hidden;
+  padding-bottom: .25em;
+  margin-bottom: -.25em;
 }
 
 .brandName,
