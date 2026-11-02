@@ -2,13 +2,12 @@
   "name": "clippress",
   "productName": "ClipPress",
   "description": "Fast clip editor for turning long recordings into clean, shareable clips",
-  "copyright": "Copyright © 2025 Adil Ahmed. Based on LosslessCut, © Mikael Finstad. GPL-2.0-only.",
   "version": "0.1.0-beta.6",
   "main": "./out/main/index.js",
   "homepage": "https://github.com/adillpickles/ClipPress",
   "type": "module",
   "scripts": {
-    "clean": "rimraf dist out common-ts-dist main-ts-dist build-resources icon-build",
+    "clean": "node -e \"for (const dir of ['dist', 'out', 'common-ts-dist', 'main-ts-dist', 'icon-build']) require('node:fs').rmSync(dir, { recursive: true, force: true })\"",
     "start": "electron-vite preview",
     "dev": "electron-vite dev -w",
     "download-ffmpeg-darwin-x64": "mkdirp ffmpeg/darwin-x64 && cd ffmpeg/darwin-x64 && wget https://github.com/mifi/ffmpeg-build-script/releases/download/8.0-1/ffmpeg-macos-X64 -O ffmpeg && wget https://github.com/mifi/ffmpeg-build-script/releases/download/8.0-1/ffprobe-macos-X64 -O ffprobe && chmod +x ffmpeg && chmod +x ffprobe",
@@ -166,9 +165,6 @@
       "runAsNode": false,
       "enableNodeOptionsEnvironmentVariable": false,
       "enableNodeCliInspectArguments": false
-    },
-    "directories": {
-      "buildResources": "build-resources"
     },
     "files": [
       "out/**/*",

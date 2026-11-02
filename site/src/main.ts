@@ -1,4 +1,4 @@
-﻿import { INSTALLER_ASSET_NAME, RELEASES_API_URL, RELEASES_URL, previewAssetUrl, previewDownloadHref, releaseMetaLine } from './site.config';
+import { INSTALLER_ASSET_NAME, RELEASES_API_URL, RELEASES_URL, previewAssetUrl, previewDownloadHref, releaseMetaLine } from './site.config';
 
 // Every download link ships pointing at the Releases page so the no-JS path can
 // never 404. When a preview asset is published we swap in the direct asset URL.

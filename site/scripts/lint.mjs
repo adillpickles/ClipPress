@@ -32,19 +32,24 @@ const mustNot = (hay, re, msg) => {
 const count = (hay, re) => (hay.match(re) ?? []).length;
 
 // ---------- SEO / social ----------
-// No production domain yet: canonical/og:url ship only as a TODO until
-// SITE.siteUrl is set (see the <head> comment in index.html).
+// Link previews need absolute URLs, and Discord, X and Facebook don't render SVG
+// share images: the image is a PNG on the production domain (SITE.siteUrl).
+const siteUrl = /siteUrl:\s*'([^']*)'/.exec(config)?.[1];
 must(html, '<title>', 'missing <title>');
 must(html, 'name="description"', 'missing meta description');
-must(html, 'production domain', 'missing configurable-domain TODO in <head>');
 must(html, 'property="og:title"', 'missing OG title');
-must(html, 'property="og:image"', 'missing OG image');
 must(html, 'name="twitter:card"', 'missing Twitter card');
 must(html, 'application/ld+json', 'missing JSON-LD');
 must(html, '<h1', 'missing H1');
 must(html, 'lang="en"', 'missing lang="en"');
-mustNot(html, /clippress\.app/i, 'do not ship an unchosen production domain');
-mustNot(config, /clippress\.app/i, 'do not ship an unchosen production domain');
+mustMatch(siteUrl ?? '', /^https:\/\/[^/]+$/, 'SITE.siteUrl must be the https production origin, without a trailing slash');
+if (siteUrl) {
+  must(html, `<link rel="canonical" href="${siteUrl}/" />`, 'canonical must be SITE.siteUrl');
+  must(html, `<meta property="og:url" content="${siteUrl}/" />`, 'og:url must be SITE.siteUrl');
+  must(html, `<meta property="og:image" content="${siteUrl}/og-image.png" />`, 'og:image must be the absolute PNG on SITE.siteUrl');
+  must(html, `<meta name="twitter:image" content="${siteUrl}/og-image.png" />`, 'twitter:image must be the absolute PNG on SITE.siteUrl');
+}
+mustNot(html, /og-image\.svg/, 'share images must be the PNG: link previews do not render SVG');
 
 // ---------- accessibility ----------
 must(html, 'skip-link', 'missing skip link');
