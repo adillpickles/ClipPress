@@ -40,9 +40,18 @@ inputs fit a video-memory budget (each open decoder holds about 250 MB at 1440p)
 
 ## When the GPU fails
 
-If an export fails, ClipPress retries it with CPU decoding, then (for the size presets and regular
-exports) on the next encoder in line, and skips a failed encoder for the rest of the session.
-Cancelling is never retried, and an encoder picked in Custom settings reports its error instead.
+Each GPU encoder has tuned settings (look-ahead, adaptive quantisation, B-frames: what NVIDIA, AMD and
+Intel recommend) and basic ones every driver accepts. The first export check tries both, and an older card
+or driver that turns the tuned ones down gets the basic ones.
+
+If an export fails, ClipPress retries it with CPU decoding, then with the same encoder's basic settings,
+then (for the size presets and regular exports) on the next encoder in line, and skips a failed encoder
+for the rest of the session once another one worked. Cancelling and a full disk are never retried, and an
+encoder picked in Custom settings keeps to it (its basic settings included).
+
+AMD's AV1 encoder on RX 7000 cards and current Ryzen chips pads the picture to blocks of 64×16 pixels,
+which players show as black bars, so its exports are sized to those blocks (scaled a little, at most a few
+pixels cropped from the middle).
 
 Turning off **Settings > Export > Use the GPU** stops GPU decoding and GPU encoding for regular
 exports. Target-size presets keep choosing their encoder as above; to force a CPU encoder, pick one in
