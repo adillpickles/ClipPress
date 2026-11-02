@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { getResolvedVideoArgs } from './sizeLimitedEncoderArgs';
 import { resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
+import type { SizeLimitedEncoderCapabilities } from './sizeLimitedTypes';
 
 const fullCapabilities = { h264Nvenc: true, av1Nvenc: true, libx264: true, libsvtav1: true } as const;
 const defaultStrategyArgs = {
@@ -94,7 +95,7 @@ describe('getResolvedVideoArgs', () => {
     expect(getArgValue(args, '-bufsize')).toBe('6000k');
   });
 
-  it('keeps non-fast h264 nvenc on size-first vbr_hq without cq', () => {
+  it('keeps non-fast h264 nvenc on size-first vbr with quarter-res multipass, without cq', () => {
     const strategy = resolveSizeLimitedStrategy({
       controlMode: 'advanced',
       preset: 'fast',
@@ -114,7 +115,7 @@ describe('getResolvedVideoArgs', () => {
     });
 
     expect(getArgValue(args, '-c:v')).toBe('h264_nvenc');
-    expect(getArgValue(args, '-rc')).toBe('vbr_hq');
+    expect(getArgValue(args, '-rc')).toBe('vbr');
     expect(getArgValue(args, '-strict_gop')).toBe('1');
     expect(getArgValue(args, '-cq')).toBeUndefined();
     expect(getArgValue(args, '-multipass')).toBe('qres');
@@ -248,5 +249,68 @@ describe('getResolvedVideoArgs with a relaxed quality cap', () => {
     expect(getArgValue(args, '-b:v')).toBe('4000k');
     expect(getArgValue(args, '-maxrate')).toBe('4320k');
     if (encoder === 'av1_amf') expect(getArgValue(args, '-rc')).toBe('vbr_peak');
+  });
+});
+
+describe('GPU vendor settings', () => {
+  const resolveVendorArgs = (gpu: Partial<SizeLimitedEncoderCapabilities>, preset: 'quality' | 'fast' = 'quality') => getResolvedVideoArgs({
+    strategy: resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset,
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: { h264Nvenc: false, av1Nvenc: false, libx264: true, libsvtav1: false, cpuThreads: 4, ...gpu },
+    }),
+    videoBitrate: 4_000_000,
+    twoPass: false,
+    videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
+    sourceFps: 60,
+    outputPlaybackRate: 1,
+  });
+
+  it('gives AMD its quality tools, pre-analysis and B-frames, with a 10 s keyframe interval', () => {
+    const av1 = resolveVendorArgs({ av1Amf: true });
+    expect(getArgValue(av1, '-aq_mode')).toBe('caq');
+    expect(getArgValue(av1, '-enforce_hrd')).toBe('1');
+    expect(getArgValue(av1, '-preanalysis')).toBe('1');
+    expect(Number(getArgValue(av1, '-pa_lookahead_buffer_depth'))).toBeLessThan(16);
+    expect(getArgValue(av1, '-bf')).toBe('2');
+    expect(getArgValue(av1, '-g')).toBe('600');
+
+    const h264 = resolveVendorArgs({ h264Amf: true });
+    expect(getArgValue(h264, '-c:v')).toBe('h264_amf');
+    expect(getArgValue(h264, '-profile:v')).toBe('high');
+    expect(getArgValue(h264, '-vbaq')).toBe('1');
+    expect(getArgValue(h264, '-preencode')).toBe('1');
+    expect(getArgValue(h264, '-g')).toBe('600');
+  });
+
+  it('keeps Fast quick on AMD and Intel (no pre-analysis or look-ahead)', () => {
+    expect(getArgValue(resolveVendorArgs({ av1Amf: true }, 'fast'), '-preanalysis')).toBeUndefined();
+    expect(getArgValue(resolveVendorArgs({ av1Qsv: true }, 'fast'), '-extbrc')).toBeUndefined();
+  });
+
+  it('gives Intel its look-ahead rate control, and H.264 no minimum bitrate', () => {
+    const h264 = resolveVendorArgs({ h264Qsv: true });
+    expect(getArgValue(h264, '-extbrc')).toBe('1');
+    expect(getArgValue(h264, '-look_ahead_depth')).toBe('40');
+    expect(getArgValue(h264, '-bitrate_limit')).toBe('0');
+    expect(h264).not.toContain('-look_ahead');
+  });
+
+  it.each([
+    [{ av1Amf: true, basicSettingsOnly: ['av1Amf'] }, ['-c:v', 'av1_amf', '-usage', 'transcoding', '-quality', 'quality', '-rc', 'vbr_peak', '-pix_fmt', 'nv12']],
+    [{ h264Qsv: true, basicSettingsOnly: ['h264Qsv'] }, ['-c:v', 'h264_qsv', '-preset', 'slower', '-pix_fmt', 'nv12']],
+  ] as const)('keeps a card that turned the tuned settings down on the plain ones', (gpu, plain) => {
+    expect(resolveVendorArgs(gpu).slice(0, plain.length)).toEqual(plain);
+  });
+
+  it("drops the look-ahead, temporal AQ and B-frame references NVENC's basic settings can't count on", () => {
+    const args = resolveVendorArgs({ h264Nvenc: true, basicSettingsOnly: ['h264Nvenc'] });
+    expect(getArgValue(args, '-c:v')).toBe('h264_nvenc');
+    expect(args).not.toContain('-b_ref_mode');
+    expect(args).not.toContain('-temporal-aq');
+    expect(args).not.toContain('-rc-lookahead');
   });
 });

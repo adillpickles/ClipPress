@@ -33,14 +33,16 @@ function buildStrategy(strategy: Omit<SizeLimitedResolvedStrategy, 'plannerProfi
 }
 
 /** Fields shared by every GPU strategy. A 2-pass request becomes one run with the encoder's own multipass. */
-function gpuFields(gpu: NonNullable<ReturnType<typeof pickGpuEncoder>>, twoPass: boolean) {
+function gpuFields(gpu: NonNullable<ReturnType<typeof pickGpuEncoder>>, twoPass: boolean, capabilities: SizeLimitedEncoderCapabilities) {
+  const basic = capabilities.basicSettingsOnly?.includes(gpu.capability) === true;
   return {
     encoder: gpu.encoder,
     hardware: gpu.vendor,
     usesGpu: true,
     executionMode: 'single_pass',
-    // Only NVENC exposes a full-resolution multipass mode.
-    ...(twoPass && gpu.vendor === 'nvidia' ? { encoderMultipass: true } : {}),
+    // Only NVENC exposes a full-resolution multipass mode (not among its basic settings).
+    ...(twoPass && gpu.vendor === 'nvidia' && !basic ? { encoderMultipass: true } : {}),
+    ...(basic ? { basicEncoderSettings: true } : {}),
   } as const;
 }
 
@@ -86,7 +88,7 @@ function resolveSimplePresetStrategy({
           id: gpuAv1.vendor === 'nvidia' ? 'max_quality_av1_nvenc_two_pass' : 'max_quality_av1_gpu',
           plannerProfileId: 'max_quality_av1_nvenc_two_pass',
           encoderPreset: 'p7',
-          ...gpuFields(gpuAv1, true),
+          ...gpuFields(gpuAv1, true, capabilities),
           tuningProfile: 'max_quality',
           fallbackReason: 'svt_av1_unavailable',
         });
@@ -117,7 +119,7 @@ function resolveSimplePresetStrategy({
         id: h264.vendor === 'nvidia' ? 'max_quality_h264_nvenc_two_pass' : 'max_quality_h264_gpu',
         plannerProfileId: 'max_quality_h264_nvenc_two_pass',
         encoderPreset: 'p6',
-        ...gpuFields(h264, true),
+        ...gpuFields(h264, true, capabilities),
         tuningProfile: 'max_quality',
         fallbackReason: 'av1_unavailable',
       });
@@ -131,7 +133,7 @@ function resolveSimplePresetStrategy({
           id: gpuAv1.vendor === 'nvidia' ? 'quality_av1_nvenc' : 'quality_av1_gpu',
           plannerProfileId: 'quality_av1_nvenc',
           encoderPreset: 'p6',
-          ...gpuFields(gpuAv1, false),
+          ...gpuFields(gpuAv1, false, capabilities),
           tuningProfile: 'quality',
         });
       }
@@ -164,7 +166,7 @@ function resolveSimplePresetStrategy({
           id: 'quality_h264_gpu',
           plannerProfileId: 'advanced_h264_nvenc_single_pass',
           encoderPreset: 'p6',
-          ...gpuFields(gpuH264, false),
+          ...gpuFields(gpuH264, false, capabilities),
           tuningProfile: 'quality',
           fallbackReason: 'gpu_av1_unavailable',
         });
@@ -193,7 +195,7 @@ function resolveSimplePresetStrategy({
           id: gpuAv1.vendor === 'nvidia' ? 'fast_av1_nvenc' : 'fast_av1_gpu',
           plannerProfileId: 'fast_av1_nvenc',
           encoderPreset: 'p1',
-          ...gpuFields(gpuAv1, false),
+          ...gpuFields(gpuAv1, false, capabilities),
           tuningProfile: 'fast',
         });
       }
@@ -207,7 +209,7 @@ function resolveSimplePresetStrategy({
           id: 'fast_h264_gpu',
           plannerProfileId: 'advanced_h264_nvenc_single_pass',
           encoderPreset: 'p3',
-          ...gpuFields(gpuH264, false),
+          ...gpuFields(gpuH264, false, capabilities),
           tuningProfile: 'fast',
           fallbackReason: 'gpu_av1_unavailable',
         });
@@ -271,7 +273,7 @@ function resolveAdvancedGpuStrategy({ codec, twoPass, preset, capabilities }: {
       id: codec === 'av1' ? 'advanced_av1_gpu' : 'advanced_h264_gpu',
       plannerProfileId: codec === 'av1' ? 'advanced_av1_nvenc_single_pass' : 'advanced_h264_nvenc_single_pass',
       encoderPreset,
-      ...gpuFields(otherVendor, twoPass),
+      ...gpuFields(otherVendor, twoPass, capabilities),
       tuningProfile: 'advanced',
       fallbackReason: 'nvidia_unavailable',
     });
@@ -287,7 +289,7 @@ function resolveAdvancedGpuStrategy({ codec, twoPass, preset, capabilities }: {
     effectiveCodec: codec,
     id: twoPass ? ids.twoPass : ids.singlePass,
     encoderPreset,
-    ...gpuFields(nvencInfo, twoPass),
+    ...gpuFields(nvencInfo, twoPass, capabilities),
     tuningProfile: 'advanced',
   });
 }

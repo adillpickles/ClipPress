@@ -20,9 +20,9 @@ import {
   getSizeLimitedSwsFlagsArgs,
   getSizeLimitedTwoPassEncodeArgs,
 } from './sizeLimitedFfmpegArgs';
-import { buildSizeLimitedVideoFilter, resolveSizeLimitedVideoProfile, targetLowFps } from './sizeLimitedResolution';
+import { buildSizeLimitedVideoFilter, fitVideoProfileToEncoder, getSizeLimitedDisplayDimensions, resolveSizeLimitedVideoProfile, targetLowFps } from './sizeLimitedResolution';
 import { planSizeLimitedEncode, relaxQualityCapForGenerousBudget } from './sizeLimitedPlanner';
-import { hasQualityCap } from './sizeLimitedEncoderArgs';
+import { getGpuProbeVideoArgs, hasQualityCap } from './sizeLimitedEncoderArgs';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import { buildAudioMixFilter, buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
 import type { MixedAudioTrack } from './exportSegmentMath';
@@ -30,12 +30,12 @@ import { getAudioTempoFilter, getSegmentOutputDuration, getSegmentPlaybackRate, 
 import type { OverlayClip, SegmentToExport, SizeLimitedEncoderCapabilities, SizeLimitedExecutionResult, SizeLimitedProgressMetadata, SizeLimitedResolvedStrategy, SizeLimitedRetryStep } from './types';
 import type { SizeLimitedVideoTransformProfile } from './sizeLimitedResolution';
 import { isMutedAudioGain, isNeutralAudioGain } from './util/streams';
-import { assertFileExists, isAbortedError, isExecaError, readFileSize, moveExportWithRetry, transferTimestamps, unlinkWithRetry } from './util';
+import { assertFileExists, isAbortedError, isExecaError, isOutOfSpaceError, readFileSize, moveExportWithRetry, transferTimestamps, unlinkWithRetry } from './util';
 import { UserFacingError } from '../errors';
 import { assertOutPathsNotSource } from './util/sourceProtection';
 import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } from './textOverlays';
 import createAsyncCache from './util/asyncCache';
-import { getGpuEncoderInfo, getGpuFramesDownloadFormat, getGpuFramesFilter, getHardwareDecodeArgs, gpuEncoderLabels, gpuEncoders, isGpuEncoderAvailable, runWithGpuFallbacksCore, shouldKeepFramesOnGpu, shouldUseHardwareDecode } from './gpuEncoders';
+import { getEncoderSizeRules, getGpuEncoderInfo, getGpuFramesDownloadFormat, getGpuFramesFilter, getHardwareDecodeArgs, gpuEncoderLabels, gpuEncoders, isGpuEncoderAvailable, runWithGpuFallbacksCore, shouldKeepFramesOnGpu, shouldUseHardwareDecode } from './gpuEncoders';
 import type { GpuEncoderName } from './gpuEncoders';
 import { getTempWorkDir } from './util/tempFiles';
 
@@ -58,15 +58,14 @@ function decodeProcessOutput({ stdout, stderr }: { stdout: Uint8Array, stderr: U
  * Listing an encoder only means FFmpeg was built with it; opening one proves the GPU and driver support it. A test that
  * timed out isn't a sure answer.
  */
-async function probeGpuEncoder(encoder: GpuEncoderName) {
+async function probeGpuEncoder(encoder: GpuEncoderName, videoArgs = ['-pix_fmt', 'nv12', '-c:v', encoder]) {
   const ffmpegArgs = [
     '-hide_banner',
     '-f', 'lavfi',
     '-i', gpuProbeSource,
     '-frames:v', gpuProbeFrames,
     '-an',
-    '-pix_fmt', 'nv12',
-    '-c:v', encoder,
+    ...videoArgs,
     '-f', 'null',
     '-',
   ];
@@ -92,8 +91,10 @@ function isSavedEncoderCheck(value: unknown): value is SavedEncoderCheck {
   const { capabilities, retest } = value as Record<string, unknown>;
   if (capabilities == null || typeof capabilities !== 'object' || !Array.isArray(retest)) return false;
   const known = gpuEncoders.map(({ capability }) => capability);
+  const { basicSettingsOnly } = capabilities as Record<string, unknown>;
   return ['h264Nvenc', 'av1Nvenc', 'libx264', 'libsvtav1', ...known].every((key) => typeof (capabilities as Record<string, unknown>)[key] === 'boolean')
-    && retest.every((key) => known.includes(key as GpuCapability));
+    && retest.every((key) => known.includes(key as GpuCapability))
+    && (basicSettingsOnly == null || (Array.isArray(basicSettingsOnly) && basicSettingsOnly.every((key) => known.includes(key as GpuCapability))));
 }
 
 /**
@@ -117,19 +118,25 @@ const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimite
   const cpuThreads = navigator.hardwareConcurrency || undefined;
   const saved = await mainApi.readSavedEncoderCheck(key).catch(() => undefined);
   const unsure = new Set<GpuCapability>();
+  const basicOnly = new Set<GpuCapability>(isSavedEncoderCheck(saved) ? saved.capabilities.basicSettingsOnly : []);
+  // Whether the encoder opens at all, then whether it takes the tuned settings an export uses or only the basic ones.
   const probe = async (encoder: GpuEncoderName, capability: GpuCapability) => {
+    basicOnly.delete(capability);
     const result = await probeGpuEncoder(encoder);
     if (!result.sure) unsure.add(capability);
-    return result.usable;
+    if (!result.usable) return false;
+    if (!(await probeGpuEncoder(encoder, getGpuProbeVideoArgs(encoder))).usable) basicOnly.add(capability);
+    return true;
   };
+  const withBasicOnly = (capabilities: SavedEncoderCheck['capabilities']) => ({ ...capabilities, basicSettingsOnly: gpuEncoders.flatMap(({ capability }) => (basicOnly.has(capability) ? [capability] : [])) });
 
   if (isSavedEncoderCheck(saved)) {
     if (saved.retest.length === 0) return { ...saved.capabilities, cpuThreads };
     const capabilities = { ...saved.capabilities };
     const retest = gpuEncoders.filter(({ capability }) => saved.retest.includes(capability));
     await Promise.all(retest.map(async ({ encoder, capability }) => { capabilities[capability] = await probe(encoder, capability); }));
-    saveEncoderCheck(key, capabilities, (encoder) => retest.some((info) => info.encoder === encoder), unsure).catch(() => undefined);
-    return { ...capabilities, cpuThreads };
+    saveEncoderCheck(key, withBasicOnly(capabilities), (encoder) => retest.some((info) => info.encoder === encoder), unsure).catch(() => undefined);
+    return { ...withBasicOnly(capabilities), cpuThreads };
   }
 
   const result = await runFfmpeg(['-hide_banner', '-encoders'], undefined, { logCli: false });
@@ -144,8 +151,8 @@ const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimite
     capabilities[capability] = encoders.has(encoder) && await probe(encoder, capability);
   }));
   // Saved in the background: the answer is used now.
-  saveEncoderCheck(key, capabilities, (encoder) => encoders.has(encoder), unsure).catch(() => undefined);
-  return { ...capabilities, cpuThreads };
+  saveEncoderCheck(key, withBasicOnly(capabilities), (encoder) => encoders.has(encoder), unsure).catch(() => undefined);
+  return { ...withBasicOnly(capabilities), cpuThreads };
 });
 
 /**
@@ -153,6 +160,14 @@ const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimite
  * still rejects the export's settings, so a failed encoder is skipped from then on.
  */
 const failedGpuEncoders = new Set<GpuEncoderName>();
+/** GPU encoders whose tuned settings failed in a real export this session: they keep to their basic ones. */
+const basicSettingsGpuEncoders = new Set<GpuEncoderName>();
+/**
+ * What the export now running found failing, used for its next tries but kept only if it then works another way:
+ * when nothing works (a full disk, a gone source), the GPU wasn't at fault.
+ */
+const pendingFailedGpuEncoders = new Set<GpuEncoderName>();
+const pendingBasicSettingsGpuEncoders = new Set<GpuEncoderName>();
 let hardwareDecodeFailed = false;
 
 export async function getSizeLimitedEncoderCapabilities(): Promise<SizeLimitedEncoderCapabilities> {
@@ -160,12 +175,16 @@ export async function getSizeLimitedEncoderCapabilities(): Promise<SizeLimitedEn
   const { size, mtimeMs } = await stat(path);
   // External FFmpeg can be selected or replaced while the application is running.
   const capabilities = await readEncoderCapabilities(`${path}:${size}:${mtimeMs}`);
-  if (failedGpuEncoders.size === 0) return capabilities;
+  const failed = new Set([...failedGpuEncoders, ...pendingFailedGpuEncoders]);
+  const basic = new Set([...basicSettingsGpuEncoders, ...pendingBasicSettingsGpuEncoders]);
+  if (failed.size === 0 && basic.size === 0) return capabilities;
   const usable = { ...capabilities };
-  for (const encoder of failedGpuEncoders) {
+  for (const encoder of failed) {
     const info = getGpuEncoderInfo(encoder);
     if (info != null) usable[info.capability] = false;
   }
+  const basicOnly = gpuEncoders.filter(({ encoder, capability }) => basic.has(encoder) || capabilities.basicSettingsOnly?.includes(capability));
+  usable.basicSettingsOnly = basicOnly.map(({ capability }) => capability);
   return usable;
 }
 
@@ -186,18 +205,34 @@ export function canUseHardwareDecode({ enabled, inputCount, width, height }: {
   return shouldUseHardwareDecode({ platform: process.platform, enabled: enabled && !hardwareDecodeFailed, inputCount, width, height });
 }
 
-/** FFmpeg exited with an error that was not a user cancel: worth one more try another way. */
+/** FFmpeg exited with an error that was not a user cancel or a full disk: worth one more try another way. */
 function isRetryableEncodeFailure(error: unknown) {
-  return isExecaError(error) && !isAbortedError(error);
+  return isExecaError(error) && !isAbortedError(error) && !isOutOfSpaceError(error);
+}
+
+/** The export worked another way, so what failed on the way was at fault: kept for the session. */
+function keepPendingGpuDemotions() {
+  pendingBasicSettingsGpuEncoders.forEach((encoder) => basicSettingsGpuEncoders.add(encoder));
+  if (pendingFailedGpuEncoders.size === 0) return;
+  pendingFailedGpuEncoders.forEach((encoder) => failedGpuEncoders.add(encoder));
+  // The next run tests the encoders again.
+  mainApi.forgetEncoderCheck().catch((error: unknown) => console.warn('Could not forget the encoder check', error));
 }
 
 /** See {@link runWithGpuFallbacksCore}; failures that were not user cancels are retried. */
-export function runWithGpuFallbacks<T>(args: Omit<Parameters<typeof runWithGpuFallbacksCore<T>>[0], 'isRetryableFailure' | 'onHardwareDecodeFailed'>) {
-  return runWithGpuFallbacksCore({
-    ...args,
-    isRetryableFailure: isRetryableEncodeFailure,
-    onHardwareDecodeFailed: () => { hardwareDecodeFailed = true; },
-  });
+export async function runWithGpuFallbacks<T>(args: Omit<Parameters<typeof runWithGpuFallbacksCore<T>>[0], 'isRetryableFailure' | 'onHardwareDecodeFailed'>) {
+  try {
+    const result = await runWithGpuFallbacksCore({
+      ...args,
+      isRetryableFailure: isRetryableEncodeFailure,
+      onHardwareDecodeFailed: () => { hardwareDecodeFailed = true; },
+    });
+    keepPendingGpuDemotions();
+    return result;
+  } finally {
+    pendingFailedGpuEncoders.clear();
+    pendingBasicSettingsGpuEncoders.clear();
+  }
 }
 
 /** Sources whose frames couldn't stay on the GPU (a codec it doesn't decode, which FFmpeg then decodes on the CPU). */
@@ -239,9 +274,14 @@ async function runKeepingFramesOnGpu<T>({ videoStream, gpuFramesFormat, run }: {
   return result;
 }
 
+/** Within {@link runWithGpuFallbacks}: the next tries skip this encoder, and so does the session if one then works. */
 export function markGpuEncoderFailed(encoder: GpuEncoderName) {
-  failedGpuEncoders.add(encoder);
-  mainApi.forgetEncoderCheck().catch((error: unknown) => console.warn('Could not forget the encoder check', error));
+  pendingFailedGpuEncoders.add(encoder);
+}
+
+/** Within {@link runWithGpuFallbacks}: the next tries use this encoder's basic settings (the session too, if they work). */
+export function markGpuEncoderBasicOnly(encoder: GpuEncoderName) {
+  pendingBasicSettingsGpuEncoders.add(encoder);
 }
 
 function assertStrategySupported({ strategy, capabilities }: {
@@ -503,13 +543,29 @@ interface ResolvedSizeLimitedPlan { strategy: SizeLimitedResolvedStrategy, plan:
  * After a Simple preset's GPU encoder fails mid-export, plans the same export on the next
  * encoder in line (another GPU, then the CPU). Undefined when there is nothing to fall back to.
  */
+/** An attempt's video profile, fitted to what its encoder takes (AMD AV1's block alignment, GPU H.264's 4096). */
+function resolveAttemptVideoProfile(args: Parameters<typeof resolveSizeLimitedVideoProfile>[0], encoder: SizeLimitedResolvedStrategy['encoder']) {
+  return fitVideoProfileToEncoder({
+    videoProfile: resolveSizeLimitedVideoProfile(args),
+    displayDimensions: getSizeLimitedDisplayDimensions(args),
+    rules: getEncoderSizeRules(encoder),
+  });
+}
+
 async function resolveNextEncoder(strategy: SizeLimitedResolvedStrategy, resolve: () => Promise<ResolvedSizeLimitedPlan>) {
   const gpu = getGpuEncoderInfo(strategy.encoder);
-  if (strategy.controlMode !== 'simple' || gpu == null) return undefined;
-  markGpuEncoderFailed(gpu.encoder);
+  if (gpu == null) return undefined;
+  if (!strategy.basicEncoderSettings) {
+    // An older card or driver may turn down only the tuned settings: the same encoder again with its basic ones, which
+    // is far quicker than moving to the CPU (and keeps the encoder chosen in advanced mode).
+    markGpuEncoderBasicOnly(gpu.encoder);
+  } else {
+    if (strategy.controlMode !== 'simple') return undefined;
+    markGpuEncoderFailed(gpu.encoder);
+  }
   try {
     const next = await resolve();
-    console.warn(`${gpu.encoder} failed during export; continuing with ${next.strategy.encoder}`);
+    console.warn(`${gpu.encoder} failed during export; continuing with ${next.strategy.encoder}${next.strategy.basicEncoderSettings ? ' (basic settings)' : ''}`);
     return next;
   } catch (error) {
     console.warn('No other encoder is available', error);
@@ -1035,7 +1091,7 @@ export async function exportSizeLimitedSegment({
             const attemptOutPath = makeAttemptPath(tempPath, attempt.attemptNumber);
             const inputArgs = getSegmentInputArgs({ filePath, segment, rotation, hardwareDecode, keepFramesOnGpu: gpuFramesFormat != null });
             const outputTrimArgs = ['-t', plannedDuration.toFixed(5)];
-            const videoProfile = resolveSizeLimitedVideoProfile({
+            const videoProfile = resolveAttemptVideoProfile({
               resolution,
               fps,
               sourceWidth: videoStream.width,
@@ -1043,7 +1099,7 @@ export async function exportSizeLimitedSegment({
               rotation: sourceRotation ?? rotation,
               sourceFps,
               plannedVideoBitrate: attempt.videoBitrate,
-            });
+            }, strategy.encoder);
             const baseVideoFilter = buildSizeLimitedVideoFilter({ videoProfile });
             const dimensions = getRotatedVideoDimensions({ width: videoStream.width!, height: videoStream.height!, rotation: sourceRotation ?? rotation });
             const cropFilter = getSegmentCropFilter(segment, dimensions.width, dimensions.height);
@@ -1332,7 +1388,7 @@ export async function exportSizeLimitedMerge({
             const inputArgs = getMergeInputArgs({ filePath, segments, rotation, hardwareDecode, keepFramesOnGpu: gpuFramesFormat != null });
             const overlayInputArgs = buildOverlayImageInputArgs(preparedOverlayAssets.map(({ imagePath }) => imagePath));
             const outputTrimArgs = ['-t', plannedDuration.toFixed(5)];
-            const videoProfile = resolveSizeLimitedVideoProfile({
+            const videoProfile = resolveAttemptVideoProfile({
               resolution,
               fps,
               sourceWidth: videoStream.width,
@@ -1340,7 +1396,7 @@ export async function exportSizeLimitedMerge({
               rotation: sourceRotation ?? rotation,
               sourceFps,
               plannedVideoBitrate: attempt.videoBitrate,
-            });
+            }, strategy.encoder);
             const dimensions = getRotatedVideoDimensions({ width: videoStream.width!, height: videoStream.height!, rotation: sourceRotation ?? rotation });
             const filterComplex = getConcatFilter({
               segments,

@@ -1,5 +1,6 @@
 import type { SizeLimitAdvancedNvencPreset, SizeLimitCodec } from '../../common/types.js';
-import type { SizeLimitedEncoderCapabilities, SizeLimitedEncoderName, SizeLimitedHardwareTarget } from './sizeLimitedTypes';
+import type { EncoderSizeRules } from './sizeLimitedResolution';
+import type { SizeLimitedEncoderCapabilities, SizeLimitedEncoderName, SizeLimitedGpuCapability, SizeLimitedHardwareTarget } from './sizeLimitedTypes';
 
 /**
  * Hardware encoders across GPU vendors.
@@ -14,7 +15,7 @@ import type { SizeLimitedEncoderCapabilities, SizeLimitedEncoderName, SizeLimite
 
 export type GpuEncoderName = Exclude<SizeLimitedEncoderName, 'libx264' | 'libsvtav1'>;
 export type GpuVendor = Exclude<SizeLimitedHardwareTarget, 'cpu'>;
-type GpuCapabilityKey = 'h264Nvenc' | 'av1Nvenc' | 'h264Amf' | 'av1Amf' | 'h264Qsv' | 'av1Qsv';
+type GpuCapabilityKey = SizeLimitedGpuCapability;
 
 interface GpuEncoderInfo {
   encoder: GpuEncoderName,
@@ -67,6 +68,20 @@ const qsvPresets = ['veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'v
 
 export function getQsvPreset(preset: SizeLimitAdvancedNvencPreset) {
   return qsvPresets[Math.min(qsvPresets.length, Math.max(1, Number(preset.slice(1)))) - 1]!;
+}
+
+/** The longest side every GPU's H.264 encoder takes. */
+export const maxGpuH264Side = 4096;
+
+/**
+ * The picture sizes an encoder takes as they are. AMD's AV1 encoder needs 64×16 blocks on RX 7000 cards and current
+ * Ryzen chips (8×2 on RX 9000; 64×16 suits both), or it pads the picture and players show black bars; every GPU's
+ * H.264 encoder stops at 4096 on a side (`notes/beta6-ux/research/gpu-encoders.md`, c1 and c6).
+ */
+export function getEncoderSizeRules(encoder: SizeLimitedEncoderName): EncoderSizeRules | undefined {
+  if (encoder === 'av1_amf') return { alignWidth: 64, alignHeight: 16 };
+  if (encoder === 'h264_nvenc' || encoder === 'h264_amf' || encoder === 'h264_qsv') return { alignWidth: 2, alignHeight: 2, maxSide: maxGpuH264Side };
+  return undefined;
 }
 
 export const gpuVendorLabels: Record<GpuVendor, string> = {
@@ -183,16 +198,18 @@ export function getGpuFramesFilter({ rate, downloadFormat, outputFps }: {
  * for visually lossless quality rather than a size, so each encoder uses its quality mode.
  * Measured on a 30 s 1080p60 clip: NVENC took 5.4 s against 20.1 s for x264 at a similar size.
  */
-export function getRegularExportVideoArgs(encoder: GpuEncoderName | undefined) {
+export function getRegularExportVideoArgs(encoder: GpuEncoderName | undefined, { basic = false }: { basic?: boolean | undefined } = {}) {
   switch (encoder) {
     case 'h264_nvenc': {
-      return ['-c:v', 'h264_nvenc', '-preset', 'p5', '-tune', 'hq', '-profile:v', 'high', '-rc', 'vbr', '-cq', '19', '-b:v', '0', '-rc-lookahead', '20', '-spatial-aq', '1', '-temporal-aq', '1', '-pix_fmt', 'yuv420p'];
+      // The basic settings leave out the look-ahead and temporal AQ a Maxwell card lacks.
+      return ['-c:v', 'h264_nvenc', '-preset', 'p5', '-tune', 'hq', '-profile:v', 'high', '-rc', 'vbr', '-cq', '19', '-b:v', '0', ...(basic ? [] : ['-rc-lookahead', '20']), '-spatial-aq', '1', ...(basic ? [] : ['-temporal-aq', '1']), '-pix_fmt', 'yuv420p'];
     }
     case 'h264_amf': {
-      return ['-c:v', 'h264_amf', '-usage', 'transcoding', '-quality', 'quality', '-rc', 'cqp', '-qp_i', '18', '-qp_p', '20', '-qp_b', '22', '-pix_fmt', 'nv12'];
+      // High profile: AMD's own default is Main.
+      return ['-c:v', 'h264_amf', '-usage', 'transcoding', '-quality', 'quality', ...(basic ? [] : ['-profile:v', 'high']), '-rc', 'cqp', '-qp_i', '18', '-qp_p', '20', '-qp_b', '22', '-pix_fmt', 'nv12'];
     }
     case 'h264_qsv': {
-      return ['-c:v', 'h264_qsv', '-preset', 'slow', '-global_quality', '20', '-pix_fmt', 'nv12'];
+      return ['-c:v', 'h264_qsv', '-preset', 'slow', ...(basic ? [] : ['-profile:v', 'high']), '-global_quality', '20', '-pix_fmt', 'nv12'];
     }
     default: {
       return ['-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p'];

@@ -311,7 +311,13 @@ function getSimplePresetTargetingProfile(preset: SizeLimitedResolvedStrategy['pr
   }
 }
 
-function getTargetingProfile(strategy: SizeLimitedResolvedStrategy, budgetProfile: StrategyProfile): StrategyTargetingProfile {
+/**
+ * AMD's rate control lands above its target more often than NVENC's (+1-10% on current drivers, more on early RX 9000
+ * ones: `notes/beta6-ux/research/gpu-encoders.md`, c3), so its first try aims a little lower: one encode, not two.
+ */
+const amdFirstAttemptTargetFactor = 0.88;
+
+function getEncoderTargetingProfile(strategy: SizeLimitedResolvedStrategy, budgetProfile: StrategyProfile): StrategyTargetingProfile {
   if (strategy.controlMode === 'simple') {
     const simplePresetProfile = getSimplePresetTargetingProfile(strategy.preset);
 
@@ -334,6 +340,12 @@ function getTargetingProfile(strategy: SizeLimitedResolvedStrategy, budgetProfil
     retryMinFactor: budgetProfile.retryMinFactor,
     retryMaxFactor: budgetProfile.retryMaxFactor,
   };
+}
+
+function getTargetingProfile(strategy: SizeLimitedResolvedStrategy, budgetProfile: StrategyProfile): StrategyTargetingProfile {
+  const profile = getEncoderTargetingProfile(strategy, budgetProfile);
+  if (strategy.hardware !== 'amd') return profile;
+  return { ...profile, firstAttemptTargetFactor: Math.min(profile.firstAttemptTargetFactor, amdFirstAttemptTargetFactor) };
 }
 
 /**

@@ -37,6 +37,8 @@ export interface SizeLimitedExportOptions {
   advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
 }
 
+export type SizeLimitedGpuCapability = 'h264Nvenc' | 'av1Nvenc' | 'h264Amf' | 'av1Amf' | 'h264Qsv' | 'av1Qsv';
+
 export interface SizeLimitedEncoderCapabilities {
   h264Nvenc: boolean,
   av1Nvenc: boolean,
@@ -50,6 +52,8 @@ export interface SizeLimitedEncoderCapabilities {
   av1Qsv?: boolean | undefined,
   /** Logical CPU threads, used to decide whether CPU AV1 is quick enough to prefer. */
   cpuThreads?: number | undefined,
+  /** GPU encoders that open with their basic settings but not the tuned ones (an older card or driver). */
+  basicSettingsOnly?: readonly SizeLimitedGpuCapability[] | undefined,
 }
 
 export type SizeLimitedStrategyId =
@@ -114,6 +118,8 @@ export interface SizeLimitedResolvedStrategy {
    * encode. A 2-pass GPU strategy instead runs once with the encoder's own full multipass.
    */
   encoderMultipass?: boolean | undefined,
+  /** A GPU encoder run with only its basic settings, because this card or driver turned the tuned ones down. */
+  basicEncoderSettings?: boolean | undefined,
 }
 
 export interface SizeLimitedRetryStep {

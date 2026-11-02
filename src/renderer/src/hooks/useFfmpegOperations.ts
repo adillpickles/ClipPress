@@ -16,8 +16,8 @@ import { needsSmartCut, getCodecParams } from '../smartcut';
 import { getGuaranteedSegments, isDurationValid } from '../segments';
 import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } from '../textOverlays';
 import { buildOverlayImageInputArgs, getRelativeSegmentOverlapWindow } from '../exportSegmentMath';
-import { getHardwareDecodeArgs, getRegularExportVideoArgs, pickGpuEncoder } from '../gpuEncoders';
-import { canUseHardwareDecode, getSizeLimitedEncoderCapabilities, markGpuEncoderFailed, runWithGpuFallbacks } from '../sizeLimitedExport';
+import { getHardwareDecodeArgs, getRegularExportVideoArgs, maxGpuH264Side, pickGpuEncoder } from '../gpuEncoders';
+import { canUseHardwareDecode, getSizeLimitedEncoderCapabilities, markGpuEncoderBasicOnly, markGpuEncoderFailed, runWithGpuFallbacks } from '../sizeLimitedExport';
 import { getSegmentCropFilter } from '../segmentCrop';
 import { getSizeLimitedRotationArgs } from '../sizeLimitedFfmpegArgs';
 import { getAudioTempoFilter, getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from '../segmentSpeed';
@@ -774,7 +774,14 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         };
 
         // Re-encode on the GPU's H.264 encoder when there is one; see runWithGpuFallbacks for recovery.
-        let gpuH264 = exportGpuAcceleration ? pickGpuEncoder(await getSizeLimitedEncoderCapabilities(), 'h264') : undefined;
+        // Not above 4096 on a side, which no GPU's H.264 encoder takes (the CPU's does).
+        const fitsGpuH264 = (videoWidth ?? 0) <= maxGpuH264Side && (videoHeight ?? 0) <= maxGpuH264Side;
+        const pickGpuH264 = async () => {
+          const capabilities = await getSizeLimitedEncoderCapabilities();
+          const gpu = pickGpuEncoder(capabilities, 'h264');
+          return gpu == null ? undefined : { ...gpu, basic: capabilities.basicSettingsOnly?.includes(gpu.capability) === true };
+        };
+        let gpuH264 = exportGpuAcceleration && fitsGpuH264 ? await pickGpuH264() : undefined;
         const hardwareDecode = canUseHardwareDecode({ enabled: exportGpuAcceleration, inputCount: 1, width: videoWidth, height: videoHeight });
 
         return await pMap(segments, async (segment, index) => {
@@ -837,7 +844,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
             ...(chaptersPath != null ? getChaptersInputArgs(chaptersPath) : []),
             '-filter_complex', filterGraph,
             '-map', videoOutputLabel,
-            ...getRegularExportVideoArgs(gpuH264?.encoder),
+            ...getRegularExportVideoArgs(gpuH264?.encoder, { basic: gpuH264?.basic }),
             ...mapStreamsArgs,
             ...customTagsArgs,
             ...customParamsArgs,
@@ -869,8 +876,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
               onGpuEncoderFailed: async (error) => {
                 if (gpuH264 == null) return false;
                 console.warn(`${gpuH264.encoder} failed; continuing on the next encoder`, error);
-                markGpuEncoderFailed(gpuH264.encoder);
-                gpuH264 = pickGpuEncoder(await getSizeLimitedEncoderCapabilities(), 'h264');
+                // First the same encoder with its basic settings, which an older card or driver may need.
+                if (gpuH264.basic) markGpuEncoderFailed(gpuH264.encoder);
+                else markGpuEncoderBasicOnly(gpuH264.encoder);
+                gpuH264 = await pickGpuH264();
                 return true;
               },
             });

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildSizeLimitedVideoFilter,
   buildSizeLimitedVideoTransformFilters,
+  fitVideoProfileToEncoder,
   getSizeLimitedDisplayDimensions,
   getSizeLimitedSimpleFpsOptions,
   getSizeLimitedSimpleResolutionOptions,
@@ -389,5 +390,40 @@ describe('size-limited transform filters', () => {
     };
 
     expect(buildSizeLimitedVideoFilter({ videoProfile })).toBe('fps=30,scale=1920:1080:flags=lanczos+accurate_rnd');
+  });
+});
+
+describe('fitVideoProfileToEncoder', () => {
+  const amdAv1 = { alignWidth: 64, alignHeight: 16 };
+  const gpuH264 = { alignWidth: 2, alignHeight: 2, maxSide: 4096 };
+  const keepSource = { outputWidth: undefined, outputHeight: undefined, outputFps: undefined };
+
+  it('scales 1440x1080 to the nearest 64x16 size of the same shape, with nothing cropped', () => {
+    expect(fitVideoProfileToEncoder({ videoProfile: keepSource, displayDimensions: { width: 1440, height: 1080 }, rules: amdAv1 }))
+      .toEqual({ ...keepSource, outputWidth: 1408, outputHeight: 1056, fillOutput: true });
+  });
+
+  it('crops 8 rows of 1080p for AMD AV1 rather than padding it to 1082', () => {
+    expect(fitVideoProfileToEncoder({ videoProfile: { ...keepSource, outputWidth: 1920, outputHeight: 1080 }, displayDimensions: { width: 1920, height: 1080 }, rules: amdAv1 }))
+      .toMatchObject({ outputWidth: 1920, outputHeight: 1072, fillOutput: true });
+  });
+
+  it('crops at most a sliver of a portrait video', () => {
+    const fitted = fitVideoProfileToEncoder({ videoProfile: keepSource, displayDimensions: { width: 1080, height: 1920 }, rules: amdAv1 });
+    expect(fitted.outputWidth! % 64).toBe(0);
+    expect(fitted.outputHeight! % 16).toBe(0);
+    expect(Math.abs((fitted.outputHeight! / fitted.outputWidth!) - (1920 / 1080)) / (1920 / 1080)).toBeLessThanOrEqual(0.01);
+  });
+
+  it('leaves sizes the encoder takes alone', () => {
+    const profile = { ...keepSource, outputWidth: 1280, outputHeight: 720 };
+    expect(fitVideoProfileToEncoder({ videoProfile: profile, displayDimensions: { width: 1920, height: 1080 }, rules: amdAv1 })).toBe(profile);
+    expect(fitVideoProfileToEncoder({ videoProfile: keepSource, displayDimensions: { width: 1920, height: 1080 }, rules: gpuH264 })).toBe(keepSource);
+    expect(fitVideoProfileToEncoder({ videoProfile: keepSource, displayDimensions: { width: 1440, height: 1080 }, rules: undefined })).toBe(keepSource);
+  });
+
+  it('scales a super-ultrawide recording down to the 4096 GPU H.264 takes', () => {
+    expect(fitVideoProfileToEncoder({ videoProfile: keepSource, displayDimensions: { width: 5120, height: 1440 }, rules: gpuH264 }))
+      .toEqual({ ...keepSource, outputWidth: 4096, outputHeight: 1152 });
   });
 });
