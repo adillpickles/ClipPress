@@ -7,17 +7,17 @@ with this updater; an older EXE cannot acquire an updater on its own.
 
 ## Settings
 
-In **Settings > App updates**, choose either:
+In **Settings > Updates**, **When an update is found** offers:
 
-- **Automatic (recommended)**: check after the editor is ready, download in the
+- **Download it (recommended)**: check after the editor is ready, download in the
   background, and install on a normal exit. The next launch uses the new version.
-- **Ask before downloading**: show a small update notice first. **Download update**
+- **Ask me first**: show a small update notice. **Download update**
   approves the download and installation on a normal exit.
 
-Turn off **Check automatically** to use only **Help > Check for updates**.
-Previously disabled update checking stays disabled after upgrading. Turning
-checking off or switching to Ask pauses installation of an already downloaded
-automatic update; **Install when I close ClipPress** approves it again.
+Turn off **Check for updates automatically** to use only **Help > Check for
+updates**. Previously disabled update checking stays disabled after upgrading.
+Turning checking off or switching to **Ask me first** pauses installation of an
+already downloaded update; **Install when I close ClipPress** approves it again.
 
 The check starts eight seconds after the renderer is ready, once per session. It
 does not delay opening the editor. There is no forced restart or automatic reopen
@@ -36,15 +36,15 @@ installing deletes: a `config.json` there that ClipPress could not move to the
 app-data folder when it started (for example because the file was in use), or a
 `--config-dir` folder inside the installation folder, however its path is written
 (through a junction or link, a short name, a `\\?\` path, or a network path to the
-same drive). **Settings > App updates** says so. ClipPress tries the move again at
+same drive). **Settings > Updates** says so. ClipPress tries the move again at
 its next start; a `--config-dir` folder you have to move yourself. Until you do,
 the installer refuses to run, too, even when you start it by hand.
 
 ## Closing and unsaved changes
 
-Projects save automatically shortly after each edit (Settings: **Auto save project
-file?**, on by default; with it off, nothing is saved for you). A project file is
-the same file however its path is written (in another case, or through another
+Projects save automatically shortly after each edit (**Settings > Projects > Save
+edits automatically**, on by default; with it off, nothing is saved for you). A
+project file is the same file however its path is written (in another case, or through another
 name of its folder), so an older open of it can never write over a newer one. That
 holds even if its folder could not be reached for a while, like a network drive
 that was reconnecting: ClipPress looks again before such a save. Closing ClipPress in any way
@@ -90,7 +90,9 @@ there. Updates keep everything else:
   `config.json` found next to an installed executable, which is moved there; the
   installer also copies it, and the other settings files next to it, there before
   it deletes the installation folder, and installs nothing if it cannot).
-- Projects are saved next to the media file, or in the working folder you chose.
+- Projects (your edits) are kept in a `Projects` folder inside the settings folder
+  by default. **Settings > Projects > Where edits are kept** can keep them next to
+  the recording, in both places, or in the export folder instead.
 - Uninstalling keeps settings unless you delete the app-data folder yourself.
 
 Do not keep media, projects, exports, or a `--config-dir` folder inside the
@@ -135,7 +137,8 @@ Before the next preview release:
 3. Build with `yarn pack-win`; keep the generated assets together.
 4. Publish the matching tag only after QA approval, then test discovery from the
    previous installed version against the real GitHub feed.
-5. Update the website download links to offer the installer and portable EXE.
+5. The website's download follows the newest release by itself. Move `PREVIEW` in
+   `site/src/site.config.ts` to the new release, as its fallback.
 
 Windows builds currently use the project's existing unsigned packaging. SHA-512
 verification checks the release artifact; it does not substitute for publisher
@@ -147,9 +150,9 @@ The updater and NSIS behavior follow the [electron-builder auto-update guide](ht
 ## Manual QA
 
 - Install, launch, and confirm the editor opens before the update check.
-- In Automatic mode, keep editing while an update downloads. Close normally and
-  reopen; confirm the new version and retained settings/projects.
-- In Ask mode, confirm no installer downloads before **Download update**.
+- With **Download it (recommended)**, keep editing while an update downloads.
+  Close normally and reopen; confirm the new version and retained settings/projects.
+- With **Ask me first**, confirm no installer downloads before **Download update**.
 - With an update waiting, make an edit and close at once; reopen and confirm the
   edit was saved. Make the project folder read-only, edit, close, and confirm
   **Cancel** keeps ClipPress open and does not install the update.
