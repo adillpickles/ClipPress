@@ -121,7 +121,7 @@ describe('getRegularExportVideoArgs', () => {
     expect(getRegularExportVideoArgs('h264_nvenc')).toEqual(expect.arrayContaining(['h264_nvenc', '-cq', '19']));
     expect(getRegularExportVideoArgs('h264_amf')).toEqual(expect.arrayContaining(['h264_amf', '-rc', 'cqp']));
     expect(getRegularExportVideoArgs('h264_qsv')).toEqual(expect.arrayContaining(['h264_qsv', '-global_quality', '20']));
-    expect(getRegularExportVideoArgs(undefined)).toEqual(['-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p']);
+    expect(getRegularExportVideoArgs(undefined)).toEqual(['-c:v', 'libx264', '-preset', 'faster', '-crf', '18', '-pix_fmt', 'yuv420p']);
   });
 });
 

@@ -19,7 +19,7 @@ function getArgValue(args: string[], flag: string) {
 }
 
 describe('getResolvedVideoArgs', () => {
-  it('keeps max quality on svt-av1 two-pass with tune=0 and long keyint', () => {
+  it('keeps max quality on svt-av1 with tune=0 and long keyint', () => {
     const strategy = resolveSizeLimitedStrategy({
       controlMode: 'simple',
       preset: 'max_quality',
@@ -32,7 +32,7 @@ describe('getResolvedVideoArgs', () => {
     const args = getResolvedVideoArgs({
       strategy,
       videoBitrate: 4_000_000,
-      twoPass: true,
+      twoPass: false,
       videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
       sourceFps: 60,
       outputPlaybackRate: 1,
@@ -41,6 +41,52 @@ describe('getResolvedVideoArgs', () => {
     expect(getArgValue(args, '-c:v')).toBe('libsvtav1');
     expect(getArgValue(args, '-preset')).toBe('5');
     expect(getArgValue(args, '-svtav1-params')).toBe('tune=0:keyint=600');
+  });
+
+  it('turns on quantisation matrices for quality and fast svt-av1 only', () => {
+    const argsFor = (preset: 'quality' | 'fast', controlMode: 'simple' | 'advanced' = 'simple') => getResolvedVideoArgs({
+      strategy: resolveSizeLimitedStrategy({
+        controlMode,
+        preset,
+        advancedEncoder: 'av1_cpu',
+        advancedTwoPass: false,
+        ...defaultStrategyArgs,
+        capabilities: { h264Nvenc: false, av1Nvenc: false, libx264: true, libsvtav1: true },
+      }),
+      videoBitrate: 4_000_000,
+      twoPass: false,
+      videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
+      sourceFps: 60,
+      outputPlaybackRate: 1,
+    });
+
+    expect(getArgValue(argsFor('quality'), '-preset')).toBe('8');
+    expect(getArgValue(argsFor('quality'), '-svtav1-params')).toBe('enable-qm=1');
+    expect(getArgValue(argsFor('fast'), '-svtav1-params')).toBe('enable-qm=1');
+    expect(argsFor('quality', 'advanced')).not.toContain('-svtav1-params');
+  });
+
+  it('runs max quality h264 cpu two-pass at slow with the quality params', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'max_quality',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: { h264Nvenc: false, av1Nvenc: false, libx264: true, libsvtav1: false },
+    });
+    const args = getResolvedVideoArgs({
+      strategy,
+      videoBitrate: 4_000_000,
+      twoPass: true,
+      videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
+      sourceFps: 60,
+      outputPlaybackRate: 1,
+    });
+
+    expect(strategy.executionMode).toBe('ffmpeg_two_pass');
+    expect(getArgValue(args, '-preset')).toBe('slow');
+    expect(getArgValue(args, '-x264-params')).toBe('aq-mode=3:aq-strength=0.85:deblock=-1,-1:rc-lookahead=28:me=umh:subme=7:ref=3');
   });
 
   it('makes fast av1 nvenc clearly speed-first', () => {

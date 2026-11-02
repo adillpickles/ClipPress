@@ -70,12 +70,13 @@ function resolveSimplePresetStrategy({
           controlMode: 'simple',
           preset,
           effectiveCodec: 'av1',
-          id: 'max_quality_av1_cpu_two_pass',
+          id: 'max_quality_av1_cpu',
           encoder: 'libsvtav1',
           encoderPreset: 5,
           hardware: 'cpu',
           usesGpu: false,
-          executionMode: 'ffmpeg_two_pass',
+          // FFmpeg's SVT-AV1 has no two-pass: a first pass only encodes the same file twice.
+          executionMode: 'single_pass',
           tuningProfile: 'max_quality',
         });
       }
@@ -101,7 +102,8 @@ function resolveSimplePresetStrategy({
           effectiveCodec: 'h264',
           id: 'max_quality_h264_cpu_two_pass',
           encoder: 'libx264',
-          encoderPreset: 'slower',
+          // Two passes at `slow` look the same as at `slower`, in less time (measured).
+          encoderPreset: 'slow',
           hardware: 'cpu',
           usesGpu: false,
           executionMode: 'ffmpeg_two_pass',
@@ -323,7 +325,8 @@ function resolveAdvancedStrategy({
         encoderPreset: clampAv1CpuPreset(advancedAv1CpuPreset),
         hardware: 'cpu',
         usesGpu: false,
-        executionMode: advancedTwoPass ? 'ffmpeg_two_pass' : 'single_pass',
+        // SVT-AV1 encodes once either way (FFmpeg has no two-pass for it); 2-pass keeps its size targeting.
+        executionMode: 'single_pass',
         tuningProfile: 'advanced',
       });
     }

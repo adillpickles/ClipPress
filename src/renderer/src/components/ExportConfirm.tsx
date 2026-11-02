@@ -933,7 +933,7 @@ function ExportConfirm({
   const onSizeLimitedAdvancedTwoPassHelpPress = useCallback(() => {
     showHelpText({
       text: t(
-        'Turn this on for 2-pass encoding. CPU encoders run FFmpeg 2-pass and show Pass 1/2 and Pass 2/2 during export. NVIDIA GPUs run their built-in full multipass in a single encode, which is as good and takes about half the time; AMD and Intel GPUs encode once.',
+        'Turn this on for 2-pass encoding. H.264 CPU runs FFmpeg 2-pass and shows Pass 1/2 and Pass 2/2 during export. NVIDIA GPUs run their built-in full multipass in a single encode, which is as good and takes about half the time. AV1 CPU and AMD and Intel GPUs encode once.',
       ),
     });
   }, [showHelpText, t]);

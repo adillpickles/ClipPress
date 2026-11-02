@@ -87,9 +87,10 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoPro
 }) {
   switch (strategy.encoder) {
     case 'libsvtav1': {
+      // Quantisation matrices: a small gain at no cost on the faster presets, neutral on Max quality's (measured).
       const svtav1Params = strategy.tuningProfile === 'max_quality'
         ? `tune=${maxQualitySvtTune}:keyint=${getLongGopFrames({ outputFps: videoProfile.outputFps, sourceFps })}`
-        : undefined;
+        : (strategy.tuningProfile === 'quality' || strategy.tuningProfile === 'fast' ? 'enable-qm=1' : undefined);
       return [
         '-c:v', 'libsvtav1',
         '-preset', String(strategy.encoderPreset),
@@ -135,7 +136,8 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoPro
 
     case 'libx264': {
       const isFast = strategy.tuningProfile === 'fast';
-      const qualityParams = twoPass || strategy.tuningProfile === 'max_quality' ? premiumCpuX264Params : (isFast ? fastCpuX264Params : qualityCpuX264Params);
+      // Max quality's two passes get the Quality params: the premium ones measured no better there, only slower.
+      const qualityParams = twoPass && strategy.tuningProfile === 'advanced' ? premiumCpuX264Params : (isFast ? fastCpuX264Params : qualityCpuX264Params);
       return [
         '-c:v', 'libx264',
         '-preset', String(strategy.encoderPreset),

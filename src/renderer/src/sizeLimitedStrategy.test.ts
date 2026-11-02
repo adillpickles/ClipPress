@@ -39,10 +39,11 @@ describe('resolveSizeLimitedStrategy', () => {
       capabilities: fullCapabilities,
     });
 
-    expect(strategy.id).toBe('max_quality_av1_cpu_two_pass');
+    expect(strategy.id).toBe('max_quality_av1_cpu');
     expect(strategy.effectiveCodec).toBe('av1');
     expect(strategy.encoderPreset).toBe(5);
-    expect(strategy.executionMode).toBe('ffmpeg_two_pass');
+    // FFmpeg's SVT-AV1 has no two-pass, so a second run would only repeat the encode.
+    expect(strategy.executionMode).toBe('single_pass');
   });
 
   it('uses av1 nvenc for quality when available', () => {
@@ -289,7 +290,7 @@ describe('resolveSizeLimitedStrategy', () => {
 
     expect(strategy.id).toBe('advanced_av1_cpu_two_pass');
     expect(strategy.encoder).toBe('libsvtav1');
-    expect(strategy.executionMode).toBe('ffmpeg_two_pass');
+    expect(strategy.executionMode).toBe('single_pass');
     expect(strategy.encoderPreset).toBe(4);
   });
 

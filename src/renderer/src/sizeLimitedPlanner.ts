@@ -72,7 +72,7 @@ type CalibratedStrategyId = Exclude<SizeLimitedStrategyId,
   | 'fast_h264_gpu' | 'fast_av1_cpu' | 'fast_h264_cpu' | 'advanced_av1_gpu' | 'advanced_h264_gpu'>;
 
 const calibratedProfiles: Record<CalibratedStrategyId, StrategyProfile> = {
-  max_quality_av1_cpu_two_pass: createProfile({
+  max_quality_av1_cpu: createProfile({
     overheadRatio: 0.017,
     minOverheadBytes: 20 * 1024,
     maxOverheadBytes: 160 * 1024,

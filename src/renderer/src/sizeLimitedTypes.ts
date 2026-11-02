@@ -57,7 +57,7 @@ export interface SizeLimitedEncoderCapabilities {
 }
 
 export type SizeLimitedStrategyId =
-  | 'max_quality_av1_cpu_two_pass'
+  | 'max_quality_av1_cpu'
   | 'max_quality_av1_nvenc_two_pass'
   | 'max_quality_h264_cpu_two_pass'
   | 'max_quality_h264_nvenc_two_pass'

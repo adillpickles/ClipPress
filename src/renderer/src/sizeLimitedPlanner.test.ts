@@ -64,7 +64,7 @@ describe('planSizeLimitedEncode', () => {
 
     expect(plan.initialAttempt.audioBitrate).toBeLessThan(plan.initialAttempt.videoBitrate);
     expect(plan.initialAttempt.audioBitrate).toBeLessThanOrEqual(64_000);
-    expect(strategy.id).toBe('max_quality_av1_cpu_two_pass');
+    expect(strategy.id).toBe('max_quality_av1_cpu');
     expect(plan.firstAttemptTargetBytes).toBeLessThan(plan.hardTargetBytes);
   });
 

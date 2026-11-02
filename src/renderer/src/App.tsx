@@ -3753,8 +3753,8 @@ function App() {
           );
         } else {
           switch (strategy.id) {
-            case 'max_quality_av1_cpu_two_pass': {
-              notices.add(i18n.t('Max Quality used CPU AV1 (SVT-AV1) 2-pass for the strongest low-bitrate result.'));
+            case 'max_quality_av1_cpu': {
+              notices.add(i18n.t('Max Quality used CPU AV1 (SVT-AV1) for the strongest low-bitrate result.'));
               break;
             }
             case 'max_quality_av1_nvenc_two_pass':
