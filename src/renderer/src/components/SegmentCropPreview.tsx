@@ -22,7 +22,7 @@ const corners: CropCorner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-r
  * around it. So the texts (drawn on the exported picture) never move while cropping, and the picture keeps its size
  * when editing starts.
  */
-export default function SegmentCropPreview({ children, frameContent, videoWidth, videoHeight, rotation, crop, editing, clipLabel, onChange, onDone, doneKeys, finishRef }: {
+export default function SegmentCropPreview({ children, frameContent, videoWidth, videoHeight, rotation, crop, editing, clipLabel, onChange, onDone, doneKeys, finishRef, keysBlocked = false }: {
   children: ReactNode,
   /** Drawn in the crop frame while editing, under its handles (the texts, which the export puts on the cropped picture). */
   frameContent?: ReactNode,
@@ -39,9 +39,15 @@ export default function SegmentCropPreview({ children, frameContent, videoWidth,
   doneKeys?: string | undefined,
   /** Set while editing: finishes like Done (a zoom still settling is kept), for the shortcut that closes it. */
   finishRef?: MutableRefObject<(() => void) | undefined> | undefined,
+  /** A dialog or sheet is open over it: its Escape and Enter are that dialog's. */
+  keysBlocked?: boolean,
 }) {
   const { t } = useTranslation();
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const keysBlockedRef = useRef(keysBlocked);
+  useEffect(() => {
+    keysBlockedRef.current = keysBlocked;
+  }, [keysBlocked]);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [draft, setDraft] = useState<SegmentCrop>();
@@ -137,6 +143,11 @@ export default function SegmentCropPreview({ children, frameContent, videoWidth,
       setDragging(false);
     };
     const keyDown = (event: KeyboardEvent) => {
+      if (keysBlockedRef.current || (event.key !== 'Escape' && event.key !== 'Enter')) return;
+      // A focused field, or a menu or dialog open over it, keeps its own Enter and Escape.
+      const { target } = event;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable)) return;
+      if (target instanceof Element && target.closest('[role="dialog"], [role="menu"], [role="listbox"]') != null) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();

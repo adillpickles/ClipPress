@@ -2693,18 +2693,19 @@ function App() {
       const sendErrorReport = await showExportFailedDialog({
         fileFormat,
         safeOutputFileName,
+        simpleMode,
       });
       if (sendErrorReport) openSendReportDialogWithState(err);
     },
-    [fileFormat, safeOutputFileName, openSendReportDialogWithState],
+    [fileFormat, safeOutputFileName, simpleMode, openSendReportDialogWithState],
   );
 
   const handleConcatFailed = useCallback(
     async (err: unknown, reportState: object) => {
-      const sendErrorReport = await showConcatFailedDialog({ fileFormat });
+      const sendErrorReport = await showConcatFailedDialog({ fileFormat, simpleMode });
       if (sendErrorReport) openSendConcatReportDialogWithState(err, reportState);
     },
-    [fileFormat, openSendConcatReportDialogWithState],
+    [fileFormat, simpleMode, openSendConcatReportDialogWithState],
   );
 
   /** The shelf moves an exported clip to the bottom and doesn't offer its exports as clips. */
@@ -4058,6 +4059,7 @@ function App() {
 
             const result = await exportSizeLimitedSegment({
               filePath,
+              signal: exportAbort.signal,
               gpuAcceleration: exportGpuAcceleration,
               outPath,
               segment,
@@ -4131,6 +4133,7 @@ function App() {
 
           const mergedResult = await exportSizeLimitedMerge({
             filePath,
+            signal: exportAbort.signal,
             gpuAcceleration: exportGpuAcceleration,
             outPath: mergedOutFilePath,
             segments: sizeLimitedSegmentsForExport,
@@ -4248,7 +4251,7 @@ function App() {
 
       if (hasOverlayClips || hasSegmentSpeedChanges || hasSegmentCropChanges) {
         if ((hasSegmentSpeedChanges || hasSegmentCropChanges) && !['mp4', 'mov', 'matroska'].includes(fileFormat ?? '')) {
-          throw new UserFacingError(i18n.t('Speed and crop changes require MP4, MOV or MKV output. Choose one of these formats or use size-limited export.'));
+          throw new UserFacingError(i18n.t('Speed and crop changes need an MP4, MOV or MKV file. Choose one of these, or Fit a file size.'));
         }
         if (
           activeVideoStream == null
@@ -5075,6 +5078,8 @@ function App() {
           });
         }
       } catch (err) {
+        // The user's own Cancel isn't a failure.
+        if (isAbortedError(err)) return;
         showOsNotification(i18n.t('Failed to extract frames'));
         handleError({ err, title: i18n.t('Failed to extract frames') });
       } finally {
@@ -5301,7 +5306,7 @@ function App() {
             edl.length > 0
             && (enableImportChapters === 'always'
               || (enableImportChapters === 'ask'
-                && (await askForImportChapters())))
+                && (await askForImportChapters({ simpleMode }))))
           ) {
             console.log('Convert chapters to segments', edl);
             loadCutSegments({ segments: edl, append: false });
@@ -6524,7 +6529,8 @@ function App() {
       removeCurrentSegment: () => removeSegment(currentSegIndexSafe, true),
       removeSelectedClips,
       startOver,
-      removeCurrentCutpoint: () => removeSegment(currentSegIndexSafe),
+      // In the simple editor Backspace deletes like Delete: a clip there never becomes a lone marker.
+      removeCurrentCutpoint: () => (simpleMode ? removeSelectedClips() : removeSegment(currentSegIndexSafe)),
       undo: () => editHistoryOrder.undo(editHistories),
       redo: () => editHistoryOrder.redo(editHistories),
       labelCurrentSegment,
@@ -6592,7 +6598,8 @@ function App() {
       shiftAllSegmentTimes,
       increaseVolume: () => setPlaybackVolume((val) => Math.min(1, val + 0.07)),
       decreaseVolume: () => setPlaybackVolume((val) => Math.max(0, val - 0.07)),
-      makeCursorTimeZero: () => setStartTimeOffset(-commandedTimeRef.current),
+      // Advanced mode only: the simple editor has no way to set the clock back.
+      makeCursorTimeZero: () => { if (!simpleMode) setStartTimeOffset(-commandedTimeRef.current); },
       toggleMuted,
       copySegmentsToClipboard,
       reloadFile: () => setCacheBuster((v) => v + 1),
@@ -7530,6 +7537,7 @@ function App() {
                             onDone={() => setEditingCropSegmentId(undefined)}
                             doneKeys={keyBindingByAction['editCurrentSegmentCrop']?.keys}
                             finishRef={cropFinishRef}
+                            keysBlocked={exportConfirmOpen || streamsSelectorShown || settingsVisible || keyboardShortcutsVisible}
                             frameContent={editingCropSegment != null && activeVideoStream?.width != null && activeVideoStream.height != null && (
                               // The export crops first and then draws the texts, so while cropping they sit in the frame.
                               <TextOverlayEditor

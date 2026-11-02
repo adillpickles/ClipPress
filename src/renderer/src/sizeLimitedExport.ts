@@ -688,17 +688,21 @@ async function executeAttempts({
   strategy,
   buildAttempt,
   onProgress,
+  signal,
 }: {
   plan: ReturnType<typeof planSizeLimitedEncode>,
   strategy: SizeLimitedResolvedStrategy,
   buildAttempt: (attempt: SizeLimitedRetryStep, tempPath?: string) => Promise<AttemptFiles>,
   onProgress: (progress: number, metadata?: SizeLimitedProgressMetadata) => void,
+  /** Cancel: FFmpeg is stopped while it runs; this catches a Cancel between its runs. */
+  signal?: AbortSignal | undefined,
 }) {
   return runSizeLimitedAttempts({
     plan,
     strategy,
     buildAttempt: (attempt) => buildAttempt(attempt),
     runAttempt: async (attemptFiles, attempt, retryReason) => {
+      signal?.throwIfAborted();
       if (strategy.executionMode === 'ffmpeg_two_pass') {
         const { pass1Args } = attemptFiles;
         if (pass1Args == null) throw new UserFacingError('2-pass encoding was not configured correctly');
@@ -946,6 +950,7 @@ export async function exportSizeLimitedSegment({
   overlayVideoWidth,
   overlayVideoHeight,
   gpuAcceleration = true,
+  signal,
 }: {
   filePath: string,
   outPath: string,
@@ -983,6 +988,8 @@ export async function exportSizeLimitedSegment({
   gpuAcceleration?: boolean | undefined,
   /** The recording's audio tracks when it has two or more: mixed into the export's one track (exportSegmentMath.ts). */
   mixedAudioTracks?: readonly MixedAudioTrack[] | undefined,
+  /** The export's Cancel. */
+  signal?: AbortSignal | undefined,
 }) {
   await assertFileExists(filePath);
   await assertOutPathIsNotSource({ outPath, filePath });
@@ -1084,6 +1091,7 @@ export async function exportSizeLimitedSegment({
         videoStream,
         gpuFramesFormat: hardwareDecode ? getGpuFramesFormat({ videoStream, clips: [{ rate: segmentRate, duration: plannedDuration }], rotation: sourceRotation ?? rotation, sourceFps }) : undefined,
         run: (gpuFramesFormat) => executeWithRetries({
+          signal,
           outPath,
           plan,
           strategy,
@@ -1225,6 +1233,8 @@ export async function exportSizeLimitedSegment({
     await Promise.all(preparedOverlayAssets.map((asset) => deleteIfExists(asset.imagePath)));
   }
 
+  // A Cancel that came as the last run finished: the export doesn't take its place.
+  signal?.throwIfAborted();
   const { result: finalResult, postProcessingWarning } = await finalizeEncodedOutput({ result, outPath, filePath, enableOverwriteOutput });
 
   await transferTimestamps({
@@ -1275,6 +1285,7 @@ export async function exportSizeLimitedMerge({
   overlayVideoWidth,
   overlayVideoHeight,
   gpuAcceleration = true,
+  signal,
 }: {
   filePath: string,
   outPath: string,
@@ -1311,6 +1322,8 @@ export async function exportSizeLimitedMerge({
   gpuAcceleration?: boolean | undefined,
   /** The recording's audio tracks when it has two or more: mixed into the export's one track (exportSegmentMath.ts). */
   mixedAudioTracks?: readonly MixedAudioTrack[] | undefined,
+  /** The export's Cancel. */
+  signal?: AbortSignal | undefined,
 }) {
   await assertFileExists(filePath);
   await assertOutPathIsNotSource({ outPath, filePath });
@@ -1380,6 +1393,7 @@ export async function exportSizeLimitedMerge({
           sourceFps,
         }) : undefined,
         run: (gpuFramesFormat) => executeWithRetries({
+          signal,
           outPath,
           plan,
           strategy,
@@ -1512,6 +1526,8 @@ export async function exportSizeLimitedMerge({
     await Promise.all(preparedOverlayAssets.map((asset) => deleteIfExists(asset.imagePath)));
   }
 
+  // A Cancel that came as the last run finished: the export doesn't take its place.
+  signal?.throwIfAborted();
   const { result: finalResult, postProcessingWarning } = await finalizeEncodedOutput({ result, outPath, filePath, enableOverwriteOutput });
 
   const mergedDuration = segments.reduce((sum, segment) => sum + (segment.end - segment.start), 0);

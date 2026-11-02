@@ -442,7 +442,7 @@ export function useDialog() {
               </div>
               <Checkbox label={t('Move temporary preview files to the Recycle Bin')} checked={trashTmpFiles} onCheckedChange={(checked) => onChange('trashTmpFiles', checked)} />
               <Checkbox label={t('Move the original recording to the Recycle Bin')} checked={trashSourceFile} onCheckedChange={(checked) => onChange('trashSourceFile', checked)} />
-              <Checkbox label={t('Move the project file (.llc) to the Recycle Bin')} checked={trashProjectFile} onCheckedChange={(checked) => onChange('trashProjectFile', checked)} />
+              <Checkbox label={t('Move the project file to the Recycle Bin')} checked={trashProjectFile} onCheckedChange={(checked) => onChange('trashProjectFile', checked)} />
               <Checkbox label={t('Delete temporary and project files permanently if the Recycle Bin can\'t take them')} disabled={!(trashTmpFiles || trashProjectFile || trashSourceFile)} checked={deleteIfTrashFails} onCheckedChange={(checked) => onChange('deleteIfTrashFails', checked)} />
             </div>
 

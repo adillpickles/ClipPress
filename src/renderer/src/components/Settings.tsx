@@ -304,7 +304,7 @@ function Settings({
             <SettingRow
               label={t('Use the GPU')}
               description={t('Faster exports on NVIDIA, AMD or Intel graphics.')}
-              details={t('Decodes video on the graphics card and re-encodes regular exports with its H.264 encoder. ClipPress switches to the CPU automatically if the GPU fails. Size-limited exports pick their encoder from the preset.')}
+              details={t('Reads and encodes video on the graphics card, which makes most exports several times faster.')}
             >
               <Switch checked={exportGpuAcceleration} onCheckedChange={setExportGpuAcceleration} aria-label={t('Use the GPU')} />
             </SettingRow>

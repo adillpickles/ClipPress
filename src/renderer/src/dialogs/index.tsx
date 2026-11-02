@@ -238,13 +238,13 @@ export async function showRefuseToOverwrite() {
   });
 }
 
-export async function askForImportChapters() {
+export async function askForImportChapters({ simpleMode = false }: { simpleMode?: boolean } = {}) {
   const { isConfirmed } = await getSwal().Swal.fire({
     icon: 'question',
-    text: i18n.t('This file has embedded chapters. Do you want to import the chapters as cut-segments?'),
+    text: simpleMode ? i18n.t('This recording has chapter marks. Make a clip for each?') : i18n.t('This file has embedded chapters. Do you want to import the chapters as cut-segments?'),
     showCancelButton: true,
-    cancelButtonText: i18n.t('Ignore chapters'),
-    confirmButtonText: i18n.t('Import chapters'),
+    cancelButtonText: simpleMode ? i18n.t('No thanks') : i18n.t('Ignore chapters'),
+    confirmButtonText: simpleMode ? i18n.t('Make clips') : i18n.t('Import chapters'),
   });
 
   return isConfirmed;
@@ -504,8 +504,15 @@ const DifferentFileSuggestion = () => <li><Trans>Try with a <b>Different file</b
 const HelpSuggestion = () => <li><Trans>See <b>Help</b></Trans> menu</li>;
 const ErrorReportSuggestion = () => <li><Trans>If nothing helps, you can send an <b>Error report</b></Trans></li>;
 
+/** The simple editor's: one plain line (the checklist names controls it doesn't have). */
+async function showSimpleExportFailedDialog({ title }: { title: string }) {
+  const { value } = await getSwal().ReactSwal.fire({ title, html: <div>{i18n.t('Something went wrong while exporting. Try again, or send a report so it can be fixed.')}</div>, showConfirmButton: true, showCancelButton: true, cancelButtonText: i18n.t('OK'), confirmButtonText: i18n.t('Report'), reverseButtons: true, focusCancel: true });
+  return value;
+}
+
 // todo Dialog component
-export async function showExportFailedDialog({ fileFormat, safeOutputFileName }: { fileFormat: string | undefined, safeOutputFileName: boolean }) {
+export async function showExportFailedDialog({ fileFormat, safeOutputFileName, simpleMode = false }: { fileFormat: string | undefined, safeOutputFileName: boolean, simpleMode?: boolean }) {
+  if (simpleMode) return showSimpleExportFailedDialog({ title: i18n.t('Could not export this clip') });
   const html = (
     <div style={{ textAlign: 'left' }}>
       <Trans>Try one of the following before exporting again:</Trans>
@@ -528,7 +535,8 @@ export async function showExportFailedDialog({ fileFormat, safeOutputFileName }:
 }
 
 // todo Dialog component
-export async function showConcatFailedDialog({ fileFormat }: { fileFormat: string | undefined }) {
+export async function showConcatFailedDialog({ fileFormat, simpleMode = false }: { fileFormat: string | undefined, simpleMode?: boolean }) {
+  if (simpleMode) return showSimpleExportFailedDialog({ title: i18n.t('Could not join these clips') });
   const html = (
     <div style={{ textAlign: 'left' }}>
       <Trans>Try each of the following before merging again:</Trans>

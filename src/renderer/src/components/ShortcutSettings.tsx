@@ -163,7 +163,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, showAdvanced
     segmentMouseModifierKey, setSegmentMouseModifierKey, invertTimelineScroll, setInvertTimelineScroll, wheelSensitivity, setWheelSensitivity,
     keyboardNormalSeekSpeed, setKeyboardNormalSeekSpeed, setKeyboardSeekSpeed2, setKeyboardSeekSpeed3, setKeyboardSeekAccFactor,
     mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, keyboardSeekSpeed2, keyboardSeekSpeed3, keyboardSeekAccFactor,
-    extraMouseModifierKeys, setExtraMouseModifierKeys,
+    extraMouseModifierKeys, setExtraMouseModifierKeys, simpleMode,
   } = useUserSettings();
 
   // Shortcut changes made here can be undone and redone, with the keys Undo and Redo are set to.
@@ -349,7 +349,8 @@ export default function ShortcutSettings({ onAllShortcutsRequested, showAdvanced
       ))}
 
       <div className={styles['shortcutActions']}>
-        <Button onClick={onAllShortcutsRequested}>{t('Every action…')}</Button>
+        {/* LosslessCut's every action is advanced mode's: the simple editor's own are all above. */}
+        {!simpleMode && <Button onClick={onAllShortcutsRequested}>{t('Every action…')}</Button>}
         <ConfirmButton question={t('Reset every shortcut?')} confirmLabel={t('Reset')} onConfirm={resetAll}>{t('Reset all shortcuts')}</ConfirmButton>
       </div>
     </SettingsSearchContext.Provider>

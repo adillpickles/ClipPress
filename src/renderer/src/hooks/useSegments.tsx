@@ -377,11 +377,12 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
 
   const createSegmentsFromKeyframes = useCallback(async () => {
     const { start, end } = currentCutSegOrWholeTimeline;
-    deleteCurrentCutSeg();
     if (!videoStream) return;
     invariant(filePath != null);
     const keyframes = (await readFrames({ filePath, from: start, to: end, streamIndex: videoStream.index })).filter((frame) => frame.keyframe);
     const newSegments = mapTimesToSegments(keyframes.map((keyframe) => keyframe.time), true);
+    // Only once the new segments are in hand: no video, or a failed read, leaves the segment where it was.
+    deleteCurrentCutSeg();
     loadCutSegments({ segments: newSegments, append: true, getNextCurrentSegIndex: (edl) => edl.length - 1, clampDuration: fileDuration });
   }, [currentCutSegOrWholeTimeline, deleteCurrentCutSeg, fileDuration, filePath, loadCutSegments, videoStream]);
 

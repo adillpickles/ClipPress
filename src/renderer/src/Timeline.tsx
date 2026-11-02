@@ -413,10 +413,17 @@ function Timeline({
   const spring = useSpring(scrollLeftMotion, { damping: 100, stiffness: 1000 });
 
   useEffect(() => {
-    spring.on('change', (value) => {
+    const unsubscribe = spring.on('change', (value) => {
       if (timelineScrollerSkipEventRef.current) return; // Don't animate while zooming
-      timelineScrollerRef.current!.scrollLeft = value;
+      const scroller = timelineScrollerRef.current;
+      if (scroller != null) scroller.scrollLeft = value;
     });
+    // The spring may still be settling when the timeline goes (a recording closed mid-scroll): stopped with it, as an
+    // error from its listener would stop motion's shared frame loop, and every animation in the app with it.
+    return () => {
+      unsubscribe();
+      spring.stop();
+    };
   }, [spring]);
 
   // Pan timeline when cursor moves out of timeline window
@@ -587,6 +594,7 @@ function Timeline({
       resizingSegmentRef.current = undefined;
       setSegmentDragging(false);
       window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('blur', onMouseUp);
       window.removeEventListener('mousemove', onMouseMove);
       if (scrubbing) onScrubbingChange(false);
     }
@@ -595,6 +603,9 @@ function Timeline({
     // https://stackoverflow.com/questions/11533098/how-to-catch-mouse-up-event-outside-of-element
     // https://stackoverflow.com/questions/6073505/what-is-the-difference-between-screenx-y-clientx-y-and-pagex-y
     window.addEventListener('mouseup', onMouseUp, { once: true });
+    // The window losing focus mid-drag (Alt+Tab, a game overlay) may never see the mouse let go: the drag ends there,
+    // or the playhead would follow the pointer and playback stay paused.
+    window.addEventListener('blur', onMouseUp, { once: true });
     window.addEventListener('mousemove', onMouseMove);
   }, [extraMouseModifierKeys, fileDurationNonZero, getMouseTimelinePos, onScrubbingChange, seekAbs, segmentMouseModifierKey, setCutTime, zoom]);
 
