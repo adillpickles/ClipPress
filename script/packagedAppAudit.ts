@@ -92,7 +92,9 @@ export const bytesPerMib = 1024 * 1024;
  * actively wrong if it ever did win resolution. `typescript` is a compile-time optional
  * peer of `i18next` that nothing imports at runtime.
  */
-export const disallowedPackagedModules = ['electron', 'typescript', 'electron-devtools-installer', '@electron/get', 'extract-zip', 'node-gyp', 'npmlog'];
+// Electron's own install-time helpers (extract-zip was renamed @electron-internal/extract-zip in Electron 45), which
+// the dependency collector picks up through @electron/remote's peer dependency on electron.
+export const disallowedPackagedModules = ['electron', 'typescript', 'electron-devtools-installer', '@electron/get', 'extract-zip', '@electron-internal/extract-zip', 'undici', 'node-gyp', 'npmlog'];
 
 /**
  * Generous enough that ordinary dependency growth will not trip it, tight enough that
@@ -105,6 +107,8 @@ export const requiredResourcesByPlatform: Record<string, string[]> = {
   win32: [
     'ffmpeg.exe',
     'ffprobe.exe',
+    // Every licence, opened by Help > Licenses.
+    'licenses.txt',
     'avcodec-62.dll',
     'avdevice-62.dll',
     'avfilter-11.dll',
@@ -148,7 +152,7 @@ export function auditPackagedApp({ manifest, resourceFileNames, platform }: Pack
   if (!manifest.entries.some((entry) => entry.path === 'out/main/index.js')) {
     problems.push('app.asar is missing out/main/index.js, so the app has no main process.');
   }
-  for (const required of ['out/renderer/index.html', 'out/preload/index.cjs', 'LICENSE', 'out/licenses.txt']) {
+  for (const required of ['out/renderer/index.html', 'out/preload/index.cjs', 'LICENSE']) {
     if (!manifest.entries.some((entry) => entry.path === required)) problems.push(`app.asar is missing ${required}.`);
   }
 
