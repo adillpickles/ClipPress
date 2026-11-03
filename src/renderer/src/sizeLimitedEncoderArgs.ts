@@ -192,13 +192,41 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoPro
       ];
     }
 
+    // H.264's settings in HEVC's names. Basic: without the look-ahead, temporal AQ and B-frames as references a GTX 900
+    // or 10 card lacks for HEVC. `hvc1` so Apple's players (iPhones, Macs) play the MP4 too.
+    case 'hevc_nvenc': {
+      const isFast = strategy.tuningProfile === 'fast';
+      return [
+        '-c:v', 'hevc_nvenc',
+        '-preset', String(strategy.encoderPreset),
+        '-tune', 'hq',
+        '-profile:v', 'main',
+        '-rc', 'vbr',
+        ...(strategy.basicEncoderSettings ? ['-multipass', 'qres'] : [
+          ...getNvencMultipassArgs(strategy, { twoPass, isFast: false }),
+          '-rc-lookahead', isFast ? '12' : '20',
+          '-temporal-aq', '1',
+          '-strict_gop', '1',
+          ...(!isFast ? ['-b_ref_mode', 'middle'] : []),
+        ]),
+        '-spatial-aq', '1',
+        '-aq-strength', isFast ? '6' : '8',
+        '-pix_fmt', 'yuv420p',
+        '-tag:v', 'hvc1',
+        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: constrainedH264MaxRateFactor, bufferFactor: constrainedH264BufferFactor }),
+      ];
+    }
+
     // AMD: the quality tools OBS turns on for every AMD card (FFmpeg leaves out what a card can't do), plus its
     // pre-analysis (scene cuts, fast motion) and B-frames where the card has them, except for Fast. The pre-analysis
     // look-ahead stays below 16: a deeper one can deadlock in this FFmpeg (fixed upstream later). The basic settings
     // are the plain ones every driver accepts. `notes/beta6-ux/research/gpu-encoders.md`.
     case 'av1_amf':
-    case 'h264_amf': {
+    case 'h264_amf':
+    case 'hevc_amf': {
       const isAv1 = strategy.encoder === 'av1_amf';
+      // HEVC without B-frames: only RX 7000 and newer have them, and those encode AV1 instead.
+      const isHevc = strategy.encoder === 'hevc_amf';
       const isFast = strategy.tuningProfile === 'fast';
       const gopFrames = getLongGopFrames({ outputFps: videoProfile.outputFps, sourceFps });
       return [
@@ -206,13 +234,14 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoPro
         '-usage', 'transcoding',
         '-quality', getAmfQualityPreset(strategy.encoder, getGpuPreset(strategy)),
         ...(strategy.basicEncoderSettings ? [] : [
-          ...(isAv1 ? ['-aq_mode', 'caq'] : ['-profile:v', 'high', '-vbaq', '1', '-preencode', '1']),
+          ...(isAv1 ? ['-aq_mode', 'caq'] : ['-profile:v', isHevc ? 'main' : 'high', '-vbaq', '1', '-preencode', '1']),
           '-enforce_hrd', '1',
           '-g', String(isAv1 ? gopFrames : Math.min(gopFrames, maxAmfH264GopFrames)),
-          ...(!isFast ? ['-preanalysis', '1', '-pa_lookahead_buffer_depth', '11', '-pa_scene_change_detection_enable', '1', '-pa_high_motion_quality_boost_mode', 'auto', '-high_motion_quality_boost_enable', '1', '-bf', '2'] : []),
+          ...(!isFast ? ['-preanalysis', '1', '-pa_lookahead_buffer_depth', '11', '-pa_scene_change_detection_enable', '1', '-pa_high_motion_quality_boost_mode', 'auto', '-high_motion_quality_boost_enable', '1', ...(isHevc ? [] : ['-bf', '2'])] : []),
         ]),
         '-rc', 'vbr_peak',
         '-pix_fmt', 'nv12',
+        ...(isHevc ? ['-tag:v', 'hvc1'] : []),
         ...getBitrateWindowArgs({
           videoBitrate,
           maxRateFactor: isAv1 ? 1.08 : constrainedH264MaxRateFactor,
@@ -225,18 +254,21 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoPro
     // Intel's own recipe for its look-ahead rate control (Arc and newer; older chips turn it down and get the basic
     // settings). Never `-look_ahead 1`: Arc refuses it. `notes/beta6-ux/research/gpu-encoders.md`.
     case 'av1_qsv':
-    case 'h264_qsv': {
+    case 'h264_qsv':
+    case 'hevc_qsv': {
       const isAv1 = strategy.encoder === 'av1_qsv';
+      const isHevc = strategy.encoder === 'hevc_qsv';
       const isFast = strategy.tuningProfile === 'fast';
       return [
         '-c:v', strategy.encoder,
         '-preset', getQsvPreset(getGpuPreset(strategy)),
         ...(strategy.basicEncoderSettings ? [] : [
-          ...(isAv1 ? [] : ['-profile:v', 'high', '-bitrate_limit', '0']),
+          ...(isAv1 ? [] : (isHevc ? ['-profile:v', 'main'] : ['-profile:v', 'high', '-bitrate_limit', '0'])),
           '-g', String(getLongGopFrames({ outputFps: videoProfile.outputFps, sourceFps })),
           ...(!isFast ? ['-extbrc', '1', '-look_ahead_depth', '40', '-adaptive_i', '1', '-adaptive_b', '1', '-b_strategy', '1', '-bf', '7'] : []),
         ]),
         '-pix_fmt', 'nv12',
+        ...(isHevc ? ['-tag:v', 'hvc1'] : []),
         ...getBitrateWindowArgs({
           videoBitrate,
           maxRateFactor: isAv1 ? 1.08 : constrainedH264MaxRateFactor,

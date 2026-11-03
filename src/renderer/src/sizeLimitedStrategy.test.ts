@@ -42,8 +42,8 @@ describe('resolveSizeLimitedStrategy', () => {
     expect(strategy.id).toBe('max_quality_av1_cpu');
     expect(strategy.effectiveCodec).toBe('av1');
     expect(strategy.encoderPreset).toBe(5);
-    // FFmpeg's SVT-AV1 has no two-pass, so a second run would only repeat the encode.
-    expect(strategy.executionMode).toBe('single_pass');
+    // A real two-pass since FFmpeg 8.1.
+    expect(strategy.executionMode).toBe('ffmpeg_two_pass');
   });
 
   it('uses av1 nvenc for quality when available', () => {
@@ -107,7 +107,7 @@ describe('resolveSizeLimitedStrategy', () => {
     const av1 = resolveFast({ ...noGpu, libx264: true, libsvtav1: true });
     expect(av1.id).toBe('fast_av1_cpu');
     expect(av1.encoder).toBe('libsvtav1');
-    expect(av1.encoderPreset).toBe(10);
+    expect(av1.encoderPreset).toBe(9);
 
     const h264 = resolveFast({ ...noGpu, libx264: true, libsvtav1: false });
     expect(h264.id).toBe('fast_h264_cpu');
@@ -134,6 +134,32 @@ describe('resolveSizeLimitedStrategy', () => {
       expect(strategy.usesGpu).toBe(true);
       expect(strategy.plannerProfileId).toBe(preset === 'fast' ? 'fast_av1_nvenc' : 'quality_av1_nvenc');
     }
+  });
+
+  it('goes GPU AV1, then GPU HEVC, then CPU AV1 on a strong CPU, then GPU H.264 (owner, 2026-11-03)', () => {
+    const resolve = (preset: 'quality' | 'fast', capabilities: SizeLimitedEncoderCapabilities) => resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset,
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities,
+    });
+    // An RTX 30-series card: HEVC and H.264, no AV1.
+    const rtx30 = { ...noGpu, h264Nvenc: true, hevcNvenc: true, libx264: true, libsvtav1: true, cpuThreads: 16 };
+
+    expect(resolve('quality', { ...rtx30, av1Nvenc: true }).encoder).toBe('av1_nvenc');
+    expect(resolve('quality', rtx30)).toMatchObject({ id: 'quality_hevc_gpu', encoder: 'hevc_nvenc', effectiveCodec: 'hevc', usesGpu: true });
+    expect(resolve('quality', { ...rtx30, hevcNvenc: false }).id).toBe('quality_av1_cpu');
+    expect(resolve('quality', { ...rtx30, hevcNvenc: false, cpuThreads: 4 }).id).toBe('quality_h264_gpu');
+    expect(resolve('fast', rtx30)).toMatchObject({ id: 'fast_hevc_gpu', encoder: 'hevc_nvenc', encoderPreset: 'p3' });
+    expect(resolve('fast', { ...rtx30, hevcNvenc: false }).id).toBe('fast_h264_gpu');
+    // An RX 6000 card, and an older Intel chip.
+    expect(resolve('quality', { ...noGpu, h264Amf: true, hevcAmf: true, libx264: true, libsvtav1: true }).encoder).toBe('hevc_amf');
+    expect(resolve('fast', { ...noGpu, h264Qsv: true, hevcQsv: true, libx264: true, libsvtav1: true }).encoder).toBe('hevc_qsv');
+    // Max quality stays on the CPU's SVT-AV1.
+    expect(resolve('quality', rtx30).hardware).toBe('nvidia');
+    expect(resolveSizeLimitedStrategy({ controlMode: 'simple', preset: 'max_quality', advancedEncoder: 'h264_nvenc', advancedTwoPass: false, ...defaultStrategyArgs, capabilities: rtx30 }).encoder).toBe('libsvtav1');
   });
 
   it('prefers a discrete NVIDIA GPU over an Intel iGPU', () => {
@@ -290,7 +316,7 @@ describe('resolveSizeLimitedStrategy', () => {
 
     expect(strategy.id).toBe('advanced_av1_cpu_two_pass');
     expect(strategy.encoder).toBe('libsvtav1');
-    expect(strategy.executionMode).toBe('single_pass');
+    expect(strategy.executionMode).toBe('ffmpeg_two_pass');
     expect(strategy.encoderPreset).toBe(4);
   });
 

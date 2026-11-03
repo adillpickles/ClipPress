@@ -362,6 +362,9 @@ const capabilityByEncoder = {
   av1_amf: 'av1Amf',
   h264_qsv: 'h264Qsv',
   av1_qsv: 'av1Qsv',
+  hevc_nvenc: 'hevcNvenc',
+  hevc_amf: 'hevcAmf',
+  hevc_qsv: 'hevcQsv',
 } as const satisfies Record<SizeLimitedResolvedStrategy['encoder'], keyof SizeLimitedEncoderCapabilities>;
 
 function isCaseRunnable(strategy: SizeLimitedResolvedStrategy, capabilities: SizeLimitedEncoderCapabilities) {

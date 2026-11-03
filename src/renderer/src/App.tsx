@@ -3754,7 +3754,7 @@ function App() {
         } else {
           switch (strategy.id) {
             case 'max_quality_av1_cpu': {
-              notices.add(i18n.t('Max Quality used CPU AV1 (SVT-AV1) for the strongest low-bitrate result.'));
+              notices.add(i18n.t('Max Quality used CPU AV1 (SVT-AV1) 2-pass for the strongest low-bitrate result.'));
               break;
             }
             case 'max_quality_av1_nvenc_two_pass':
@@ -3781,6 +3781,10 @@ function App() {
               notices.add(i18n.t('This GPU has no AV1 encoder, so Quality used {{encoder}} to keep the export quick.', { encoder }));
               break;
             }
+            case 'quality_hevc_gpu': {
+              notices.add(i18n.t('This GPU has no AV1 encoder, so Quality used {{encoder}}.', { encoder }));
+              break;
+            }
             case 'quality_h264_cpu': {
               warnings.add(i18n.t('AV1 encoders were unavailable, so Quality fell back to H.264 CPU.'));
               break;
@@ -3790,7 +3794,8 @@ function App() {
               notices.add(i18n.t('Fast used {{encoder}} with a speed-tuned profile for quick shareable exports.', { encoder }));
               break;
             }
-            case 'fast_h264_gpu': {
+            case 'fast_h264_gpu':
+            case 'fast_hevc_gpu': {
               notices.add(i18n.t('This GPU has no AV1 encoder, so Fast used {{encoder}}.', { encoder }));
               break;
             }

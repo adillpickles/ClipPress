@@ -214,7 +214,7 @@ describe('getNextSizeLimitedRetryStep', () => {
     expect(nextAttempt).toBeUndefined();
   });
 
-  it('plans max quality at the locked 95% first-attempt target', () => {
+  it('plans max quality on SVT-AV1’s two-pass at 97% of the size, which it lands within ~1% of', () => {
     const maxQualityStrategy = resolveSizeLimitedStrategy({
       controlMode: 'simple',
       preset: 'max_quality',
@@ -231,9 +231,10 @@ describe('getNextSizeLimitedRetryStep', () => {
     });
 
     expect(maxQualityPlan.maxAttempts).toBe(3);
-    expect(maxQualityPlan.firstAttemptTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.95));
+    expect(maxQualityStrategy.executionMode).toBe('ffmpeg_two_pass');
+    expect(maxQualityPlan.firstAttemptTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.97));
     expect(maxQualityPlan.retryTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.92));
-    expect(maxQualityPlan.targetZoneMinBytes).toBe(Math.floor(maxQualityPlan.hardTargetBytes * 0.95));
+    expect(maxQualityPlan.targetZoneMinBytes).toBe(Math.floor(maxQualityPlan.hardTargetBytes * 0.97));
     expect(maxQualityPlan.targetZoneMaxBytes).toBe(Math.floor(maxQualityPlan.hardTargetBytes * 0.98));
   });
 

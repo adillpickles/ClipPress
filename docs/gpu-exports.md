@@ -7,14 +7,21 @@ driver, so there is nothing extra to install. Each encoder is tested by opening 
 
 ## Which encoder a target-size export uses
 
-AV1 encoding needs an NVIDIA RTX 40-series, AMD RX 7000-series, Intel Arc or newer GPU.
-Where several GPUs are present, NVIDIA is preferred, then AMD, then Intel.
+AV1 encoding needs an NVIDIA RTX 40-series, AMD RX 7000-series, Intel Arc or newer GPU. Older cards
+(GTX 900 to RTX 30, RX 400 to RX 6000, 6th-gen Intel and newer) encode HEVC instead, which is about as
+quick as H.264 and much sharper at the same size; Discord plays HEVC on desktop and the web. Where several
+GPUs are present, NVIDIA is preferred, then AMD, then Intel.
 
-| Preset | First choice | Without GPU AV1 | Without any GPU encoder |
-| --- | --- | --- | --- |
-| Max Quality | CPU AV1 (SVT-AV1) 2-pass | (unchanged) | (unchanged) |
-| Quality | GPU AV1 | CPU AV1 on 8+ CPU threads, otherwise GPU H.264 | CPU AV1 |
-| Fast | GPU AV1 | GPU H.264 | CPU AV1 (fast preset), then CPU H.264 |
+| Preset | First choice | Without GPU AV1 | Without GPU AV1 or HEVC | Without any GPU encoder |
+| --- | --- | --- | --- | --- |
+| Max Quality | CPU AV1 (SVT-AV1) 2-pass | (unchanged) | (unchanged) | (unchanged) |
+| Quality | GPU AV1 | GPU HEVC | CPU AV1 on 8+ CPU threads, otherwise GPU H.264 | CPU AV1 |
+| Fast | GPU AV1 | GPU HEVC | GPU H.264 | CPU AV1 (fast preset), then CPU H.264 |
+
+Max Quality's 2-pass is a real one with the bundled FFmpeg (9.0, SVT-AV1 4.2): the second pass reads
+the first pass's statistics, puts the bits where the clip needs them and lands within about 1% of the
+target size. (FFmpeg before 8.1 couldn't pass those statistics to SVT-AV1, so its "2-pass" was one pass
+done twice.)
 
 In Custom settings, the **AV1 GPU** and **H.264 GPU** choices use whichever vendor is present, mapping
 the **Speed** setting (p1–p7) to the vendor's own scale. NVIDIA **2-pass** now runs as one encode with the
@@ -53,6 +60,6 @@ AMD's AV1 encoder on RX 7000 cards and current Ryzen chips pads the picture to b
 which players show as black bars, so its exports are sized to those blocks (scaled a little, at most a few
 pixels cropped from the middle).
 
-Turning off **Settings > Export > Use the GPU** stops GPU decoding and GPU encoding for regular
-exports. Target-size presets keep choosing their encoder as above; to force a CPU encoder, pick one in
-Custom settings.
+Turning off **Settings > Export > Use the GPU** keeps every export off the graphics card: decoding,
+regular exports and the target-size presets, which then choose from the CPU encoders. An encoder picked
+in Custom settings is still used.

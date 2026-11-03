@@ -1,6 +1,6 @@
-import type { SizeLimitAdvancedNvencPreset, SizeLimitCodec } from '../../common/types.js';
+import type { SizeLimitAdvancedNvencPreset } from '../../common/types.js';
 import type { EncoderSizeRules } from './sizeLimitedResolution';
-import type { SizeLimitedEncoderCapabilities, SizeLimitedEncoderName, SizeLimitedGpuCapability, SizeLimitedHardwareTarget } from './sizeLimitedTypes';
+import type { SizeLimitedCodec, SizeLimitedEncoderCapabilities, SizeLimitedEncoderName, SizeLimitedGpuCapability, SizeLimitedHardwareTarget } from './sizeLimitedTypes';
 
 /**
  * Hardware encoders across GPU vendors.
@@ -19,7 +19,7 @@ type GpuCapabilityKey = SizeLimitedGpuCapability;
 
 interface GpuEncoderInfo {
   encoder: GpuEncoderName,
-  codec: SizeLimitCodec,
+  codec: SizeLimitedCodec,
   vendor: GpuVendor,
   capability: GpuCapabilityKey,
 }
@@ -33,6 +33,11 @@ export const gpuEncoders: readonly GpuEncoderInfo[] = [
   { encoder: 'h264_nvenc', codec: 'h264', vendor: 'nvidia', capability: 'h264Nvenc' },
   { encoder: 'h264_amf', codec: 'h264', vendor: 'amd', capability: 'h264Amf' },
   { encoder: 'h264_qsv', codec: 'h264', vendor: 'intel', capability: 'h264Qsv' },
+  // For cards that can't encode AV1 (RTX 20/30, RX 5000/6000, older Intel): about as quick as H.264 and much sharper
+  // at the same size. Discord plays HEVC on desktop and the web since 2024.
+  { encoder: 'hevc_nvenc', codec: 'hevc', vendor: 'nvidia', capability: 'hevcNvenc' },
+  { encoder: 'hevc_amf', codec: 'hevc', vendor: 'amd', capability: 'hevcAmf' },
+  { encoder: 'hevc_qsv', codec: 'hevc', vendor: 'intel', capability: 'hevcQsv' },
 ];
 
 export function getGpuEncoderInfo(encoder: SizeLimitedEncoderName) {
@@ -45,7 +50,7 @@ export function isGpuEncoderAvailable(capabilities: SizeLimitedEncoderCapabiliti
 }
 
 /** The preferred working GPU encoder for a codec, if any. */
-export function pickGpuEncoder(capabilities: SizeLimitedEncoderCapabilities, codec: SizeLimitCodec) {
+export function pickGpuEncoder(capabilities: SizeLimitedEncoderCapabilities, codec: SizeLimitedCodec) {
   return gpuEncoders.find((info) => info.codec === codec && capabilities[info.capability] === true);
 }
 
@@ -63,7 +68,7 @@ export function withoutGpuEncoders(capabilities: SizeLimitedEncoderCapabilities)
 export const minCpuThreadsForCpuAv1 = 8;
 
 /** NVENC preset names are the shared vocabulary; AMD and Intel map them to their own scales. */
-export function getAmfQualityPreset(encoder: 'av1_amf' | 'h264_amf', preset: SizeLimitAdvancedNvencPreset) {
+export function getAmfQualityPreset(encoder: 'av1_amf' | 'h264_amf' | 'hevc_amf', preset: SizeLimitAdvancedNvencPreset) {
   const level = Number(preset.slice(1));
   if (level <= 2) return 'speed';
   if (level <= 5) return 'balanced';
@@ -83,11 +88,13 @@ export const maxGpuH264Side = 4096;
 /**
  * The picture sizes an encoder takes as they are. AMD's AV1 encoder needs 64×16 blocks on RX 7000 cards and current
  * Ryzen chips (8×2 on RX 9000; 64×16 suits both), or it pads the picture and players show black bars; every GPU's
- * H.264 encoder stops at 4096 on a side (`notes/beta6-ux/research/gpu-encoders.md`, c1 and c6).
+ * H.264 encoder stops at 4096 on a side (`notes/beta6-ux/research/gpu-encoders.md`, c1 and c6), and so does HEVC on the
+ * oldest cards that have it (GTX 900, RX 400, 6th-gen Intel).
  */
 export function getEncoderSizeRules(encoder: SizeLimitedEncoderName): EncoderSizeRules | undefined {
   if (encoder === 'av1_amf') return { alignWidth: 64, alignHeight: 16 };
   if (encoder === 'h264_nvenc' || encoder === 'h264_amf' || encoder === 'h264_qsv') return { alignWidth: 2, alignHeight: 2, maxSide: maxGpuH264Side };
+  if (encoder === 'hevc_nvenc' || encoder === 'hevc_amf' || encoder === 'hevc_qsv') return { alignWidth: 2, alignHeight: 2, maxSide: maxGpuH264Side };
   return undefined;
 }
 
@@ -106,6 +113,9 @@ export const gpuEncoderLabels: Record<SizeLimitedEncoderName, string> = {
   h264_amf: 'AMD H.264',
   av1_qsv: 'Intel AV1',
   h264_qsv: 'Intel H.264',
+  hevc_nvenc: 'NVIDIA HEVC',
+  hevc_amf: 'AMD HEVC',
+  hevc_qsv: 'Intel HEVC',
 };
 
 /**

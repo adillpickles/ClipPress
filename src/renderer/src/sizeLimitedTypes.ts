@@ -37,7 +37,10 @@ export interface SizeLimitedExportOptions {
   advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
 }
 
-export type SizeLimitedGpuCapability = 'h264Nvenc' | 'av1Nvenc' | 'h264Amf' | 'av1Amf' | 'h264Qsv' | 'av1Qsv';
+export type SizeLimitedGpuCapability = 'h264Nvenc' | 'av1Nvenc' | 'hevcNvenc' | 'h264Amf' | 'av1Amf' | 'hevcAmf' | 'h264Qsv' | 'av1Qsv' | 'hevcQsv';
+
+/** What a size-limited export makes: the setting's codecs, plus HEVC for GPUs that can't encode AV1. */
+export type SizeLimitedCodec = SizeLimitCodec | 'hevc';
 
 export interface SizeLimitedEncoderCapabilities {
   h264Nvenc: boolean,
@@ -50,6 +53,9 @@ export interface SizeLimitedEncoderCapabilities {
   av1Amf?: boolean | undefined,
   h264Qsv?: boolean | undefined,
   av1Qsv?: boolean | undefined,
+  hevcNvenc?: boolean | undefined,
+  hevcAmf?: boolean | undefined,
+  hevcQsv?: boolean | undefined,
   /** Logical CPU threads, used to decide whether CPU AV1 is quick enough to prefer. */
   cpuThreads?: number | undefined,
   /** GPU encoders that open with their basic settings but not the tuned ones (an older card or driver). */
@@ -71,7 +77,9 @@ export type SizeLimitedStrategyId =
   | 'max_quality_h264_gpu'
   | 'quality_av1_gpu'
   | 'quality_h264_gpu'
+  | 'quality_hevc_gpu'
   | 'fast_av1_gpu'
+  | 'fast_hevc_gpu'
   | 'fast_h264_gpu'
   | 'fast_av1_cpu'
   | 'fast_h264_cpu'
@@ -86,7 +94,7 @@ export type SizeLimitedStrategyId =
   | 'advanced_h264_nvenc_single_pass'
   | 'advanced_h264_nvenc_two_pass';
 
-export type SizeLimitedEncoderName = 'h264_nvenc' | 'av1_nvenc' | 'h264_amf' | 'av1_amf' | 'h264_qsv' | 'av1_qsv' | 'libx264' | 'libsvtav1';
+export type SizeLimitedEncoderName = 'h264_nvenc' | 'av1_nvenc' | 'hevc_nvenc' | 'h264_amf' | 'av1_amf' | 'hevc_amf' | 'h264_qsv' | 'av1_qsv' | 'hevc_qsv' | 'libx264' | 'libsvtav1';
 
 export type SizeLimitedHardwareTarget = 'nvidia' | 'amd' | 'intel' | 'cpu';
 
@@ -103,7 +111,7 @@ export interface SizeLimitedResolvedStrategy {
   preset?: SizeLimitPreset | undefined,
   requestedAdvancedEncoder?: SizeLimitAdvancedEncoder | undefined,
   requestedAdvancedTwoPass?: boolean | undefined,
-  effectiveCodec: SizeLimitCodec,
+  effectiveCodec: SizeLimitedCodec,
   id: SizeLimitedStrategyId,
   plannerProfileId: SizeLimitedPlannerProfileId,
   encoder: SizeLimitedEncoderName,

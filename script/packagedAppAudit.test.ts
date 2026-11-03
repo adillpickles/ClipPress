@@ -28,13 +28,13 @@ const windowsResources = [
   'ffmpeg.exe',
   'ffprobe.exe',
   'licenses.txt',
-  'avcodec-62.dll',
-  'avdevice-62.dll',
-  'avfilter-11.dll',
-  'avformat-62.dll',
-  'avutil-60.dll',
-  'swresample-6.dll',
-  'swscale-9.dll',
+  'avcodec-63.dll',
+  'avdevice-63.dll',
+  'avfilter-12.dll',
+  'avformat-63.dll',
+  'avutil-61.dll',
+  'swresample-7.dll',
+  'swscale-10.dll',
 ];
 
 const audit = (entries: AsarEntry[], overrides: Partial<Parameters<typeof auditPackagedApp>[0]> = {}) => auditPackagedApp({
@@ -82,7 +82,7 @@ describe('auditPackagedApp', () => {
     expect(result.problems[0]).toContain('out/main/index.js');
   });
 
-  it.each(['ffmpeg.exe', 'ffprobe.exe', 'avcodec-62.dll'])('rejects a package missing %s', (missing) => {
+  it.each(['ffmpeg.exe', 'ffprobe.exe', 'avcodec-63.dll'])('rejects a package missing %s', (missing) => {
     const result = audit(healthyEntries, {
       resourceFileNames: windowsResources.filter((name) => name !== missing),
     });

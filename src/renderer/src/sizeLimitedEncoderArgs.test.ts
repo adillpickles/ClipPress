@@ -60,7 +60,7 @@ describe('getResolvedVideoArgs', () => {
       outputPlaybackRate: 1,
     });
 
-    expect(getArgValue(argsFor('quality'), '-preset')).toBe('8');
+    expect(getArgValue(argsFor('quality'), '-preset')).toBe('7');
     expect(getArgValue(argsFor('quality'), '-svtav1-params')).toBe('enable-qm=1');
     expect(getArgValue(argsFor('fast'), '-svtav1-params')).toBe('enable-qm=1');
     expect(argsFor('quality', 'advanced')).not.toContain('-svtav1-params');
@@ -358,5 +358,33 @@ describe('GPU vendor settings', () => {
     expect(args).not.toContain('-b_ref_mode');
     expect(args).not.toContain('-temporal-aq');
     expect(args).not.toContain('-rc-lookahead');
+  });
+
+  it('makes HEVC in Main profile, tagged hvc1 for Apple players, in a tight bitrate window', () => {
+    const nvenc = resolveVendorArgs({ hevcNvenc: true, h264Nvenc: true });
+    expect(getArgValue(nvenc, '-c:v')).toBe('hevc_nvenc');
+    expect(getArgValue(nvenc, '-profile:v')).toBe('main');
+    expect(getArgValue(nvenc, '-tag:v')).toBe('hvc1');
+    expect(getArgValue(nvenc, '-b_ref_mode')).toBe('middle');
+    expect(getArgValue(nvenc, '-temporal-aq')).toBe('1');
+    expect(getArgValue(nvenc, '-maxrate')).toBe('4200k');
+
+    const nvencBasic = resolveVendorArgs({ hevcNvenc: true, basicSettingsOnly: ['hevcNvenc'] });
+    expect(nvencBasic).not.toContain('-b_ref_mode');
+    expect(nvencBasic).not.toContain('-temporal-aq');
+    expect(getArgValue(nvencBasic, '-tag:v')).toBe('hvc1');
+
+    const amf = resolveVendorArgs({ hevcAmf: true });
+    expect(getArgValue(amf, '-c:v')).toBe('hevc_amf');
+    expect(getArgValue(amf, '-profile:v')).toBe('main');
+    expect(getArgValue(amf, '-preanalysis')).toBe('1');
+    expect(amf).not.toContain('-bf');
+    expect(getArgValue(amf, '-tag:v')).toBe('hvc1');
+
+    const qsv = resolveVendorArgs({ hevcQsv: true });
+    expect(getArgValue(qsv, '-c:v')).toBe('hevc_qsv');
+    expect(getArgValue(qsv, '-profile:v')).toBe('main');
+    expect(qsv).not.toContain('-bitrate_limit');
+    expect(getArgValue(qsv, '-tag:v')).toBe('hvc1');
   });
 });

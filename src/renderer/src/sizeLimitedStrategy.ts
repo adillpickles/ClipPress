@@ -61,6 +61,7 @@ function resolveSimplePresetStrategy({
   capabilities: SizeLimitedEncoderCapabilities,
 }): SizeLimitedResolvedStrategy {
   const gpuAv1 = pickGpuEncoder(capabilities, 'av1');
+  const gpuHevc = pickGpuEncoder(capabilities, 'hevc');
   const gpuH264 = pickGpuEncoder(capabilities, 'h264');
 
   switch (preset) {
@@ -75,8 +76,9 @@ function resolveSimplePresetStrategy({
           encoderPreset: 5,
           hardware: 'cpu',
           usesGpu: false,
-          // FFmpeg's SVT-AV1 has no two-pass: a first pass only encodes the same file twice.
-          executionMode: 'single_pass',
+          // A real two-pass since FFmpeg 8.1 (pass 2 reads pass 1's stats): the bits go where the clip needs them, and
+          // the size lands within ~1% of the target. With an older custom FFmpeg it's one pass done twice.
+          executionMode: 'ffmpeg_two_pass',
           tuningProfile: 'max_quality',
         });
       }
@@ -140,9 +142,23 @@ function resolveSimplePresetStrategy({
         });
       }
 
-      // No GPU AV1 (for example an RTX 20/30-series card, or older AMD and Intel GPUs). CPU AV1
-      // keeps the better compression when the CPU can keep up; otherwise the GPU's H.264
-      // encoder is far quicker.
+      // No GPU AV1 (for example an RTX 20/30-series card, or older AMD and Intel GPUs): the GPU's HEVC, as quick as its
+      // H.264 and much sharper at the same size (owner, 2026-11-03: the GPU's speed beats CPU AV1's edge).
+      if (gpuHevc != null) {
+        return buildStrategy({
+          controlMode: 'simple',
+          preset,
+          effectiveCodec: 'hevc',
+          id: 'quality_hevc_gpu',
+          encoderPreset: 'p6',
+          ...gpuFields(gpuHevc, false, capabilities),
+          tuningProfile: 'quality',
+          fallbackReason: 'gpu_av1_unavailable',
+        });
+      }
+
+      // Nor HEVC: CPU AV1 keeps the better compression when the CPU can keep up; otherwise the GPU's H.264 encoder is
+      // far quicker.
       const cpuIsQuickEnough = capabilities.cpuThreads == null || capabilities.cpuThreads >= minCpuThreadsForCpuAv1;
       if (capabilities.libsvtav1 && (cpuIsQuickEnough || gpuH264 == null)) {
         return buildStrategy({
@@ -151,7 +167,8 @@ function resolveSimplePresetStrategy({
           effectiveCodec: 'av1',
           id: 'quality_av1_cpu',
           encoder: 'libsvtav1',
-          encoderPreset: 8,
+          // SVT-AV1 4.2: preset 7 is at least as sharp as 3.1's preset 8, in about the same time (measured).
+          encoderPreset: 7,
           hardware: 'cpu',
           usesGpu: false,
           executionMode: 'single_pass',
@@ -202,7 +219,20 @@ function resolveSimplePresetStrategy({
         });
       }
 
-      // Fast is about speed, so any GPU encoder beats CPU AV1 here.
+      // Fast is about speed, so any GPU encoder beats CPU AV1 here, HEVC first for its sharper picture.
+      if (gpuHevc != null) {
+        return buildStrategy({
+          controlMode: 'simple',
+          preset: 'fast',
+          effectiveCodec: 'hevc',
+          id: 'fast_hevc_gpu',
+          encoderPreset: 'p3',
+          ...gpuFields(gpuHevc, false, capabilities),
+          tuningProfile: 'fast',
+          fallbackReason: 'gpu_av1_unavailable',
+        });
+      }
+
       if (gpuH264 != null) {
         return buildStrategy({
           controlMode: 'simple',
@@ -225,7 +255,8 @@ function resolveSimplePresetStrategy({
           id: 'fast_av1_cpu',
           plannerProfileId: 'quality_av1_cpu',
           encoder: 'libsvtav1',
-          encoderPreset: 10,
+          // SVT-AV1 4.2: preset 9 is sharper than 3.1's preset 10 (+2-3.5 VMAF) for 8-14% more time (measured).
+          encoderPreset: 9,
           hardware: 'cpu',
           usesGpu: false,
           executionMode: 'single_pass',
@@ -325,8 +356,7 @@ function resolveAdvancedStrategy({
         encoderPreset: clampAv1CpuPreset(advancedAv1CpuPreset),
         hardware: 'cpu',
         usesGpu: false,
-        // SVT-AV1 encodes once either way (FFmpeg has no two-pass for it); 2-pass keeps its size targeting.
-        executionMode: 'single_pass',
+        executionMode: advancedTwoPass ? 'ffmpeg_two_pass' : 'single_pass',
         tuningProfile: 'advanced',
       });
     }
