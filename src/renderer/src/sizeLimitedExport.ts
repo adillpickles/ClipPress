@@ -35,7 +35,7 @@ import { UserFacingError } from '../errors';
 import { assertOutPathsNotSource } from './util/sourceProtection';
 import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } from './textOverlays';
 import createAsyncCache from './util/asyncCache';
-import { getEncoderSizeRules, getGpuEncoderInfo, getGpuFramesDownloadFormat, getGpuFramesFilter, getHardwareDecodeArgs, gpuEncoderLabels, gpuEncoders, isGpuEncoderAvailable, runWithGpuFallbacksCore, shouldKeepFramesOnGpu, shouldUseHardwareDecode } from './gpuEncoders';
+import { getEncoderSizeRules, getGpuEncoderInfo, getGpuFramesDownloadFormat, getGpuFramesFilter, getHardwareDecodeArgs, gpuEncoderLabels, gpuEncoders, isGpuEncoderAvailable, runWithGpuFallbacksCore, shouldKeepFramesOnGpu, shouldUseHardwareDecode, withoutGpuEncoders } from './gpuEncoders';
 import type { GpuEncoderName } from './gpuEncoders';
 import { getTempWorkDir } from './util/tempFiles';
 
@@ -863,6 +863,7 @@ function makePasslogPath(outPath: string, attemptNumber: number) {
 }
 
 async function resolveSizeLimitedPlan({
+  gpuAcceleration,
   controlMode,
   preset,
   advancedEncoder,
@@ -876,6 +877,8 @@ async function resolveSizeLimitedPlan({
   hasAudio,
   getOutputPixelRate,
 }: {
+  /** "Use the GPU": off keeps the presets on the CPU (advanced mode's own encoder choice still wins). */
+  gpuAcceleration: boolean,
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
   advancedEncoder: SizeLimitAdvancedEncoder,
@@ -890,7 +893,8 @@ async function resolveSizeLimitedPlan({
   /** The pixels the encode makes each second at a video bitrate (the size may follow it), when known. */
   getOutputPixelRate: (plannedVideoBitrate: number) => number | undefined,
 }) {
-  const capabilities = await getSizeLimitedEncoderCapabilities();
+  const found = await getSizeLimitedEncoderCapabilities();
+  const capabilities = !gpuAcceleration && controlMode === 'simple' ? withoutGpuEncoders(found) : found;
   const strategy = resolveSizeLimitedStrategy({
     controlMode,
     preset,
@@ -1013,6 +1017,7 @@ export async function exportSizeLimitedSegment({
   const segmentRate = getSegmentPlaybackRate(segment, outputPlaybackRate);
   const plannedDuration = getSegmentOutputDuration(segment, outputPlaybackRate);
   const resolvePlan = () => resolveSizeLimitedPlan({
+    gpuAcceleration,
     controlMode,
     preset,
     advancedEncoder,
@@ -1346,6 +1351,7 @@ export async function exportSizeLimitedMerge({
   const mixing = audioStream != null && mixedAudioTracks != null && mixedAudioTracks.length > 1;
   const plannedDuration = segments.reduce((sum, segment) => sum + getSegmentOutputDuration(segment, outputPlaybackRate), 0);
   const resolvePlan = () => resolveSizeLimitedPlan({
+    gpuAcceleration,
     controlMode,
     preset,
     advancedEncoder,

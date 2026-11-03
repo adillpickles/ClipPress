@@ -49,6 +49,13 @@ export function pickGpuEncoder(capabilities: SizeLimitedEncoderCapabilities, cod
   return gpuEncoders.find((info) => info.codec === codec && capabilities[info.capability] === true);
 }
 
+/** "Use the GPU" switched off: the encoders found, minus every one on the graphics card. */
+export function withoutGpuEncoders(capabilities: SizeLimitedEncoderCapabilities): SizeLimitedEncoderCapabilities {
+  const cpuOnly = { ...capabilities };
+  for (const { capability } of gpuEncoders) cpuOnly[capability] = false;
+  return cpuOnly;
+}
+
 /**
  * A size-limited export on a CPU with few threads is better served by a GPU H.264 encode than a
  * slow CPU AV1 one. With this many threads SVT-AV1 keeps up well enough to be worth its quality.

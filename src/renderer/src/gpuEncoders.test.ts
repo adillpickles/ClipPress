@@ -13,6 +13,7 @@ import {
   runWithGpuFallbacksCore,
   shouldKeepFramesOnGpu,
   shouldUseHardwareDecode,
+  withoutGpuEncoders,
 } from './gpuEncoders';
 
 const noGpu = { h264Nvenc: false, av1Nvenc: false, libx264: true, libsvtav1: true } as const;
@@ -22,6 +23,13 @@ describe('pickGpuEncoder', () => {
     expect(pickGpuEncoder({ ...noGpu, av1Qsv: true, av1Amf: true }, 'av1')?.encoder).toBe('av1_amf');
     expect(pickGpuEncoder({ ...noGpu, h264Qsv: true, h264Nvenc: true }, 'h264')?.encoder).toBe('h264_nvenc');
     expect(pickGpuEncoder({ ...noGpu, h264Qsv: true }, 'av1')).toBeUndefined();
+  });
+
+  it('finds nothing on the graphics card once Use the GPU is off', () => {
+    const cpuOnly = withoutGpuEncoders({ ...noGpu, av1Nvenc: true, h264Nvenc: true, av1Amf: true, h264Qsv: true, cpuThreads: 16 });
+    expect(pickGpuEncoder(cpuOnly, 'av1')).toBeUndefined();
+    expect(pickGpuEncoder(cpuOnly, 'h264')).toBeUndefined();
+    expect(cpuOnly).toMatchObject({ libx264: true, libsvtav1: true, cpuThreads: 16 });
   });
 });
 
