@@ -84,18 +84,18 @@ async function probeGpuEncoder(encoder: GpuEncoderName, videoArgs = ['-pix_fmt',
 
 /**
  * Whether this FFmpeg runs SVT-AV1's real two-pass (8.1 and newer hand pass 2 the first pass's stats). An older one
- * writes an empty pass log, and its "two-pass" would be one pass done twice.
+ * writes an empty pass log, and its "two-pass" would be one pass done twice. A test that timed out isn't a sure answer.
  */
-async function probeSvtTwoPass() {
+async function probeSvtTwoPass(): Promise<{ supported: boolean, sure: boolean }> {
   const logBase = join(getTempWorkDir(), `svt-two-pass-check-${Date.now()}`);
   const logPath = `${logBase}-0.log`;
   try {
     await runFfmpeg(['-hide_banner', '-f', 'lavfi', '-i', 'color=c=black:s=320x240:r=30:d=0.2', '-frames:v', '3', '-an', '-c:v', 'libsvtav1', '-preset', '12', '-b:v', '200k', '-pass', '1', '-passlogfile', logBase, '-f', 'null', '-'], { timeout: gpuProbeTimeoutMs }, { logCli: false });
-    return (await stat(logPath)).size > 0;
+    return { supported: (await stat(logPath)).size > 0, sure: true };
   } catch (error) {
     if (isAbortedError(error) && !(isExecaError(error) && error.timedOut)) throw error;
     console.info('SVT-AV1 two-pass is not available in this FFmpeg', error);
-    return false;
+    return { supported: false, sure: !(isExecaError(error) && error.timedOut) };
   } finally {
     await unlinkWithRetry(logPath).catch(() => undefined);
   }
@@ -166,14 +166,20 @@ const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimite
     libx264: encoders.has('libx264'),
     libsvtav1: encoders.has('libsvtav1'),
   };
+  let svtTwoPassSure = true;
   await Promise.all([
     ...gpuEncoders.map(async ({ encoder, capability }) => {
       capabilities[capability] = encoders.has(encoder) && await probe(encoder, capability);
     }),
-    (async () => { capabilities.svtTwoPass = capabilities.libsvtav1 && await probeSvtTwoPass(); })(),
+    (async () => {
+      const svt = capabilities.libsvtav1 ? await probeSvtTwoPass() : { supported: false, sure: true };
+      capabilities.svtTwoPass = svt.supported;
+      svtTwoPassSure = svt.sure;
+    })(),
   ]);
-  // Saved in the background: the answer is used now.
-  saveEncoderCheck(key, withBasicOnly(capabilities), (encoder) => encoders.has(encoder), unsure).catch(() => undefined);
+  // Saved in the background: the answer is used now. A two-pass test that timed out (a busy PC) holds for this run
+  // only: the next one tests everything again.
+  if (svtTwoPassSure) saveEncoderCheck(key, withBasicOnly(capabilities), (encoder) => encoders.has(encoder), unsure).catch(() => undefined);
   return { ...withBasicOnly(capabilities), cpuThreads };
 });
 
