@@ -136,6 +136,22 @@ describe('resolveSizeLimitedStrategy', () => {
     }
   });
 
+  it('runs SVT-AV1 once where the FFmpeg can’t do its real two-pass (before 8.1)', () => {
+    const resolve = (controlMode: 'simple' | 'advanced', svtTwoPass: boolean | undefined) => resolveSizeLimitedStrategy({
+      controlMode,
+      preset: 'max_quality',
+      advancedEncoder: 'av1_cpu',
+      advancedTwoPass: true,
+      ...defaultStrategyArgs,
+      capabilities: { ...fullCapabilities, svtTwoPass },
+    });
+    expect(resolve('simple', undefined).executionMode).toBe('ffmpeg_two_pass');
+    expect(resolve('simple', true).executionMode).toBe('ffmpeg_two_pass');
+    expect(resolve('simple', false).executionMode).toBe('single_pass');
+    expect(resolve('advanced', true).executionMode).toBe('ffmpeg_two_pass');
+    expect(resolve('advanced', false).executionMode).toBe('single_pass');
+  });
+
   it('goes GPU AV1, then GPU HEVC, then CPU AV1 on a strong CPU, then GPU H.264 (owner, 2026-11-03)', () => {
     const resolve = (preset: 'quality' | 'fast', capabilities: SizeLimitedEncoderCapabilities) => resolveSizeLimitedStrategy({
       controlMode: 'simple',

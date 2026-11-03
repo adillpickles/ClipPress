@@ -56,6 +56,8 @@ export interface SizeLimitedEncoderCapabilities {
   hevcNvenc?: boolean | undefined,
   hevcAmf?: boolean | undefined,
   hevcQsv?: boolean | undefined,
+  /** Whether SVT-AV1's two-pass is real in this FFmpeg (8.1 and newer); missing means yes, as with the bundled one. */
+  svtTwoPass?: boolean | undefined,
   /** Logical CPU threads, used to decide whether CPU AV1 is quick enough to prefer. */
   cpuThreads?: number | undefined,
   /** GPU encoders that open with their basic settings but not the tuned ones (an older card or driver). */

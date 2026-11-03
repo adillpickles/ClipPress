@@ -3704,6 +3704,8 @@ function App() {
       results: SizeLimitedExecutionResult[],
       notices: Set<string>,
       warnings: Set<string>,
+      /** "Use the GPU" off: a preset on the CPU says so, rather than blaming the graphics card. */
+      gpuSwitchedOff: boolean,
     ) => {
       if (results.length === 0) return;
 
@@ -3751,10 +3753,14 @@ function App() {
               },
             ),
           );
+        } else if (gpuSwitchedOff && !strategy.usesGpu && strategy.preset !== 'max_quality') {
+          notices.add(i18n.t('Use the GPU is off, so {{encoder}} was used.', { encoder }));
         } else {
           switch (strategy.id) {
             case 'max_quality_av1_cpu': {
-              notices.add(i18n.t('Max Quality used CPU AV1 (SVT-AV1) 2-pass for the strongest low-bitrate result.'));
+              notices.add(strategy.executionMode === 'ffmpeg_two_pass'
+                ? i18n.t('Max Quality used CPU AV1 (SVT-AV1) 2-pass for the strongest low-bitrate result.')
+                : i18n.t('Max Quality used CPU AV1 (SVT-AV1) for the strongest low-bitrate result.'));
               break;
             }
             case 'max_quality_av1_nvenc_two_pass':
@@ -4194,7 +4200,7 @@ function App() {
           finalizedResults,
           quality.sizeLimitMb,
         );
-        appendSizeLimitedResultNotices(finalizedResults, notices, warnings);
+        appendSizeLimitedResultNotices(finalizedResults, notices, warnings, !exportGpuAcceleration);
 
         if (firstCreatedResult != null && simpleMode && !prefersReducedMotion) shootConfetti();
 

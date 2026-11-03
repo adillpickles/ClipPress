@@ -77,8 +77,8 @@ function resolveSimplePresetStrategy({
           hardware: 'cpu',
           usesGpu: false,
           // A real two-pass since FFmpeg 8.1 (pass 2 reads pass 1's stats): the bits go where the clip needs them, and
-          // the size lands within ~1% of the target. With an older custom FFmpeg it's one pass done twice.
-          executionMode: 'ffmpeg_two_pass',
+          // the size lands within ~1% of the target. An older custom FFmpeg would only encode twice: one pass there.
+          executionMode: capabilities.svtTwoPass === false ? 'single_pass' : 'ffmpeg_two_pass',
           tuningProfile: 'max_quality',
         });
       }
@@ -356,7 +356,7 @@ function resolveAdvancedStrategy({
         encoderPreset: clampAv1CpuPreset(advancedAv1CpuPreset),
         hardware: 'cpu',
         usesGpu: false,
-        executionMode: advancedTwoPass ? 'ffmpeg_two_pass' : 'single_pass',
+        executionMode: advancedTwoPass && capabilities.svtTwoPass !== false ? 'ffmpeg_two_pass' : 'single_pass',
         tuningProfile: 'advanced',
       });
     }
