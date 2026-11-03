@@ -74,6 +74,16 @@ export default ({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfi
       }
     }
 
+    // The shortcuts list holds focus while it's open; its own shortcut closes it, as it opened it (not while typing
+    // in its search box).
+    if (action === 'toggleKeyboardShortcuts' && !e.defaultPrevented && e.target instanceof Element
+      && e.target.closest('[data-shortcuts-dialog]') != null && e.target.closest('input, textarea, select, [contenteditable="true"]') == null) {
+      getKeyboardAction(action)();
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
     // From now on, only handle key events when focus is on document body
     // because we don't allow focus to anything else
     // except for inputs, buttons, dialogs etc, which we want allowed to handle keys normally.

@@ -1115,6 +1115,8 @@ function KeyboardShortcutsDialog({
           // Only the list scrolls: the title, the close button and the view switch stay put.
           style={{ width: '44rem', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
           aria-describedby={undefined}
+          // Its own shortcut closes it again (useKeyboard).
+          data-shortcuts-dialog
           // Focus the dialog itself, so it opens without a focus ring on "Essentials". The "All shortcuts" view
           // has already focused its search box as it mounted: leave that.
           onOpenAutoFocus={(e) => {
