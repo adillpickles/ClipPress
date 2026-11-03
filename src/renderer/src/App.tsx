@@ -6218,6 +6218,14 @@ function App() {
                 ...(inputOptions.addToBatch != null ? [{ key: 'addToBatch', label: inputOptions.addToBatch }] : []),
               ],
             });
+          } else if (enableAskForFileOpenAction && simpleMode && isFileOpened && newFilePaths.length > 1) {
+            // Several files onto an open recording: the same question as for one, not LosslessCut's batch list wording.
+            // Open opens the first; the others wait in the file list, as when several are opened with nothing open.
+            const choice = await askForFileOpenChoice({
+              fileName: i18n.t('{{name}} and {{count}} more', { name: basename(firstNewFilePath), count: newFilePaths.length - 1 }),
+              extras: [{ key: 'mergeWithCurrentFile', label: i18n.t('Join them after this recording') }],
+            });
+            openFileResponse = choice === 'open' ? 'openFirstOfSeveral' : choice;
           } else if (enableAskForFileOpenAction && inputOptionsKeys.length > 1) openFileResponse = await askForFileOpenAction(inputOptions);
           else if (newFilePaths.length === 1) openFileResponse = 'open';
 
@@ -6245,6 +6253,11 @@ function App() {
           }
           if (openFileResponse === 'addToBatch') {
             batchLoadPaths(newFilePaths, true);
+            return;
+          }
+          if (openFileResponse === 'openFirstOfSeveral') {
+            batchLoadPaths(newFilePaths, true);
+            await userOpenSingleFile({ path: firstNewFilePath, isLlcProject });
             return;
           }
           if (openFileResponse === 'mergeWithCurrentFile') {
