@@ -303,8 +303,8 @@ function Settings({
           <>
             <SettingRow
               label={t('Use the GPU')}
-              description={t('Faster exports on NVIDIA, AMD or Intel graphics.')}
-              details={t('Reads and encodes video on the graphics card, which makes most exports several times faster.')}
+              description={t('Reads and encodes video on the graphics card (NVIDIA, AMD or Intel), which makes most exports several times faster.')}
+              keywords="hardware acceleration"
             >
               <Switch checked={exportGpuAcceleration} onCheckedChange={setExportGpuAcceleration} aria-label={t('Use the GPU')} />
             </SettingRow>
