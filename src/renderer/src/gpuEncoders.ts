@@ -137,7 +137,7 @@ export const gpuEncoderLabels: Record<SizeLimitedEncoderName, string> = {
  * Measured with 1440p60 HEVC and NVENC: a single-input export went from 12.4 s to 7.2 s on 4 CPU
  * threads and 6.8 s to 6.0 s on 8, and was unchanged on 16.
  *
- * Merges decode on the GPU too, whatever the CPU (measured in Beta 6.1 with AV1 NVENC exports on a 16-thread Ryzen
+ * Merges decode on the GPU too, whatever the CPU (measured in Beta 6.1 on AV1 NVENC recordings, a 16-thread Ryzen
  * and an RTX 5060 Ti). Two 1440p30 AV1 clips at 400% took 8.6 s instead of 21 s, the same pair at 100% 2.9 s instead
  * of 5.2 s, two 1080p60 HEVC clips 14 s instead of 36-44 s at 400% and 6.0 s instead of 12.2 s at 100%, and three of
  * them 6.5 s instead of 11.4 s, every output byte-for-byte the same size. (Beta 6 kept merges on the CPU above 8

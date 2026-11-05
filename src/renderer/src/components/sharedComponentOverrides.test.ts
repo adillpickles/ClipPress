@@ -235,7 +235,8 @@ describe('classes handed to shared components', () => {
     expect(ownProperties('Dialog.Title')).toContain('margin');
     // Handed on: ConfirmButton's class lands on Button.
     expect(ownProperties('ConfirmButton')).toContain('padding');
-    expect(ownProperties('Select', ':hover')).not.toBeUndefined();
+    // Read with what follows the class.
+    expect(ownProperties('Select', ':hover')).toContain('background-color');
   });
 
   it("never set a component's own property at the same weight, so the CSS order can't decide", () => {
