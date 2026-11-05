@@ -80,7 +80,7 @@ export function getAmfQualityPreset(encoder: 'av1_amf' | 'h264_amf' | 'hevc_amf'
   const level = Number(preset.slice(1));
   if (level <= 2) return 'speed';
   if (level <= 5) return 'balanced';
-  // Only the AV1 encoder has a mode above "quality".
+  // AV1's mode above "quality" at p7. FFmpeg 9.0's HEVC and H.264 encoders have one too, not yet measured on an AMD card.
   return encoder === 'av1_amf' && level === 7 ? 'high_quality' : 'quality';
 }
 
