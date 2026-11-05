@@ -131,8 +131,10 @@
   gap: 2px;
   max-height: min(26rem, 62vh);
   overflow-y: auto;
-  /* Room for the focus ring of the first and last rows, which the scrolling would otherwise cut off. */
-  margin: -4px -.35rem;
+  /* Room for the focus ring of the first and last rows, which the scrolling would otherwise cut off. The sides reach a
+     row's padding further out too, so the rows' pictures line up with the folder icon and their highlight reaches out
+     past it, as the folder button's does. */
+  margin: -4px -.75rem;
   padding: 4px .35rem;
 }
 
