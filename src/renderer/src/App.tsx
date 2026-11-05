@@ -7419,6 +7419,12 @@ function App() {
     setKeyboardShortcutsVisible(false);
     setKeyboardShortcutsView(undefined);
   }, [setKeyboardShortcutsVisible]);
+  // Stable, so the shortcuts list (memo) doesn't render again with every App render now that it stays mounted.
+  const openShortcutSettings = useCallback(() => {
+    closeKeyboardShortcuts();
+    setSettingsCategory('shortcuts');
+    setSettingsVisible(true);
+  }, [closeKeyboardShortcuts]);
 
   function renderSubtitles() {
     if (!activeSubtitle) return null;
@@ -8192,11 +8198,7 @@ function App() {
                     resetKeyBindings={resetKeyBindings}
                     getKeyboardAction={getKeyboardAction}
                     initialView={keyboardShortcutsView}
-                    onChangeShortcutsRequested={() => {
-                      closeKeyboardShortcuts();
-                      setSettingsCategory('shortcuts');
-                      setSettingsVisible(true);
-                    }}
+                    onChangeShortcutsRequested={openShortcutSettings}
                   />
                 </Suspense>
               )}

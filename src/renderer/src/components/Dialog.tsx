@@ -3,7 +3,7 @@ import { forwardRef } from 'react';
 import type { ReactNode } from 'react';
 
 import styles from './Dialog.module.css';
-import { withClass } from './util';
+import { releaseFocusWhenClosing, withClass } from './util';
 import CloseButtonRaw from './CloseButton';
 
 export * from '@radix-ui/react-dialog';
@@ -14,9 +14,13 @@ export const Overlay = withClass(Dialog.Overlay, styles['DialogOverlay']!);
 // isn't a click outside that closes the dialog.
 const isInAppMenu = (target: EventTarget | null) => target instanceof Element && target.closest('[data-app-menu]') != null;
 
-export const Content = forwardRef<HTMLDivElement, Dialog.DialogContentProps>(({ className, onPointerDownOutside, onFocusOutside, ...props }, ref) => (
+export const Content = forwardRef<HTMLDivElement, Dialog.DialogContentProps>(({ className, onPointerDownOutside, onFocusOutside, onAnimationStart, ...props }, ref) => (
   <Dialog.Content
     ref={ref}
+    onAnimationStart={(e) => {
+      releaseFocusWhenClosing(e);
+      onAnimationStart?.(e);
+    }}
     className={[styles['DialogContent'], className].filter(Boolean).join(' ')}
     onPointerDownOutside={(e) => {
       if (isInAppMenu(e.target)) e.preventDefault();

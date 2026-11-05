@@ -1,5 +1,6 @@
 import type { MouseEventHandler, ReactNode } from 'react';
 import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import invariant from 'tiny-invariant';
 import { useReducedMotionConfig } from 'motion/react';
@@ -59,37 +60,48 @@ export function useGenericDialogContext() {
   return context;
 }
 
+/** A little longer than the dialogs' close animation (150 ms, Dialog.module.css). */
+const closeFadeMs = 250;
+
 export default function GenericDialog({ dialog, onOpenChange }: {
   dialog: GenericDialogParams | undefined,
   onOpenChange: (open: boolean) => void,
 }) {
   const context = useMemo(() => ({ onOpenChange }), [onOpenChange]);
-  // Each kind keeps showing its last dialog while it fades out (their contents belong to their own root).
-  const shownDialog = useLastDefined(dialog != null && !dialog.isAlert ? dialog : undefined);
-  const shownAlert = useLastDefined(dialog != null && dialog.isAlert ? dialog : undefined);
+  // Each kind keeps showing its last dialog while it fades out (their contents belong to their own root), then lets go.
+  const shownDialog = useLastDefined(dialog != null && !dialog.isAlert ? dialog : undefined, closeFadeMs);
+  const shownAlert = useLastDefined(dialog != null && dialog.isAlert ? dialog : undefined, closeFadeMs);
+  const portalTarget = document.getElementById('app-root') ?? document.body;
 
   return (
     <>
       {/* Non-alert dialog */ }
+      {/* Portalled by React, not Dialog.Portal: that one only keeps a child whose element it can see for the close animation
+          (this content is the dialog's own component), so the content vanished at once; this way the overlay and the
+          content each fade on their own. */}
       <Dialog.Root open={dialog != null && !dialog.isAlert} onOpenChange={onOpenChange}>
-        <Dialog.Portal>
-          <Dialog.Overlay />
-
-          <GenericDialogContext.Provider value={context}>
-            {shownDialog?.render()}
-          </GenericDialogContext.Provider>
-        </Dialog.Portal>
+        {createPortal(
+          <>
+            <Dialog.Overlay />
+            <GenericDialogContext.Provider value={context}>
+              {shownDialog?.render()}
+            </GenericDialogContext.Provider>
+          </>,
+          portalTarget,
+        )}
       </Dialog.Root>
 
       {/* Alert dialog */ }
       <AlertDialog.Root open={dialog != null && !!dialog.isAlert} onOpenChange={onOpenChange}>
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay />
-
-          <GenericDialogContext.Provider value={context}>
-            {shownAlert?.render()}
-          </GenericDialogContext.Provider>
-        </AlertDialog.Portal>
+        {createPortal(
+          <>
+            <AlertDialog.Overlay />
+            <GenericDialogContext.Provider value={context}>
+              {shownAlert?.render()}
+            </GenericDialogContext.Provider>
+          </>,
+          portalTarget,
+        )}
       </AlertDialog.Root>
     </>
   );
