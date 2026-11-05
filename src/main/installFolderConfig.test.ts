@@ -291,8 +291,8 @@ describe('noteSettingsFoldersForInstaller', () => {
   });
 });
 
-// When the import failed before it could copy the settings, updates
-// went on being installed, and installing one deletes the installation folder with the only copy.
+// When the import failed before it could copy the settings, updates used to
+// go on being installed, and installing one deletes the installation folder with the only copy.
 describe('moveSettingsOutOfInstallFolder', () => {
   const move = (at = now) => moveSettingsOutOfInstallFolder({ installDir, configDir, now: at, retryDelayMs: 1 });
   const later = new Date('2026-10-17T08:00:00.000Z');

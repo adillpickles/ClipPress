@@ -17,7 +17,7 @@ export function getNodeText(node: ReactNode): string {
 
 const getQueryWords = (query: string) => query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
 
-/** Every word of the query is somewhere in the text (in any order, any case), as most apps' settings search works. */
+/** Every word of the query is somewhere in the text (in any order, any case), the way settings searches usually work. */
 export function matchesSearch(query: string, ...texts: ReactNode[]) {
   const words = getQueryWords(query);
   if (words.length === 0) return true;

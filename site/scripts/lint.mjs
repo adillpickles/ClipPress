@@ -3,9 +3,9 @@
 // Two jobs:
 //   1. keep the page factually grounded in the repository and the published
 //      release (nothing invented, nothing hardcoded that belongs in config)
-//   2. keep the page SMALL — the previous pass drifted into a generic
-//      multi-section SaaS landing page and failed manual QA. The budgets below
-//      are deliberate. Raise one only with a reason.
+//   2. keep the page SMALL — one short page, not a generic multi-section SaaS
+//      landing page. The budgets below are deliberate. Raise one only with a
+//      reason.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -105,7 +105,7 @@ if (/macos/i.test(flatHtml) && !/No macOS or Linux build/i.test(flatHtml)) {
   errors.push('macOS may only appear in the "no macOS or Linux build" disclaimer');
 }
 
-// ---------- page-size budget (this is the point of the rebuild) ----------
+// ---------- page-size budget (the page stays short) ----------
 const sections = count(html, /<section[\s>]/g);
 if (sections > 6) errors.push(`too many <section>s (${sections} > 6) — the page must stay short`);
 const h2s = count(html, /<h2[\s>]/g);

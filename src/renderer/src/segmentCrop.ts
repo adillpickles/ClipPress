@@ -6,7 +6,7 @@ export interface SegmentCrop {
 }
 
 export type CropCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-/** Up to 1600%: enough for one camera at the top of a video-call recording (6.1; it was 400%). */
+/** Up to 1600%: enough for one camera at the top of a video-call recording (Beta 6.1; it was 400%). */
 export const minCropSize = 1 / 16;
 const maxCropZoom = 1 / minCropSize;
 export const fullFrameCrop: SegmentCrop = { x: 0, y: 0, width: 1, height: 1 };

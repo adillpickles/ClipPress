@@ -149,7 +149,7 @@ function resolveAv1PresetStrategy({
       }
 
       // No GPU AV1 (for example an RTX 20/30-series card, or older AMD and Intel GPUs): the GPU's HEVC, as quick as its
-      // H.264 and much sharper at the same size (owner, 2026-11-03: the GPU's speed beats CPU AV1's edge).
+      // H.264 and much sharper at the same size: its speed is worth more than CPU AV1's small edge.
       if (gpuHevc != null) {
         return buildStrategy({
           controlMode: 'simple',

@@ -156,7 +156,7 @@ describe('resolveSizeLimitedStrategy', () => {
     expect(resolve('advanced', false).executionMode).toBe('single_pass');
   });
 
-  it('goes GPU AV1, then GPU HEVC, then CPU AV1 on a strong CPU, then GPU H.264 (owner, 2026-11-03)', () => {
+  it('goes GPU AV1, then GPU HEVC, then CPU AV1 on a strong CPU, then GPU H.264', () => {
     const resolve = (preset: 'quality' | 'fast', capabilities: SizeLimitedEncoderCapabilities) => resolveSizeLimitedStrategy({
       controlMode: 'simple',
       preset,

@@ -1155,7 +1155,7 @@ describe('ProjectAutoSave before the app closes', () => {
       expect(t.disk.get(beside)).toEqual(withTrim);
     });
 
-    // Review finding R2-3: the copy next to the recording failing read as the edits not being saved.
+    // The copy next to the recording failing used to read as the edits not being saved.
     describe('when only the copy cannot be written', () => {
       it('warns about the copy once, not as a failed save, while it keeps failing', async () => {
         const t = setup();

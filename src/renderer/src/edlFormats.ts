@@ -559,7 +559,6 @@ const otioSchema = z.object({
 
 export type Otio = z.infer<typeof otioSchema>;
 
-// implemented by OpenAI:
 export function parseOtio(data: unknown): SegmentBase[] {
   const schema = otioSchema.parse(data);
 
