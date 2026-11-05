@@ -1,14 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import i18n from 'i18next';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { SizeLimitAdvancedEncoder, SizeLimitPreset, SizeLimitVideoFormat } from '../../common/types';
 import { withoutGpuEncoders } from './gpuEncoders';
-import { getSizeLimitedTwoPassEncodeArgs } from './sizeLimitedFfmpegArgs';
+import { getPassArtifactPaths, getSizeLimitedTwoPassEncodeArgs } from './sizeLimitedFfmpegArgs';
+import addSizeLimitedStrategyNotes from './sizeLimitedResultNotes';
+import { isSavedEncoderCheck } from './savedEncoderCheck';
 import { getResolvedVideoArgs } from './sizeLimitedEncoderArgs';
 import { planSizeLimitedEncode } from './sizeLimitedPlanner';
 import { resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import type { SizeLimitedEncoderCapabilities } from './sizeLimitedTypes';
 
 const presets: SizeLimitPreset[] = ['max_quality', 'quality', 'fast'];
+
+beforeAll(async () => {
+  await i18n.init({ lng: 'en', resources: {}, keySeparator: false, nsSeparator: false });
+});
 
 // An RTX 40/50: every NVIDIA encoder, and the bundled FFmpeg's CPU encoders.
 const rtx40: SizeLimitedEncoderCapabilities = { h264Nvenc: true, av1Nvenc: true, hevcNvenc: true, libx264: true, libx265: true, libsvtav1: true, cpuThreads: 16 };
@@ -214,5 +221,75 @@ describe('x265 size planning', () => {
     expect(onePass.firstAttemptTargetBytes / onePass.hardTargetBytes).toBeCloseTo(0.93, 3);
     // Not H.264's retry path: AV1's, which follows how far the last try went over.
     expect(onePass.strategyId).toBe('quality_hevc_cpu');
+  });
+});
+
+describe('the saved encoder check', () => {
+  const complete = {
+    capabilities: {
+      h264Nvenc: true,
+      av1Nvenc: true,
+      libx264: true,
+      libx265: true,
+      libsvtav1: true,
+      svtTwoPass: true,
+      x265TwoPass: true,
+      h264Amf: false,
+      av1Amf: false,
+      hevcAmf: false,
+      h264Qsv: false,
+      av1Qsv: false,
+      hevcQsv: false,
+      hevcNvenc: true,
+    },
+    retest: [],
+  };
+
+  it('is trusted when it has every answer', () => {
+    expect(isSavedEncoderCheck(complete)).toBe(true);
+  });
+
+  it('is tested again when saved before x265 (no answer for it, or for its two-pass)', () => {
+    const { libx265, ...withoutX265 } = complete.capabilities;
+    expect(libx265).toBe(true);
+    expect(isSavedEncoderCheck({ ...complete, capabilities: withoutX265 })).toBe(false);
+    const { x265TwoPass, ...withoutTwoPass } = complete.capabilities;
+    expect(x265TwoPass).toBe(true);
+    expect(isSavedEncoderCheck({ ...complete, capabilities: withoutTwoPass })).toBe(false);
+  });
+});
+
+describe("a two-pass encode's leftovers", () => {
+  it("include x265's stats, its .cutree and the .temp files a Cancel leaves", () => {
+    const paths = getPassArtifactPaths(String.raw`C:\Temp\export.passlog.1`);
+    for (const suffix of ['', '.temp', '.cutree', '.cutree.temp', '-0.log', '-0.log.mbtree', '-0.log.mbtree.temp']) {
+      expect(paths).toContain(`C:\\Temp\\export.passlog.1${suffix}`);
+    }
+  });
+});
+
+describe('result notes', () => {
+  const notesFor = (strategy: ReturnType<typeof resolve>, gpuSwitchedOff = false) => {
+    const notices = new Set<string>();
+    const warnings = new Set<string>();
+    addSizeLimitedStrategyNotes({ strategy, notices, warnings, gpuSwitchedOff });
+    return { notices: [...notices], warnings: [...warnings] };
+  };
+  const pcs: SizeLimitedEncoderCapabilities[] = [rtx40, gtx750(4), gtx750(16), noGpu, { ...noGpu, libx265: false }, { ...rtx40, libx265: false }, { ...noGpu, libx265: false, libx264: false, h264Nvenc: true }];
+
+  it('never warn in the simple editor about a step down for HEVC or H.264 (the simple editor shows warnings)', () => {
+    for (const videoFormat of ['hevc', 'h264'] as const) {
+      for (const capabilities of pcs) {
+        for (const preset of presets) {
+          const { notices, warnings } = notesFor(resolve(preset, capabilities, videoFormat));
+          expect(warnings, `${videoFormat} ${preset} ${JSON.stringify(capabilities)}`).toEqual([]);
+          expect(notices.length).toBe(1);
+        }
+      }
+    }
+  });
+
+  it("keep AV1's warning when it had to make H.264, as before", () => {
+    expect(notesFor(resolve('quality', { ...noGpu, libsvtav1: false }, 'av1')).warnings).toEqual(['AV1 encoders were unavailable, so Quality fell back to H.264 CPU.']);
   });
 });

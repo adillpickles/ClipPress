@@ -930,7 +930,7 @@ function ExportConfirm({
   const onSizeLimitedAdvancedEncoderHelpPress = useCallback(() => {
     showHelpText({
       text: t(
-        'Choose the exact encoder path directly in Advanced mode. AV1 CPU prioritizes premium quality, AV1 GPU prioritizes faster AV1, H.264 CPU is the compatibility CPU path, and H.264 GPU is the fastest H.264 path. GPU options use NVIDIA, AMD, or Intel hardware, whichever is present; the preset (p1 fastest to p7 best) is mapped to each vendor.',
+        'Choose the exact encoder path directly in Advanced mode. AV1 CPU prioritizes premium quality, AV1 GPU prioritizes faster AV1, HEVC CPU and HEVC GPU make files every phone plays and saves, H.264 CPU is the compatibility CPU path, and H.264 GPU is the fastest H.264 path. GPU options use NVIDIA, AMD, or Intel hardware, whichever is present; the preset (p1 fastest to p7 best) is mapped to each vendor.',
       ),
     });
   }, [showHelpText, t]);

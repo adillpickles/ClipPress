@@ -50,7 +50,8 @@ export function canCopyLosslessly({ playbackRate, cropped, hasText, audioGainDb,
   if (playbackRate !== 1 || cropped || hasText || rotation != null) return false;
   // Chosen on purpose: a size, a frame rate or an encoder of their own.
   if (controlMode !== 'simple' || (resolution !== 'auto' && resolution !== 'source') || (fps !== 'auto' && fps !== 'source')) return false;
-  if (videoCodec == null || !copyableVideoCodecs[videoFormat].has(videoCodec)) return false;
+  // A value this version doesn't know (a newer one's, or a hand-edited settings file) counts as HEVC, as for the presets.
+  if (videoCodec == null || !(copyableVideoCodecs[videoFormat] ?? copyableVideoCodecs.hevc).has(videoCodec)) return false;
   if (videoPixFmt == null || !copyablePixelFormats.has(videoPixFmt)) return false;
   if (!hasAudio) return true;
   return audioCodec != null && copyableAudioCodecs.has(audioCodec) && isNeutralAudioGain(audioGainDb);

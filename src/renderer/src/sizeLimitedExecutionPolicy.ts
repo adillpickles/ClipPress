@@ -16,8 +16,9 @@ export function shouldWarnAboutTightAdvancedH264Target({
 }
 
 function createSizeLimitedTargetFailure(bestResult: SizeLimitedExecutionResult) {
-  if (bestResult.strategy.effectiveCodec === 'h264') {
-    return new UserFacingError(i18n.t("H.264 couldn't get this clip that small. Try AV1, a lower resolution or frame rate, or a bigger size."));
+  // Only where the encoder was picked by hand: a preset may have stepped down to H.264 without saying so.
+  if (bestResult.strategy.controlMode === 'advanced' && bestResult.strategy.effectiveCodec === 'h264') {
+    return new UserFacingError(i18n.t("H.264 couldn't get this clip that small. Try HEVC, a lower resolution or frame rate, or a bigger size."));
   }
 
   return new UserFacingError(i18n.t("This clip can't be made that small. Try a bigger size or a shorter clip."));

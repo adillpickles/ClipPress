@@ -37,6 +37,9 @@ describe('canCopyLosslessly', () => {
     expect(canCopyLosslessly({ ...copyable, videoFormat: 'h264', videoCodec: 'hevc' })).toBe(false);
     expect(canCopyLosslessly({ ...copyable, videoFormat: 'h264', videoCodec: 'h264' })).toBe(true);
     expect(canCopyLosslessly({ ...copyable, videoCodec: 'vp9' })).toBe(false);
+    // A format this version doesn't know counts as HEVC.
+    expect(canCopyLosslessly({ ...copyable, videoFormat: 'vvc' as never, videoCodec: 'hevc' })).toBe(true);
+    expect(canCopyLosslessly({ ...copyable, videoFormat: 'vvc' as never, videoCodec: 'av1' })).toBe(false);
   });
 
   it('copies only 8-bit 4:2:0 pictures', () => {

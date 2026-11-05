@@ -16,6 +16,7 @@ import { hasSegmentCrop, getSegmentCropFilter } from './segmentCrop';
 import mainApi from './mainApi';
 import runSizeLimitedAttempts from './sizeLimitedAttempts';
 import {
+  getPassArtifactPaths,
   getSizeLimitedCommonEncodeArgs,
   getSizeLimitedRotationArgs,
   getSizeLimitedSwsFlagsArgs,
@@ -39,6 +40,8 @@ import createAsyncCache from './util/asyncCache';
 import { getEncoderSizeRules, getGpuEncoderInfo, getGpuFramesDownloadFormat, getGpuFramesFilter, getHardwareDecodeArgs, gpuEncoderLabels, gpuEncoders, isGpuEncoderAvailable, runWithGpuFallbacksCore, shouldKeepFramesOnGpu, shouldUseHardwareDecode, withoutGpuEncoders } from './gpuEncoders';
 import type { GpuEncoderName } from './gpuEncoders';
 import { getTempWorkDir } from './util/tempFiles';
+import { isSavedEncoderCheck } from './savedEncoderCheck';
+import type { GpuCapability, SavedEncoderCheck } from './savedEncoderCheck';
 
 const { access, constants: { W_OK }, mkdir, mkdtemp, rmdir, stat, writeFile } = window.require('fs/promises');
 const { basename, dirname, join } = window.require('path');
@@ -103,8 +106,8 @@ async function probeSvtTwoPass(): Promise<{ supported: boolean, sure: boolean }>
 }
 
 /**
- * Whether this FFmpeg runs x265's two-pass: `-x265-stats` (FFmpeg 6.1 and newer) names the stats file the passes share.
- * An older custom FFmpeg doesn't know the option. A test that timed out isn't a sure answer.
+ * Whether this FFmpeg runs x265's two-pass: `-x265-stats` names the stats file the passes share (the bundled 9.0 has it;
+ * 8.0 and older releases don't). A test that timed out isn't a sure answer.
  */
 async function probeX265TwoPass(): Promise<{ supported: boolean, sure: boolean }> {
   const statsPath = join(getTempWorkDir(), `x265-two-pass-check-${Date.now()}.log`);
@@ -116,23 +119,8 @@ async function probeX265TwoPass(): Promise<{ supported: boolean, sure: boolean }
     console.info('x265 two-pass is not available in this FFmpeg', error);
     return { supported: false, sure: !(isExecaError(error) && error.timedOut) };
   } finally {
-    await Promise.all([statsPath, `${statsPath}.cutree`].map((path) => unlinkWithRetry(path).catch(() => undefined)));
+    await Promise.all(getPassArtifactPaths(statsPath).map((path) => unlinkWithRetry(path).catch(() => undefined)));
   }
-}
-
-type GpuCapability = (typeof gpuEncoders)[number]['capability'];
-/** What's kept between runs: the answer, and the encoders to test again each run all the same. */
-interface SavedEncoderCheck { capabilities: Omit<SizeLimitedEncoderCapabilities, 'cpuThreads'>, retest: GpuCapability[] }
-
-function isSavedEncoderCheck(value: unknown): value is SavedEncoderCheck {
-  if (value == null || typeof value !== 'object') return false;
-  const { capabilities, retest } = value as Record<string, unknown>;
-  if (capabilities == null || typeof capabilities !== 'object' || !Array.isArray(retest)) return false;
-  const known = gpuEncoders.map(({ capability }) => capability);
-  const { basicSettingsOnly } = capabilities as Record<string, unknown>;
-  return ['h264Nvenc', 'av1Nvenc', 'libx264', 'libx265', 'libsvtav1', 'svtTwoPass', 'x265TwoPass', ...known].every((key) => typeof (capabilities as Record<string, unknown>)[key] === 'boolean')
-    && retest.every((key) => known.includes(key as GpuCapability))
-    && (basicSettingsOnly == null || (Array.isArray(basicSettingsOnly) && basicSettingsOnly.every((key) => known.includes(key as GpuCapability))));
 }
 
 /**
@@ -469,17 +457,7 @@ async function discardIfCancelled({ result, outPath, signal }: { result: SizeLim
 
 async function deletePassArtifacts(basePath: string | undefined) {
   if (basePath == null) return;
-  const artifacts = [
-    basePath,
-    `${basePath}-0.log`,
-    `${basePath}-0.log.mbtree`,
-    `${basePath}.log`,
-    `${basePath}.log.mbtree`,
-    // x265's: the stats file is basePath itself.
-    `${basePath}.cutree`,
-  ];
-
-  await Promise.all(artifacts.map((artifact) => deleteIfExists(artifact)));
+  await Promise.all(getPassArtifactPaths(basePath).map((artifact) => deleteIfExists(artifact)));
 }
 
 interface PreparedTextOverlayAsset {

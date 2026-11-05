@@ -148,3 +148,19 @@ export function getSizeLimitedTwoPassEncodeArgs({
     '-y', outPath,
   ];
 }
+
+/**
+ * What a two-pass encode leaves beside its pass log: FFmpeg's names for x264 and SVT-AV1 (`-passlogfile`), x265's
+ * (`-x265-stats`: the file itself and its `.cutree`), and the `.temp` copies x264 and x265 write until the encoder
+ * closes, which a Cancel leaves behind.
+ */
+export function getPassArtifactPaths(basePath: string) {
+  return [
+    basePath,
+    `${basePath}-0.log`,
+    `${basePath}-0.log.mbtree`,
+    `${basePath}.log`,
+    `${basePath}.log.mbtree`,
+    `${basePath}.cutree`,
+  ].flatMap((path) => [path, `${path}.temp`]);
+}
