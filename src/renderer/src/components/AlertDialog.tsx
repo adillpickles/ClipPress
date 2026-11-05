@@ -2,7 +2,7 @@ import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { forwardRef } from 'react';
 
 import styles from './AlertDialog.module.css';
-import { releaseFocusWhenClosing, withClass } from './util';
+import { moveFocusWithDialogAnimation, withClass } from './util';
 
 export * from '@radix-ui/react-alert-dialog';
 
@@ -13,7 +13,7 @@ export const Content = forwardRef<HTMLDivElement, AlertDialog.AlertDialogContent
     ref={ref}
     className={[styles['AlertDialogContent'], className].filter(Boolean).join(' ')}
     onAnimationStart={(e) => {
-      releaseFocusWhenClosing(e);
+      moveFocusWithDialogAnimation(e);
       onAnimationStart?.(e);
     }}
     // eslint-disable-next-line react/jsx-props-no-spreading

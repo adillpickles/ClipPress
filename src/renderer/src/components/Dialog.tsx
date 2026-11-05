@@ -3,7 +3,7 @@ import { forwardRef } from 'react';
 import type { ReactNode } from 'react';
 
 import styles from './Dialog.module.css';
-import { releaseFocusWhenClosing, withClass } from './util';
+import { moveFocusWithDialogAnimation, withClass } from './util';
 import CloseButtonRaw from './CloseButton';
 
 export * from '@radix-ui/react-dialog';
@@ -18,7 +18,7 @@ export const Content = forwardRef<HTMLDivElement, Dialog.DialogContentProps>(({ 
   <Dialog.Content
     ref={ref}
     onAnimationStart={(e) => {
-      releaseFocusWhenClosing(e);
+      moveFocusWithDialogAnimation(e);
       onAnimationStart?.(e);
     }}
     className={[styles['DialogContent'], className].filter(Boolean).join(' ')}

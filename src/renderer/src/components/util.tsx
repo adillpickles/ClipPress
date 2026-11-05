@@ -12,13 +12,18 @@ export function withClass<P extends { className?: string | undefined }>(Componen
 }
 
 /**
- * As a dialog's content starts to fade out, focus goes back to the page: while it fades it's still there, and a key
- * (Space, Enter) would otherwise go to the button just clicked in it, or be kept from the app's shortcuts. Radix moves
- * focus back to what opened it once the dialog is gone. (Without an animation, Reduce motion, it's gone at once.)
+ * A dialog's content as its open or close animation starts. Closing, focus goes back to the page: while it fades it's
+ * still there, and a key (Space, Enter) would otherwise go to the button just clicked in it, or be kept from the app's
+ * shortcuts (Radix then focuses the dialog's trigger, when it has one). Opened again before it had gone, it takes focus
+ * back, as Radix doesn't focus a dialog it never removed. (Without an animation, Reduce motion, neither happens.)
  */
-export function releaseFocusWhenClosing(event: React.AnimationEvent<HTMLElement>) {
+export function moveFocusWithDialogAnimation(event: React.AnimationEvent<HTMLElement>) {
   const content = event.currentTarget;
-  if (event.target !== content || content.dataset['state'] !== 'closed') return;
+  if (event.target !== content) return;
   const active = document.activeElement;
-  if (active instanceof HTMLElement && content.contains(active)) active.blur();
+  if (content.dataset['state'] === 'closed') {
+    if (active instanceof HTMLElement && content.contains(active)) active.blur();
+  } else if (content.dataset['state'] === 'open' && (active == null || active === document.body)) {
+    content.focus({ preventScroll: true });
+  }
 }

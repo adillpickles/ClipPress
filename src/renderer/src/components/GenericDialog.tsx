@@ -1,5 +1,5 @@
 import type { MouseEventHandler, ReactNode } from 'react';
-import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import invariant from 'tiny-invariant';
@@ -60,8 +60,22 @@ export function useGenericDialogContext() {
   return context;
 }
 
-/** A little longer than the dialogs' close animation (150 ms, Dialog.module.css). */
-const closeFadeMs = 250;
+/** Longer than the dialogs' close animation (150 ms, Dialog.module.css), with room for a busy moment. */
+const closeFadeMs = 400;
+
+// Each dialog shown gets its own instance: one component used by several dialogs (ExpressionDialog) would otherwise
+// carry the last one's text into the next, opened while it faded.
+const dialogKeys = new WeakMap<GenericDialogParams, number>();
+let lastDialogKey = 0;
+function getDialogKey(dialog: GenericDialogParams) {
+  let key = dialogKeys.get(dialog);
+  if (key == null) {
+    lastDialogKey += 1;
+    key = lastDialogKey;
+    dialogKeys.set(dialog, key);
+  }
+  return key;
+}
 
 export default function GenericDialog({ dialog, onOpenChange }: {
   dialog: GenericDialogParams | undefined,
@@ -84,7 +98,7 @@ export default function GenericDialog({ dialog, onOpenChange }: {
           <>
             <Dialog.Overlay />
             <GenericDialogContext.Provider value={context}>
-              {shownDialog?.render()}
+              {shownDialog != null && <Fragment key={getDialogKey(shownDialog)}>{shownDialog.render()}</Fragment>}
             </GenericDialogContext.Provider>
           </>,
           portalTarget,
@@ -97,7 +111,7 @@ export default function GenericDialog({ dialog, onOpenChange }: {
           <>
             <AlertDialog.Overlay />
             <GenericDialogContext.Provider value={context}>
-              {shownAlert?.render()}
+              {shownAlert != null && <Fragment key={getDialogKey(shownAlert)}>{shownAlert.render()}</Fragment>}
             </GenericDialogContext.Provider>
           </>,
           portalTarget,
