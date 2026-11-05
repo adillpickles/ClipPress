@@ -482,6 +482,11 @@ function ExportConfirm({
     setSizeLimitAdvancedH264CpuPreset,
     sizeLimitAdvancedH264NvencPreset,
     setSizeLimitAdvancedH264NvencPreset,
+    sizeLimitAdvancedHevcCpuPreset,
+    setSizeLimitAdvancedHevcCpuPreset,
+    sizeLimitAdvancedHevcNvencPreset,
+    setSizeLimitAdvancedHevcNvencPreset,
+    sizeLimitVideoFormat,
     sizeLimitSeparateNamingMode,
     setSizeLimitSeparateNamingMode,
     sizeLimitMergedNamingMode,
@@ -1126,6 +1131,7 @@ function ExportConfirm({
   // The "NVIDIA" Advanced choices use whichever GPU vendor is present.
   const gpuAv1Encoder = encoderCapabilities != null ? pickGpuEncoder(encoderCapabilities, 'av1') : undefined;
   const gpuH264Encoder = encoderCapabilities != null ? pickGpuEncoder(encoderCapabilities, 'h264') : undefined;
+  const gpuHevcEncoder = encoderCapabilities != null ? pickGpuEncoder(encoderCapabilities, 'hevc') : undefined;
 
   const advancedEncoderUnavailableMessage = useMemo(() => {
     if (encoderCapabilities == null) return undefined;
@@ -1141,8 +1147,10 @@ function ExportConfirm({
     if (sizeLimitAdvancedEncoder === 'av1_nvenc' && gpuAv1Encoder == null) return t('No GPU AV1 encoder is available on this system. AV1 needs an NVIDIA RTX 40-series, AMD RX 7000-series, Intel Arc, or newer GPU.');
     if (sizeLimitAdvancedEncoder === 'h264_cpu' && !encoderCapabilities.libx264) return t('H.264 CPU (x264) is unavailable in this bundled ffmpeg build.');
     if (sizeLimitAdvancedEncoder === 'h264_nvenc' && gpuH264Encoder == null) return t('No GPU H.264 encoder is available on this system.');
+    if (sizeLimitAdvancedEncoder === 'hevc_cpu' && encoderCapabilities.libx265 !== true) return t('HEVC CPU (x265) is unavailable in this ffmpeg build.');
+    if (sizeLimitAdvancedEncoder === 'hevc_nvenc' && gpuHevcEncoder == null) return t('No GPU HEVC encoder is available on this system.');
     return undefined;
-  }, [encoderCapabilities, gpuAv1Encoder, gpuH264Encoder, sizeLimitAdvancedEncoder, t]);
+  }, [encoderCapabilities, gpuAv1Encoder, gpuH264Encoder, gpuHevcEncoder, sizeLimitAdvancedEncoder, t]);
 
   const advancedH264TargetWarningMessage = useMemo(() => {
     if (!isSizeLimited || sizeLimitControlMode !== 'advanced') return undefined;
@@ -1158,6 +1166,9 @@ function ExportConfirm({
       advancedAv1NvencPreset: sizeLimitAdvancedAv1NvencPreset,
       advancedH264CpuPreset: sizeLimitAdvancedH264CpuPreset,
       advancedH264NvencPreset: sizeLimitAdvancedH264NvencPreset,
+      advancedHevcCpuPreset: sizeLimitAdvancedHevcCpuPreset,
+      advancedHevcNvencPreset: sizeLimitAdvancedHevcNvencPreset,
+      videoFormat: sizeLimitVideoFormat,
       capabilities: encoderCapabilities ?? {
         h264Nvenc: false,
         av1Nvenc: false,
@@ -1191,10 +1202,13 @@ function ExportConfirm({
     sizeLimitAdvancedEncoder,
     sizeLimitAdvancedH264CpuPreset,
     sizeLimitAdvancedH264NvencPreset,
+    sizeLimitAdvancedHevcCpuPreset,
+    sizeLimitAdvancedHevcNvencPreset,
     sizeLimitAdvancedTwoPass,
     sizeLimitControlMode,
     sizeLimitMb,
     sizeLimitPreset,
+    sizeLimitVideoFormat,
     sizeLimitedHasAudio,
     sizeLimitedPreviewDuration,
     t,
@@ -1214,6 +1228,12 @@ function ExportConfirm({
       case 'h264_nvenc': {
         return sizeLimitAdvancedH264NvencPreset;
       }
+      case 'hevc_cpu': {
+        return sizeLimitAdvancedHevcCpuPreset;
+      }
+      case 'hevc_nvenc': {
+        return sizeLimitAdvancedHevcNvencPreset;
+      }
       default: {
         return '';
       }
@@ -1224,6 +1244,8 @@ function ExportConfirm({
     sizeLimitAdvancedEncoder,
     sizeLimitAdvancedH264CpuPreset,
     sizeLimitAdvancedH264NvencPreset,
+    sizeLimitAdvancedHevcCpuPreset,
+    sizeLimitAdvancedHevcNvencPreset,
   ]);
 
   const handleAdvancedPresetChange = useCallback(
@@ -1251,6 +1273,14 @@ function ExportConfirm({
           );
           break;
         }
+        case 'hevc_cpu': {
+          setSizeLimitAdvancedHevcCpuPreset(value as SizeLimitAdvancedH264CpuPreset);
+          break;
+        }
+        case 'hevc_nvenc': {
+          setSizeLimitAdvancedHevcNvencPreset(value as SizeLimitAdvancedNvencPreset);
+          break;
+        }
         default: {
           break;
         }
@@ -1261,6 +1291,8 @@ function ExportConfirm({
       setSizeLimitAdvancedAv1NvencPreset,
       setSizeLimitAdvancedH264CpuPreset,
       setSizeLimitAdvancedH264NvencPreset,
+      setSizeLimitAdvancedHevcCpuPreset,
+      setSizeLimitAdvancedHevcNvencPreset,
       sizeLimitAdvancedEncoder,
     ],
   );
@@ -1274,9 +1306,12 @@ function ExportConfirm({
         }));
       }
       case 'av1_nvenc':
+      case 'hevc_nvenc':
       case 'h264_nvenc': {
         return nvencPresetOptions.map((value) => ({ value, label: value }));
       }
+      // x265 takes x264's preset names.
+      case 'hevc_cpu':
       case 'h264_cpu': {
         return h264CpuPresetOptions.map((value) => ({ value, label: value }));
       }
@@ -1776,6 +1811,10 @@ function ExportConfirm({
                                   <option value="av1_nvenc" disabled={encoderCapabilities != null && gpuAv1Encoder == null}>
                                     {gpuAv1Encoder != null ? t('AV1 GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuAv1Encoder.vendor] }) : t('AV1 GPU')}
                                   </option>
+                                  <option value="hevc_cpu" disabled={encoderCapabilities != null && encoderCapabilities.libx265 !== true}>{t('HEVC CPU (x265)')}</option>
+                                  <option value="hevc_nvenc" disabled={encoderCapabilities != null && gpuHevcEncoder == null}>
+                                    {gpuHevcEncoder != null ? t('HEVC GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuHevcEncoder.vendor] }) : t('HEVC GPU')}
+                                  </option>
                                   <option value="h264_cpu" disabled={encoderCapabilities != null && !encoderCapabilities.libx264}>{t('H.264 CPU (x264)')}</option>
                                   <option value="h264_nvenc" disabled={encoderCapabilities != null && gpuH264Encoder == null}>
                                     {gpuH264Encoder != null ? t('H.264 GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuH264Encoder.vendor] }) : t('H.264 GPU')}
@@ -2198,6 +2237,12 @@ function ExportConfirm({
                                 disabled={encoderCapabilities != null && gpuAv1Encoder == null}
                               >
                                 {gpuAv1Encoder != null ? t('AV1 GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuAv1Encoder.vendor] }) : t('AV1 GPU')}
+                              </option>
+                              <option value="hevc_cpu" disabled={encoderCapabilities != null && encoderCapabilities.libx265 !== true}>
+                                {t('HEVC CPU (x265)')}
+                              </option>
+                              <option value="hevc_nvenc" disabled={encoderCapabilities != null && gpuHevcEncoder == null}>
+                                {gpuHevcEncoder != null ? t('HEVC GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuHevcEncoder.vendor] }) : t('HEVC GPU')}
                               </option>
                               <option
                                 value="h264_cpu"

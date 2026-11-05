@@ -603,6 +603,7 @@ function App() {
     sizeLimitMb,
     sizeLimitControlMode,
     sizeLimitPreset,
+    sizeLimitVideoFormat,
     sizeLimitSimpleResolution,
     sizeLimitSimpleResolutionTouched,
     sizeLimitSimpleFps,
@@ -615,6 +616,8 @@ function App() {
     sizeLimitAdvancedAv1NvencPreset,
     sizeLimitAdvancedH264CpuPreset,
     sizeLimitAdvancedH264NvencPreset,
+    sizeLimitAdvancedHevcCpuPreset,
+    sizeLimitAdvancedHevcNvencPreset,
     sizeLimitSeparateNamingMode,
     sizeLimitMergedNamingMode,
     sizeLimitCutFileTemplate,
@@ -3756,6 +3759,9 @@ function App() {
         } else if (gpuSwitchedOff && !strategy.usesGpu && strategy.preset !== 'max_quality') {
           notices.add(i18n.t('Use the GPU is off, so {{encoder}} was used.', { encoder }));
         } else {
+          // AV1 chosen keeps its notes from before HEVC became the default. For HEVC and H.264 every step down is a note
+          // (only advanced mode shows notes): the simple editor never mentions a fallback.
+          const presetName = { max_quality: i18n.t('Max Quality'), quality: i18n.t('Quality'), fast: i18n.t('Fast') }[strategy.preset ?? 'quality'];
           switch (strategy.id) {
             case 'max_quality_av1_cpu': {
               notices.add(strategy.executionMode === 'ffmpeg_two_pass'
@@ -3771,7 +3777,19 @@ function App() {
             case 'max_quality_h264_cpu_two_pass':
             case 'max_quality_h264_nvenc_two_pass':
             case 'max_quality_h264_gpu': {
-              warnings.add(i18n.t('AV1 encoders were unavailable, so Max Quality used {{encoder}}.', { encoder }));
+              if (strategy.fallbackReason === 'av1_unavailable') warnings.add(i18n.t('AV1 encoders were unavailable, so Max Quality used {{encoder}}.', { encoder }));
+              else if (strategy.fallbackReason === 'hevc_unavailable') notices.add(i18n.t('No HEVC encoder was found, so {{preset}} used {{encoder}}.', { preset: presetName, encoder }));
+              else notices.add(i18n.t('{{preset}} used {{encoder}}.', { preset: presetName, encoder }));
+              break;
+            }
+            case 'max_quality_hevc_cpu': {
+              notices.add(strategy.executionMode === 'ffmpeg_two_pass'
+                ? i18n.t('Max Quality used CPU HEVC (x265) 2-pass for the sharpest result every phone plays.')
+                : i18n.t('Max Quality used CPU HEVC (x265) for the sharpest result every phone plays.'));
+              break;
+            }
+            case 'max_quality_hevc_gpu': {
+              notices.add(i18n.t('x265 was unavailable, so Max Quality used {{encoder}}.', { encoder }));
               break;
             }
             case 'quality_av1_nvenc':
@@ -3783,16 +3801,23 @@ function App() {
               notices.add(i18n.t('This GPU has no AV1 encoder, so Quality used CPU AV1 (SVT-AV1), which takes longer.'));
               break;
             }
-            case 'quality_h264_gpu': {
-              notices.add(i18n.t('This GPU has no AV1 encoder, so Quality used {{encoder}} to keep the export quick.', { encoder }));
+            case 'quality_hevc_cpu': {
+              notices.add(i18n.t('This GPU has no HEVC encoder, so Quality used CPU HEVC (x265), which takes longer.'));
               break;
             }
-            case 'quality_hevc_gpu': {
-              notices.add(i18n.t('This GPU has no AV1 encoder, so Quality used {{encoder}}.', { encoder }));
+            case 'quality_h264_gpu':
+            case 'fast_h264_gpu':
+            case 'quality_hevc_gpu':
+            case 'fast_hevc_gpu': {
+              if (strategy.fallbackReason === 'gpu_av1_unavailable') notices.add(i18n.t('This GPU has no AV1 encoder, so {{preset}} used {{encoder}}.', { preset: presetName, encoder }));
+              else if (strategy.fallbackReason === 'gpu_hevc_unavailable') notices.add(i18n.t('This GPU has no HEVC encoder, so {{preset}} used {{encoder}}.', { preset: presetName, encoder }));
+              else notices.add(i18n.t('{{preset}} used {{encoder}}.', { preset: presetName, encoder }));
               break;
             }
             case 'quality_h264_cpu': {
-              warnings.add(i18n.t('AV1 encoders were unavailable, so Quality fell back to H.264 CPU.'));
+              if (strategy.fallbackReason === 'av1_unavailable') warnings.add(i18n.t('AV1 encoders were unavailable, so Quality fell back to H.264 CPU.'));
+              else if (strategy.fallbackReason === 'hevc_unavailable') notices.add(i18n.t('No HEVC encoder was found, so {{preset}} used {{encoder}}.', { preset: presetName, encoder }));
+              else notices.add(i18n.t('No usable GPU encoder was found, so {{preset}} used {{encoder}}.', { preset: presetName, encoder }));
               break;
             }
             case 'fast_av1_nvenc':
@@ -3800,14 +3825,10 @@ function App() {
               notices.add(i18n.t('Fast used {{encoder}} with a speed-tuned profile for quick shareable exports.', { encoder }));
               break;
             }
-            case 'fast_h264_gpu':
-            case 'fast_hevc_gpu': {
-              notices.add(i18n.t('This GPU has no AV1 encoder, so Fast used {{encoder}}.', { encoder }));
-              break;
-            }
+            case 'fast_hevc_cpu':
             case 'fast_av1_cpu':
             case 'fast_h264_cpu': {
-              notices.add(i18n.t('No usable GPU encoder was found, so Fast used {{encoder}}.', { encoder }));
+              notices.add(i18n.t('No usable GPU encoder was found, so {{preset}} used {{encoder}}.', { preset: presetName, encoder }));
               break;
             }
             default: {
@@ -4078,6 +4099,7 @@ function App() {
               targetSizeMb: quality.sizeLimitMb,
               controlMode: quality.controlMode,
               preset: quality.preset,
+              videoFormat: sizeLimitVideoFormat,
               resolution: quality.transform.resolution,
               fps: quality.transform.fps,
               advancedEncoder: sizeLimitAdvancedEncoder,
@@ -4086,6 +4108,8 @@ function App() {
               advancedAv1NvencPreset: sizeLimitAdvancedAv1NvencPreset,
               advancedH264CpuPreset: sizeLimitAdvancedH264CpuPreset,
               advancedH264NvencPreset: sizeLimitAdvancedH264NvencPreset,
+              advancedHevcCpuPreset: sizeLimitAdvancedHevcCpuPreset,
+              advancedHevcNvencPreset: sizeLimitAdvancedHevcNvencPreset,
               videoStream: sizeLimitedVideoStream,
               audioStream: sizeLimitedAudioStream,
               enableOverwriteOutput,
@@ -4151,6 +4175,7 @@ function App() {
             targetSizeMb: quality.sizeLimitMb,
             controlMode: quality.controlMode,
             preset: quality.preset,
+            videoFormat: sizeLimitVideoFormat,
             resolution: quality.transform.resolution,
             fps: quality.transform.fps,
             advancedEncoder: sizeLimitAdvancedEncoder,
@@ -4159,6 +4184,8 @@ function App() {
             advancedAv1NvencPreset: sizeLimitAdvancedAv1NvencPreset,
             advancedH264CpuPreset: sizeLimitAdvancedH264CpuPreset,
             advancedH264NvencPreset: sizeLimitAdvancedH264NvencPreset,
+            advancedHevcCpuPreset: sizeLimitAdvancedHevcCpuPreset,
+            advancedHevcNvencPreset: sizeLimitAdvancedHevcNvencPreset,
             videoStream: sizeLimitedVideoStream,
             audioStream: sizeLimitedAudioStream,
             enableOverwriteOutput,
@@ -4859,12 +4886,15 @@ function App() {
     sizeLimitAdvancedEncoder,
     sizeLimitAdvancedH264CpuPreset,
     sizeLimitAdvancedH264NvencPreset,
+    sizeLimitAdvancedHevcCpuPreset,
+    sizeLimitAdvancedHevcNvencPreset,
     sizeLimitAdvancedTwoPass,
     sizeLimitControlMode,
     sizeLimitMb,
     sizeLimitMergedNamingMode,
     sizeLimitPreset,
     sizeLimitSeparateNamingMode,
+    sizeLimitVideoFormat,
     sizeLimitedAudioGainDb,
     sizeLimitedCutFileTemplateOrDefault,
     sizeLimitedCutMergedFileTemplateOrDefault,

@@ -13,7 +13,7 @@ import type { SizeLimitedCodec, SizeLimitedEncoderCapabilities, SizeLimitedEncod
  * Kept free of `window` and the ffmpeg runner so the benchmark can load it in plain Node.
  */
 
-export type GpuEncoderName = Exclude<SizeLimitedEncoderName, 'libx264' | 'libsvtav1'>;
+export type GpuEncoderName = Exclude<SizeLimitedEncoderName, 'libx264' | 'libx265' | 'libsvtav1'>;
 export type GpuVendor = Exclude<SizeLimitedHardwareTarget, 'cpu'>;
 type GpuCapabilityKey = SizeLimitedGpuCapability;
 
@@ -67,6 +67,9 @@ export function withoutGpuEncoders(capabilities: SizeLimitedEncoderCapabilities)
  */
 export const minCpuThreadsForCpuAv1 = 8;
 
+/** The same for CPU HEVC (x265) against a GPU H.264 encode, for a graphics card that can't make HEVC. */
+export const minCpuThreadsForCpuHevc = 8;
+
 /** NVENC preset names are the shared vocabulary; AMD and Intel map them to their own scales. */
 export function getAmfQualityPreset(encoder: 'av1_amf' | 'h264_amf' | 'hevc_amf', preset: SizeLimitAdvancedNvencPreset) {
   const level = Number(preset.slice(1));
@@ -107,6 +110,7 @@ export const gpuVendorLabels: Record<GpuVendor, string> = {
 export const gpuEncoderLabels: Record<SizeLimitedEncoderName, string> = {
   libsvtav1: 'CPU AV1 (SVT-AV1)',
   libx264: 'CPU H.264',
+  libx265: 'CPU HEVC (x265)',
   av1_nvenc: 'NVIDIA AV1',
   h264_nvenc: 'NVIDIA H.264',
   av1_amf: 'AMD AV1',

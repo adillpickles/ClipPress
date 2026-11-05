@@ -56,12 +56,20 @@ test('getMapStreamsArgs', () => {
     '-map', '0:0', '-c:0', 'copy',
     '-map', '0:1', '-c:1', 'copy',
     '-map', '0:2', '-c:2', 'copy',
-    '-map', '0:3', '-c:3', 'copy',
+    '-map', '0:3', '-c:3', 'copy', '-tag:3', 'hvc1',
     '-map', '0:4', '-c:4', 'copy',
     '-map', '0:5', '-c:5', 'copy',
     '-map', '0:6', '-c:6', 'copy',
     '-map', '0:7', '-c:7', 'mov_text',
   ]);
+});
+
+test('getMapStreamsArgs, HEVC keeps its own tag outside MP4 and MOV', () => {
+  expect(getMapStreamsArgs({
+    allFilesMeta,
+    copyFileStreams: [{ path, streamIds: [3] }],
+    outFormat: 'matroska',
+  })).toEqual(['-map', '0:3', '-c:0', 'copy']);
 });
 
 test('getMapStreamsArgs, subtitles to matroska', () => {

@@ -36,11 +36,17 @@ export type SizeLimitControlMode = 'simple' | 'advanced';
 
 export type SizeLimitPreset = 'max_quality' | 'quality' | 'fast';
 
+/**
+ * The codec the size presets make. HEVC plays and saves on every phone; H.264 plays on anything, old PCs included;
+ * AV1 can be a little sharper, but iPhones won't save it to Photos and those before the 15 Pro can't play it.
+ */
+export type SizeLimitVideoFormat = 'hevc' | 'h264' | 'av1';
+
 export type SizeLimitSimpleResolution = 'auto' | 'source' | '720p' | '1080p' | '1440p';
 
 export type SizeLimitSimpleFps = 'auto' | 'source' | '30fps';
 
-export type SizeLimitAdvancedEncoder = 'av1_cpu' | 'av1_nvenc' | 'h264_cpu' | 'h264_nvenc';
+export type SizeLimitAdvancedEncoder = 'av1_cpu' | 'av1_nvenc' | 'hevc_cpu' | 'hevc_nvenc' | 'h264_cpu' | 'h264_nvenc';
 
 export type SizeLimitAdvancedAv1CpuPreset = number;
 
@@ -198,6 +204,8 @@ export interface Config {
   sizeLimitQuality: SizeLimitQuality,
   sizeLimitControlMode: SizeLimitControlMode,
   sizeLimitPreset: SizeLimitPreset,
+  /** Settings > Export > Video format: what the size presets make. Custom settings choose their own encoder. */
+  sizeLimitVideoFormat: SizeLimitVideoFormat,
   sizeLimitSimpleResolution: SizeLimitSimpleResolution,
   sizeLimitSimpleResolutionTouched: boolean,
   sizeLimitSimpleFps: SizeLimitSimpleFps,
@@ -210,6 +218,9 @@ export interface Config {
   sizeLimitAdvancedAv1NvencPreset: SizeLimitAdvancedNvencPreset,
   sizeLimitAdvancedH264CpuPreset: SizeLimitAdvancedH264CpuPreset,
   sizeLimitAdvancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
+  /** x265 takes x264's preset names. */
+  sizeLimitAdvancedHevcCpuPreset: SizeLimitAdvancedH264CpuPreset,
+  sizeLimitAdvancedHevcNvencPreset: SizeLimitAdvancedNvencPreset,
   sizeLimitSeparateNamingMode: SizeLimitNamingMode,
   sizeLimitMergedNamingMode: SizeLimitNamingMode,
   /**

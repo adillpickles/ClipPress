@@ -14,6 +14,9 @@ const strategy = resolveSizeLimitedStrategy({
   advancedAv1NvencPreset: 'p6',
   advancedH264CpuPreset: 'slow',
   advancedH264NvencPreset: 'p4',
+  advancedHevcCpuPreset: 'fast',
+  advancedHevcNvencPreset: 'p6',
+  videoFormat: 'av1',
   capabilities: { h264Nvenc: false, av1Nvenc: false, libx264: true, libsvtav1: true },
 });
 const plan = planSizeLimitedEncode({ targetSizeMb: 10, duration: 30, hasAudio: true, strategy });

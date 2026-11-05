@@ -5,10 +5,11 @@ import type {
   SizeLimitAdvancedNvencPreset,
   SizeLimitControlMode,
   SizeLimitPreset,
+  SizeLimitVideoFormat,
 } from '../../common/types.js';
-import type { SizeLimitedEncoderCapabilities, SizeLimitedResolvedStrategy } from './sizeLimitedTypes';
+import type { SizeLimitedCodec, SizeLimitedEncoderCapabilities, SizeLimitedResolvedStrategy, SizeLimitedStrategyId } from './sizeLimitedTypes';
 // The extension is required because `script/benchmarkSizeLimited.ts` loads this module in plain Node.
-import { getGpuEncoderInfo, minCpuThreadsForCpuAv1, pickGpuEncoder } from './gpuEncoders.ts';
+import { getGpuEncoderInfo, minCpuThreadsForCpuAv1, minCpuThreadsForCpuHevc, pickGpuEncoder } from './gpuEncoders.ts';
 
 const nvencPresetValues = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'] as const satisfies readonly SizeLimitAdvancedNvencPreset[];
 const h264CpuPresetValues = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'] as const satisfies readonly SizeLimitAdvancedH264CpuPreset[];
@@ -53,7 +54,12 @@ export function parseFfmpegEncoderNames(output: string) {
     .filter((encoderName): encoderName is string => encoderName != null));
 }
 
-function resolveSimplePresetStrategy({
+function cpuIsQuickEnough(capabilities: SizeLimitedEncoderCapabilities, minThreads: number) {
+  return capabilities.cpuThreads == null || capabilities.cpuThreads >= minThreads;
+}
+
+/** Video format AV1: as before HEVC became the default (iPhones play it from the 15 Pro on, and never save it). */
+function resolveAv1PresetStrategy({
   preset,
   capabilities,
 }: {
@@ -159,8 +165,7 @@ function resolveSimplePresetStrategy({
 
       // Nor HEVC: CPU AV1 keeps the better compression when the CPU can keep up; otherwise the GPU's H.264 encoder is
       // far quicker.
-      const cpuIsQuickEnough = capabilities.cpuThreads == null || capabilities.cpuThreads >= minCpuThreadsForCpuAv1;
-      if (capabilities.libsvtav1 && (cpuIsQuickEnough || gpuH264 == null)) {
+      if (capabilities.libsvtav1 && (cpuIsQuickEnough(capabilities, minCpuThreadsForCpuAv1) || gpuH264 == null)) {
         return buildStrategy({
           controlMode: 'simple',
           preset,
@@ -286,13 +291,214 @@ function resolveSimplePresetStrategy({
   }
 }
 
+/** CPU H.264 (x264): two passes at `slow` for Max quality (they look the same as at `slower`, in less time). */
+function x264Strategy(preset: SizeLimitPreset, fallbackReason: SizeLimitedResolvedStrategy['fallbackReason']) {
+  if (preset === 'max_quality') {
+    return buildStrategy({
+      controlMode: 'simple',
+      preset,
+      effectiveCodec: 'h264',
+      id: 'max_quality_h264_cpu_two_pass',
+      encoder: 'libx264',
+      encoderPreset: 'slow',
+      hardware: 'cpu',
+      usesGpu: false,
+      executionMode: 'ffmpeg_two_pass',
+      tuningProfile: 'max_quality',
+      fallbackReason,
+    });
+  }
+  if (preset === 'quality') {
+    return buildStrategy({
+      controlMode: 'simple',
+      preset,
+      effectiveCodec: 'h264',
+      id: 'quality_h264_cpu',
+      encoder: 'libx264',
+      encoderPreset: 'slow',
+      hardware: 'cpu',
+      usesGpu: false,
+      executionMode: 'single_pass',
+      tuningProfile: 'quality',
+      fallbackReason,
+    });
+  }
+  return buildStrategy({
+    controlMode: 'simple',
+    preset,
+    effectiveCodec: 'h264',
+    id: 'fast_h264_cpu',
+    plannerProfileId: 'quality_h264_cpu',
+    encoder: 'libx264',
+    encoderPreset: 'veryfast',
+    hardware: 'cpu',
+    usesGpu: false,
+    executionMode: 'single_pass',
+    tuningProfile: 'fast',
+    fallbackReason,
+  });
+}
+
+/**
+ * The graphics card's H.264: p6 with its full multipass for Max quality, p6 for Quality, p3 for Fast. Without any GPU
+ * H.264 either, the NVENC one fails the support check with a clear error.
+ */
+function gpuH264Strategy(preset: SizeLimitPreset, capabilities: SizeLimitedEncoderCapabilities, fallbackReason: SizeLimitedResolvedStrategy['fallbackReason']) {
+  const h264 = pickGpuEncoder(capabilities, 'h264') ?? getGpuEncoderInfo('h264_nvenc')!;
+  if (preset === 'max_quality') {
+    return buildStrategy({
+      controlMode: 'simple',
+      preset,
+      effectiveCodec: 'h264',
+      id: h264.vendor === 'nvidia' ? 'max_quality_h264_nvenc_two_pass' : 'max_quality_h264_gpu',
+      plannerProfileId: 'max_quality_h264_nvenc_two_pass',
+      encoderPreset: 'p6',
+      ...gpuFields(h264, true, capabilities),
+      tuningProfile: 'max_quality',
+      fallbackReason,
+    });
+  }
+  return buildStrategy({
+    controlMode: 'simple',
+    preset,
+    effectiveCodec: 'h264',
+    id: preset === 'quality' ? 'quality_h264_gpu' : 'fast_h264_gpu',
+    plannerProfileId: 'advanced_h264_nvenc_single_pass',
+    encoderPreset: preset === 'quality' ? 'p6' : 'p3',
+    ...gpuFields(h264, false, capabilities),
+    tuningProfile: preset,
+    fallbackReason,
+  });
+}
+
+/** CPU HEVC (x265), at the settings measured best for each preset (sizeLimitedEncoderArgs.ts). */
+function x265Strategy(preset: SizeLimitPreset, capabilities: SizeLimitedEncoderCapabilities, fallbackReason: SizeLimitedResolvedStrategy['fallbackReason']) {
+  if (preset === 'max_quality') {
+    return buildStrategy({
+      controlMode: 'simple',
+      preset,
+      effectiveCodec: 'hevc',
+      id: 'max_quality_hevc_cpu',
+      encoder: 'libx265',
+      encoderPreset: 'slow',
+      hardware: 'cpu',
+      usesGpu: false,
+      // A custom FFmpeg without x265's two-pass (`-x265-stats`) makes one pass.
+      executionMode: capabilities.x265TwoPass === false ? 'single_pass' : 'ffmpeg_two_pass',
+      tuningProfile: 'max_quality',
+      fallbackReason,
+    });
+  }
+  return buildStrategy({
+    controlMode: 'simple',
+    preset,
+    effectiveCodec: 'hevc',
+    id: preset === 'quality' ? 'quality_hevc_cpu' : 'fast_hevc_cpu',
+    encoder: 'libx265',
+    encoderPreset: preset === 'quality' ? 'fast' : 'veryfast',
+    hardware: 'cpu',
+    usesGpu: false,
+    executionMode: 'single_pass',
+    tuningProfile: preset,
+    fallbackReason,
+  });
+}
+
+/**
+ * Video format HEVC, the default: every iPhone and Android phone plays and saves it, and so does every PC with an HEVC
+ * decoder (Discord's app plays video on the graphics card only). Every step down stays phone-safe: the graphics card's
+ * HEVC, then x265, then H.264. Never AV1.
+ */
+function resolveHevcPresetStrategy({ preset, capabilities }: {
+  preset: SizeLimitPreset,
+  capabilities: SizeLimitedEncoderCapabilities,
+}): SizeLimitedResolvedStrategy {
+  const gpuHevc = pickGpuEncoder(capabilities, 'hevc');
+  const gpuH264 = pickGpuEncoder(capabilities, 'h264');
+  const x265 = capabilities.libx265 === true;
+
+  switch (preset) {
+    case 'max_quality': {
+      // x265's two passes: time doesn't matter within reason (about twice SVT-AV1's at preset 5, measured).
+      if (x265) return x265Strategy(preset, capabilities, undefined);
+      if (gpuHevc != null) {
+        return buildStrategy({
+          controlMode: 'simple',
+          preset,
+          effectiveCodec: 'hevc',
+          id: 'max_quality_hevc_gpu',
+          encoderPreset: 'p7',
+          ...gpuFields(gpuHevc, true, capabilities),
+          tuningProfile: 'max_quality',
+          fallbackReason: 'x265_unavailable',
+        });
+      }
+      return capabilities.libx264 ? x264Strategy(preset, 'hevc_unavailable') : gpuH264Strategy(preset, capabilities, 'hevc_unavailable');
+    }
+    case 'quality': {
+      if (gpuHevc != null) {
+        return buildStrategy({
+          controlMode: 'simple', preset, effectiveCodec: 'hevc', id: 'quality_hevc_gpu', encoderPreset: 'p6', ...gpuFields(gpuHevc, false, capabilities), tuningProfile: 'quality',
+        });
+      }
+      // A graphics card without HEVC (GTX 600/700, RX 300 and older, Intel before the 6th generation): x265 keeps HEVC's
+      // sharper picture when the CPU can keep up; otherwise the card's H.264 is far quicker.
+      if (x265 && (cpuIsQuickEnough(capabilities, minCpuThreadsForCpuHevc) || gpuH264 == null)) return x265Strategy(preset, capabilities, 'gpu_hevc_unavailable');
+      if (gpuH264 != null) return gpuH264Strategy(preset, capabilities, 'gpu_hevc_unavailable');
+      return x264Strategy(preset, 'hevc_unavailable');
+    }
+    case 'fast': {
+      // Fast is about speed: any GPU encoder beats the CPU.
+      if (gpuHevc != null) {
+        return buildStrategy({
+          controlMode: 'simple', preset, effectiveCodec: 'hevc', id: 'fast_hevc_gpu', encoderPreset: 'p3', ...gpuFields(gpuHevc, false, capabilities), tuningProfile: 'fast',
+        });
+      }
+      if (gpuH264 != null) return gpuH264Strategy(preset, capabilities, 'gpu_hevc_unavailable');
+      if (x265) return x265Strategy(preset, capabilities, 'gpu_unavailable');
+      return x264Strategy(preset, 'gpu_unavailable');
+    }
+    default: {
+      throw new Error(`Unhandled size-limited preset: ${preset}`);
+    }
+  }
+}
+
+/** Video format H.264: plays on anything, old PCs included, a little less sharp. The graphics card first, but for Max quality. */
+function resolveH264PresetStrategy({ preset, capabilities }: {
+  preset: SizeLimitPreset,
+  capabilities: SizeLimitedEncoderCapabilities,
+}): SizeLimitedResolvedStrategy {
+  const gpuH264 = pickGpuEncoder(capabilities, 'h264');
+  if (preset === 'max_quality') return capabilities.libx264 ? x264Strategy(preset, undefined) : gpuH264Strategy(preset, capabilities, undefined);
+  if (gpuH264 != null) return gpuH264Strategy(preset, capabilities, undefined);
+  return x264Strategy(preset, 'gpu_unavailable');
+}
+
+function resolveSimplePresetStrategy({ preset, videoFormat, capabilities }: {
+  preset: SizeLimitPreset,
+  videoFormat: SizeLimitVideoFormat,
+  capabilities: SizeLimitedEncoderCapabilities,
+}): SizeLimitedResolvedStrategy {
+  if (videoFormat === 'av1') return resolveAv1PresetStrategy({ preset, capabilities });
+  if (videoFormat === 'h264') return resolveH264PresetStrategy({ preset, capabilities });
+  return resolveHevcPresetStrategy({ preset, capabilities });
+}
+
+const advancedGpuIds = {
+  av1: { requested: 'av1_nvenc', vendorNeutral: 'advanced_av1_gpu', planner: 'advanced_av1_nvenc_single_pass', twoPass: 'advanced_av1_nvenc_two_pass', singlePass: 'advanced_av1_nvenc_single_pass' },
+  hevc: { requested: 'hevc_nvenc', vendorNeutral: 'advanced_hevc_gpu', planner: 'advanced_hevc_nvenc_single_pass', twoPass: 'advanced_hevc_nvenc_two_pass', singlePass: 'advanced_hevc_nvenc_single_pass' },
+  h264: { requested: 'h264_nvenc', vendorNeutral: 'advanced_h264_gpu', planner: 'advanced_h264_nvenc_single_pass', twoPass: 'advanced_h264_nvenc_two_pass', singlePass: 'advanced_h264_nvenc_single_pass' },
+} as const satisfies Record<SizeLimitedCodec, { requested: SizeLimitAdvancedEncoder, vendorNeutral: SizeLimitedStrategyId, planner: SizeLimitedStrategyId, twoPass: SizeLimitedStrategyId, singlePass: SizeLimitedStrategyId }>;
+
 function resolveAdvancedGpuStrategy({ codec, twoPass, preset, capabilities }: {
-  codec: 'av1' | 'h264',
+  codec: SizeLimitedCodec,
   twoPass: boolean,
   preset: SizeLimitAdvancedNvencPreset,
   capabilities: SizeLimitedEncoderCapabilities,
 }): SizeLimitedResolvedStrategy {
-  const nvencInfo = getGpuEncoderInfo(codec === 'av1' ? 'av1_nvenc' : 'h264_nvenc')!;
+  const ids = advancedGpuIds[codec];
+  const nvencInfo = getGpuEncoderInfo(ids.requested)!;
   const otherVendor = capabilities[nvencInfo.capability] ? undefined : pickGpuEncoder(capabilities, codec);
   const encoderPreset = sanitizeNvencPreset(preset);
 
@@ -300,11 +506,11 @@ function resolveAdvancedGpuStrategy({ codec, twoPass, preset, capabilities }: {
   if (otherVendor != null) {
     return buildStrategy({
       controlMode: 'advanced',
-      requestedAdvancedEncoder: codec === 'av1' ? 'av1_nvenc' : 'h264_nvenc',
+      requestedAdvancedEncoder: ids.requested,
       requestedAdvancedTwoPass: twoPass,
       effectiveCodec: codec,
-      id: codec === 'av1' ? 'advanced_av1_gpu' : 'advanced_h264_gpu',
-      plannerProfileId: codec === 'av1' ? 'advanced_av1_nvenc_single_pass' : 'advanced_h264_nvenc_single_pass',
+      id: ids.vendorNeutral,
+      plannerProfileId: ids.planner,
       encoderPreset,
       ...gpuFields(otherVendor, twoPass, capabilities),
       tuningProfile: 'advanced',
@@ -312,12 +518,9 @@ function resolveAdvancedGpuStrategy({ codec, twoPass, preset, capabilities }: {
     });
   }
 
-  const ids = codec === 'av1'
-    ? { twoPass: 'advanced_av1_nvenc_two_pass', singlePass: 'advanced_av1_nvenc_single_pass' } as const
-    : { twoPass: 'advanced_h264_nvenc_two_pass', singlePass: 'advanced_h264_nvenc_single_pass' } as const;
   return buildStrategy({
     controlMode: 'advanced',
-    requestedAdvancedEncoder: codec === 'av1' ? 'av1_nvenc' : 'h264_nvenc',
+    requestedAdvancedEncoder: ids.requested,
     requestedAdvancedTwoPass: twoPass,
     effectiveCodec: codec,
     id: twoPass ? ids.twoPass : ids.singlePass,
@@ -334,6 +537,8 @@ function resolveAdvancedStrategy({
   advancedAv1NvencPreset,
   advancedH264CpuPreset,
   advancedH264NvencPreset,
+  advancedHevcCpuPreset,
+  advancedHevcNvencPreset,
   capabilities,
 }: {
   advancedEncoder: SizeLimitAdvancedEncoder,
@@ -342,6 +547,8 @@ function resolveAdvancedStrategy({
   advancedAv1NvencPreset: SizeLimitAdvancedNvencPreset,
   advancedH264CpuPreset: SizeLimitAdvancedH264CpuPreset,
   advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
+  advancedHevcCpuPreset: SizeLimitAdvancedH264CpuPreset,
+  advancedHevcNvencPreset: SizeLimitAdvancedNvencPreset,
   capabilities: SizeLimitedEncoderCapabilities,
 }): SizeLimitedResolvedStrategy {
   switch (advancedEncoder) {
@@ -365,6 +572,25 @@ function resolveAdvancedStrategy({
     }
     case 'h264_nvenc': {
       return resolveAdvancedGpuStrategy({ codec: 'h264', twoPass: advancedTwoPass, preset: advancedH264NvencPreset, capabilities });
+    }
+    case 'hevc_nvenc': {
+      return resolveAdvancedGpuStrategy({ codec: 'hevc', twoPass: advancedTwoPass, preset: advancedHevcNvencPreset, capabilities });
+    }
+    case 'hevc_cpu': {
+      return buildStrategy({
+        controlMode: 'advanced',
+        requestedAdvancedEncoder: 'hevc_cpu',
+        requestedAdvancedTwoPass: advancedTwoPass,
+        effectiveCodec: 'hevc',
+        id: advancedTwoPass ? 'advanced_hevc_cpu_two_pass' : 'advanced_hevc_cpu_single_pass',
+        encoder: 'libx265',
+        // x265 takes x264's preset names.
+        encoderPreset: sanitizeH264CpuPreset(advancedHevcCpuPreset),
+        hardware: 'cpu',
+        usesGpu: false,
+        executionMode: advancedTwoPass && capabilities.x265TwoPass !== false ? 'ffmpeg_two_pass' : 'single_pass',
+        tuningProfile: 'advanced',
+      });
     }
     case 'h264_cpu': {
       return buildStrategy({
@@ -390,22 +616,29 @@ function resolveAdvancedStrategy({
 export function resolveSizeLimitedStrategy({
   controlMode,
   preset,
+  videoFormat,
   advancedEncoder,
   advancedTwoPass,
   advancedAv1CpuPreset,
   advancedAv1NvencPreset,
   advancedH264CpuPreset,
   advancedH264NvencPreset,
+  advancedHevcCpuPreset,
+  advancedHevcNvencPreset,
   capabilities,
 }: {
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
+  /** Settings > Export > Video format, for the presets. */
+  videoFormat: SizeLimitVideoFormat,
   advancedEncoder: SizeLimitAdvancedEncoder,
   advancedTwoPass: boolean,
   advancedAv1CpuPreset: SizeLimitAdvancedAv1CpuPreset,
   advancedAv1NvencPreset: SizeLimitAdvancedNvencPreset,
   advancedH264CpuPreset: SizeLimitAdvancedH264CpuPreset,
   advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
+  advancedHevcCpuPreset: SizeLimitAdvancedH264CpuPreset,
+  advancedHevcNvencPreset: SizeLimitAdvancedNvencPreset,
   capabilities: SizeLimitedEncoderCapabilities,
 }): SizeLimitedResolvedStrategy {
   if (controlMode === 'advanced') {
@@ -416,12 +649,15 @@ export function resolveSizeLimitedStrategy({
       advancedAv1NvencPreset,
       advancedH264CpuPreset,
       advancedH264NvencPreset,
+      advancedHevcCpuPreset,
+      advancedHevcNvencPreset,
       capabilities,
     });
   }
 
   return resolveSimplePresetStrategy({
     preset,
+    videoFormat,
     capabilities,
   });
 }

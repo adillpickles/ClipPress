@@ -72,7 +72,8 @@ function createProfile(profile: StrategyProfile) {
 type CalibratedStrategyId = Exclude<SizeLimitedStrategyId,
   | 'max_quality_av1_gpu' | 'max_quality_h264_gpu' | 'quality_av1_gpu' | 'quality_h264_gpu' | 'fast_av1_gpu'
   | 'fast_h264_gpu' | 'fast_av1_cpu' | 'fast_h264_cpu' | 'advanced_av1_gpu' | 'advanced_h264_gpu' | 'quality_hevc_gpu'
-  | 'fast_hevc_gpu'>;
+  | 'fast_hevc_gpu' | 'max_quality_hevc_cpu' | 'quality_hevc_cpu' | 'fast_hevc_cpu' | 'max_quality_hevc_gpu' | 'advanced_hevc_gpu'
+  | 'advanced_hevc_cpu_single_pass' | 'advanced_hevc_cpu_two_pass' | 'advanced_hevc_nvenc_single_pass' | 'advanced_hevc_nvenc_two_pass'>;
 
 const calibratedProfiles: Record<CalibratedStrategyId, StrategyProfile> = {
   max_quality_av1_cpu: createProfile({
@@ -282,6 +283,15 @@ const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
   // HEVC's container overhead and audio share match AV1's; its retries take the AV1 path (not H.264's).
   quality_hevc_gpu: calibratedProfiles.quality_av1_nvenc,
   fast_hevc_gpu: calibratedProfiles.fast_av1_nvenc,
+  max_quality_hevc_gpu: calibratedProfiles.max_quality_av1_nvenc_two_pass,
+  max_quality_hevc_cpu: calibratedProfiles.max_quality_av1_cpu,
+  quality_hevc_cpu: calibratedProfiles.quality_av1_cpu,
+  fast_hevc_cpu: calibratedProfiles.quality_av1_cpu,
+  advanced_hevc_gpu: calibratedProfiles.advanced_av1_nvenc_single_pass,
+  advanced_hevc_nvenc_single_pass: calibratedProfiles.advanced_av1_nvenc_single_pass,
+  advanced_hevc_nvenc_two_pass: calibratedProfiles.advanced_av1_nvenc_two_pass,
+  advanced_hevc_cpu_single_pass: calibratedProfiles.advanced_av1_cpu_single_pass,
+  advanced_hevc_cpu_two_pass: calibratedProfiles.advanced_av1_cpu_two_pass,
   fast_av1_cpu: calibratedProfiles.quality_av1_cpu,
   fast_h264_cpu: calibratedProfiles.quality_h264_cpu,
   advanced_av1_gpu: calibratedProfiles.advanced_av1_nvenc_single_pass,
@@ -348,12 +358,15 @@ function getEncoderTargetingProfile(strategy: SizeLimitedResolvedStrategy, budge
   };
 }
 
-/** SVT-AV1's real two-pass lands within about 1% of its bitrate (98.9-99.6% measured), so it can aim closer. */
+/**
+ * SVT-AV1's real two-pass lands within about 1% of its bitrate (98.9-99.6% measured), so it can aim closer. x265's
+ * two-pass lands a little under it (96.5-99.5% on 1080p60 game footage, never over).
+ */
 const svtTwoPassFirstAttemptTargetFactor = 0.97;
 
 function getTargetingProfile(strategy: SizeLimitedResolvedStrategy, budgetProfile: StrategyProfile): StrategyTargetingProfile {
   const profile = getEncoderTargetingProfile(strategy, budgetProfile);
-  if (strategy.encoder === 'libsvtav1' && strategy.executionMode === 'ffmpeg_two_pass') {
+  if ((strategy.encoder === 'libsvtav1' || strategy.encoder === 'libx265') && strategy.executionMode === 'ffmpeg_two_pass') {
     return { ...profile, firstAttemptTargetFactor: Math.max(profile.firstAttemptTargetFactor, svtTwoPassFirstAttemptTargetFactor) };
   }
   if (strategy.hardware !== 'amd') return profile;

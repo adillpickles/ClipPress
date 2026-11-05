@@ -10,6 +10,10 @@ const defaultStrategyArgs = {
   advancedAv1NvencPreset: 'p6',
   advancedH264CpuPreset: 'slow',
   advancedH264NvencPreset: 'p4',
+  advancedHevcCpuPreset: 'fast',
+  advancedHevcNvencPreset: 'p6',
+  // These cases check the AV1 order, as it was before HEVC became the default (that has its own tests).
+  videoFormat: 'av1',
 } as const;
 
 function getArgValue(args: string[], flag: string) {

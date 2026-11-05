@@ -9,6 +9,14 @@ const fastCpuX264Params = 'aq-mode=3:aq-strength=0.8:deblock=-1,-1:rc-lookahead=
 const qualityCpuX264Params = 'aq-mode=3:aq-strength=0.85:deblock=-1,-1:rc-lookahead=28:me=umh:subme=7:ref=3';
 const premiumCpuX264Params = 'aq-mode=3:aq-strength=0.9:deblock=-1,-1:rc-lookahead=40:me=umh:subme=8:ref=4';
 const maxQualitySvtTune = '0';
+/**
+ * x265, measured on 1080p60 game footage at 5 Mbps (VMAF, three games). Quality is `fast` with slow's psychovisual
+ * RDOQ: 1.3-3.1 sharper than plain `fast` and 1.2-3.5 than `medium`, in `medium`'s time. Fast is plain `veryfast`.
+ * Max quality is `slow`'s two passes. SAO off is never worse (up to +0.3 on `slow`). `superfast` scores higher only by
+ * leaving out adaptive quantisation, which bands flat and dark areas (VMAF doesn't see banding).
+ */
+const qualityX265Params = ['no-sao=1', 'rdoq-level=2', 'psy-rdoq=1.0'];
+const maxQualityX265Params = ['no-sao=1'];
 const longGopSeconds = 10;
 const fallbackLongGopFrames = 300;
 /** The most frames AMD's H.264 encoder allows between keyframes. */
@@ -76,10 +84,12 @@ function resolveNvencCq({ baseCq, qualityCapOffset }: { baseCq: number, qualityC
   return String(Math.max(minNvencCq, baseCq - qualityCapOffset));
 }
 
-export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoProfile, sourceFps, qualityCapOffset }: {
+export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, passNumber, videoProfile, sourceFps, qualityCapOffset }: {
   strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
   twoPass: boolean,
+  /** Which pass of a two-pass encode these are for. */
+  passNumber?: 1 | 2 | undefined,
   videoProfile: SizeLimitedVideoTransformProfile,
   sourceFps: number | undefined,
   outputPlaybackRate: number,
@@ -97,6 +107,30 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, videoPro
         '-pix_fmt', 'yuv420p',
         '-b:v', toKbitrateArg(videoBitrate),
         ...(svtav1Params != null ? ['-svtav1-params', svtav1Params] : []),
+      ];
+    }
+
+    case 'libx265': {
+      const tuning = strategy.tuningProfile === 'max_quality' ? maxQualityX265Params : (strategy.tuningProfile === 'quality' ? qualityX265Params : []);
+      const x265Params = [
+        `keyint=${getLongGopFrames({ outputFps: videoProfile.outputFps, sourceFps })}`,
+        ...tuning,
+        // The first pass only reads the clip: x265's quicker settings there leave the second pass's result the same
+        // (measured: 87.4 vs 87.3 and 96.1 vs 96.1) in a third less time.
+        ...(passNumber === 1 ? ['no-slow-firstpass=1'] : []),
+        // Its settings and per-frame notes would only fill the export log; errors still show.
+        'log-level=error',
+      ];
+      return [
+        '-c:v', 'libx265',
+        '-preset', String(strategy.encoderPreset),
+        '-profile:v', 'main',
+        '-pix_fmt', 'yuv420p',
+        '-x265-params', x265Params.join(':'),
+        // Apple's players (iPhones, Macs) and Photos want `hvc1`; FFmpeg's MP4 default is `hev1`.
+        '-tag:v', 'hvc1',
+        // Size-first like H.264's, so the planner's under-cap budget holds.
+        ...getBitrateWindowArgs({ videoBitrate, maxRateFactor: constrainedH264MaxRateFactor, bufferFactor: constrainedH264BufferFactor }),
       ];
     }
 

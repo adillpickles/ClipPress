@@ -115,6 +115,7 @@ const defaults: Config = {
   sizeLimitQuality: 'fast',
   sizeLimitControlMode: 'simple',
   sizeLimitPreset: 'quality',
+  sizeLimitVideoFormat: 'hevc',
   sizeLimitSimpleResolution: 'auto',
   sizeLimitSimpleResolutionTouched: false,
   sizeLimitSimpleFps: 'auto',
@@ -127,6 +128,8 @@ const defaults: Config = {
   sizeLimitAdvancedAv1NvencPreset: 'p6',
   sizeLimitAdvancedH264CpuPreset: 'slow',
   sizeLimitAdvancedH264NvencPreset: 'p4',
+  sizeLimitAdvancedHevcCpuPreset: 'fast',
+  sizeLimitAdvancedHevcNvencPreset: 'p6',
   sizeLimitSeparateNamingMode: 'auto',
   sizeLimitMergedNamingMode: 'auto',
   sizeLimitCutFileTemplate: undefined,
@@ -446,6 +449,8 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
   if (!store.has('sizeLimitAdvancedAv1NvencPreset')) set('sizeLimitAdvancedAv1NvencPreset', defaults.sizeLimitAdvancedAv1NvencPreset);
   if (!store.has('sizeLimitAdvancedH264CpuPreset')) set('sizeLimitAdvancedH264CpuPreset', defaults.sizeLimitAdvancedH264CpuPreset);
   if (!store.has('sizeLimitAdvancedH264NvencPreset')) set('sizeLimitAdvancedH264NvencPreset', defaults.sizeLimitAdvancedH264NvencPreset);
+  if (!store.has('sizeLimitAdvancedHevcCpuPreset')) set('sizeLimitAdvancedHevcCpuPreset', defaults.sizeLimitAdvancedHevcCpuPreset);
+  if (!store.has('sizeLimitAdvancedHevcNvencPreset')) set('sizeLimitAdvancedHevcNvencPreset', defaults.sizeLimitAdvancedHevcNvencPreset);
 
   const hasSizeLimitSeparateNamingMode = storedKeys.has('sizeLimitSeparateNamingMode');
   const hasSizeLimitMergedNamingMode = storedKeys.has('sizeLimitMergedNamingMode');

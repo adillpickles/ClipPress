@@ -135,10 +135,12 @@ export function getSizeLimitedTwoPassEncodeArgs({
     '-dn',
     '-ignore_unknown',
     '-map', videoInputLabel,
-    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: true, videoProfile, sourceFps, outputPlaybackRate, qualityCapOffset }),
+    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: true, passNumber, videoProfile, sourceFps, outputPlaybackRate, qualityCapOffset }),
     ...(videoFilter != null ? ['-vf', videoFilter] : []),
     '-pass', String(passNumber),
-    '-passlogfile', passlogFile,
+    // x265 keeps its own stats file (and `.cutree` beside it); passed as an option, never in -x265-params, where a
+    // Windows path's colon would split the list.
+    ...(strategy.encoder === 'libx265' ? ['-x265-stats', passlogFile] : ['-passlogfile', passlogFile]),
     ...(passNumber === 1 ? ['-an'] : getSizeLimitedAudioArgs({ audioInputLabel, audioBitrate, audioGainDb, audioPlaybackRate })),
     ...(passNumber === 2 ? ['-movflags', '+faststart'] : []),
     ...experimentalArgs,

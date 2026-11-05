@@ -194,6 +194,9 @@ function getPerStreamFlags({ path, stream, outputIndex, outFormat, manuallyCopyD
       args = [...videoArgs];
     } else {
       addCodecArgs('copy');
+      // Apple's players and Photos want HEVC in MP4 and MOV tagged `hvc1`; FFmpeg's default there is `hev1` (an OBS MKV
+      // recording cut to MP4 then couldn't be saved on an iPhone).
+      if (isMov(outFormat) && stream.codec_name === 'hevc') addArgs(`-tag:${outputIndex}`, 'hvc1');
     }
   } else { // other stream types
     addCodecArgs('copy');

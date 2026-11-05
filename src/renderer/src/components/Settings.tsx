@@ -13,7 +13,7 @@ import RevertButton from './RevertButton';
 import { getEnableImportChaptersOptions, isMasBuild, isStoreBuild, isWindows } from '../util';
 import type { SupportedLanguage } from '../../../common/i18n';
 import { langNames } from '../../../common/i18n';
-import type { CaptureFormat, Config, EnableImportChapters, ProjectFileLocation, TimecodeFormat } from '../../../common/types.js';
+import type { CaptureFormat, Config, EnableImportChapters, ProjectFileLocation, SizeLimitVideoFormat, TimecodeFormat } from '../../../common/types.js';
 import { getProjectsDir, getProjectStoreEnv } from '../projectStore';
 import styles from './Settings.module.css';
 import Select from './Select';
@@ -58,7 +58,7 @@ function Settings({
     window.require('electron').shell.openPath(getProjectsDir(getProjectStoreEnv())).catch?.(() => undefined);
   }, []);
 
-  const { customOutDir, clipsFolder, setClipsFolder, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, waveformHeight, setWaveformHeight, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, exportProgressStyle, setExportProgressStyle, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, trashSourceAfterExport, setTrashSourceAfterExport, enableAdvancedMode, setEnableAdvancedMode, trashProjectWithSource, setTrashProjectWithSource, copyAfterExport, setCopyAfterExport, playOnOpen, setPlayOnOpen } = useUserSettings();
+  const { customOutDir, clipsFolder, setClipsFolder, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, waveformHeight, setWaveformHeight, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, exportProgressStyle, setExportProgressStyle, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, sizeLimitVideoFormat, setSizeLimitVideoFormat, trashSourceAfterExport, setTrashSourceAfterExport, enableAdvancedMode, setEnableAdvancedMode, trashProjectWithSource, setTrashProjectWithSource, copyAfterExport, setCopyAfterExport, playOnOpen, setPlayOnOpen } = useUserSettings();
 
   const onLangChange = useCallback<ChangeEventHandler<HTMLSelectElement>>((e) => {
     const { value } = e.target;
@@ -126,6 +126,7 @@ function Settings({
   const sourceDateId = useId();
   const chaptersId = useId();
   const captureFormatId = useId();
+  const videoFormatId = useId();
   const advancedToggleId = useId();
   const tabsId = useId();
   const getTabId = (id: Category) => `${tabsId}-tab-${id}`;
@@ -307,6 +308,21 @@ function Settings({
               keywords="hardware acceleration"
             >
               <Switch checked={exportGpuAcceleration} onCheckedChange={setExportGpuAcceleration} aria-label={t('Use the GPU')} />
+            </SettingRow>
+
+            {/* What the size presets make (Custom settings pick their own encoder). The codec names are the same in every language. */}
+            <SettingRow
+              label={t('Video format')}
+              description={t('HEVC plays and saves on every phone, and on most PCs.')}
+              details={t('H.264 plays anywhere, even on old PCs, a little less sharp. AV1 can be a little sharper, but iPhones can\'t save it and older ones can\'t play it.')}
+              controlId={videoFormatId}
+              keywords="codec H.265 iPhone Android Discord"
+            >
+              <Select id={videoFormatId} value={sizeLimitVideoFormat} onChange={(e) => setSizeLimitVideoFormat(e.target.value as SizeLimitVideoFormat)}>
+                <option value="hevc">HEVC</option>
+                <option value="h264">H.264</option>
+                <option value="av1">AV1</option>
+              </Select>
             </SettingRow>
 
             <SettingRow

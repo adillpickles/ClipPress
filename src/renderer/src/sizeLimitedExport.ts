@@ -8,9 +8,10 @@ import type {
   SizeLimitPreset,
   SizeLimitSimpleFps,
   SizeLimitSimpleResolution,
+  SizeLimitVideoFormat,
 } from '../../common/types.js';
 import { decodeText, getDuration, getExperimentalArgs, getFfmpegPath, logStdoutStderr, readPackets, runFfmpeg, runFfmpegWithProgress } from './ffmpeg';
-import { canCopyLosslessly, estimateLosslessCopy, maxLosslessLeadIn } from './losslessFit';
+import { canCopyLosslessly, estimateLosslessCopy, getLosslessCopyArgs, maxLosslessLeadIn } from './losslessFit';
 import { hasSegmentCrop, getSegmentCropFilter } from './segmentCrop';
 import mainApi from './mainApi';
 import runSizeLimitedAttempts from './sizeLimitedAttempts';
@@ -101,6 +102,24 @@ async function probeSvtTwoPass(): Promise<{ supported: boolean, sure: boolean }>
   }
 }
 
+/**
+ * Whether this FFmpeg runs x265's two-pass: `-x265-stats` (FFmpeg 6.1 and newer) names the stats file the passes share.
+ * An older custom FFmpeg doesn't know the option. A test that timed out isn't a sure answer.
+ */
+async function probeX265TwoPass(): Promise<{ supported: boolean, sure: boolean }> {
+  const statsPath = join(getTempWorkDir(), `x265-two-pass-check-${Date.now()}.log`);
+  try {
+    await runFfmpeg(['-hide_banner', '-f', 'lavfi', '-i', 'color=c=black:s=320x240:r=30:d=0.2', '-frames:v', '3', '-an', '-c:v', 'libx265', '-preset', 'ultrafast', '-b:v', '200k', '-x265-params', 'log-level=error', '-pass', '1', '-x265-stats', statsPath, '-f', 'null', '-'], { timeout: gpuProbeTimeoutMs }, { logCli: false });
+    return { supported: (await stat(statsPath)).size > 0, sure: true };
+  } catch (error) {
+    if (isAbortedError(error) && !(isExecaError(error) && error.timedOut)) throw error;
+    console.info('x265 two-pass is not available in this FFmpeg', error);
+    return { supported: false, sure: !(isExecaError(error) && error.timedOut) };
+  } finally {
+    await Promise.all([statsPath, `${statsPath}.cutree`].map((path) => unlinkWithRetry(path).catch(() => undefined)));
+  }
+}
+
 type GpuCapability = (typeof gpuEncoders)[number]['capability'];
 /** What's kept between runs: the answer, and the encoders to test again each run all the same. */
 interface SavedEncoderCheck { capabilities: Omit<SizeLimitedEncoderCapabilities, 'cpuThreads'>, retest: GpuCapability[] }
@@ -111,7 +130,7 @@ function isSavedEncoderCheck(value: unknown): value is SavedEncoderCheck {
   if (capabilities == null || typeof capabilities !== 'object' || !Array.isArray(retest)) return false;
   const known = gpuEncoders.map(({ capability }) => capability);
   const { basicSettingsOnly } = capabilities as Record<string, unknown>;
-  return ['h264Nvenc', 'av1Nvenc', 'libx264', 'libsvtav1', 'svtTwoPass', ...known].every((key) => typeof (capabilities as Record<string, unknown>)[key] === 'boolean')
+  return ['h264Nvenc', 'av1Nvenc', 'libx264', 'libx265', 'libsvtav1', 'svtTwoPass', 'x265TwoPass', ...known].every((key) => typeof (capabilities as Record<string, unknown>)[key] === 'boolean')
     && retest.every((key) => known.includes(key as GpuCapability))
     && (basicSettingsOnly == null || (Array.isArray(basicSettingsOnly) && basicSettingsOnly.every((key) => known.includes(key as GpuCapability))));
 }
@@ -164,9 +183,11 @@ const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimite
     h264Nvenc: false,
     av1Nvenc: false,
     libx264: encoders.has('libx264'),
+    libx265: encoders.has('libx265'),
     libsvtav1: encoders.has('libsvtav1'),
   };
   let svtTwoPassSure = true;
+  let x265TwoPassSure = true;
   await Promise.all([
     ...gpuEncoders.map(async ({ encoder, capability }) => {
       capabilities[capability] = encoders.has(encoder) && await probe(encoder, capability);
@@ -176,10 +197,15 @@ const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimite
       capabilities.svtTwoPass = svt.supported;
       svtTwoPassSure = svt.sure;
     })(),
+    (async () => {
+      const x265 = capabilities.libx265 ? await probeX265TwoPass() : { supported: false, sure: true };
+      capabilities.x265TwoPass = x265.supported;
+      x265TwoPassSure = x265.sure;
+    })(),
   ]);
   // Saved in the background: the answer is used now. A two-pass test that timed out (a busy PC) holds for this run
   // only: the next one tests everything again.
-  if (svtTwoPassSure) saveEncoderCheck(key, withBasicOnly(capabilities), (encoder) => encoders.has(encoder), unsure).catch(() => undefined);
+  if (svtTwoPassSure && x265TwoPassSure) saveEncoderCheck(key, withBasicOnly(capabilities), (encoder) => encoders.has(encoder), unsure).catch(() => undefined);
   return { ...withBasicOnly(capabilities), cpuThreads };
 });
 
@@ -319,6 +345,9 @@ function assertStrategySupported({ strategy, capabilities }: {
   if (strategy.encoder === 'libx264' && !capabilities.libx264) {
     throw new UserFacingError('Size-limited export could not find a usable H.264 encoder.');
   }
+  if (strategy.encoder === 'libx265' && capabilities.libx265 !== true) {
+    throw new UserFacingError('Size-limited export could not find a usable HEVC encoder.');
+  }
   if (strategy.encoder === 'libsvtav1' && !capabilities.libsvtav1) {
     throw new UserFacingError('Size-limited export could not find a usable AV1 encoder.');
   }
@@ -446,6 +475,8 @@ async function deletePassArtifacts(basePath: string | undefined) {
     `${basePath}-0.log.mbtree`,
     `${basePath}.log`,
     `${basePath}.log.mbtree`,
+    // x265's: the stats file is basePath itself.
+    `${basePath}.cutree`,
   ];
 
   await Promise.all(artifacts.map((artifact) => deleteIfExists(artifact)));
@@ -683,10 +714,16 @@ async function runSinglePassEncode({
   logStdoutStderr(result);
 }
 
-/** How much of a two-pass encode's time the first pass takes: ~28% for SVT-AV1 and ~30% for x264 (measured). */
-const firstPassShare = 0.3;
+/**
+ * How much of a two-pass encode's time the first pass takes: ~28% for SVT-AV1, ~30% for x264 and ~23% for x265 with
+ * its quicker first pass (measured).
+ */
+function getFirstPassShare(encoder: SizeLimitedResolvedStrategy['encoder']) {
+  return encoder === 'libx265' ? 0.23 : 0.3;
+}
 
 async function runTwoPassEncode({
+  firstPassShare,
   pass1Args,
   pass2Args,
   duration,
@@ -695,6 +732,7 @@ async function runTwoPassEncode({
   pass2ProgressMetadata,
   signal,
 }: {
+  firstPassShare: number,
   pass1Args: string[],
   pass2Args: string[],
   duration: number,
@@ -752,6 +790,7 @@ async function executeAttempts({
         const { pass1Args } = attemptFiles;
         if (pass1Args == null) throw new UserFacingError('2-pass encoding was not configured correctly');
         await runTwoPassEncode({
+          firstPassShare: getFirstPassShare(strategy.encoder),
           signal,
           pass1Args,
           pass2Args: attemptFiles.ffmpegArgs,
@@ -817,7 +856,7 @@ async function copyLosslesslyIfItFits({ filePath, sourceDuration, start, end, vi
   sourceDuration: number | undefined,
   start: number,
   end: number,
-  videoStream: Pick<FFprobeStream, 'index'>,
+  videoStream: Pick<FFprobeStream, 'index' | 'codec_name'>,
   audioStream: Pick<FFprobeStream, 'index'> | undefined,
   targetBytes: number,
   strategy: SizeLimitedResolvedStrategy,
@@ -844,19 +883,7 @@ async function copyLosslesslyIfItFits({ filePath, sourceDuration, start, end, vi
   // In ClipPress's temporary folder, like an encode's attempts, so nothing shows next to the export until it's done.
   const tempDir = await mkdtemp(join(getTempWorkDir(), 'copy-'));
   const copyPath = join(tempDir, 'export.mp4');
-  const ffmpegArgs = [
-    '-hide_banner',
-    // Before the input: the copy starts on the keyframe before the clip, never after it.
-    '-ss', start.toFixed(5),
-    '-i', filePath,
-    '-t', (end - start).toFixed(5),
-    '-map', `0:${videoStream.index}`,
-    ...(audioStream != null ? ['-map', `0:${audioStream.index}`] : []),
-    '-c', 'copy',
-    '-avoid_negative_ts', 'make_zero',
-    '-movflags', '+faststart',
-    '-f', 'mp4', '-y', copyPath,
-  ];
+  const ffmpegArgs = getLosslessCopyArgs({ filePath, start, end, videoStream, audioStream, outPath: copyPath });
   appendFfmpegCommandLog(ffmpegArgs);
   try {
     const result = await runFfmpegWithProgress({ ffmpegArgs, duration: end - estimate.copyStart, onProgress });
@@ -897,12 +924,15 @@ async function resolveSizeLimitedPlan({
   gpuAcceleration,
   controlMode,
   preset,
+  videoFormat,
   advancedEncoder,
   advancedTwoPass,
   advancedAv1CpuPreset,
   advancedAv1NvencPreset,
   advancedH264CpuPreset,
   advancedH264NvencPreset,
+  advancedHevcCpuPreset,
+  advancedHevcNvencPreset,
   targetSizeMb,
   duration,
   hasAudio,
@@ -912,12 +942,15 @@ async function resolveSizeLimitedPlan({
   gpuAcceleration: boolean,
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
+  videoFormat: SizeLimitVideoFormat,
   advancedEncoder: SizeLimitAdvancedEncoder,
   advancedTwoPass: boolean,
   advancedAv1CpuPreset: SizeLimitAdvancedAv1CpuPreset,
   advancedAv1NvencPreset: SizeLimitAdvancedNvencPreset,
   advancedH264CpuPreset: SizeLimitAdvancedH264CpuPreset,
   advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
+  advancedHevcCpuPreset: SizeLimitAdvancedH264CpuPreset,
+  advancedHevcNvencPreset: SizeLimitAdvancedNvencPreset,
   targetSizeMb: number,
   duration: number,
   hasAudio: boolean,
@@ -929,12 +962,15 @@ async function resolveSizeLimitedPlan({
   const strategy = resolveSizeLimitedStrategy({
     controlMode,
     preset,
+    videoFormat,
     advancedEncoder,
     advancedTwoPass,
     advancedAv1CpuPreset,
     advancedAv1NvencPreset,
     advancedH264CpuPreset,
     advancedH264NvencPreset,
+    advancedHevcCpuPreset,
+    advancedHevcNvencPreset,
     capabilities,
   });
   assertStrategySupported({ strategy, capabilities });
@@ -973,6 +1009,7 @@ export async function exportSizeLimitedSegment({
   targetSizeMb,
   controlMode,
   preset,
+  videoFormat,
   resolution,
   fps,
   advancedEncoder,
@@ -981,6 +1018,8 @@ export async function exportSizeLimitedSegment({
   advancedAv1NvencPreset,
   advancedH264CpuPreset,
   advancedH264NvencPreset,
+  advancedHevcCpuPreset,
+  advancedHevcNvencPreset,
   videoStream,
   audioStream,
   mixedAudioTracks,
@@ -1009,6 +1048,7 @@ export async function exportSizeLimitedSegment({
   targetSizeMb: number,
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
+  videoFormat: SizeLimitVideoFormat,
   resolution: SizeLimitSimpleResolution,
   fps: SizeLimitSimpleFps,
   advancedEncoder: SizeLimitAdvancedEncoder,
@@ -1017,6 +1057,8 @@ export async function exportSizeLimitedSegment({
   advancedAv1NvencPreset: SizeLimitAdvancedNvencPreset,
   advancedH264CpuPreset: SizeLimitAdvancedH264CpuPreset,
   advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
+  advancedHevcCpuPreset: SizeLimitAdvancedH264CpuPreset,
+  advancedHevcNvencPreset: SizeLimitAdvancedNvencPreset,
   videoStream: Pick<FFprobeStream, 'index' | 'width' | 'height' | 'codec_name' | 'pix_fmt'>,
   audioStream: Pick<FFprobeStream, 'index' | 'codec_name'> | undefined,
   enableOverwriteOutput: boolean,
@@ -1051,12 +1093,15 @@ export async function exportSizeLimitedSegment({
     gpuAcceleration,
     controlMode,
     preset,
+    videoFormat,
     advancedEncoder,
     advancedTwoPass,
     advancedAv1CpuPreset,
     advancedAv1NvencPreset,
     advancedH264CpuPreset,
     advancedH264NvencPreset,
+    advancedHevcCpuPreset,
+    advancedHevcNvencPreset,
     targetSizeMb,
     duration: plannedDuration,
     hasAudio: audioStream != null,
@@ -1095,7 +1140,9 @@ export async function exportSizeLimitedSegment({
     controlMode,
     resolution,
     fps,
+    videoFormat,
     videoCodec: videoStream.codec_name,
+    videoPixFmt: videoStream.pix_fmt,
     audioCodec: audioStream?.codec_name,
   });
   const copied = copyable ? await copyLosslesslyIfItFits({
@@ -1308,6 +1355,7 @@ export async function exportSizeLimitedMerge({
   targetSizeMb,
   controlMode,
   preset,
+  videoFormat,
   resolution,
   fps,
   advancedEncoder,
@@ -1316,6 +1364,8 @@ export async function exportSizeLimitedMerge({
   advancedAv1NvencPreset,
   advancedH264CpuPreset,
   advancedH264NvencPreset,
+  advancedHevcCpuPreset,
+  advancedHevcNvencPreset,
   videoStream,
   audioStream,
   mixedAudioTracks,
@@ -1343,6 +1393,7 @@ export async function exportSizeLimitedMerge({
   targetSizeMb: number,
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
+  videoFormat: SizeLimitVideoFormat,
   resolution: SizeLimitSimpleResolution,
   fps: SizeLimitSimpleFps,
   advancedEncoder: SizeLimitAdvancedEncoder,
@@ -1351,6 +1402,8 @@ export async function exportSizeLimitedMerge({
   advancedAv1NvencPreset: SizeLimitAdvancedNvencPreset,
   advancedH264CpuPreset: SizeLimitAdvancedH264CpuPreset,
   advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
+  advancedHevcCpuPreset: SizeLimitAdvancedH264CpuPreset,
+  advancedHevcNvencPreset: SizeLimitAdvancedNvencPreset,
   videoStream: Pick<FFprobeStream, 'index' | 'width' | 'height' | 'codec_name' | 'pix_fmt'>,
   audioStream: Pick<FFprobeStream, 'index'> | undefined,
   enableOverwriteOutput: boolean,
@@ -1385,12 +1438,15 @@ export async function exportSizeLimitedMerge({
     gpuAcceleration,
     controlMode,
     preset,
+    videoFormat,
     advancedEncoder,
     advancedTwoPass,
     advancedAv1CpuPreset,
     advancedAv1NvencPreset,
     advancedH264CpuPreset,
     advancedH264NvencPreset,
+    advancedHevcCpuPreset,
+    advancedHevcNvencPreset,
     targetSizeMb,
     duration: plannedDuration,
     hasAudio: audioStream != null,

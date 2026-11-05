@@ -81,6 +81,10 @@ const defaultAdvancedPresets = {
   advancedAv1NvencPreset: 'p6',
   advancedH264CpuPreset: 'slow',
   advancedH264NvencPreset: 'p4',
+  advancedHevcCpuPreset: 'fast',
+  advancedHevcNvencPreset: 'p6',
+  // What ships: Settings > Export > Video format's default.
+  videoFormat: 'hevc',
 } as const;
 
 const benchmarkCases: BenchmarkCase[] = [
@@ -342,6 +346,7 @@ async function getCapabilities(ffmpegPath: string): Promise<SizeLimitedEncoderCa
   const encoders = parseFfmpegEncoderNames(all ?? '');
   const capabilities: SizeLimitedEncoderCapabilities = {
     libx264: encoders.has('libx264'),
+    libx265: encoders.has('libx265'),
     libsvtav1: encoders.has('libsvtav1'),
     h264Nvenc: false,
     av1Nvenc: false,
@@ -355,6 +360,7 @@ async function getCapabilities(ffmpegPath: string): Promise<SizeLimitedEncoderCa
 
 const capabilityByEncoder = {
   libx264: 'libx264',
+  libx265: 'libx265',
   libsvtav1: 'libsvtav1',
   h264_nvenc: 'h264Nvenc',
   av1_nvenc: 'av1Nvenc',

@@ -10,6 +10,10 @@ const defaultStrategyArgs = {
   advancedAv1NvencPreset: 'p6',
   advancedH264CpuPreset: 'slow',
   advancedH264NvencPreset: 'p4',
+  advancedHevcCpuPreset: 'fast',
+  advancedHevcNvencPreset: 'p6',
+  // These cases check the AV1 order, as it was before HEVC became the default (that has its own tests).
+  videoFormat: 'av1',
 } as const;
 
 describe('parseFfmpegEncoderNames', () => {
@@ -307,6 +311,9 @@ describe('resolveSizeLimitedStrategy', () => {
       advancedAv1NvencPreset: 'p5',
       advancedH264CpuPreset: 'slow',
       advancedH264NvencPreset: 'p4',
+      advancedHevcCpuPreset: 'fast',
+      advancedHevcNvencPreset: 'p6',
+      videoFormat: 'av1',
       capabilities: fullCapabilities,
     });
 
@@ -327,6 +334,9 @@ describe('resolveSizeLimitedStrategy', () => {
       advancedAv1NvencPreset: 'p6',
       advancedH264CpuPreset: 'slow',
       advancedH264NvencPreset: 'p4',
+      advancedHevcCpuPreset: 'fast',
+      advancedHevcNvencPreset: 'p6',
+      videoFormat: 'av1',
       capabilities: fullCapabilities,
     });
 
@@ -346,6 +356,9 @@ describe('resolveSizeLimitedStrategy', () => {
       advancedAv1NvencPreset: 'p6',
       advancedH264CpuPreset: 'slow',
       advancedH264NvencPreset: 'p7',
+      advancedHevcCpuPreset: 'fast',
+      advancedHevcNvencPreset: 'p6',
+      videoFormat: 'av1',
       capabilities: fullCapabilities,
     });
 

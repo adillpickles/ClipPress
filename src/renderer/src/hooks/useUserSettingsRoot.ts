@@ -238,6 +238,8 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ sizeLimitControlMode }), [sizeLimitControlMode]);
   const [sizeLimitPreset, setSizeLimitPreset] = useState(safeGetConfigInitial('sizeLimitPreset'));
   useEffect(() => safeSetConfig({ sizeLimitPreset }), [sizeLimitPreset]);
+  const [sizeLimitVideoFormat, setSizeLimitVideoFormat] = useState(safeGetConfigInitial('sizeLimitVideoFormat'));
+  useEffect(() => safeSetConfig({ sizeLimitVideoFormat }), [sizeLimitVideoFormat]);
   const [sizeLimitSimpleResolution, setSizeLimitSimpleResolution] = useState(safeGetConfigInitial('sizeLimitSimpleResolution'));
   useEffect(() => safeSetConfig({ sizeLimitSimpleResolution }), [sizeLimitSimpleResolution]);
   const [sizeLimitSimpleResolutionTouched, setSizeLimitSimpleResolutionTouched] = useState(safeGetConfigInitial('sizeLimitSimpleResolutionTouched'));
@@ -262,6 +264,10 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ sizeLimitAdvancedH264CpuPreset }), [sizeLimitAdvancedH264CpuPreset]);
   const [sizeLimitAdvancedH264NvencPreset, setSizeLimitAdvancedH264NvencPreset] = useState(safeGetConfigInitial('sizeLimitAdvancedH264NvencPreset'));
   useEffect(() => safeSetConfig({ sizeLimitAdvancedH264NvencPreset }), [sizeLimitAdvancedH264NvencPreset]);
+  const [sizeLimitAdvancedHevcCpuPreset, setSizeLimitAdvancedHevcCpuPreset] = useState(safeGetConfigInitial('sizeLimitAdvancedHevcCpuPreset'));
+  useEffect(() => safeSetConfig({ sizeLimitAdvancedHevcCpuPreset }), [sizeLimitAdvancedHevcCpuPreset]);
+  const [sizeLimitAdvancedHevcNvencPreset, setSizeLimitAdvancedHevcNvencPreset] = useState(safeGetConfigInitial('sizeLimitAdvancedHevcNvencPreset'));
+  useEffect(() => safeSetConfig({ sizeLimitAdvancedHevcNvencPreset }), [sizeLimitAdvancedHevcNvencPreset]);
   const [sizeLimitSeparateNamingMode, setSizeLimitSeparateNamingMode] = useState(safeGetConfigInitial('sizeLimitSeparateNamingMode'));
   useEffect(() => safeSetConfig({ sizeLimitSeparateNamingMode }), [sizeLimitSeparateNamingMode]);
   const [sizeLimitMergedNamingMode, setSizeLimitMergedNamingMode] = useState(safeGetConfigInitial('sizeLimitMergedNamingMode'));
@@ -405,6 +411,7 @@ export default function useUserSettingsRoot() {
     sizeLimitMb,
     sizeLimitControlMode,
     sizeLimitPreset,
+    sizeLimitVideoFormat,
     sizeLimitSimpleResolution,
     sizeLimitSimpleResolutionTouched,
     sizeLimitSimpleFps,
@@ -417,6 +424,8 @@ export default function useUserSettingsRoot() {
     sizeLimitAdvancedAv1NvencPreset,
     sizeLimitAdvancedH264CpuPreset,
     sizeLimitAdvancedH264NvencPreset,
+    sizeLimitAdvancedHevcCpuPreset,
+    sizeLimitAdvancedHevcNvencPreset,
     sizeLimitSeparateNamingMode,
     sizeLimitMergedNamingMode,
     sizeLimitCutFileTemplate,
@@ -509,6 +518,7 @@ export default function useUserSettingsRoot() {
     sizeLimitMb,
     sizeLimitControlMode,
     sizeLimitPreset,
+    sizeLimitVideoFormat,
     sizeLimitSimpleResolution,
     sizeLimitSimpleResolutionTouched,
     sizeLimitSimpleFps,
@@ -521,6 +531,8 @@ export default function useUserSettingsRoot() {
     sizeLimitAdvancedAv1NvencPreset,
     sizeLimitAdvancedH264CpuPreset,
     sizeLimitAdvancedH264NvencPreset,
+    sizeLimitAdvancedHevcCpuPreset,
+    sizeLimitAdvancedHevcNvencPreset,
     sizeLimitSeparateNamingMode,
     sizeLimitMergedNamingMode,
     sizeLimitCutFileTemplate,
@@ -633,6 +645,7 @@ export default function useUserSettingsRoot() {
     setSizeLimitMb,
     setSizeLimitControlMode,
     setSizeLimitPreset,
+    setSizeLimitVideoFormat,
     setSizeLimitSimpleResolution,
     setSizeLimitSimpleResolutionTouched,
     setSizeLimitSimpleFps,
@@ -645,6 +658,8 @@ export default function useUserSettingsRoot() {
     setSizeLimitAdvancedAv1NvencPreset,
     setSizeLimitAdvancedH264CpuPreset,
     setSizeLimitAdvancedH264NvencPreset,
+    setSizeLimitAdvancedHevcCpuPreset,
+    setSizeLimitAdvancedHevcNvencPreset,
     setSizeLimitSeparateNamingMode,
     setSizeLimitMergedNamingMode,
     setSizeLimitCutFileTemplate,
