@@ -160,6 +160,8 @@ const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimite
   const unsure = new Set<GpuCapability>();
   const basicOnly = new Set<GpuCapability>(isSavedEncoderCheck(saved) ? saved.capabilities.basicSettingsOnly : []);
   let hevcNvencUhq: boolean | undefined;
+  // A UHQ test that timed out (a busy card) holds for this run only, as a two-pass test's does: the check isn't saved.
+  let hevcNvencUhqSure = true;
   // Whether the encoder opens at all, then whether it takes the tuned settings an export uses or only the basic ones,
   // then, for NVIDIA's HEVC, whether it takes the "ultra high quality" tuning too.
   const probe = async (encoder: GpuEncoderName, capability: GpuCapability) => {
@@ -173,8 +175,7 @@ const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimite
     } else if (capability === 'hevcNvenc') {
       const uhq = await probeGpuEncoder(encoder, getGpuProbeVideoArgs(encoder, { nvencUhq: true }));
       hevcNvencUhq = uhq.usable;
-      // A test that timed out has the next run test this encoder again.
-      if (!uhq.sure) unsure.add(capability);
+      hevcNvencUhqSure = uhq.sure;
     }
     return true;
   };
@@ -186,7 +187,7 @@ const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimite
     const retest = gpuEncoders.filter(({ capability }) => saved.retest.includes(capability));
     await runAFewAtATime(retest.map(({ encoder, capability }) => async () => { capabilities[capability] = await probe(encoder, capability); }));
     if (hevcNvencUhq != null) capabilities.hevcNvencUhq = hevcNvencUhq;
-    saveEncoderCheck({ key, capabilities: withBasicOnly(capabilities), listed: (encoder) => retest.some((info) => info.encoder === encoder), unsure, failedBefore: new Set(saved.retest) }).catch(() => undefined);
+    if (hevcNvencUhqSure) saveEncoderCheck({ key, capabilities: withBasicOnly(capabilities), listed: (encoder) => retest.some((info) => info.encoder === encoder), unsure, failedBefore: new Set(saved.retest) }).catch(() => undefined);
     return { ...withBasicOnly(capabilities), cpuThreads };
   }
 
@@ -220,9 +221,9 @@ const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimite
     },
   ]);
   capabilities.hevcNvencUhq = hevcNvencUhq ?? false;
-  // Saved in the background: the answer is used now. A two-pass test that timed out (a busy PC) holds for this run
-  // only: the next one tests everything again.
-  if (svtTwoPassSure && x265TwoPassSure) saveEncoderCheck({ key, capabilities: withBasicOnly(capabilities), listed: (encoder) => encoders.has(encoder), unsure, failedBefore: new Set() }).catch(() => undefined);
+  // Saved in the background: the answer is used now. A two-pass or UHQ test that timed out (a busy PC) holds for this
+  // run only: the next one tests everything again.
+  if (svtTwoPassSure && x265TwoPassSure && hevcNvencUhqSure) saveEncoderCheck({ key, capabilities: withBasicOnly(capabilities), listed: (encoder) => encoders.has(encoder), unsure, failedBefore: new Set() }).catch(() => undefined);
   return { ...withBasicOnly(capabilities), cpuThreads };
 });
 

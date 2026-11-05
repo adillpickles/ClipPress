@@ -7240,11 +7240,12 @@ function App() {
 
   // The first start with a new FFmpeg (or ClipPress, or graphics driver): FFmpeg is warmed up and its encoders checked
   // in the background while the start screen shows, so the first clip opened doesn't wait for its first slow runs. A
-  // recording that's opening goes first (at most 30 s).
+  // recording that's opening goes first (at most 30 s): from its first probe ("working", set before the file is known)
+  // to its filmstrip and waveform.
   useEffect(() => {
     const waitUntil = Date.now() + 30_000;
     const whenIdle = async () => {
-      while (openWorkPendingRef.current && Date.now() < waitUntil) {
+      while ((workingRef.current || openWorkPendingRef.current) && Date.now() < waitUntil) {
         // eslint-disable-next-line no-await-in-loop
         await new Promise((resolve) => { setTimeout(resolve, 500); });
       }
@@ -7253,7 +7254,8 @@ function App() {
       prepareNewFfmpeg(whenIdle).catch((error: unknown) => console.warn('Could not prepare FFmpeg', error));
     }, 2000);
     return () => clearTimeout(timer);
-  }, []);
+    // workingRef is a ref (useLoading's useRef): the same object for the app's life, so this still runs once.
+  }, [workingRef]);
 
   // FFmpeg's self-check starts two processes; at launch it waits a moment, and for the first file to open (its
   // filmstrip and waveform, at most 30 s), so it doesn't compete with that (a broken FFmpeg shows up then anyway).
