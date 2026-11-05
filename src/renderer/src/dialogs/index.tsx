@@ -183,14 +183,15 @@ export async function askForFileOpenAction(inputOptions: Record<string, string>)
   return value;
 }
 
-/** The simple editor's version: open the dropped file or cancel, with the rest under "More options". */
-export async function askForFileOpenChoice({ fileName, extras }: { fileName: string, extras: FileOpenExtra[] }) {
+/** The simple editor's version: open the dropped file, add it to this recording, or cancel. */
+export async function askForFileOpenChoice({ fileName, openLabel, extras }: { fileName: string, openLabel?: string, extras: FileOpenExtra[] }) {
   let value: string | undefined;
   const swal = getSwal().ReactSwal.fire({
     title: i18n.t('Open new file'),
     html: (
       <FileOpenChoice
         fileName={fileName}
+        openLabel={openLabel}
         extras={extras}
         onChoose={(key) => {
           value = key;

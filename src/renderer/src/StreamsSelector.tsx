@@ -31,6 +31,8 @@ import Json5Dialog from './components/Json5Dialog';
 import TextInput from './components/TextInput';
 import Switch from './components/Switch';
 
+const { basename } = window.require('path');
+
 const GpsMap = lazy(() => import('./components/GpsMap'));
 
 
@@ -566,23 +568,41 @@ function StreamsSelector({
   );
 
   if (simpleMode) {
+    // A file's tracks added from the open-file question ("Its sound" and so on) are listed after the recording's own,
+    // so what was added can be seen and skipped.
+    const rows = [
+      ...simpleModeStreams.map((stream, index) => ({
+        path: mainFilePath,
+        stream,
+        label: stream.codec_type === 'video'
+          ? (index === 0 ? t('Video') : t('Video {{index}}', { index: index + 1 }))
+          : (simpleModeAudioStreams.length === 1
+            ? t('Audio')
+            : t('Audio {{index}}', { index: simpleModeAudioStreams.findIndex((item) => item.index === stream.index) + 1 })),
+      })),
+      ...externalFilesEntries.flatMap(([path, { streams }]) => streams
+        .filter((stream) => stream.codec_type === 'video' || stream.codec_type === 'audio')
+        .map((stream) => ({
+          path,
+          stream,
+          label: stream.codec_type === 'video'
+            ? t('Video from {{name}}', { name: basename(path) })
+            : t('Audio from {{name}}', { name: basename(path) }),
+        }))),
+    ];
+
     return (
       <div className={styles['simpleList']}>
-        {simpleModeStreams.map((stream, index) => {
-          const copyStream = isCopyingStreamId(mainFilePath, stream.index);
+        {rows.map(({ path, stream, label }) => {
+          const copyStream = isCopyingStreamId(path, stream.index);
           const isVideoStream = stream.codec_type === 'video';
           const Icon = isVideoStream ? FaVideo : FaVolumeUp;
-          const label = stream.codec_type === 'video'
-            ? (index === 0 ? t('Video') : t('Video {{index}}', { index: index + 1 }))
-            : (simpleModeAudioStreams.length === 1
-              ? t('Audio')
-              : t('Audio {{index}}', { index: simpleModeAudioStreams.findIndex((item) => item.index === stream.index) + 1 }));
 
           return (
             <button
-              key={stream.index}
+              key={`${path}:${stream.index}`}
               type="button"
-              onClick={() => toggleCopyStreamId(mainFilePath, stream.index)}
+              onClick={() => toggleCopyStreamId(path, stream.index)}
               className={[
                 styles['simpleStreamButton'],
                 ...(copyStream ? [styles['simpleStreamButtonActive']] : [styles['simpleStreamButtonInactive']]),

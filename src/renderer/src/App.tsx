@@ -6174,21 +6174,17 @@ function App() {
           // Without asking, several files go to the batch list, as they do when no file is open (LosslessCut #2894)
           if (!enableAskForFileOpenAction && newFilePaths.length > 1) openFileResponse = 'addToBatch';
           if (enableAskForFileOpenAction && inputOptionsKeys.length > 1 && simpleMode && inputOptions.open != null) {
-            // Open or cancel, the rest under "More options": its audio, its video or both added to this recording, or
-            // the other choices in plain words.
+            // One page: open it, or add its sound, picture or both to this recording. Joining is in the menu (Join
+            // files…); a project's or subtitles' own choices, and the batch list, stay in advanced mode.
+            const isMedia = inputOptions.project == null && inputOptions.subtitles == null;
             openFileResponse = await askForFileOpenChoice({
               fileName: basename(firstNewFilePath),
-              extras: [
-                ...(inputOptions.tracks != null ? [
-                  { key: 'tracksAudio', label: i18n.t('Its audio'), add: 'audio' as const },
-                  { key: 'tracksVideo', label: i18n.t('Its video'), add: 'video' as const },
-                  { key: 'tracks', label: i18n.t('Both'), add: 'both' as const },
-                ] : []),
-                ...(inputOptions.mergeWithCurrentFile != null ? [{ key: 'mergeWithCurrentFile', label: i18n.t('Join it after this recording') }] : []),
-                ...(inputOptions.project != null ? [{ key: 'project', label: inputOptions.project }] : []),
-                ...(inputOptions.subtitles != null ? [{ key: 'subtitles', label: inputOptions.subtitles }] : []),
-                ...(inputOptions.addToBatch != null ? [{ key: 'addToBatch', label: inputOptions.addToBatch }] : []),
-              ],
+              openLabel: i18n.t('Open it'),
+              extras: inputOptions.tracks != null && isMedia ? [
+                { key: 'tracksAudio', label: i18n.t('Its sound'), add: 'audio' as const },
+                { key: 'tracksVideo', label: i18n.t('Its picture'), add: 'video' as const },
+                { key: 'tracks', label: i18n.t('Both'), add: 'both' as const },
+              ] : [],
             });
           } else if (enableAskForFileOpenAction && simpleMode && isFileOpened && newFilePaths.length > 1) {
             // Several files onto an open recording: the same question as for one, not LosslessCut's batch list wording.

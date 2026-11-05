@@ -91,6 +91,10 @@
 }
 
 .simpleStreamLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: .98rem;
   font-weight: 700;
   line-height: 1.2;

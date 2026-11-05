@@ -55,6 +55,7 @@
 
 .primary,
 .secondary,
+.quietCancel,
 .add,
 .other,
 .moreLink {
@@ -98,6 +99,22 @@
 }
 
 .secondary:hover {
+  background: var(--cp-hover);
+}
+
+.quietCancel {
+  align-self: center;
+  margin-top: .3rem;
+  padding: .3rem .8rem;
+  border-radius: var(--cp-radius-sm);
+  color: var(--cp-text-muted);
+  font-size: .875rem;
+  font-weight: 600;
+  transition: color .12s ease, background-color .12s ease;
+}
+
+.quietCancel:hover {
+  color: var(--cp-text);
   background: var(--cp-hover);
 }
 
@@ -183,6 +200,7 @@
 
 .primary:focus-visible,
 .secondary:focus-visible,
+.quietCancel:focus-visible,
 .add:focus-visible,
 .other:focus-visible,
 .moreLink:focus-visible {
