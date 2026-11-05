@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -14,6 +14,8 @@ import { describe, expect, it } from 'vitest';
 
 const componentsDir = dirname(fileURLToPath(import.meta.url));
 const rendererDir = resolve(componentsDir, '..');
+/** A renderer file as `components/Shelf.tsx`, with forward slashes on Windows too. */
+const toRendererPath = (file: string) => relative(rendererDir, file).split(sep).join('/');
 
 function listTsx(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -39,7 +41,8 @@ const shorthands: Record<string, string[]> = {
   'border-color': sides('border', '-color'),
   ...Object.fromEntries(['top', 'right', 'bottom', 'left'].map((side) => [`border-${side}`, [`border-${side}-width`, `border-${side}-style`, `border-${side}-color`]])),
   'border-radius': ['border-top-left-radius', 'border-top-right-radius', 'border-bottom-right-radius', 'border-bottom-left-radius'],
-  background: ['background-color', 'background-image', 'background-position', 'background-position-x', 'background-position-y', 'background-size', 'background-repeat'],
+  background: ['background-color', 'background-image', 'background-position', 'background-size', 'background-repeat'],
+  'background-position': ['background-position-x', 'background-position-y'],
   font: ['font-family', 'font-size', 'font-weight', 'font-style', 'line-height'],
   flex: ['flex-grow', 'flex-shrink', 'flex-basis'],
   overflow: ['overflow-x', 'overflow-y'],
@@ -208,7 +211,7 @@ function findClashes() {
         // The component's rules with the same pseudo-classes and elements after their class weigh the same.
         const ownProperties = new Set(component.rules.filter(({ suffix }) => suffix === callerRule.suffix).flatMap(({ properties }) => properties.flatMap((property) => expand(property))));
         const clash = callerRule.properties.filter((property) => expand(property).some((longhand) => ownProperties.has(longhand)));
-        if (clash.length > 0) clashes.push(`${relative(rendererDir, file)}: <${component.name} className={${variable}['${className}']}> .${className}${callerRule.suffix} sets ${clash.join(', ')}`);
+        if (clash.length > 0) clashes.push(`${toRendererPath(file)}: <${component.name} className={${variable}['${className}']}> .${className}${callerRule.suffix} sets ${clash.join(', ')}`);
       }
     }
   }
@@ -217,11 +220,22 @@ function findClashes() {
 
 describe('classes handed to shared components', () => {
   it('are all found (a check that finds nothing passes for nothing)', () => {
-    const found = new Set(findUsages(findSharedComponents()).map(({ file, component }) => `${relative(rendererDir, file)} ${component.name}`));
+    const found = new Set(findUsages(findSharedComponents()).map(({ file, component }) => `${toRendererPath(file)} ${component.name}`));
     for (const usage of ['components/ShelfButton.tsx AnchoredPopover', 'components/ShortcutField.tsx Select', 'components/QuickExportSettings.tsx ShortcutField', 'components/GenericDialog.tsx Dialog.Content', 'components/GenericDialog.tsx Dialog.Title', 'components/MissingRecordingDialog.tsx AlertDialog.Content']) {
       expect(found).toContain(usage);
     }
     expect(found.size).toBeGreaterThanOrEqual(10);
+  });
+
+  it("read the components' own rules (a check that reads no rules passes for nothing)", () => {
+    const ownProperties = (name: string, suffix = '') => findSharedComponents().find((component) => component.name === name)?.rules.filter((rule) => rule.suffix === suffix).flatMap(({ properties }) => properties);
+    expect(ownProperties('AnchoredPopover')).toContain('max-width');
+    // Read past its nested `&[data-state]` blocks.
+    expect(ownProperties('Dialog.Content')).toContain('width');
+    expect(ownProperties('Dialog.Title')).toContain('margin');
+    // Handed on: ConfirmButton's class lands on Button.
+    expect(ownProperties('ConfirmButton')).toContain('padding');
+    expect(ownProperties('Select', ':hover')).not.toBeUndefined();
   });
 
   it("never set a component's own property at the same weight, so the CSS order can't decide", () => {
