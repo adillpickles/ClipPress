@@ -187,9 +187,9 @@ function findUsages(components: SharedComponent[]) {
     for (const component of components.filter(({ file: componentFile }) => componentFile !== file)) {
       const [moduleName, part] = component.name.split('.');
       const alias = namespaces.get(moduleName!);
+      // A part is written through its namespace (none imported here: none written).
       const written = part == null ? component.name : (alias != null ? `${alias}\\.${part}` : undefined);
-      if (written == null) continue;
-      for (const attributes of findElementAttributes(source, written)) {
+      for (const attributes of written == null ? [] : findElementAttributes(source, written)) {
         const expression = getClassNameExpression(attributes);
         if (expression != null) usages.push({ file, component, expression, modules });
       }
