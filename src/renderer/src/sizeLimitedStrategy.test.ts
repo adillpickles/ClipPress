@@ -171,7 +171,10 @@ describe('resolveSizeLimitedStrategy', () => {
     expect(resolve('quality', { ...rtx30, av1Nvenc: true }).encoder).toBe('av1_nvenc');
     expect(resolve('quality', rtx30)).toMatchObject({ id: 'quality_hevc_gpu', encoder: 'hevc_nvenc', effectiveCodec: 'hevc', usesGpu: true });
     expect(resolve('quality', { ...rtx30, hevcNvenc: false }).id).toBe('quality_av1_cpu');
-    expect(resolve('quality', { ...rtx30, hevcNvenc: false, cpuThreads: 4 }).id).toBe('quality_h264_gpu');
+    // CPU AV1 before the card's H.264 from 4 threads; below that, the card's H.264.
+    expect(resolve('quality', { ...rtx30, hevcNvenc: false, cpuThreads: 4 }).id).toBe('quality_av1_cpu');
+    expect(resolve('quality', { ...rtx30, hevcNvenc: false, cpuThreads: 3 }).id).toBe('quality_h264_gpu');
+    expect(resolve('quality', { ...rtx30, hevcNvenc: false, cpuThreads: 2 }).id).toBe('quality_h264_gpu');
     expect(resolve('fast', rtx30)).toMatchObject({ id: 'fast_hevc_gpu', encoder: 'hevc_nvenc', encoderPreset: 'p3' });
     expect(resolve('fast', { ...rtx30, hevcNvenc: false }).id).toBe('fast_h264_gpu');
     // An RX 6000 card, and an older Intel chip.
@@ -209,14 +212,14 @@ describe('resolveSizeLimitedStrategy', () => {
     expect(strategy.fallbackReason).toBe('gpu_av1_unavailable');
   });
 
-  it('moves quality to GPU H.264 on a small CPU without GPU AV1', () => {
+  it('moves quality to GPU H.264 on a small CPU (under 4 threads) without GPU AV1', () => {
     const strategy = resolveSizeLimitedStrategy({
       controlMode: 'simple',
       preset: 'quality',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
       ...defaultStrategyArgs,
-      capabilities: { ...noGpu, h264Amf: true, libx264: true, libsvtav1: true, cpuThreads: 4 },
+      capabilities: { ...noGpu, h264Amf: true, libx264: true, libsvtav1: true, cpuThreads: 2 },
     });
 
     expect(strategy.id).toBe('quality_h264_gpu');

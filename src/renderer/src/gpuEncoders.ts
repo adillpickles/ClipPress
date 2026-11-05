@@ -62,13 +62,17 @@ export function withoutGpuEncoders(capabilities: SizeLimitedEncoderCapabilities)
 }
 
 /**
- * A size-limited export on a CPU with few threads is better served by a GPU H.264 encode than a
- * slow CPU AV1 one. With this many threads SVT-AV1 keeps up well enough to be worth its quality.
+ * Quality on a graphics card without the codec's own encoder: from this many CPU threads the CPU's sharper encode is
+ * worth its time, below it the card's H.264 is far quicker. SVT-AV1 at preset 7 takes about 2× a 1080p60 clip's length
+ * on 4 threads (measured: 40-55 s for 20 s): kept from 4 threads.
  */
-export const minCpuThreadsForCpuAv1 = 8;
+export const minCpuThreadsForCpuAv1 = 4;
 
-/** The same for CPU HEVC (x265) against a GPU H.264 encode, for a graphics card that can't make HEVC. */
-export const minCpuThreadsForCpuHevc = 8;
+/**
+ * The same for CPU HEVC (x265 Quality): about 1.5× SVT-AV1's time (61 s for 20 s of 1080p60 on 4 threads, 112 s on 2,
+ * measured), so it reaches AV1's 4-thread time at about 6.
+ */
+export const minCpuThreadsForCpuHevc = 6;
 
 /** NVENC preset names are the shared vocabulary; AMD and Intel map them to their own scales. */
 export function getAmfQualityPreset(encoder: 'av1_amf' | 'h264_amf' | 'hevc_amf', preset: SizeLimitAdvancedNvencPreset) {

@@ -24,7 +24,7 @@ HEVC (every step stays phone-safe, never AV1):
 | Preset | First choice | Without GPU HEVC | Without any GPU encoder |
 | --- | --- | --- | --- |
 | Max Quality | CPU HEVC (x265 `slow`) 2-pass | (unchanged) | (unchanged) |
-| Quality | GPU HEVC | x265 `fast` on 8+ CPU threads, otherwise GPU H.264 | x265 `fast` |
+| Quality | GPU HEVC | x265 `fast` on 6+ CPU threads, otherwise GPU H.264 | x265 `fast` |
 | Fast | GPU HEVC | GPU H.264 | x265 `veryfast` |
 
 H.264: GPU H.264 for Quality and Fast (x264 without one), x264 `slow` 2-pass for Max Quality.
@@ -34,7 +34,7 @@ AV1 (as before HEVC became the default):
 | Preset | First choice | Without GPU AV1 | Without GPU AV1 or HEVC | Without any GPU encoder |
 | --- | --- | --- | --- | --- |
 | Max Quality | CPU AV1 (SVT-AV1) 2-pass | (unchanged) | (unchanged) | (unchanged) |
-| Quality | GPU AV1 | GPU HEVC | CPU AV1 on 8+ CPU threads, otherwise GPU H.264 | CPU AV1 |
+| Quality | GPU AV1 | GPU HEVC | CPU AV1 on 4+ CPU threads, otherwise GPU H.264 | CPU AV1 |
 | Fast | GPU AV1 | GPU HEVC | GPU H.264 | CPU AV1 (fast preset), then CPU H.264 |
 
 x265's settings were measured on 1080p60 game footage at 5 Mbps (VMAF, three games, same size): Quality's `fast`
