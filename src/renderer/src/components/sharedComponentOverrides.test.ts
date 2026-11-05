@@ -24,19 +24,35 @@ function listTsx(dir: string): string[] {
 }
 
 /** The longhands a property sets, so `padding` and `padding-bottom` (or `background` and `background-color`) meet. */
+const sides = (prefix: string, suffix = '') => ['top', 'right', 'bottom', 'left'].map((side) => `${prefix}-${side}${suffix}`);
 const shorthands: Record<string, string[]> = {
-  padding: ['padding-top', 'padding-right', 'padding-bottom', 'padding-left'],
-  margin: ['margin-top', 'margin-right', 'margin-bottom', 'margin-left'],
+  padding: [...sides('padding'), 'padding-inline', 'padding-block'],
+  'padding-inline': ['padding-left', 'padding-right'],
+  'padding-block': ['padding-top', 'padding-bottom'],
+  margin: [...sides('margin'), 'margin-inline', 'margin-block'],
+  'margin-inline': ['margin-left', 'margin-right'],
+  'margin-block': ['margin-top', 'margin-bottom'],
   inset: ['top', 'right', 'bottom', 'left'],
-  border: ['border-width', 'border-style', 'border-color', 'border-top', 'border-right', 'border-bottom', 'border-left'],
+  border: ['border-width', 'border-style', 'border-color', ...sides('border'), ...sides('border', '-width'), ...sides('border', '-style'), ...sides('border', '-color')],
+  'border-width': sides('border', '-width'),
+  'border-style': sides('border', '-style'),
+  'border-color': sides('border', '-color'),
+  ...Object.fromEntries(['top', 'right', 'bottom', 'left'].map((side) => [`border-${side}`, [`border-${side}-width`, `border-${side}-style`, `border-${side}-color`]])),
   'border-radius': ['border-top-left-radius', 'border-top-right-radius', 'border-bottom-right-radius', 'border-bottom-left-radius'],
   background: ['background-color', 'background-image', 'background-position', 'background-position-x', 'background-position-y', 'background-size', 'background-repeat'],
   font: ['font-family', 'font-size', 'font-weight', 'font-style', 'line-height'],
+  flex: ['flex-grow', 'flex-shrink', 'flex-basis'],
+  overflow: ['overflow-x', 'overflow-y'],
+  outline: ['outline-width', 'outline-style', 'outline-color'],
   gap: ['row-gap', 'column-gap'],
+  'place-items': ['align-items', 'justify-items'],
+  'place-content': ['align-content', 'justify-content'],
+  'place-self': ['align-self', 'justify-self'],
   transition: ['transition-property', 'transition-duration', 'transition-timing-function', 'transition-delay'],
   animation: ['animation-name', 'animation-duration', 'animation-timing-function', 'animation-delay'],
 };
-const expand = (property: string) => [property, ...(shorthands[property] ?? [])];
+/** A property and everything it sets, two levels down (`border` → `border-top` → `border-top-color`). */
+const expand = (property: string): string[] => [property, ...(shorthands[property] ?? []).flatMap((longhand) => [longhand, ...(shorthands[longhand] ?? [])])];
 
 /**
  * Per rule with a selector that is one class and then only pseudo-classes, pseudo-elements and element names
@@ -44,7 +60,12 @@ const expand = (property: string) => [property, ...(shorthands[property] ?? [])]
  * sets (custom properties aside: setting those is the way to change one).
  */
 function readClassRules(cssPath: string) {
-  const css = readFileSync(cssPath, 'utf8').replaceAll(/\/\*[\s\S]*?\*\//gu, '');
+  let css = readFileSync(cssPath, 'utf8').replaceAll(/\/\*[\s\S]*?\*\//gu, '');
+  // Nested `&…{…}` blocks (Dialog.module.css): taken out, so their rule's own declarations are read.
+  for (let previous = ''; previous !== css;) {
+    previous = css;
+    css = css.replaceAll(/&[^{}]*\{[^{}]*\}/gu, '');
+  }
   const rules: { className: string, suffix: string, properties: string[] }[] = [];
   for (const [, selectors, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
     const properties = body!.split(';').map((declaration) => declaration.split(':')[0]!.trim()).filter((property) => property !== '' && !property.startsWith('--'));
@@ -114,41 +135,80 @@ function getClassNameExpression(attributes: string) {
   return undefined;
 }
 
-function findClashes() {
-  // Shared components: a .tsx with its own CSS module that takes a className.
-  const components = readdirSync(componentsDir).flatMap((file) => {
+/** The classes on the element whose class list takes the `className` prop, in a piece of a component's source. */
+function getRootClasses(source: string) {
+  const rootExpression = [...source.matchAll(/className=\{([^}]*\bclassName\b[^}]*)\}/gu)].map((match) => match[1]!).join(' ');
+  if (rootExpression === '') return undefined;
+  // All of the module's when one is picked by a variable, like Button's variant.
+  return /styles\[(?!')/u.test(rootExpression) ? 'any' : new Set([...rootExpression.matchAll(/styles\['([\w-]+)'\]/gu)].map((match) => match[1]!));
+}
+
+interface SharedComponent { name: string, file: string, rules: ReturnType<typeof readClassRules>, passesTo: string[] }
+
+/** Shared components: a .tsx with its own CSS module that takes a className, and its named parts (`Dialog.Content`). */
+function findSharedComponents() {
+  const components = readdirSync(componentsDir).flatMap((file): SharedComponent[] => {
     if (!file.endsWith('.tsx')) return [];
     const name = basename(file, '.tsx');
     const source = readFileSync(join(componentsDir, file), 'utf8');
-    if (!source.includes(`from './${name}.module.css'`) || !source.includes('className')) return [];
-    // A caller's class lands on the element whose class list takes the `className` prop, beside the classes listed
-    // there (all of the module's, when one is picked by a variable, like Button's variant).
-    const rootExpression = [...source.matchAll(/className=\{([^}]*\bclassName\b[^}]*)\}/gu)].map((match) => match[1]!).join(' ');
-    const rootClasses = new Set([...rootExpression.matchAll(/styles\['([\w-]+)'\]/gu)].map((match) => match[1]!));
-    // No class list takes it: callers can't hand it one.
-    if (rootExpression === '') return [];
-    const anyClass = /styles\[(?!')/u.test(rootExpression);
-    const rules = readClassRules(join(componentsDir, `${name}.module.css`)).filter(({ className }) => anyClass || rootClasses.has(className));
-    return [{ name, file: join(componentsDir, file), rules }];
+    if (!source.includes(`from './${name}.module.css'`)) return [];
+    const moduleRules = readClassRules(join(componentsDir, `${name}.module.css`));
+    const pick = (roots: Set<string> | 'any') => moduleRules.filter(({ className }) => roots === 'any' || roots.has(className));
+    // Other shared components it hands its className on to (ConfirmButton → Button).
+    const passesTo = (text: string) => [...text.matchAll(/<(\w+)(?![.\w])/gu)].map((match) => match[1]!).filter((other) => findElementAttributes(text, other).some((attributes) => /\bclassName\b/u.test(getClassNameExpression(attributes) ?? '')));
+    const found: SharedComponent[] = [];
+    // Named parts: `export const Part = withClass(…, styles['x']…)` or a forwardRef taking a className.
+    for (const match of source.matchAll(/export const (\w+) = /gu)) {
+      const end = source.indexOf('\nexport ', match.index + 1);
+      const text = source.slice(match.index, end === -1 ? undefined : end);
+      const withClass = /withClass\([^,]+,\s*styles\['([\w-]+)'\]/u.exec(text);
+      const roots = withClass != null ? new Set([withClass[1]!]) : getRootClasses(text);
+      if (roots != null) found.push({ name: `${name}.${match[1]}`, file: join(componentsDir, file), rules: pick(roots), passesTo: passesTo(text) });
+    }
+    const roots = getRootClasses(source);
+    if (roots != null && found.length === 0) found.push({ name, file: join(componentsDir, file), rules: pick(roots), passesTo: passesTo(source) });
+    return found;
   });
+  // One level of handing on: a class given to ConfirmButton lands on Button too.
+  return components.map((component) => ({
+    ...component,
+    rules: [...component.rules, ...components.filter(({ name }) => component.passesTo.includes(name)).flatMap(({ rules }) => rules)],
+  }));
+}
 
-  const clashes: string[] = [];
+/** Each `<Component className={…}>` (or `<Namespace.Part …>`) in the renderer, with the CSS module of its classes. */
+function findUsages(components: SharedComponent[]) {
+  const usages: { file: string, component: SharedComponent, expression: string, modules: Map<string, string> }[] = [];
   for (const file of listTsx(rendererDir)) {
     const source = readFileSync(file, 'utf8');
     const modules = new Map([...source.matchAll(/import (\w+) from '([^']+\.module\.css)'/gu)].map(([, variable, path]) => [variable!, resolve(dirname(file), path!)]));
+    // `import * as Dialog from './Dialog'`: its parts are written `<Dialog.Content …>`.
+    const namespaces = new Map([...source.matchAll(/import \* as (\w+) from '[^']*\/(\w+)'/gu)].map(([, alias, moduleName]) => [moduleName!, alias!]));
     for (const component of components.filter(({ file: componentFile }) => componentFile !== file)) {
-      const expressions = findElementAttributes(source, component.name).flatMap((attributes) => getClassNameExpression(attributes) ?? []);
-      for (const expression of expressions) {
-        for (const [, variable, className] of expression.matchAll(/(\w+)\['([\w-]+)'\]/gu)) {
-          const cssPath = modules.get(variable!);
-          const callerRules = cssPath == null ? [] : readClassRules(cssPath).filter((rule) => rule.className === className);
-          for (const callerRule of callerRules) {
-            // The component's rules with the same pseudo-classes and elements after their class weigh the same.
-            const ownProperties = new Set(component.rules.filter(({ suffix }) => suffix === callerRule.suffix).flatMap(({ properties }) => properties.flatMap((property) => expand(property))));
-            const clash = callerRule.properties.filter((property) => expand(property).some((longhand) => ownProperties.has(longhand)));
-            if (clash.length > 0) clashes.push(`${relative(rendererDir, file)}: <${component.name} className={${variable}['${className}']}> .${className}${callerRule.suffix} sets ${clash.join(', ')}`);
-          }
-        }
+      const [moduleName, part] = component.name.split('.');
+      const alias = namespaces.get(moduleName!);
+      const written = part == null ? component.name : (alias != null ? `${alias}\\.${part}` : undefined);
+      if (written == null) continue;
+      for (const attributes of findElementAttributes(source, written)) {
+        const expression = getClassNameExpression(attributes);
+        if (expression != null) usages.push({ file, component, expression, modules });
+      }
+    }
+  }
+  return usages;
+}
+
+function findClashes() {
+  const clashes: string[] = [];
+  for (const { file, component, expression, modules } of findUsages(findSharedComponents())) {
+    for (const [, variable, className] of expression.matchAll(/(\w+)\['([\w-]+)'\]/gu)) {
+      const cssPath = modules.get(variable!);
+      const callerRules = cssPath == null ? [] : readClassRules(cssPath).filter((rule) => rule.className === className);
+      for (const callerRule of callerRules) {
+        // The component's rules with the same pseudo-classes and elements after their class weigh the same.
+        const ownProperties = new Set(component.rules.filter(({ suffix }) => suffix === callerRule.suffix).flatMap(({ properties }) => properties.flatMap((property) => expand(property))));
+        const clash = callerRule.properties.filter((property) => expand(property).some((longhand) => ownProperties.has(longhand)));
+        if (clash.length > 0) clashes.push(`${relative(rendererDir, file)}: <${component.name} className={${variable}['${className}']}> .${className}${callerRule.suffix} sets ${clash.join(', ')}`);
       }
     }
   }
@@ -156,6 +216,14 @@ function findClashes() {
 }
 
 describe('classes handed to shared components', () => {
+  it('are all found (a check that finds nothing passes for nothing)', () => {
+    const found = new Set(findUsages(findSharedComponents()).map(({ file, component }) => `${relative(rendererDir, file)} ${component.name}`));
+    for (const usage of ['components/ShelfButton.tsx AnchoredPopover', 'components/ShortcutField.tsx Select', 'components/QuickExportSettings.tsx ShortcutField', 'components/GenericDialog.tsx Dialog.Content', 'components/GenericDialog.tsx Dialog.Title', 'components/MissingRecordingDialog.tsx AlertDialog.Content']) {
+      expect(found).toContain(usage);
+    }
+    expect(found.size).toBeGreaterThanOrEqual(10);
+  });
+
   it("never set a component's own property at the same weight, so the CSS order can't decide", () => {
     expect(findClashes()).toEqual([]);
   });

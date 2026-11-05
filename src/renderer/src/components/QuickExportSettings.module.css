@@ -105,7 +105,8 @@
   display: contents;
 }
 
-.shortcut [role="alert"] {
+.shortcut [role="alert"],
+.shortcut [role="status"] {
   grid-column: 1 / -1;
   justify-self: end;
 }

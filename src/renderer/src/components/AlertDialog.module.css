@@ -20,7 +20,9 @@
 	position: fixed;
 	inset: 0;
 	margin: auto;
-	width: fit-content;
+	/* A dialog sets its own width through this variable: a class of its own would weigh the same as this rule, and the
+	   bundle's CSS order would decide (sharedComponentOverrides.test.ts). An inline style works too. */
+	width: var(--dialog-width, fit-content);
 	height: fit-content;
 	box-sizing: border-box;
 
