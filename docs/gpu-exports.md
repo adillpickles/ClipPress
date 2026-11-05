@@ -69,8 +69,9 @@ speed, text and scaling behave exactly as before. Measured on 1440p60 HEVC:
 | Single clip | 12.4 s → 7.2 s | 6.8 s → 6.0 s | unchanged |
 | 3-clip merge | 7.8 s → 5.0 s | slower | slower |
 
-Merges therefore decode on the GPU only on CPUs with fewer than 8 threads, and only while the
-inputs fit a video-memory budget (each open decoder holds about 250 MB at 1440p).
+Merges decode on the GPU too, whatever the CPU (measured again in 6.1 on the owner's 16-thread PC: two to three times
+quicker; the older "slower" above didn't reproduce), while the inputs fit a video-memory budget (each open decoder
+holds about 250 MB at 1440p).
 
 ## When the GPU fails
 

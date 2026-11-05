@@ -63,8 +63,9 @@ export function withoutGpuEncoders(capabilities: SizeLimitedEncoderCapabilities)
 
 /**
  * Quality on a graphics card without the codec's own encoder: from this many CPU threads the CPU's sharper encode is
- * worth its time, below it the card's H.264 is far quicker. SVT-AV1 at preset 7 takes about 2× a 1080p60 clip's length
- * on 4 threads (measured: 40-55 s for 20 s): kept from 4 threads.
+ * worth its time, below it the card's H.264 is far quicker. SVT-AV1 at preset 7 takes 2-2.75× a 1080p60 clip's length on
+ * 4 threads of a recent CPU (measured: 40-55 s for 20 s; a 2015-era one, the kind beside a card without the codec, is
+ * slower): kept from 4 threads.
  */
 export const minCpuThreadsForCpuAv1 = 4;
 

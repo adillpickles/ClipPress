@@ -78,7 +78,11 @@ describe('Video format HEVC (the default)', () => {
   it("uses x265 for Quality when the graphics card can't make HEVC and the CPU keeps up, else the card's H.264", () => {
     expect(resolve('quality', gtx750(16))).toMatchObject({ id: 'quality_hevc_cpu', encoder: 'libx265', encoderPreset: 'fast', fallbackReason: 'gpu_hevc_unavailable' });
     expect(resolve('quality', gtx750(6))).toMatchObject({ id: 'quality_hevc_cpu', encoder: 'libx265' });
+    expect(resolve('quality', gtx750(5))).toMatchObject({ id: 'quality_h264_gpu', encoder: 'h264_nvenc' });
     expect(resolve('quality', gtx750(4))).toMatchObject({ id: 'quality_h264_gpu', encoder: 'h264_nvenc', fallbackReason: 'gpu_hevc_unavailable' });
+    // Without any GPU encoder, the CPU's HEVC however few threads: nothing quicker would be phone-safe and as sharp.
+    expect(resolve('quality', { ...noGpu, cpuThreads: 2 })).toMatchObject({ id: 'quality_hevc_cpu', encoder: 'libx265' });
+    expect(resolve('quality', { ...noGpu, cpuThreads: 2 }, 'av1')).toMatchObject({ id: 'quality_av1_cpu', encoder: 'libsvtav1' });
     // Fast is about speed: the card's H.264 first.
     expect(resolve('fast', gtx750(16))).toMatchObject({ id: 'fast_h264_gpu', encoder: 'h264_nvenc' });
   });
