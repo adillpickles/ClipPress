@@ -105,6 +105,16 @@ then (for the size presets and regular exports) on the next encoder in line, and
 for the rest of the session once another one worked. Cancelling and a full disk are never retried, and an
 encoder picked in Custom settings keeps to it (its basic settings included).
 
+AMD's and Intel's HEVC settings come from their own documentation (not measured: there's no AMD or Intel card
+to test on). AMD: its recipe for files in the AMF wiki ("Recommended FFmpeg Encoder Settings"): pre-analysis with
+a 40-frame look-ahead (the FFmpeg deadlock that kept it under 16 is fixed in FFmpeg 9.0), VBAQ, pre-encode, the
+high-motion boost (Fast too), but not temporal AQ, which AMD advises against when the bitrate must hold. AMD's
+HEVC has no B-frames. Every AMD HEVC file declares the smallest HEVC level its picture, frame rate and bitrate
+fit (1080p60 is 4.1): AMD's default, 5.2 or higher, made some players refuse files (OBS fixed the same in
+2024). Intel: its HEVC recipe from Intel's media-delivery quality guide (look-ahead rate control, adaptive I
+and B frames, 7 B-frames, 4 references), but not its CRA keyframes (coarser seeking) or its HRD switch-off
+(the size limit needs it); the basic settings keep Main profile and the 10 s keyframe interval.
+
 AMD's AV1 encoder on RX 7000 cards and current Ryzen chips pads the picture to blocks of 64×16 pixels,
 which players show as black bars, so its exports are sized to those blocks (scaled a little, at most a few
 pixels cropped from the middle).

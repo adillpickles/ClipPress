@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { getResolvedVideoArgs } from './sizeLimitedEncoderArgs';
+import { getHevcLevel, getResolvedVideoArgs } from './sizeLimitedEncoderArgs';
+import type { SizeLimitedEncodedFrame } from './sizeLimitedEncoderArgs';
 import { resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import type { SizeLimitedEncoderCapabilities } from './sizeLimitedTypes';
 
@@ -390,5 +391,82 @@ describe('GPU vendor settings', () => {
     expect(getArgValue(qsv, '-profile:v')).toBe('main');
     expect(qsv).not.toContain('-bitrate_limit');
     expect(getArgValue(qsv, '-tag:v')).toBe('hvc1');
+  });
+});
+
+describe('getHevcLevel', () => {
+  // ClipPress's window: a peak of 1.05 and a buffer of 1.5 times the bitrate.
+  const level = (width: number, height: number, fps: number, bitrate: number) => getHevcLevel({ width, height, fps, maxBitrate: bitrate * 1.05, bufferSize: bitrate * 1.5 });
+
+  it('gives the smallest level the picture, its rate, its peak bitrate and its buffer fit', () => {
+    expect(level(1920, 1080, 60, 8_000_000)).toBe(123);
+    expect(level(1920, 1080, 30, 8_000_000)).toBe(120);
+    expect(level(1440, 1080, 30, 8_000_000)).toBe(120);
+    expect(level(1280, 720, 30, 4_000_000)).toBe(93);
+    expect(level(2560, 1440, 60, 12_000_000)).toBe(150);
+    expect(level(3840, 2160, 60, 20_000_000)).toBe(153);
+    // A short clip at 20 MB has a bigger buffer than 4.1's 22 Mbit (1.1 x 20): 14.6 Mbps fits, 14.7 doesn't.
+    expect(level(1920, 1080, 60, 14_600_000)).toBe(123);
+    expect(level(1920, 1080, 60, 14_700_000)).toBe(150);
+    expect(level(7680, 4320, 120, 900_000_000)).toBe(186);
+  });
+});
+
+describe('AMD and Intel HEVC, from their own recipes', () => {
+  const frame1080p60: SizeLimitedEncodedFrame = { width: 1920, height: 1080, fps: 60 };
+  const args = (gpu: Partial<SizeLimitedEncoderCapabilities>, preset: 'quality' | 'fast' = 'quality', frame: SizeLimitedEncodedFrame | null = frame1080p60) => getResolvedVideoArgs({
+    strategy: resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset,
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      videoFormat: 'hevc',
+      capabilities: { h264Nvenc: false, av1Nvenc: false, libx264: true, libsvtav1: false, cpuThreads: 4, ...gpu },
+    }),
+    videoBitrate: 4_000_000,
+    twoPass: false,
+    videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: undefined },
+    sourceFps: 60,
+    outputPlaybackRate: 1,
+    frame: frame ?? undefined,
+  });
+
+  it("declares AMD HEVC's level in every tier, and leaves it to AMD when the picture isn't known", () => {
+    expect(getArgValue(args({ hevcAmf: true }), '-level:v')).toBe('123');
+    expect(getArgValue(args({ hevcAmf: true }, 'fast'), '-level:v')).toBe('123');
+    expect(getArgValue(args({ hevcAmf: true, basicSettingsOnly: ['hevcAmf'] }), '-level:v')).toBe('123');
+    expect(args({ hevcAmf: true }, 'quality', null)).not.toContain('-level:v');
+    // H.264's own default is right, and AV1 isn't changed here.
+    expect(args({ h264Amf: true })).not.toContain('-level:v');
+  });
+
+  it("gives AMD HEVC AMD's 40-frame look-ahead, the motion boost for Fast, and never B-frames", () => {
+    const quality = args({ hevcAmf: true });
+    expect(getArgValue(quality, '-pa_lookahead_buffer_depth')).toBe('40');
+    expect(quality).not.toContain('-bf');
+    const fast = args({ hevcAmf: true }, 'fast');
+    expect(fast).not.toContain('-preanalysis');
+    expect(getArgValue(fast, '-high_motion_quality_boost_enable')).toBe('1');
+    // H.264 keeps its depth.
+    expect(getArgValue(args({ h264Amf: true }), '-pa_lookahead_buffer_depth')).toBe('11');
+  });
+
+  it("keeps AMD HEVC's basic settings plain, with the GOP and bitrate limits every card has", () => {
+    const basic = args({ hevcAmf: true, basicSettingsOnly: ['hevcAmf'] });
+    expect(getArgValue(basic, '-enforce_hrd')).toBe('1');
+    expect(getArgValue(basic, '-g')).toBe('600');
+    for (const tuned of ['-preanalysis', '-vbaq', '-preencode', '-high_motion_quality_boost_enable']) expect(basic).not.toContain(tuned);
+  });
+
+  it('gives Intel HEVC 4 references, and its profile and GOP in the basic settings too', () => {
+    expect(getArgValue(args({ hevcQsv: true }), '-refs')).toBe('4');
+    expect(args({ hevcQsv: true }, 'fast')).not.toContain('-refs');
+    const basic = args({ hevcQsv: true, basicSettingsOnly: ['hevcQsv'] });
+    expect(getArgValue(basic, '-profile:v')).toBe('main');
+    expect(getArgValue(basic, '-g')).toBe('600');
+    expect(basic).not.toContain('-extbrc');
+    // H.264's are unchanged.
+    expect(args({ h264Qsv: true })).not.toContain('-refs');
   });
 });

@@ -19,8 +19,8 @@ const qualityX265Params = ['no-sao=1', 'rdoq-level=2', 'psy-rdoq=1.0'];
 const maxQualityX265Params = ['no-sao=1'];
 const longGopSeconds = 10;
 const fallbackLongGopFrames = 300;
-/** The most frames AMD's H.264 encoder allows between keyframes. */
-const maxAmfH264GopFrames = 1000;
+/** The most frames AMD's H.264 and HEVC encoders allow between keyframes. */
+const maxAmfGopFrames = 1000;
 const constrainedH264MaxRateFactor = 1.05;
 const constrainedH264BufferFactor = 1.5;
 
@@ -38,6 +38,40 @@ function getBitrateWindowArgs({ videoBitrate, maxRateFactor, bufferFactor }: {
     '-maxrate', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * maxRateFactor))),
     '-bufsize', toKbitrateArg(Math.max(videoBitrate, Math.floor(videoBitrate * bufferFactor))),
   ];
+}
+
+/**
+ * HEVC's levels (H.265 table A.8, Main tier) from 3 up: the most luma samples a picture and a second may hold, and the
+ * most bits a second (MaxBR, which is also the most bits the stream's buffer may hold, MaxCPB; the stream's own limits
+ * are 1.1 times them). The level's number is 30 times the level.
+ */
+const hevcLevels = [
+  { idc: 90, maxPictureSamples: 552_960, maxSampleRate: 16_588_800, maxBitrate: 6_000_000 },
+  { idc: 93, maxPictureSamples: 983_040, maxSampleRate: 33_177_600, maxBitrate: 10_000_000 },
+  { idc: 120, maxPictureSamples: 2_228_224, maxSampleRate: 66_846_720, maxBitrate: 12_000_000 },
+  { idc: 123, maxPictureSamples: 2_228_224, maxSampleRate: 133_693_440, maxBitrate: 20_000_000 },
+  { idc: 150, maxPictureSamples: 8_912_896, maxSampleRate: 267_386_880, maxBitrate: 25_000_000 },
+  { idc: 153, maxPictureSamples: 8_912_896, maxSampleRate: 534_773_760, maxBitrate: 40_000_000 },
+  { idc: 156, maxPictureSamples: 8_912_896, maxSampleRate: 1_069_547_520, maxBitrate: 60_000_000 },
+  { idc: 180, maxPictureSamples: 35_651_584, maxSampleRate: 1_069_547_520, maxBitrate: 60_000_000 },
+  { idc: 183, maxPictureSamples: 35_651_584, maxSampleRate: 2_139_095_040, maxBitrate: 120_000_000 },
+  { idc: 186, maxPictureSamples: 35_651_584, maxSampleRate: 4_278_190_080, maxBitrate: 240_000_000 },
+] as const;
+
+/** The smallest HEVC level an encode fits in: its picture, its pictures a second, its peak bitrate and its buffer. */
+export function getHevcLevel({ width, height, fps, maxBitrate, bufferSize }: { width: number, height: number, fps: number, maxBitrate: number, bufferSize: number }) {
+  const pictureSamples = width * height;
+  const sampleRate = pictureSamples * fps;
+  const bits = Math.max(maxBitrate, bufferSize);
+  return (hevcLevels.find((level) => pictureSamples <= level.maxPictureSamples && sampleRate <= level.maxSampleRate && bits <= level.maxBitrate * 1.1)
+    ?? hevcLevels.at(-1)!).idc;
+}
+
+/** The encoded picture's size and rate, where known (AMD's HEVC declares its level from them). */
+export interface SizeLimitedEncodedFrame {
+  width: number,
+  height: number,
+  fps: number,
 }
 
 /**
@@ -87,7 +121,7 @@ function resolveNvencCq({ baseCq, qualityCapOffset }: { baseCq: number, qualityC
   return String(Math.max(minNvencCq, baseCq - qualityCapOffset));
 }
 
-export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, passNumber, videoProfile, sourceFps, qualityCapOffset }: {
+export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, passNumber, videoProfile, sourceFps, qualityCapOffset, frame }: {
   strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
   twoPass: boolean,
@@ -97,6 +131,7 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, passNumb
   sourceFps: number | undefined,
   outputPlaybackRate: number,
   qualityCapOffset?: number | undefined,
+  frame?: SizeLimitedEncodedFrame | undefined,
 }) {
   switch (strategy.encoder) {
     case 'libsvtav1': {
@@ -263,25 +298,36 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, passNumb
 
     // AMD: the quality tools OBS turns on for every AMD card (FFmpeg leaves out what a card can't do), plus its
     // pre-analysis (scene cuts, fast motion) and B-frames where the card has them, except for Fast. The pre-analysis
-    // look-ahead stays below 16: a deeper one can deadlock in this FFmpeg (fixed upstream later). The basic settings
+    // look-ahead of H.264 and AV1 stays below 16: a deeper one could deadlock in FFmpeg before 9.0. The basic settings
     // are the plain ones every driver accepts.
+    // HEVC follows AMD's own recipe for files (its AMF wiki, "Recommended FFmpeg Encoder Settings"): a 40-frame
+    // look-ahead, and the high-motion boost for Fast too. It declares the smallest level its picture fits, in every
+    // tier: AMD's default (5.2, or 6.2 as OBS saw it) made some players refuse the file. No HEVC B-frames: AMD's HEVC
+    // encoder has none.
     case 'av1_amf':
     case 'h264_amf':
     case 'hevc_amf': {
       const isAv1 = strategy.encoder === 'av1_amf';
-      // HEVC without B-frames: only RX 7000 and newer have them, and those encode AV1 instead.
       const isHevc = strategy.encoder === 'hevc_amf';
       const isFast = strategy.tuningProfile === 'fast';
       const gopFrames = getLongGopFrames({ outputFps: videoProfile.outputFps, sourceFps });
+      const hevcLevelArgs = isHevc && frame != null
+        ? ['-level:v', String(getHevcLevel({ ...frame, maxBitrate: Math.floor(videoBitrate * constrainedH264MaxRateFactor), bufferSize: Math.floor(videoBitrate * constrainedH264BufferFactor) }))]
+        : [];
       return [
         '-c:v', strategy.encoder,
         '-usage', 'transcoding',
         '-quality', getAmfQualityPreset(strategy.encoder, getGpuPreset(strategy)),
-        ...(strategy.basicEncoderSettings ? [] : [
+        ...hevcLevelArgs,
+        ...(strategy.basicEncoderSettings ? [
+          // The GOP and the bitrate limits are rate control every AMD card has (OBS sets them on all).
+          ...(isHevc ? ['-enforce_hrd', '1', '-g', String(Math.min(gopFrames, maxAmfGopFrames))] : []),
+        ] : [
           ...(isAv1 ? ['-aq_mode', 'caq'] : ['-profile:v', isHevc ? 'main' : 'high', '-vbaq', '1', '-preencode', '1']),
           '-enforce_hrd', '1',
-          '-g', String(isAv1 ? gopFrames : Math.min(gopFrames, maxAmfH264GopFrames)),
-          ...(!isFast ? ['-preanalysis', '1', '-pa_lookahead_buffer_depth', '11', '-pa_scene_change_detection_enable', '1', '-pa_high_motion_quality_boost_mode', 'auto', '-high_motion_quality_boost_enable', '1', ...(isHevc ? [] : ['-bf', '2'])] : []),
+          '-g', String(isAv1 ? gopFrames : Math.min(gopFrames, maxAmfGopFrames)),
+          ...(!isFast ? ['-preanalysis', '1', '-pa_lookahead_buffer_depth', isHevc ? '40' : '11', '-pa_scene_change_detection_enable', '1', '-pa_high_motion_quality_boost_mode', 'auto', '-high_motion_quality_boost_enable', '1', ...(isHevc ? [] : ['-bf', '2'])] : []),
+          ...(isFast && isHevc ? ['-high_motion_quality_boost_enable', '1'] : []),
         ]),
         '-rc', 'vbr_peak',
         '-pix_fmt', 'nv12',
@@ -296,20 +342,25 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, passNumb
 
     // Intel: High profile, no minimum bitrate (the driver's floor is about 0.9 Mbps at 1080p) and, except for Fast,
     // Intel's own recipe for its look-ahead rate control (Arc and newer; older chips turn it down and get the basic
-    // settings). Never `-look_ahead 1`: Arc refuses it.
+    // settings). Never `-look_ahead 1`: Arc refuses it. HEVC takes Intel's HEVC recipe (its media-delivery "quality"
+    // guide) with its 4 reference frames, but not its two settings that would break the size limit or seeking; its
+    // profile and 10 s GOP are in the basic settings too (every chip takes them; FFmpeg's own GOP is 248 frames).
     case 'av1_qsv':
     case 'h264_qsv':
     case 'hevc_qsv': {
       const isAv1 = strategy.encoder === 'av1_qsv';
       const isHevc = strategy.encoder === 'hevc_qsv';
       const isFast = strategy.tuningProfile === 'fast';
+      const gopArgs = ['-g', String(getLongGopFrames({ outputFps: videoProfile.outputFps, sourceFps }))];
       return [
         '-c:v', strategy.encoder,
         '-preset', getQsvPreset(getGpuPreset(strategy)),
-        ...(strategy.basicEncoderSettings ? [] : [
+        ...(strategy.basicEncoderSettings ? [
+          ...(isHevc ? ['-profile:v', 'main', ...gopArgs] : []),
+        ] : [
           ...(isAv1 ? [] : (isHevc ? ['-profile:v', 'main'] : ['-profile:v', 'high', '-bitrate_limit', '0'])),
-          '-g', String(getLongGopFrames({ outputFps: videoProfile.outputFps, sourceFps })),
-          ...(!isFast ? ['-extbrc', '1', '-look_ahead_depth', '40', '-adaptive_i', '1', '-adaptive_b', '1', '-b_strategy', '1', '-bf', '7'] : []),
+          ...gopArgs,
+          ...(!isFast ? ['-extbrc', '1', '-look_ahead_depth', '40', '-adaptive_i', '1', '-adaptive_b', '1', '-b_strategy', '1', '-bf', '7', ...(isHevc ? ['-refs', '4'] : [])] : []),
         ]),
         '-pix_fmt', 'nv12',
         ...(isHevc ? ['-tag:v', 'hvc1'] : []),

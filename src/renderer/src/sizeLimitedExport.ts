@@ -26,6 +26,7 @@ import {
 import { buildSizeLimitedVideoFilter, fitVideoProfileToEncoder, getSizeLimitedDisplayDimensions, resolveSizeLimitedVideoProfile, targetLowFps } from './sizeLimitedResolution';
 import { planSizeLimitedEncode, relaxQualityCapForGenerousBudget } from './sizeLimitedPlanner';
 import { getGpuProbeVideoArgs, hasQualityCap } from './sizeLimitedEncoderArgs';
+import type { SizeLimitedEncodedFrame } from './sizeLimitedEncoderArgs';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import { buildAudioMixFilter, buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
 import type { MixedAudioTrack } from './exportSegmentMath';
@@ -670,6 +671,19 @@ function resolveAttemptVideoProfile(args: Parameters<typeof resolveSizeLimitedVi
   });
 }
 
+/**
+ * The picture an attempt encodes: its profile's size, else the source's as shown (a crop is scaled back to it), at its
+ * frame rate, else the source's. Undefined when the source's isn't known.
+ */
+function getAttemptFrame(videoProfile: ReturnType<typeof resolveAttemptVideoProfile>, args: Parameters<typeof resolveSizeLimitedVideoProfile>[0]): SizeLimitedEncodedFrame | undefined {
+  const display = getSizeLimitedDisplayDimensions(args);
+  const width = videoProfile.outputWidth ?? display?.width;
+  const height = videoProfile.outputHeight ?? display?.height;
+  const fps = videoProfile.outputFps ?? args.sourceFps;
+  if (width == null || height == null || fps == null || !(fps > 0)) return undefined;
+  return { width, height, fps };
+}
+
 async function resolveNextEncoder(strategy: SizeLimitedResolvedStrategy, resolve: () => Promise<ResolvedSizeLimitedPlan>) {
   const gpu = getGpuEncoderInfo(strategy.encoder);
   if (gpu == null) return undefined;
@@ -1249,7 +1263,7 @@ export async function exportSizeLimitedSegment({
             const attemptOutPath = makeAttemptPath(tempPath, attempt.attemptNumber);
             const inputArgs = getSegmentInputArgs({ filePath, segment, rotation, hardwareDecode, keepFramesOnGpu: gpuFramesFormat != null });
             const outputTrimArgs = ['-t', plannedDuration.toFixed(5)];
-            const videoProfile = resolveAttemptVideoProfile({
+            const profileArgs = {
               resolution,
               fps,
               sourceWidth: videoStream.width,
@@ -1257,7 +1271,9 @@ export async function exportSizeLimitedSegment({
               rotation: sourceRotation ?? rotation,
               sourceFps,
               plannedVideoBitrate: attempt.videoBitrate,
-            }, strategy.encoder);
+            };
+            const videoProfile = resolveAttemptVideoProfile(profileArgs, strategy.encoder);
+            const frame = getAttemptFrame(videoProfile, profileArgs);
             const baseVideoFilter = buildSizeLimitedVideoFilter({ videoProfile });
             const dimensions = getRotatedVideoDimensions({ width: videoStream.width!, height: videoStream.height!, rotation: sourceRotation ?? rotation });
             const cropFilter = getSegmentCropFilter(segment, dimensions.width, dimensions.height);
@@ -1315,6 +1331,7 @@ export async function exportSizeLimitedSegment({
                   audioGainDb: mixing ? undefined : audioGainDb,
                   audioPlaybackRate: mixing ? 1 : segmentRate,
                   qualityCapOffset: attempt.qualityCapOffset,
+                  frame,
                 }),
               ];
 
@@ -1339,6 +1356,7 @@ export async function exportSizeLimitedSegment({
                   audioGainDb: mixing ? undefined : audioGainDb,
                   audioPlaybackRate: mixing ? 1 : segmentRate,
                   qualityCapOffset: attempt.qualityCapOffset,
+                  frame,
                 }),
               ];
 
@@ -1366,6 +1384,7 @@ export async function exportSizeLimitedSegment({
                 audioGainDb: mixing ? undefined : audioGainDb,
                 audioPlaybackRate: mixing ? 1 : segmentRate,
                 qualityCapOffset: attempt.qualityCapOffset,
+                frame,
               }),
             ];
 
@@ -1561,7 +1580,7 @@ export async function exportSizeLimitedMerge({
             const inputArgs = getMergeInputArgs({ filePath, segments, rotation, hardwareDecode, keepFramesOnGpu: gpuFramesFormat != null });
             const overlayInputArgs = buildOverlayImageInputArgs(preparedOverlayAssets.map(({ imagePath }) => imagePath));
             const outputTrimArgs = ['-t', plannedDuration.toFixed(5)];
-            const videoProfile = resolveAttemptVideoProfile({
+            const profileArgs = {
               resolution,
               fps,
               sourceWidth: videoStream.width,
@@ -1569,7 +1588,9 @@ export async function exportSizeLimitedMerge({
               rotation: sourceRotation ?? rotation,
               sourceFps,
               plannedVideoBitrate: attempt.videoBitrate,
-            }, strategy.encoder);
+            };
+            const videoProfile = resolveAttemptVideoProfile(profileArgs, strategy.encoder);
+            const frame = getAttemptFrame(videoProfile, profileArgs);
             const dimensions = getRotatedVideoDimensions({ width: videoStream.width!, height: videoStream.height!, rotation: sourceRotation ?? rotation });
             const filterComplex = getConcatFilter({
               segments,
@@ -1617,6 +1638,7 @@ export async function exportSizeLimitedMerge({
                   outputPlaybackRate,
                   audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
                   qualityCapOffset: attempt.qualityCapOffset,
+                  frame,
                 }),
               ];
 
@@ -1641,6 +1663,7 @@ export async function exportSizeLimitedMerge({
                   outputPlaybackRate,
                   audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
                   qualityCapOffset: attempt.qualityCapOffset,
+                  frame,
                 }),
               ];
 
@@ -1668,6 +1691,7 @@ export async function exportSizeLimitedMerge({
                 outputPlaybackRate,
                 audioGainDb: applyAudioGainInFilterGraph ? undefined : audioGainDb,
                 qualityCapOffset: attempt.qualityCapOffset,
+                frame,
               }),
             ];
 
