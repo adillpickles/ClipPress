@@ -1,3 +1,4 @@
+import pMap from 'p-map';
 import type { FFprobeStream } from '../../common/ffprobe.js';
 import type {
   SizeLimitAdvancedAv1CpuPreset,
@@ -40,7 +41,7 @@ import createAsyncCache from './util/asyncCache';
 import { getEncoderSizeRules, getGpuEncoderInfo, getGpuFramesDownloadFormat, getGpuFramesFilter, getHardwareDecodeArgs, gpuEncoderLabels, gpuEncoders, isGpuEncoderAvailable, runWithGpuFallbacksCore, shouldKeepFramesOnGpu, shouldUseHardwareDecode, withoutGpuEncoders } from './gpuEncoders';
 import type { GpuEncoderName } from './gpuEncoders';
 import { getTempWorkDir } from './util/tempFiles';
-import { isSavedEncoderCheck } from './savedEncoderCheck';
+import { getEncodersToRetest, isSavedEncoderCheck } from './savedEncoderCheck';
 import type { GpuCapability, SavedEncoderCheck } from './savedEncoderCheck';
 
 const { access, constants: { W_OK }, mkdir, mkdtemp, rmdir, stat, writeFile } = window.require('fs/promises');
@@ -125,16 +126,25 @@ async function probeX265TwoPass(): Promise<{ supported: boolean, sure: boolean }
 
 /**
  * Saves the answer for the next runs. "Usable" holds (an export that fails on it has the next run test again,
- * markGpuEncoderFailed); "unusable" holds only for a maker with no card in this PC. An encoder of a card that is here
- * which failed may only have been busy (another app using its sessions, memory short, a waking driver), or unsure (it
+ * markGpuEncoderFailed); "unusable" holds for a maker with no card in this PC, and for a codec a working card lacks
+ * (another of its encoders opened: an RTX 30's AV1, say). An encoder of a card that is here which failed with all the
+ * card's others may only have been busy (another app using its sessions, memory short, a waking driver), or unsure (it
  * timed out): those are tested again each run, the rest is read back.
  */
 async function saveEncoderCheck(key: string, capabilities: SavedEncoderCheck['capabilities'], listed: (encoder: GpuEncoderName) => boolean, unsure: ReadonlySet<GpuCapability>) {
   const vendors = await mainApi.getGpuVendors().catch(() => undefined);
   if (vendors == null) return;
-  const retest = gpuEncoders.filter(({ encoder, vendor, capability }) => listed(encoder) && capabilities[capability] !== true && (unsure.has(capability) || vendors.includes(vendor))).map(({ capability }) => capability);
+  const retest = getEncodersToRetest({ capabilities, listed, unsure, vendors });
   const check: SavedEncoderCheck = { capabilities, retest };
   await mainApi.saveEncoderCheck(key, check).catch((error: unknown) => console.warn('Could not save the encoder check', error));
+}
+
+/**
+ * Two FFmpeg runs at a time: a new FFmpeg's first runs are slow (on Windows its libraries are read for the first time),
+ * and the twenty or so of the check all at once held up the clip being opened for minutes.
+ */
+async function runAFewAtATime(tasks: (() => Promise<void>)[]) {
+  await pMap(tasks, (task) => task(), { concurrency: 2 });
 }
 
 // The test runs once per graphics card, driver, FFmpeg and ClipPress version, then is read back from disk (main
@@ -160,7 +170,7 @@ const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimite
     if (saved.retest.length === 0) return { ...saved.capabilities, cpuThreads };
     const capabilities = { ...saved.capabilities };
     const retest = gpuEncoders.filter(({ capability }) => saved.retest.includes(capability));
-    await Promise.all(retest.map(async ({ encoder, capability }) => { capabilities[capability] = await probe(encoder, capability); }));
+    await runAFewAtATime(retest.map(({ encoder, capability }) => async () => { capabilities[capability] = await probe(encoder, capability); }));
     saveEncoderCheck(key, withBasicOnly(capabilities), (encoder) => retest.some((info) => info.encoder === encoder), unsure).catch(() => undefined);
     return { ...withBasicOnly(capabilities), cpuThreads };
   }
@@ -176,20 +186,23 @@ const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimite
   };
   let svtTwoPassSure = true;
   let x265TwoPassSure = true;
-  await Promise.all([
-    ...gpuEncoders.map(async ({ encoder, capability }) => {
-      capabilities[capability] = encoders.has(encoder) && await probe(encoder, capability);
+  // Only the encoders of the graphics card makers in this PC (all of them when that's unknown): the others can't open.
+  const vendors = await mainApi.getGpuVendors().catch(() => undefined);
+  const isPresent = (vendor: (typeof gpuEncoders)[number]['vendor']) => vendors == null || vendors.length === 0 || vendors.includes(vendor);
+  await runAFewAtATime([
+    ...gpuEncoders.map(({ encoder, vendor, capability }) => async () => {
+      capabilities[capability] = encoders.has(encoder) && isPresent(vendor) && await probe(encoder, capability);
     }),
-    (async () => {
+    async () => {
       const svt = capabilities.libsvtav1 ? await probeSvtTwoPass() : { supported: false, sure: true };
       capabilities.svtTwoPass = svt.supported;
       svtTwoPassSure = svt.sure;
-    })(),
-    (async () => {
+    },
+    async () => {
       const x265 = capabilities.libx265 ? await probeX265TwoPass() : { supported: false, sure: true };
       capabilities.x265TwoPass = x265.supported;
       x265TwoPassSure = x265.sure;
-    })(),
+    },
   ]);
   // Saved in the background: the answer is used now. A two-pass test that timed out (a busy PC) holds for this run
   // only: the next one tests everything again.
@@ -228,6 +241,37 @@ export async function getSizeLimitedEncoderCapabilities(): Promise<SizeLimitedEn
   const basicOnly = gpuEncoders.filter(({ encoder, capability }) => basic.has(encoder) || capabilities.basicSettingsOnly?.includes(capability));
   usable.basicSettingsOnly = basicOnly.map(({ capability }) => capability);
   return usable;
+}
+
+/**
+ * FFmpeg and ffprobe once each, a version check and a one-frame encode and decode: a new FFmpeg's first runs are slow
+ * on Windows (its libraries are read for the first time: the first filmstrip took 1.4 s instead of 0.33 s, and an HEVC
+ * recording's never finished, measured on the owner's PC), so they happen here, before a clip needs them.
+ */
+async function warmUpFfmpeg() {
+  const path = join(getTempWorkDir(), `warm-up-${Date.now()}.mkv`);
+  try {
+    await runFfmpeg(['-hide_banner', '-version'], { timeout: 60_000 }, { logCli: false });
+    await runFfmpeg(['-hide_banner', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=128x72:r=30:d=0.1', '-frames:v', '1', '-c:v', 'mpeg4', '-y', path], { timeout: 60_000 }, { logCli: false });
+    await getDuration(path);
+    await runFfmpeg(['-hide_banner', '-v', 'error', '-i', path, '-f', 'null', '-'], { timeout: 60_000 }, { logCli: false });
+  } finally {
+    await unlinkWithRetry(path).catch(() => undefined);
+  }
+}
+
+/**
+ * At the first start with a new FFmpeg, ClipPress or graphics driver (no encoder check saved for them): FFmpeg is
+ * warmed up, then the encoders are checked, in the background while the start screen shows, so the first clip opened
+ * and the first export don't wait for either. Later starts read the saved check and do nothing here.
+ */
+export async function prepareNewFfmpeg() {
+  const path = getFfmpegPath();
+  const { size, mtimeMs } = await stat(path);
+  const key = `${path}:${size}:${mtimeMs}`;
+  if (isSavedEncoderCheck(await mainApi.readSavedEncoderCheck(key).catch(() => undefined))) return;
+  await warmUpFfmpeg();
+  await readEncoderCapabilities(key);
 }
 
 /**

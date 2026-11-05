@@ -5,7 +5,7 @@ import type { SizeLimitAdvancedEncoder, SizeLimitPreset, SizeLimitVideoFormat } 
 import { withoutGpuEncoders } from './gpuEncoders';
 import { getPassArtifactPaths, getSizeLimitedTwoPassEncodeArgs } from './sizeLimitedFfmpegArgs';
 import addSizeLimitedStrategyNotes from './sizeLimitedResultNotes';
-import { isSavedEncoderCheck } from './savedEncoderCheck';
+import { getEncodersToRetest, isSavedEncoderCheck } from './savedEncoderCheck';
 import { getResolvedVideoArgs } from './sizeLimitedEncoderArgs';
 import { planSizeLimitedEncode } from './sizeLimitedPlanner';
 import { resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
@@ -305,5 +305,25 @@ describe('result notes', () => {
 
   it("keep AV1's warning when it had to make H.264, as before", () => {
     expect(notesFor(resolve('quality', { ...noGpu, libsvtav1: false }, 'av1')).warnings).toEqual(['AV1 encoders were unavailable, so Quality fell back to H.264 CPU.']);
+  });
+});
+
+describe('which encoders are tested again at the next start', () => {
+  const base = { h264Nvenc: false, av1Nvenc: false, libx264: true, libsvtav1: true };
+  const listed = () => true;
+
+  it("doesn't test again a codec a working card lacks (an RTX 30's AV1)", () => {
+    const capabilities = { ...base, h264Nvenc: true, hevcNvenc: true, av1Nvenc: false };
+    expect(getEncodersToRetest({ capabilities, listed, unsure: new Set(), vendors: ['nvidia'] })).toEqual([]);
+  });
+
+  it("tests again a card's encoders when none of them opened (it may only have been busy), or one timed out", () => {
+    expect(getEncodersToRetest({ capabilities: base, listed, unsure: new Set(), vendors: ['nvidia'] })).toEqual(['av1Nvenc', 'h264Nvenc', 'hevcNvenc']);
+    const capabilities = { ...base, h264Nvenc: true, hevcNvenc: true };
+    expect(getEncodersToRetest({ capabilities, listed, unsure: new Set(['av1Nvenc'] as const), vendors: ['nvidia'] })).toEqual(['av1Nvenc']);
+  });
+
+  it("never tests a maker's encoders when it has no card here", () => {
+    expect(getEncodersToRetest({ capabilities: { ...base, h264Nvenc: true }, listed, unsure: new Set(), vendors: ['nvidia'] })).not.toContain('h264Amf');
   });
 });
