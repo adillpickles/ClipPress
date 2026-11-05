@@ -396,8 +396,9 @@ function addSourceSafetyNotice(
 
 type EditDomain = 'segments' | 'overlays' | 'streamParams' | 'speedControls';
 
-// Loaded the first time the shortcuts open, not at every start.
-const KeyboardShortcuts = lazy(() => import('./components/KeyboardShortcuts'));
+// Not loaded at start, but once the start is over (below), so its first opening doesn't wait for it.
+const loadKeyboardShortcuts = () => import('./components/KeyboardShortcuts');
+const KeyboardShortcuts = lazy(loadKeyboardShortcuts);
 
 // How often the shown progress can change at most (setProgress). The card's strip glides over the same time
 // (Working.module.css, --progress-glide).
@@ -7237,6 +7238,19 @@ function App() {
   useEffect(() => {
     openWorkPendingRef.current = openWorkPending;
   }, [openWorkPending]);
+
+  // The shortcuts list's code, once the start is over and the page is idle: loaded on its first opening, it held the
+  // dialog back about 100 ms.
+  useEffect(() => {
+    let idle: number | undefined;
+    const timer = setTimeout(() => {
+      idle = requestIdleCallback(() => { loadKeyboardShortcuts().catch(() => undefined); }, { timeout: 5000 });
+    }, 4000);
+    return () => {
+      clearTimeout(timer);
+      if (idle != null) cancelIdleCallback(idle);
+    };
+  }, []);
 
   // The first start with a new FFmpeg (or ClipPress, or graphics driver): FFmpeg is warmed up and its encoders checked
   // in the background while the start screen shows, so the first clip opened doesn't wait for its first slow runs. A

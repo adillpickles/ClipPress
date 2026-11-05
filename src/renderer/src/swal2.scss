@@ -134,20 +134,25 @@ $toast-tones: (
   }
 }
 
-.clippress-toast .swal2-close {
+// The app's X, smaller (CloseButton.module.css). On the popup's class too, to outweigh the popups' X rules below.
+.swal2-popup.clippress-toast .swal2-close {
   position: absolute !important;
   top: 50% !important;
   right: .35rem !important;
   transform: translateY(-50%);
-  width: 1.25rem !important;
-  height: 1.25rem !important;
-  border-radius: 50% !important;
-  font-size: 1.05rem !important;
+  width: 1.375rem !important;
+  height: 1.375rem !important;
+  border-radius: var(--cp-radius-sm) !important;
   color: var(--cp-text-subtle) !important;
   transition: color .15s ease, background-color .15s ease !important;
 }
 
-.clippress-toast .swal2-close:hover {
+.swal2-popup.clippress-toast .swal2-close svg {
+  width: .875rem;
+  height: .875rem;
+}
+
+.swal2-popup.clippress-toast .swal2-close:hover {
   color: var(--cp-text) !important;
   background: var(--cp-hover) !important;
 }
@@ -259,6 +264,30 @@ $toast-tones: (
   line-height: 1.35;
 }
 
+@keyframes clippress-dialog-show {
+  from {
+    opacity: 0;
+    transform: translateY(.5rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes clippress-dialog-hide {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(.35rem);
+  }
+}
+
 @keyframes clippress-toast-fade-in {
   from {
     opacity: 0;
@@ -287,6 +316,9 @@ $toast-tones: (
 
 // Match ClipPress dialogs (components/Dialog.module.css). Declared after the library so these win.
 .swal2-popup:not(.swal2-toast) {
+  // Open and close as they do: a fade and a small slide (SweetAlert's own drops 50px and scales).
+  --swal2-show-animation: clippress-dialog-show 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  --swal2-hide-animation: clippress-dialog-hide 120ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
   border-radius: var(--cp-radius-xl) !important;
   border: 1px solid var(--cp-line) !important;
   background: var(--cp-panel) !important;
@@ -381,6 +413,24 @@ $toast-tones: (
   color: var(--cp-text-muted) !important;
   border-radius: var(--cp-radius) !important;
   font-family: var(--cp-font) !important;
+  box-shadow: none !important;
+}
+
+// Where the app's dialogs have theirs: a 2rem box .65rem in from the top right corner (CloseButton.module.css).
+.swal2-popup:not(.swal2-toast) .swal2-close {
+  width: 2rem !important;
+  height: 2rem !important;
+  margin: -.6rem -.85rem -2rem 0 !important;
+  transition: background-color .14s ease, color .14s ease, box-shadow .14s ease !important;
+}
+
+.swal2-popup:not(.swal2-toast) .swal2-close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.swal2-popup .swal2-close:focus-visible {
+  box-shadow: var(--cp-focus-ring) !important;
 }
 
 .swal2-popup .swal2-close:hover {

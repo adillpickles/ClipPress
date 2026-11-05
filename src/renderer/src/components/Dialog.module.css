@@ -16,7 +16,7 @@
 
 .DialogContent {
 	/* Centred by its margins, not a transform: a transformed dialog shifts every dropdown list opened inside it
-	   (they're placed against the window). The animations below scale it only while it opens or closes. */
+	   (they're placed against the window). The animations below move it only while it opens or closes. */
 	position: fixed;
 	inset: 0;
 	margin: auto;
@@ -104,10 +104,12 @@
 	}
 }
 
+/* A fade and a small slide, without scaling: a scaled dialog drew its text blurred while it grew, then sharp with a
+   visible jump as it settled. */
 @keyframes contentShow {
 	from {
 		opacity: 0;
-		transform: translateY(.75rem) scale(0.97);
+		transform: translateY(.5rem);
 	}
 	to {
 		opacity: 1;
@@ -122,7 +124,7 @@
 	}
 	to {
 		opacity: 0;
-		transform: translateY(.5rem) scale(0.98);
+		transform: translateY(.35rem);
 	}
 }
 
