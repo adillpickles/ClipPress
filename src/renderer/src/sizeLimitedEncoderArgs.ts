@@ -226,14 +226,17 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, passNumb
       ];
     }
 
-    // H.264's settings in HEVC's names. Basic: without the look-ahead, temporal AQ and B-frames as references a GTX 900
-    // or 10 card lacks for HEVC. `hvc1` so Apple's players (iPhones, Macs) play the MP4 too.
+    // H.264's settings in HEVC's names, with NVIDIA's "ultra high quality" tuning for Quality and Max quality where the
+    // card takes it: it sets its own look-ahead, temporal filter and five B-frames. Measured on an RTX 5060 Ti against
+    // "hq" at the same bitrate: a little higher on average and far better on the worst frames, a slightly smaller file,
+    // about half as fast. Basic: without the look-ahead, temporal AQ and B-frames as references a GTX 900 or 10 card
+    // lacks for HEVC. `hvc1` so Apple's players (iPhones, Macs) play the MP4 too.
     case 'hevc_nvenc': {
       const isFast = strategy.tuningProfile === 'fast';
       return [
         '-c:v', 'hevc_nvenc',
         '-preset', String(strategy.encoderPreset),
-        '-tune', 'hq',
+        '-tune', strategy.nvencUhq ? 'uhq' : 'hq',
         '-profile:v', 'main',
         '-rc', 'vbr',
         ...(strategy.basicEncoderSettings ? ['-multipass', 'qres'] : [
@@ -319,14 +322,16 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, passNumb
 
 /**
  * What the encoder check opens a GPU encoder with to see whether it takes the tuned settings: those of the most
- * demanding profile, at a typical bitrate. A card or driver that turns them down keeps to the basic settings.
+ * demanding profile, at a typical bitrate. A card or driver that turns them down keeps to the basic settings. `nvencUhq`:
+ * the same with NVIDIA HEVC's "ultra high quality" tuning, asked separately so a card without it keeps the tuned ones.
  */
-export function getGpuProbeVideoArgs(encoder: GpuEncoderName) {
+export function getGpuProbeVideoArgs(encoder: GpuEncoderName, { nvencUhq = false }: { nvencUhq?: boolean } = {}) {
   const strategy = {
     encoder,
     encoderPreset: 'p7',
     tuningProfile: 'max_quality',
     encoderMultipass: encoder.endsWith('_nvenc'),
+    nvencUhq,
   } as SizeLimitedResolvedStrategy;
   return getResolvedVideoArgs({ strategy, videoBitrate: 2_000_000, twoPass: false, videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: 30 }, sourceFps: 30, outputPlaybackRate: 1 });
 }

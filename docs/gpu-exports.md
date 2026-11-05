@@ -42,6 +42,18 @@ with slow's psychovisual RDOQ is 1.3-3.1 sharper than plain `fast`, in `medium`'
 Max Quality's first pass uses x265's quicker settings: the same result in a third less time. Every HEVC export is
 Main profile, tagged `hvc1` (Apple's players and Photos need it), in H.264's tight bitrate window.
 
+NVIDIA's HEVC was measured on an RTX 5060 Ti (three game recordings, 1080p60 and 1440p30, same bitrate, VMAF):
+- **Quality** uses NVIDIA's "ultra high quality" tuning at p5 where the card takes it. It's as quick as the `hq`
+  tuning at p6 and better on every clip: VMAF +0.03 to +0.35 on average, up to +8 on the worst 5% of frames, with
+  files about 5% smaller. NVIDIA doesn't say which cards before the RTX 40 take it, so the encoder check asks the
+  card. Without it, Quality stays on `hq` at p6. If it fails during an export, the export goes on with `hq`.
+- **Fast** uses p4 rather than p3: VMAF +0.7 to +2 for 5% more time. AMD and Intel keep p3, since they read the preset
+  on their own scales and weren't measured.
+- **Max Quality** stays on x265's two passes, 2–4 VMAF above the card's best settings. The card's HEVC (ultra high
+  quality, p7, full-resolution first pass) is used only by an FFmpeg without x265.
+- Changes that made no difference: a 10 s keyframe interval, a deeper look-ahead, more B-frames, every B-frame as a
+  reference, and a full-resolution first pass for Quality.
+
 Both 2-pass encoders are real ones with the bundled FFmpeg (9.0): the second pass reads the first pass's statistics,
 puts the bits where the clip needs them and lands just under the target size. (FFmpeg before 8.1 couldn't pass those
 statistics to SVT-AV1, so its "2-pass" was one pass done twice; one without `-x265-stats` gets one x265 pass.)

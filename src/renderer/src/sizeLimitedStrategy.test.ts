@@ -175,7 +175,7 @@ describe('resolveSizeLimitedStrategy', () => {
     expect(resolve('quality', { ...rtx30, hevcNvenc: false, cpuThreads: 4 }).id).toBe('quality_av1_cpu');
     expect(resolve('quality', { ...rtx30, hevcNvenc: false, cpuThreads: 3 }).id).toBe('quality_h264_gpu');
     expect(resolve('quality', { ...rtx30, hevcNvenc: false, cpuThreads: 2 }).id).toBe('quality_h264_gpu');
-    expect(resolve('fast', rtx30)).toMatchObject({ id: 'fast_hevc_gpu', encoder: 'hevc_nvenc', encoderPreset: 'p3' });
+    expect(resolve('fast', rtx30)).toMatchObject({ id: 'fast_hevc_gpu', encoder: 'hevc_nvenc', encoderPreset: 'p4' });
     expect(resolve('fast', { ...rtx30, hevcNvenc: false }).id).toBe('fast_h264_gpu');
     // An RX 6000 card, and an older Intel chip.
     expect(resolve('quality', { ...noGpu, h264Amf: true, hevcAmf: true, libx264: true, libsvtav1: true }).encoder).toBe('hevc_amf');

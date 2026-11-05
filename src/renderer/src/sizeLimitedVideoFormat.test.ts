@@ -6,7 +6,7 @@ import { withoutGpuEncoders } from './gpuEncoders';
 import { getPassArtifactPaths, getSizeLimitedTwoPassEncodeArgs } from './sizeLimitedFfmpegArgs';
 import addSizeLimitedStrategyNotes from './sizeLimitedResultNotes';
 import { getEncodersToRetest, isSavedEncoderCheck } from './savedEncoderCheck';
-import { getResolvedVideoArgs } from './sizeLimitedEncoderArgs';
+import { getGpuProbeVideoArgs, getResolvedVideoArgs } from './sizeLimitedEncoderArgs';
 import { planSizeLimitedEncode } from './sizeLimitedPlanner';
 import { resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import type { SizeLimitedEncoderCapabilities } from './sizeLimitedTypes';
@@ -51,8 +51,49 @@ describe('Video format HEVC (the default)', () => {
   it('puts every preset on HEVC, the graphics card for Quality and Fast and x265 two-pass for Max quality', () => {
     expect(resolve('quality', rtx40)).toMatchObject({ id: 'quality_hevc_gpu', encoder: 'hevc_nvenc', effectiveCodec: 'hevc', encoderPreset: 'p6' });
     expect(resolve('quality', rtx40).fallbackReason).toBeUndefined();
-    expect(resolve('fast', rtx40)).toMatchObject({ id: 'fast_hevc_gpu', encoder: 'hevc_nvenc', encoderPreset: 'p3' });
+    expect(resolve('fast', rtx40)).toMatchObject({ id: 'fast_hevc_gpu', encoder: 'hevc_nvenc', encoderPreset: 'p4' });
     expect(resolve('max_quality', rtx40)).toMatchObject({ id: 'max_quality_hevc_cpu', encoder: 'libx265', encoderPreset: 'slow', executionMode: 'ffmpeg_two_pass', usesGpu: false });
+  });
+
+  it("gives Quality NVIDIA's ultra high quality tuning at p5 where the card takes it, else hq at p6", () => {
+    const uhqCard = { ...rtx40, hevcNvencUhq: true };
+    const quality = resolve('quality', uhqCard);
+    expect(quality).toMatchObject({ id: 'quality_hevc_gpu', encoder: 'hevc_nvenc', encoderPreset: 'p5', nvencUhq: true });
+    const args = getResolvedVideoArgs({ strategy: quality, videoBitrate: 3_000_000, twoPass: false, videoProfile, sourceFps: 60, outputPlaybackRate: 1 });
+    expect(getArgValue(args, '-tune')).toBe('uhq');
+    expect(getArgValue(args, '-preset')).toBe('p5');
+    expect(getArgValue(args, '-tag:v')).toBe('hvc1');
+    // Without it (an unknown or older card), today's tuned settings.
+    const hq = resolve('quality', rtx40);
+    expect(hq.nvencUhq).toBeUndefined();
+    expect(getArgValue(getResolvedVideoArgs({ strategy: hq, videoBitrate: 3_000_000, twoPass: false, videoProfile, sourceFps: 60, outputPlaybackRate: 1 }), '-tune')).toBe('hq');
+    // Max quality on the card (an FFmpeg without x265) too, at p7 with the full-resolution first pass.
+    expect(resolve('max_quality', { ...uhqCard, libx265: false })).toMatchObject({ id: 'max_quality_hevc_gpu', encoderPreset: 'p7', encoderMultipass: true, nvencUhq: true });
+    // Also when Video format AV1 falls back to HEVC on a card without AV1.
+    expect(resolve('quality', { ...uhqCard, av1Nvenc: false }, 'av1')).toMatchObject({ id: 'quality_hevc_gpu', encoderPreset: 'p5', nvencUhq: true });
+    // Never for Fast, for basic settings, or on another maker's card.
+    expect(resolve('fast', uhqCard).nvencUhq).toBeUndefined();
+    expect(resolve('quality', { ...uhqCard, basicSettingsOnly: ['hevcNvenc'] })).toMatchObject({ encoderPreset: 'p6', basicEncoderSettings: true });
+    expect(resolve('quality', { ...uhqCard, basicSettingsOnly: ['hevcNvenc'] }).nvencUhq).toBeUndefined();
+    const amd: SizeLimitedEncoderCapabilities = { h264Nvenc: false, av1Nvenc: false, hevcAmf: true, libx264: true, libx265: true, libsvtav1: true, hevcNvencUhq: true };
+    expect(resolve('quality', amd)).toMatchObject({ encoder: 'hevc_amf', encoderPreset: 'p6' });
+    expect(resolve('quality', amd).nvencUhq).toBeUndefined();
+  });
+
+  it('asks the card about the UHQ tuning apart from the tuned settings, so a card without it keeps them', () => {
+    expect(getArgValue(getGpuProbeVideoArgs('hevc_nvenc'), '-tune')).toBe('hq');
+    const uhq = getGpuProbeVideoArgs('hevc_nvenc', { nvencUhq: true });
+    expect(getArgValue(uhq, '-tune')).toBe('uhq');
+    // The rest as the tuned check: the most demanding settings an export uses.
+    expect(getArgValue(uhq, '-multipass')).toBe('fullres');
+    expect(getArgValue(uhq, '-preset')).toBe('p7');
+  });
+
+  it('keeps AMD and Intel on p3 for Fast: they read the preset on their own scales', () => {
+    const intel: SizeLimitedEncoderCapabilities = { h264Nvenc: false, av1Nvenc: false, hevcQsv: true, libx264: true, libx265: true, libsvtav1: true };
+    expect(resolve('fast', intel)).toMatchObject({ encoder: 'hevc_qsv', encoderPreset: 'p3' });
+    const amd: SizeLimitedEncoderCapabilities = { h264Nvenc: false, av1Nvenc: false, hevcAmf: true, libx264: true, libx265: true, libsvtav1: true };
+    expect(resolve('fast', amd)).toMatchObject({ encoder: 'hevc_amf', encoderPreset: 'p3' });
   });
 
   it('never makes AV1, whatever the PC has', () => {
@@ -246,12 +287,19 @@ describe('the saved encoder check', () => {
       av1Qsv: false,
       hevcQsv: false,
       hevcNvenc: true,
+      hevcNvencUhq: true,
     },
     retest: [],
   };
 
   it('is trusted when it has every answer', () => {
     expect(isSavedEncoderCheck(complete)).toBe(true);
+  });
+
+  it("is tested again when saved before the UHQ question (it asks the card, which a check from before didn't)", () => {
+    const { hevcNvencUhq, ...withoutUhq } = complete.capabilities;
+    expect(hevcNvencUhq).toBe(true);
+    expect(isSavedEncoderCheck({ ...complete, capabilities: withoutUhq })).toBe(false);
   });
 
   it('is tested again when saved before x265 (no answer for it, or for its two-pass)', () => {

@@ -159,13 +159,23 @@ const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimite
   const saved = await mainApi.readSavedEncoderCheck(key).catch(() => undefined);
   const unsure = new Set<GpuCapability>();
   const basicOnly = new Set<GpuCapability>(isSavedEncoderCheck(saved) ? saved.capabilities.basicSettingsOnly : []);
-  // Whether the encoder opens at all, then whether it takes the tuned settings an export uses or only the basic ones.
+  let hevcNvencUhq: boolean | undefined;
+  // Whether the encoder opens at all, then whether it takes the tuned settings an export uses or only the basic ones,
+  // then, for NVIDIA's HEVC, whether it takes the "ultra high quality" tuning too.
   const probe = async (encoder: GpuEncoderName, capability: GpuCapability) => {
     basicOnly.delete(capability);
+    if (capability === 'hevcNvenc') hevcNvencUhq = false;
     const result = await probeGpuEncoder(encoder);
     if (!result.sure) unsure.add(capability);
     if (!result.usable) return false;
-    if (!(await probeGpuEncoder(encoder, getGpuProbeVideoArgs(encoder))).usable) basicOnly.add(capability);
+    if (!(await probeGpuEncoder(encoder, getGpuProbeVideoArgs(encoder))).usable) {
+      basicOnly.add(capability);
+    } else if (capability === 'hevcNvenc') {
+      const uhq = await probeGpuEncoder(encoder, getGpuProbeVideoArgs(encoder, { nvencUhq: true }));
+      hevcNvencUhq = uhq.usable;
+      // A test that timed out has the next run test this encoder again.
+      if (!uhq.sure) unsure.add(capability);
+    }
     return true;
   };
   const withBasicOnly = (capabilities: SavedEncoderCheck['capabilities']) => ({ ...capabilities, basicSettingsOnly: gpuEncoders.flatMap(({ capability }) => (basicOnly.has(capability) ? [capability] : [])) });
@@ -175,6 +185,7 @@ const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimite
     const capabilities = { ...saved.capabilities };
     const retest = gpuEncoders.filter(({ capability }) => saved.retest.includes(capability));
     await runAFewAtATime(retest.map(({ encoder, capability }) => async () => { capabilities[capability] = await probe(encoder, capability); }));
+    if (hevcNvencUhq != null) capabilities.hevcNvencUhq = hevcNvencUhq;
     saveEncoderCheck({ key, capabilities: withBasicOnly(capabilities), listed: (encoder) => retest.some((info) => info.encoder === encoder), unsure, failedBefore: new Set(saved.retest) }).catch(() => undefined);
     return { ...withBasicOnly(capabilities), cpuThreads };
   }
@@ -208,6 +219,7 @@ const readEncoderCapabilities = createAsyncCache(async (key): Promise<SizeLimite
       x265TwoPassSure = x265.sure;
     },
   ]);
+  capabilities.hevcNvencUhq = hevcNvencUhq ?? false;
   // Saved in the background: the answer is used now. A two-pass test that timed out (a busy PC) holds for this run
   // only: the next one tests everything again.
   if (svtTwoPassSure && x265TwoPassSure) saveEncoderCheck({ key, capabilities: withBasicOnly(capabilities), listed: (encoder) => encoders.has(encoder), unsure, failedBefore: new Set() }).catch(() => undefined);
@@ -227,6 +239,9 @@ const basicSettingsGpuEncoders = new Set<GpuEncoderName>();
  */
 const pendingFailedGpuEncoders = new Set<GpuEncoderName>();
 const pendingBasicSettingsGpuEncoders = new Set<GpuEncoderName>();
+/** NVIDIA HEVC's "ultra high quality" tuning failed in a real export: the tuned "hq" settings from then on. */
+let nvencUhqFailed = false;
+let pendingNvencUhqFailed = false;
 let hardwareDecodeFailed = false;
 
 export async function getSizeLimitedEncoderCapabilities(): Promise<SizeLimitedEncoderCapabilities> {
@@ -236,8 +251,9 @@ export async function getSizeLimitedEncoderCapabilities(): Promise<SizeLimitedEn
   const capabilities = await readEncoderCapabilities(`${path}:${size}:${mtimeMs}`);
   const failed = new Set([...failedGpuEncoders, ...pendingFailedGpuEncoders]);
   const basic = new Set([...basicSettingsGpuEncoders, ...pendingBasicSettingsGpuEncoders]);
-  if (failed.size === 0 && basic.size === 0) return capabilities;
-  const usable = { ...capabilities };
+  const noUhq = nvencUhqFailed || pendingNvencUhqFailed;
+  if (failed.size === 0 && basic.size === 0 && !noUhq) return capabilities;
+  const usable = { ...capabilities, ...(noUhq ? { hevcNvencUhq: false } : {}) };
   for (const encoder of failed) {
     const info = getGpuEncoderInfo(encoder);
     if (info != null) usable[info.capability] = false;
@@ -306,6 +322,7 @@ function isRetryableEncodeFailure(error: unknown) {
 
 /** The export worked another way, so what failed on the way was at fault: kept for the session. */
 function keepPendingGpuDemotions() {
+  if (pendingNvencUhqFailed) nvencUhqFailed = true;
   pendingBasicSettingsGpuEncoders.forEach((encoder) => basicSettingsGpuEncoders.add(encoder));
   if (pendingFailedGpuEncoders.size === 0) return;
   pendingFailedGpuEncoders.forEach((encoder) => failedGpuEncoders.add(encoder));
@@ -326,6 +343,7 @@ export async function runWithGpuFallbacks<T>(args: Omit<Parameters<typeof runWit
   } finally {
     pendingFailedGpuEncoders.clear();
     pendingBasicSettingsGpuEncoders.clear();
+    pendingNvencUhqFailed = false;
   }
 }
 
@@ -654,7 +672,10 @@ function resolveAttemptVideoProfile(args: Parameters<typeof resolveSizeLimitedVi
 async function resolveNextEncoder(strategy: SizeLimitedResolvedStrategy, resolve: () => Promise<ResolvedSizeLimitedPlan>) {
   const gpu = getGpuEncoderInfo(strategy.encoder);
   if (gpu == null) return undefined;
-  if (!strategy.basicEncoderSettings) {
+  if (strategy.nvencUhq) {
+    // The "ultra high quality" tuning first: the same encoder with "hq" keeps the rest of the tuned settings.
+    pendingNvencUhqFailed = true;
+  } else if (!strategy.basicEncoderSettings) {
     // An older card or driver may turn down only the tuned settings: the same encoder again with its basic ones, which
     // is far quicker than moving to the CPU (and keeps the encoder chosen in advanced mode).
     markGpuEncoderBasicOnly(gpu.encoder);

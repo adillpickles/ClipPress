@@ -47,6 +47,31 @@ function gpuFields(gpu: NonNullable<ReturnType<typeof pickGpuEncoder>>, twoPass:
   } as const;
 }
 
+/** For Quality and Max quality on NVIDIA's HEVC: its "ultra high quality" tuning, where the card takes it. */
+function nvencUhqFields(gpu: NonNullable<ReturnType<typeof pickGpuEncoder>>, capabilities: SizeLimitedEncoderCapabilities) {
+  const basic = capabilities.basicSettingsOnly?.includes(gpu.capability) === true;
+  return gpu.encoder === 'hevc_nvenc' && capabilities.hevcNvencUhq === true && !basic ? { nvencUhq: true } : {};
+}
+
+/**
+ * Quality on the graphics card's HEVC. With NVIDIA's "ultra high quality" tuning, p5: as quick as "hq" at p6 and better
+ * on every test clip (measured on an RTX 5060 Ti, three game recordings at the same bitrate: VMAF +0.03 to +0.35 on
+ * average, up to +8 on the worst 5% of frames, files 5% smaller). p6 with it was a little better again, but half as
+ * slow.
+ */
+function gpuHevcQualityFields(gpu: NonNullable<ReturnType<typeof pickGpuEncoder>>, capabilities: SizeLimitedEncoderCapabilities) {
+  const uhq = nvencUhqFields(gpu, capabilities);
+  return { encoderPreset: uhq.nvencUhq ? 'p5' : 'p6', ...gpuFields(gpu, false, capabilities), ...uhq } as const;
+}
+
+/**
+ * Fast on the graphics card's HEVC. NVIDIA: p4, measured better than p3 on every test clip (VMAF +0.7 to +2) for 5% more
+ * time. AMD and Intel read the preset on their own scales, unmeasured there, so they keep p3.
+ */
+function gpuHevcFastFields(gpu: NonNullable<ReturnType<typeof pickGpuEncoder>>, capabilities: SizeLimitedEncoderCapabilities) {
+  return { encoderPreset: gpu.encoder === 'hevc_nvenc' ? 'p4' : 'p3', ...gpuFields(gpu, false, capabilities) } as const;
+}
+
 export function parseFfmpegEncoderNames(output: string) {
   return new Set(output
     .split(/\r?\n/u)
@@ -156,8 +181,7 @@ function resolveAv1PresetStrategy({
           preset,
           effectiveCodec: 'hevc',
           id: 'quality_hevc_gpu',
-          encoderPreset: 'p6',
-          ...gpuFields(gpuHevc, false, capabilities),
+          ...gpuHevcQualityFields(gpuHevc, capabilities),
           tuningProfile: 'quality',
           fallbackReason: 'gpu_av1_unavailable',
         });
@@ -231,8 +255,7 @@ function resolveAv1PresetStrategy({
           preset: 'fast',
           effectiveCodec: 'hevc',
           id: 'fast_hevc_gpu',
-          encoderPreset: 'p3',
-          ...gpuFields(gpuHevc, false, capabilities),
+          ...gpuHevcFastFields(gpuHevc, capabilities),
           tuningProfile: 'fast',
           fallbackReason: 'gpu_av1_unavailable',
         });
@@ -429,6 +452,7 @@ function resolveHevcPresetStrategy({ preset, capabilities }: {
           id: 'max_quality_hevc_gpu',
           encoderPreset: 'p7',
           ...gpuFields(gpuHevc, true, capabilities),
+          ...nvencUhqFields(gpuHevc, capabilities),
           tuningProfile: 'max_quality',
           fallbackReason: 'x265_unavailable',
         });
@@ -438,7 +462,7 @@ function resolveHevcPresetStrategy({ preset, capabilities }: {
     case 'quality': {
       if (gpuHevc != null) {
         return buildStrategy({
-          controlMode: 'simple', preset, effectiveCodec: 'hevc', id: 'quality_hevc_gpu', encoderPreset: 'p6', ...gpuFields(gpuHevc, false, capabilities), tuningProfile: 'quality',
+          controlMode: 'simple', preset, effectiveCodec: 'hevc', id: 'quality_hevc_gpu', ...gpuHevcQualityFields(gpuHevc, capabilities), tuningProfile: 'quality',
         });
       }
       // A graphics card without HEVC (GTX 600/700, RX 300 and older, Intel before the 6th generation): x265 keeps HEVC's
@@ -451,7 +475,7 @@ function resolveHevcPresetStrategy({ preset, capabilities }: {
       // Fast is about speed: any GPU encoder beats the CPU.
       if (gpuHevc != null) {
         return buildStrategy({
-          controlMode: 'simple', preset, effectiveCodec: 'hevc', id: 'fast_hevc_gpu', encoderPreset: 'p3', ...gpuFields(gpuHevc, false, capabilities), tuningProfile: 'fast',
+          controlMode: 'simple', preset, effectiveCodec: 'hevc', id: 'fast_hevc_gpu', ...gpuHevcFastFields(gpuHevc, capabilities), tuningProfile: 'fast',
         });
       }
       if (gpuH264 != null) return gpuH264Strategy(preset, capabilities, 'gpu_hevc_unavailable');

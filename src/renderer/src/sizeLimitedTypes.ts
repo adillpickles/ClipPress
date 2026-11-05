@@ -70,6 +70,11 @@ export interface SizeLimitedEncoderCapabilities {
   cpuThreads?: number | undefined,
   /** GPU encoders that open with their basic settings but not the tuned ones (an older card or driver). */
   basicSettingsOnly?: readonly SizeLimitedGpuCapability[] | undefined,
+  /**
+   * Whether NVIDIA's HEVC opens with its "ultra high quality" tuning (RTX 40 and 50 do; NVIDIA doesn't say which older
+   * cards do, so the encoder check asks the card). Missing means no.
+   */
+  hevcNvencUhq?: boolean | undefined,
 }
 
 export type SizeLimitedStrategyId =
@@ -147,6 +152,8 @@ export interface SizeLimitedResolvedStrategy {
   encoderMultipass?: boolean | undefined,
   /** A GPU encoder run with only its basic settings, because this card or driver turned the tuned ones down. */
   basicEncoderSettings?: boolean | undefined,
+  /** NVIDIA HEVC with its "ultra high quality" tuning, on a card that takes it (hevcNvencUhq). */
+  nvencUhq?: boolean | undefined,
 }
 
 export interface SizeLimitedRetryStep {

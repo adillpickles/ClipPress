@@ -17,7 +17,7 @@ export function isSavedEncoderCheck(value: unknown): value is SavedEncoderCheck 
   if (capabilities == null || typeof capabilities !== 'object' || !Array.isArray(retest)) return false;
   const known = gpuEncoders.map(({ capability }) => capability);
   const { basicSettingsOnly } = capabilities as Record<string, unknown>;
-  return ['h264Nvenc', 'av1Nvenc', 'libx264', 'libx265', 'libsvtav1', 'svtTwoPass', 'x265TwoPass', ...known].every((key) => typeof (capabilities as Record<string, unknown>)[key] === 'boolean')
+  return ['h264Nvenc', 'av1Nvenc', 'libx264', 'libx265', 'libsvtav1', 'svtTwoPass', 'x265TwoPass', 'hevcNvencUhq', ...known].every((key) => typeof (capabilities as Record<string, unknown>)[key] === 'boolean')
     && retest.every((key) => known.includes(key as GpuCapability))
     && (basicSettingsOnly == null || (Array.isArray(basicSettingsOnly) && basicSettingsOnly.every((key) => known.includes(key as GpuCapability))));
 }
