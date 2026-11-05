@@ -7228,15 +7228,6 @@ function App() {
     [detectedFileFormat, fileFormat, onOutputFormatUserChange],
   );
 
-  // The first start with a new FFmpeg (or ClipPress, or graphics driver): FFmpeg is warmed up and its encoders checked
-  // in the background while the start screen shows, so the first clip opened doesn't wait for its first slow runs.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      prepareNewFfmpeg().catch((error: unknown) => console.warn('Could not prepare FFmpeg', error));
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, []);
-
   // Which encoders work is checked in the background once a clip has opened, so an export doesn't wait for it:
   // after its filmstrip and waveform, while the video is paused (or at most 30 s on); advanced mode's lanes aren't
   // tracked, so a while after.
@@ -7249,6 +7240,23 @@ function App() {
   useEffect(() => {
     openWorkPendingRef.current = openWorkPending;
   }, [openWorkPending]);
+
+  // The first start with a new FFmpeg (or ClipPress, or graphics driver): FFmpeg is warmed up and its encoders checked
+  // in the background while the start screen shows, so the first clip opened doesn't wait for its first slow runs. A
+  // recording that's opening goes first (at most 30 s).
+  useEffect(() => {
+    const waitUntil = Date.now() + 30_000;
+    const whenIdle = async () => {
+      while (openWorkPendingRef.current && Date.now() < waitUntil) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => { setTimeout(resolve, 500); });
+      }
+    };
+    const timer = setTimeout(() => {
+      prepareNewFfmpeg(whenIdle).catch((error: unknown) => console.warn('Could not prepare FFmpeg', error));
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // FFmpeg's self-check starts two processes; at launch it waits a moment, and for the first file to open (its
   // filmstrip and waveform, at most 30 s), so it doesn't compete with that (a broken FFmpeg shows up then anyway).

@@ -316,18 +316,26 @@ describe('which encoders are tested again at the next start', () => {
   const base = { h264Nvenc: false, av1Nvenc: false, libx264: true, libsvtav1: true };
   const listed = () => true;
 
-  it("doesn't test again a codec a working card lacks (an RTX 30's AV1)", () => {
-    const capabilities = { ...base, h264Nvenc: true, hevcNvenc: true, av1Nvenc: false };
-    expect(getEncodersToRetest({ capabilities, listed, unsure: new Set(), vendors: ['nvidia'] })).toEqual([]);
+  const rtx30 = { ...base, h264Nvenc: true, hevcNvenc: true, av1Nvenc: false };
+  const none = new Set<never>();
+
+  it("tests a codec a working card lacks (an RTX 30's AV1) once more, then leaves it", () => {
+    expect(getEncodersToRetest({ capabilities: rtx30, listed, unsure: none, failedBefore: none, adapters: ['nvidia'] })).toEqual(['av1Nvenc']);
+    expect(getEncodersToRetest({ capabilities: rtx30, listed, unsure: none, failedBefore: new Set(['av1Nvenc'] as const), adapters: ['nvidia'] })).toEqual([]);
+  });
+
+  it('keeps testing it with two cards of that maker (FFmpeg may open the other one next time)', () => {
+    const capabilities = { ...base, h264Amf: true, hevcAmf: true, av1Amf: false };
+    expect(getEncodersToRetest({ capabilities, listed, unsure: none, failedBefore: new Set(['av1Amf'] as const), adapters: ['amd', 'amd'] })).toEqual(['av1Amf']);
   });
 
   it("tests again a card's encoders when none of them opened (it may only have been busy), or one timed out", () => {
-    expect(getEncodersToRetest({ capabilities: base, listed, unsure: new Set(), vendors: ['nvidia'] })).toEqual(['av1Nvenc', 'h264Nvenc', 'hevcNvenc']);
-    const capabilities = { ...base, h264Nvenc: true, hevcNvenc: true };
-    expect(getEncodersToRetest({ capabilities, listed, unsure: new Set(['av1Nvenc'] as const), vendors: ['nvidia'] })).toEqual(['av1Nvenc']);
+    const failedBefore = new Set(['av1Nvenc', 'h264Nvenc', 'hevcNvenc'] as const);
+    expect(getEncodersToRetest({ capabilities: base, listed, unsure: none, failedBefore, adapters: ['nvidia'] })).toEqual(['av1Nvenc', 'h264Nvenc', 'hevcNvenc']);
+    expect(getEncodersToRetest({ capabilities: rtx30, listed, unsure: new Set(['av1Nvenc'] as const), failedBefore, adapters: ['nvidia'] })).toEqual(['av1Nvenc']);
   });
 
   it("never tests a maker's encoders when it has no card here", () => {
-    expect(getEncodersToRetest({ capabilities: { ...base, h264Nvenc: true }, listed, unsure: new Set(), vendors: ['nvidia'] })).not.toContain('h264Amf');
+    expect(getEncodersToRetest({ capabilities: { ...base, h264Nvenc: true }, listed, unsure: none, failedBefore: none, adapters: ['nvidia'] })).not.toContain('h264Amf');
   });
 });

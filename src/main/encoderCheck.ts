@@ -27,10 +27,13 @@ async function getKey(ffmpegKey: string) {
   return `${app.getVersion()}|${ffmpegKey}|${gpus}`;
 }
 
-/** The graphics card makers in this PC: an encoder of a maker with no card here can't start working by itself. */
-export async function getGpuVendors() {
+/**
+ * The maker of each graphics card in this PC, once per card: an encoder of a maker with no card here can't start
+ * working by itself, and with two cards of one maker (an iGPU and a graphics card) FFmpeg may open either.
+ */
+export async function getGpuAdapterVendors() {
   const devices = await getGpuDevices();
-  return [...new Set(devices.flatMap(({ vendorId }) => (vendorId != null && vendorIds[vendorId] != null ? [vendorIds[vendorId]] : [])))];
+  return devices.flatMap(({ vendorId }) => (vendorId != null && vendorIds[vendorId] != null ? [vendorIds[vendorId]] : []));
 }
 
 export async function readSavedEncoderCheck(ffmpegKey: string): Promise<unknown> {
