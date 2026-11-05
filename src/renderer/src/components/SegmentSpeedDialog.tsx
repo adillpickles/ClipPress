@@ -38,7 +38,7 @@ export default function SegmentSpeedDialog({ open, segment, fileDuration, format
     <Dialog.Root open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
       <Dialog.Portal>
         <Dialog.Overlay />
-        <Dialog.Content style={{ width: 380, maxWidth: 'calc(100vw - 48px)' }}>
+        <Dialog.Content style={{ width: 420, maxWidth: 'calc(100vw - 48px)' }}>
           <Dialog.Title>{simpleMode ? t('Change clip speed') : t('Change segment speed')}</Dialog.Title>
           <Dialog.Description>{simpleMode ? t('Adjust this clip from 10% to 1600%. Audio keeps its pitch.') : t('Adjust this segment from 10% to 1600%. Audio keeps its pitch.')}</Dialog.Description>
           <form onSubmit={(event) => {

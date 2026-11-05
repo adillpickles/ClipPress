@@ -5,8 +5,8 @@
   margin: 1.2rem 0 .7rem;
 }
 .speedField > label { flex: 1; }
-.presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: .35rem; }
-.presets button { padding: .35rem .5rem; font-size: .8rem; }
+.presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: .55rem .5rem; }
+.presets button { padding: .45rem .5rem; font-size: .8rem; }
 .presets button[aria-pressed="true"] { border-color: var(--accent-9); background: var(--accent-4); }
 .durations {
   display: grid;
