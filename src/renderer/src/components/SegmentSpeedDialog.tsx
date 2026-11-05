@@ -10,6 +10,9 @@ import useUserSettings from '../hooks/useUserSettings';
 import { formatClipLength } from '../util/clockTime';
 import styles from './SegmentSpeed.module.css';
 
+/** A speed as a percent, without the float's noise (a speed dragged on the band, 0.29, read "28.999999999999996"). */
+const formatSpeedPercent = (segment: StateSegment) => String(Math.round(getSegmentSpeed(segment) * 10_000) / 100);
+
 export default function SegmentSpeedDialog({ open, segment, fileDuration, formatTimecode, onApply, onClose }: {
   /** Kept mounted while it fades out after closing. */
   open: boolean,
@@ -23,12 +26,12 @@ export default function SegmentSpeedDialog({ open, segment, fileDuration, format
   const { simpleMode } = useUserSettings();
   // Simple mode says "clip" and writes every length as a clock time, like the speed band and the Clips panel.
   const formatDuration = (seconds: number) => (simpleMode ? formatClipLength(seconds) : formatTimecode({ seconds }));
-  const [percent, setPercent] = useState(String(getSegmentSpeed(segment) * 100));
+  const [percent, setPercent] = useState(formatSpeedPercent(segment));
   // Opened again for the same clip: its current speed, not what was typed last time.
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
-    if (open) setPercent(String(getSegmentSpeed(segment) * 100));
+    if (open) setPercent(formatSpeedPercent(segment));
   }
   const speed = Number(percent) / 100;
   const valid = isSegmentSpeedValid(speed);

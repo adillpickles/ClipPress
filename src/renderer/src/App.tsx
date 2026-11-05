@@ -1455,7 +1455,9 @@ function App() {
     if (!isSegmentSpeedValid(speed) || workingRef.current) return;
     const index = cutSegments.findIndex((segment) => segment.segId === segmentId);
     if (index === -1 || cutSegments[index]?.end == null) return;
-    if (getSegmentSpeed(cutSegments[index]!) !== speed) updateSegAtIndex(index, { speed });
+    // The stored speed, not the one played: one from a newer version, out of this one's range, plays at 100% and can
+    // still be set to 100%.
+    if ((cutSegments[index]!.speed ?? 1) !== speed) updateSegAtIndex(index, { speed });
     // Pin a bar shown by default so dragging back to 100% does not make it vanish mid-edit.
     setSpeedControlsBySegment((existing) => (existing[segmentId] != null ? existing : { ...existing, [segmentId]: true }), { merge: true });
   }, [cutSegments, setSpeedControlsBySegment, updateSegAtIndex, workingRef]);
@@ -1473,7 +1475,7 @@ function App() {
     if (workingRef.current) return;
     const index = cutSegments.findIndex((segment) => segment.segId === segmentId);
     if (index === -1) return;
-    const speedChanged = getSegmentSpeed(cutSegments[index]!) !== 1;
+    const speedChanged = (cutSegments[index]!.speed ?? 1) !== 1;
     if (speedChanged) updateSegAtIndex(index, { speed: 1 });
     // Dropping the pin (rather than storing "hidden") lets an undo of the speed bring the bar back.
     setSpeedControlsBySegment((existing) => {
@@ -1526,15 +1528,21 @@ function App() {
   }, [currentCutSeg, toggleSpeedControlsForSegment]);
 
   const previewSegmentSpeed = invertCutSegments ? 1 : getPreviewSegmentSpeed(cutSegments, currentSegIndexSafe, relevantTime, fileDuration);
-  useEffect(() => setSegmentPreviewSpeed(previewSegmentSpeed), [previewSegmentSpeed, setSegmentPreviewSpeed]);
   // Playing, a clip's speed starts on its first frame: the time above follows `timeupdate`, which comes only every
-  // ~250 ms (up to 4 s of a 1600% clip).
+  // ~250 ms (up to 4 s of a 1600% clip), so the frame loop below sets it then. Paused, seeking, once the last sped-up
+  // clip is gone, or with no frames shown (an audio-only file), from the time above; applied again as playback stops.
   const hasSpedClips = !invertCutSegments && cutSegments.some((segment) => getSegmentSpeed(segment) !== 1);
+  const lastPreviewFrameAtRef = useRef(0);
+  useEffect(() => {
+    const frameLoopRunning = playing && hasSpedClips && performance.now() - lastPreviewFrameAtRef.current < 500;
+    if (!frameLoopRunning) setSegmentPreviewSpeed(previewSegmentSpeed);
+  }, [hasSpedClips, playing, previewSegmentSpeed, setSegmentPreviewSpeed]);
   useEffect(() => {
     const video = videoRef.current;
     if (!playing || !hasSpedClips || video == null) return undefined;
     let handle = 0;
-    const onFrame: VideoFrameRequestCallback = (_now, { mediaTime }) => {
+    const onFrame: VideoFrameRequestCallback = (now, { mediaTime }) => {
+      lastPreviewFrameAtRef.current = now;
       setSegmentPreviewSpeed(getPreviewSegmentSpeed(cutSegments, currentSegIndexSafe, mediaTime, fileDuration));
       handle = video.requestVideoFrameCallback(onFrame);
     };

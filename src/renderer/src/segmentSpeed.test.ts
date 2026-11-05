@@ -95,6 +95,9 @@ describe('clip speed from 10% to 1600%', () => {
     // A speed from a newer version plays at 100% here, rather than the whole project failing to open.
     const fromNewer = llcProjectV3Schema.parse({ version: 3, mediaFileName: 'a.mp4', cutSegments: [{ start: 0, end: 1, name: '', speed: 32 }] });
     expect(getSegmentSpeed(fromNewer.cutSegments[0]!)).toBe(1);
+    for (const speed of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => llcProjectV3Schema.parse({ version: 3, mediaFileName: 'a.mp4', cutSegments: [{ start: 0, end: 1, name: '', speed }] })).toThrow();
+    }
   });
 });
 
@@ -126,9 +129,12 @@ describe('preview playback rate', () => {
     let userRate = 1;
     for (let i = 0; i < 3; i += 1) userRate = stepUserPlaybackRate({ userRate, direction: -1 });
     expect(userRate).toBeCloseTo(0.5, 5);
-    const before = getVideoPlaybackRate({ userRate, speeds: 0.1 });
+    // In a 25% clip (0.125×, above the 1/16 floor) one more J plays slower still.
+    const before = getVideoPlaybackRate({ userRate, speeds: 0.25 });
     userRate = stepUserPlaybackRate({ userRate, direction: -1 });
-    expect(getVideoPlaybackRate({ userRate, speeds: 0.1 })).toBeLessThanOrEqual(before);
+    expect(getVideoPlaybackRate({ userRate, speeds: 0.25 })).toBeLessThan(before);
     expect(userRate).toBeLessThan(0.5);
+    // In a 10% clip J only ever slows down or stays at the floor.
+    expect(getVideoPlaybackRate({ userRate, speeds: 0.1 })).toBe(1 / 16);
   });
 });

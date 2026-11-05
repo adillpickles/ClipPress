@@ -37,6 +37,10 @@ export default ({ filePath }: { filePath: string | undefined }) => {
   }, []);
 
   const setSegmentPreviewSpeed = useCallback((speed: number) => {
+    // Called for every frame of a sped-up preview: nothing to do (not even a render) when nothing changed.
+    const unchanged = speed === segmentPreviewSpeedRef.current
+      && videoRef.current?.playbackRate === getVideoPlaybackRate({ userRate: userPlaybackRateRef.current, speeds: outputPlaybackRateRef.current * speed });
+    if (unchanged) return;
     segmentPreviewSpeedRef.current = speed;
     applyPlaybackRate();
   }, [applyPlaybackRate]);
