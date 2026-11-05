@@ -158,7 +158,7 @@ function Settings({
       case 'general': {
         return (
           <>
-            <SettingRow label={t('Language')} controlId={languageId}>
+            <SettingRow label={t('Language')} controlId={languageId} labelExtra={backTo(language !== dropdownDefaults.language, langNames[dropdownDefaults.language], () => setLanguage(dropdownDefaults.language))}>
               <Select id={languageId} value={language ?? ''} onChange={onLangChange}>
                 <option key="" value="">{t('System language')}</option>
                 {Object.keys(langNames).map((lang) => <option key={lang} value={lang}>{langNames[lang as keyof typeof langNames]}</option>)}

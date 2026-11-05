@@ -5,6 +5,7 @@ import type { Config } from '../../common/types.js';
  * beside each one that's off its default.
  */
 const dropdownDefaults = {
+  language: 'en',
   reducedMotion: 'user',
   exportProgressStyle: 'pictures-sparks',
   timecodeFormat: 'timecodeWithDecimalFraction',
