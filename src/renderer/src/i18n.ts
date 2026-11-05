@@ -1,6 +1,8 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
+import { getLanguageFromSystem } from '../../common/i18n';
+
 const Backend = window.require('i18next-fs-backend');
 
 const remote = window.require('@electron/remote');
@@ -13,7 +15,8 @@ const { i18n: { commonI18nOptions, loadPath, addPath } } = remote.require('./ind
 // https://github.com/i18next/i18next/issues/869
 i18n
   .use(Backend)
-  .use({ type: 'languageDetector', async: false, detect: () => remote.app.getLocale() })
+  // Not app.getLocale(): it needs Chromium's language files, and only the English one ships.
+  .use({ type: 'languageDetector', async: false, detect: () => getLanguageFromSystem(remote.app.getPreferredSystemLanguages()) })
   .use(initReactI18next)
   // See also i18next.config.base.ts
   .init({

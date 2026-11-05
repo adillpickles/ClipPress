@@ -179,6 +179,9 @@
       "smartUnpack": false
     },
     "appId": "com.clippress.app",
+    "electronLanguages": [
+      "en-US"
+    ],
     "artifactName": "${productName}-${os}-${arch}.${ext}",
     "extraResources": [
       {
