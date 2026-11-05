@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import * as Dialog from './Dialog';
 import Button, { DialogButton } from './Button';
 import ScrubNumberInput from './ScrubNumberInput';
-import { getSegmentOutputDuration, getSegmentSpeed, isSegmentSpeedValid } from '../segmentSpeed';
+import { getSegmentOutputDuration, getSegmentSpeed, isSegmentSpeedValid, maxSegmentSpeed, minSegmentSpeed } from '../segmentSpeed';
 import type { FormatTimecode, StateSegment } from '../types';
 import useUserSettings from '../hooks/useUserSettings';
 import { formatClipLength } from '../util/clockTime';
@@ -40,7 +40,7 @@ export default function SegmentSpeedDialog({ open, segment, fileDuration, format
         <Dialog.Overlay />
         <Dialog.Content style={{ width: 380, maxWidth: 'calc(100vw - 48px)' }}>
           <Dialog.Title>{simpleMode ? t('Change clip speed') : t('Change segment speed')}</Dialog.Title>
-          <Dialog.Description>{simpleMode ? t('Adjust this clip from 25% to 400%. Audio keeps its pitch.') : t('Adjust this segment from 25% to 400%. Audio keeps its pitch.')}</Dialog.Description>
+          <Dialog.Description>{simpleMode ? t('Adjust this clip from 10% to 1600%. Audio keeps its pitch.') : t('Adjust this segment from 10% to 1600%. Audio keeps its pitch.')}</Dialog.Description>
           <form onSubmit={(event) => {
             event.preventDefault();
             if (valid) onApply(speed);
@@ -53,8 +53,8 @@ export default function SegmentSpeedDialog({ open, segment, fileDuration, format
                 id="segment-speed-percent"
                 value={percent}
                 onChange={setPercent}
-                min={25}
-                max={400}
+                min={Math.round(minSegmentSpeed * 100)}
+                max={Math.round(maxSegmentSpeed * 100)}
                 step={5}
                 unit="%"
                 label={t('Speed')}
@@ -63,7 +63,8 @@ export default function SegmentSpeedDialog({ open, segment, fileDuration, format
               />
             </div>
             <div className={styles['presets']}>
-              {[25, 50, 100, 150, 200, 400].map((value) => (
+              {/* Four slower, four faster, in two even rows. */}
+              {[10, 25, 50, 100, 200, 400, 800, 1600].map((value) => (
                 <Button key={value} aria-pressed={Number(percent) === value} onClick={() => setPercent(String(value))}>{value}%</Button>
               ))}
             </div>

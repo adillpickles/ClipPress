@@ -720,6 +720,7 @@ function App() {
     videoContainerRef,
     playbackRate,
     setPlaybackRate,
+    resetPlaybackRate: resetVideoPlaybackRate,
     setSegmentPreviewSpeed,
     outputPlaybackRate,
     setOutputPlaybackRate,
@@ -2300,7 +2301,7 @@ function App() {
       video.removeAttribute('src');
       video.load();
     }
-    setPlaybackRate(1);
+    resetVideoPlaybackRate();
 
     // setWorking();
     setPreviewFilePath(undefined);
@@ -2346,11 +2347,11 @@ function App() {
     editHistoryOrder,
     endProjectSession,
     overlayClipsHistory,
+    resetVideoPlaybackRate,
     setProgress,
     streamParamsHistory,
     videoRef,
     setCommandedTime,
-    setPlaybackRate,
     setPreviewFilePath,
     setUsingDummyVideo,
     setPlaying,

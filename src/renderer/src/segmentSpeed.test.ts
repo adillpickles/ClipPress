@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { getAudioTempoFilter, getPreviewSegmentSpeed, getSegmentOutputDuration, getSegmentPlaybackRate, getSegmentSpeed, getSpeedForOutputDuration, isSegmentSpeedValid } from './segmentSpeed';
 import { createSegment, mapSaveableSegments } from './segments';
+import { getUserPlaybackRate, getVideoPlaybackRate } from './previewPlaybackRate';
 import { llcProjectV3Schema } from './types';
 
 describe('segment speed', () => {
   it('keeps old segments at normal speed and rejects invalid speeds', () => {
     expect(getSegmentSpeed({})).toBe(1);
-    for (const speed of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, 0.24, 4.01]) {
+    for (const speed of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, 0.09, 16.01]) {
       expect(isSegmentSpeedValid(speed)).toBe(false);
       expect(getSegmentSpeed({ speed })).toBe(1);
     }
@@ -25,6 +26,9 @@ describe('segment speed', () => {
     expect(getAudioTempoFilter(1)).toBe('');
     expect(getAudioTempoFilter(0.25)).toBe('atempo=0.5,atempo=0.5');
     expect(getAudioTempoFilter(4)).toBe('atempo=2,atempo=2');
+    // 10% and 1600%, the ends of the range: every stage within atempo's 0.5-2 (product 0.1 and 16).
+    expect(getAudioTempoFilter(0.1)).toBe('atempo=0.5,atempo=0.5,atempo=0.5,atempo=0.8');
+    expect(getAudioTempoFilter(16)).toBe('atempo=2,atempo=2,atempo=2,atempo=2');
     expect(getAudioTempoFilter(1.5)).toBe('atempo=1.5');
   });
 
@@ -53,10 +57,10 @@ describe('getSpeedForOutputDuration', () => {
   });
 
   it('clamps to the supported range, including drags past the segment start', () => {
-    expect(getSpeedForOutputDuration(10, 100)).toBe(0.25);
-    expect(getSpeedForOutputDuration(10, 1)).toBe(4);
-    expect(getSpeedForOutputDuration(10, 0)).toBe(4);
-    expect(getSpeedForOutputDuration(10, -5)).toBe(4);
+    expect(getSpeedForOutputDuration(10, 1000)).toBe(0.1);
+    expect(getSpeedForOutputDuration(10, 0.5)).toBe(16);
+    expect(getSpeedForOutputDuration(10, 0)).toBe(16);
+    expect(getSpeedForOutputDuration(10, -5)).toBe(16);
   });
 
   it('snaps close drags back to normal speed', () => {
@@ -64,5 +68,50 @@ describe('getSpeedForOutputDuration', () => {
     expect(getSpeedForOutputDuration(10, 9.8)).toBe(1);
     expect(getSpeedForOutputDuration(10, 10.5)).toBe(0.95);
     expect(getSpeedForOutputDuration(0, 5)).toBe(1);
+  });
+});
+
+describe('clip speed from 10% to 1600%', () => {
+  it('takes both ends of the range, and nothing past them', () => {
+    for (const speed of [0.1, 0.25, 4, 8, 16]) expect(isSegmentSpeedValid(speed)).toBe(true);
+    expect(getSegmentSpeed({ speed: 16 })).toBe(16);
+    expect(getSegmentSpeed({ speed: 0.1 })).toBe(0.1);
+  });
+
+  it('turns a dragged length into a speed within the range', () => {
+    expect(getSpeedForOutputDuration(16, 1)).toBe(16);
+    expect(getSpeedForOutputDuration(16, 0.5)).toBe(16);
+    expect(getSpeedForOutputDuration(10, 100)).toBe(0.1);
+    expect(getSpeedForOutputDuration(10, 1000)).toBe(0.1);
+    expect(getSpeedForOutputDuration(16, 0)).toBe(16);
+  });
+
+  it('saves and loads 1600% and 10% clips in projects', () => {
+    for (const speed of [0.1, 16]) {
+      const segment = { ...createSegment({ start: 3, end: 9, speed }), segColorIndex: 0 };
+      const project = llcProjectV3Schema.parse({ version: 3, mediaFileName: 'a.mp4', cutSegments: mapSaveableSegments([segment]) });
+      expect(project.cutSegments[0]?.speed).toBe(speed);
+    }
+    expect(() => llcProjectV3Schema.parse({ version: 3, mediaFileName: 'a.mp4', cutSegments: [{ start: 0, end: 1, speed: 17 }] })).toThrow();
+  });
+});
+
+describe('preview playback rate', () => {
+  it('never asks the video for more than 16× or less than 1/16×, whatever the clip and J/L ask', () => {
+    expect(getVideoPlaybackRate({ userRate: 1, speeds: 16 })).toBe(16);
+    expect(getVideoPlaybackRate({ userRate: 2, speeds: 16 })).toBe(16);
+    expect(getVideoPlaybackRate({ userRate: 8, speeds: 4 })).toBe(16);
+    expect(getVideoPlaybackRate({ userRate: 0.5, speeds: 0.1 })).toBe(1 / 16);
+    expect(getVideoPlaybackRate({ userRate: 1.5, speeds: 2 })).toBe(3);
+  });
+
+  it("keeps J and L's own factor, up to 8×", () => {
+    expect(getUserPlaybackRate({ rate: 3, speeds: 2 })).toBe(1.5);
+    expect(getUserPlaybackRate({ rate: 20, speeds: 1 })).toBe(8);
+    // At a 1600% clip, the 16× the video already plays at leaves J and L at 1×: speeding up does nothing.
+    expect(getUserPlaybackRate({ rate: 16, speeds: 16 })).toBe(1);
+    // A clip moving from 1600% back to 100% then plays at J and L's own speed, not at a factor worked back from 16×.
+    const userRate = getUserPlaybackRate({ rate: 12.7, speeds: 16 });
+    expect(getVideoPlaybackRate({ userRate, speeds: 1 })).toBeCloseTo(12.7 / 16, 5);
   });
 });
