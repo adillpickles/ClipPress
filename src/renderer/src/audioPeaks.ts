@@ -30,7 +30,7 @@ const envelopeSampleRate = 16_000;
  *   that rate's range, which resampling on its own would filter away.
  * One pass straight through the file: while a recording opens the filmstrip reads it the same way, which on a
  * hard disk costs about one read. Stretches decoded at once were quicker from the disk cache, but much slower
- * from a hard disk (notes/beta6-ux/perf/qa-filmstrip.md).
+ * from a hard disk (measured).
  */
 export function getPeaksArgs({ filePath, streamIndex, sampleRate }: { filePath: string, streamIndex: number | undefined, sampleRate: number }) {
   return [

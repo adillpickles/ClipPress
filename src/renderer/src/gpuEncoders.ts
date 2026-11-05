@@ -96,7 +96,7 @@ export const maxGpuH264Side = 4096;
 /**
  * The picture sizes an encoder takes as they are. AMD's AV1 encoder needs 64×16 blocks on RX 7000 cards and current
  * Ryzen chips (8×2 on RX 9000; 64×16 suits both), or it pads the picture and players show black bars; every GPU's
- * H.264 encoder stops at 4096 on a side (`notes/beta6-ux/research/gpu-encoders.md`, c1 and c6), and so does HEVC on the
+ * H.264 encoder stops at 4096 on a side, and so does HEVC on the
  * oldest cards that have it (GTX 900, RX 400, 6th-gen Intel).
  */
 export function getEncoderSizeRules(encoder: SizeLimitedEncoderName): EncoderSizeRules | undefined {
@@ -137,8 +137,8 @@ export const gpuEncoderLabels: Record<SizeLimitedEncoderName, string> = {
  * Measured with 1440p60 HEVC and NVENC: a single-input export went from 12.4 s to 7.2 s on 4 CPU
  * threads and 6.8 s to 6.0 s on 8, and was unchanged on 16.
  *
- * Merges decode on the GPU too, whatever the CPU (Beta 6.1, the owner's kind of share: AV1 NVENC
- * recordings, a 16-thread Ryzen and an RTX 5060 Ti, `notes/beta6-ux/perf/speedlab*.sh`). Two 1440p30
+ * Merges decode on the GPU too, whatever the CPU (measured in Beta 6.1 on the owner's kind of share: AV1 NVENC
+ * recordings, a 16-thread Ryzen and an RTX 5060 Ti). Two 1440p30
  * AV1 clips at 400% took 8.6 s instead of 21 s, the same pair at 100% 2.9 s instead of 5.2 s, two
  * 1080p60 HEVC clips 14 s instead of 36-44 s at 400% and 6.0 s instead of 12.2 s at 100%, and
  * three of them 6.5 s instead of 11.4 s, every output byte-for-byte the same size. (Beta 6 kept
@@ -172,7 +172,7 @@ export function getHardwareDecodeArgs(useHardwareDecode: boolean, keepFramesOnGp
 /**
  * A sped-up clip decoded on the GPU can keep its frames there until `fps` has dropped the ones the export doesn't
  * keep (at 400%, three in four): `setpts` and `fps` only read timestamps, so only the kept frames are copied to the
- * CPU for the rest of the filters. That copy was most of a sped-up export's time (`notes/beta6-ux/perf/speedlab4.sh`):
+ * CPU for the rest of the filters. That copy was most of a sped-up export's time (measured):
  * the owner's kind of share (two 1440p30 AV1 clips at 400%, a text, AV1 NVENC) took 3.9 s instead of 6.6 s, two
  * 1080p60 HEVC clips 5.4 s instead of 9.4 s, 10-bit HEVC 2.7 s instead of 6.5 s, with as many frames and a size
  * within 1%. It also drops them evenly from the first frame (the encoder's own dropping kept the first three).
@@ -188,7 +188,7 @@ export function getGpuFramesDownloadFormat(pixFmt: string | undefined) {
 /**
  * Joined clips can drop their frames on the GPU only up to this many. Each clip's frames then sit on the export's own
  * frame grid, and concat takes each clip's length from them, so every join can land up to half a frame from where
- * it's planned (`notes/beta6-ux/perf/speedlab6.sh`: +12.5 ms per join at 30 fps). With up to two joins that stays
+ * it's planned (measured: +12.5 ms per join at 30 fps). With up to two joins that stays
  * within one frame; longer merges take the old path, whose joins are exact.
  */
 export const maxGpuFramesClips = 3;

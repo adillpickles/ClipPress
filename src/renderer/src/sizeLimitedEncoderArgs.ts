@@ -254,7 +254,7 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, passNumb
     // AMD: the quality tools OBS turns on for every AMD card (FFmpeg leaves out what a card can't do), plus its
     // pre-analysis (scene cuts, fast motion) and B-frames where the card has them, except for Fast. The pre-analysis
     // look-ahead stays below 16: a deeper one can deadlock in this FFmpeg (fixed upstream later). The basic settings
-    // are the plain ones every driver accepts. `notes/beta6-ux/research/gpu-encoders.md`.
+    // are the plain ones every driver accepts.
     case 'av1_amf':
     case 'h264_amf':
     case 'hevc_amf': {
@@ -286,7 +286,7 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, passNumb
 
     // Intel: High profile, no minimum bitrate (the driver's floor is about 0.9 Mbps at 1080p) and, except for Fast,
     // Intel's own recipe for its look-ahead rate control (Arc and newer; older chips turn it down and get the basic
-    // settings). Never `-look_ahead 1`: Arc refuses it. `notes/beta6-ux/research/gpu-encoders.md`.
+    // settings). Never `-look_ahead 1`: Arc refuses it.
     case 'av1_qsv':
     case 'h264_qsv':
     case 'hevc_qsv': {

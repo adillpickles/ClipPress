@@ -73,7 +73,7 @@ export function getKeyframePickExpression(interval: number) {
  * keyframes picked are decoded (in software, quicker for that than starting a hardware decoder).
  * The file is read straight through: while a recording opens the waveform reads it too, and on a hard disk two
  * passes going the same way cost about one read, where skipping from keyframe to keyframe (`keyframesOnly`) made
- * both much slower; from the disk cache, skipping is only a little quicker (notes/beta6-ux/perf/qa-filmstrip.md).
+ * both much slower; from the disk cache, skipping is only a little quicker (measured).
  * With only keyframes read, MP4 frame times can be a few frames out. `-copyts` keeps the file's timestamps.
  */
 export function getFilmstripArgs({ filePath, from, length, interval, height, keyframesOnly = false }: {
