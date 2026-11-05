@@ -24,6 +24,8 @@ export default ({ filePath }: { filePath: string | undefined }) => {
   const outputPlaybackRateRef = useRef(1);
   // J and L's own factor, kept apart: worked back out of a rate that was capped at 16×, it would come out wrong.
   const userPlaybackRateRef = useRef(1);
+  // What the readout shows, so a rate set while nothing changed on the video still corrects it.
+  const shownPlaybackRateRef = useRef(1);
 
   const applyPlaybackRate = useCallback(() => {
     const rate = getVideoPlaybackRate({ userRate: userPlaybackRateRef.current, speeds: outputPlaybackRateRef.current * segmentPreviewSpeedRef.current });
@@ -33,13 +35,14 @@ export default ({ filePath }: { filePath: string | undefined }) => {
       video.playbackRate = rate;
       video.preservesPitch = true;
     }
+    shownPlaybackRateRef.current = rate;
     setPlaybackRateState(rate);
   }, []);
 
   const setSegmentPreviewSpeed = useCallback((speed: number) => {
     // Called for every frame of a sped-up preview: nothing to do (not even a render) when nothing changed.
-    const unchanged = speed === segmentPreviewSpeedRef.current
-      && videoRef.current?.playbackRate === getVideoPlaybackRate({ userRate: userPlaybackRateRef.current, speeds: outputPlaybackRateRef.current * speed });
+    const rate = getVideoPlaybackRate({ userRate: userPlaybackRateRef.current, speeds: outputPlaybackRateRef.current * speed });
+    const unchanged = speed === segmentPreviewSpeedRef.current && videoRef.current?.playbackRate === rate && shownPlaybackRateRef.current === rate;
     if (unchanged) return;
     segmentPreviewSpeedRef.current = speed;
     applyPlaybackRate();

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { getAudioTempoFilter, getPreviewSegmentSpeed, getSegmentOutputDuration, getSegmentPlaybackRate, getSegmentSpeed, getSpeedForOutputDuration, isSegmentSpeedValid } from './segmentSpeed';
+import { formatSpeedPercent, getAudioTempoFilter, getPreviewSegmentSpeed, getSegmentOutputDuration, getSegmentPlaybackRate, getSegmentSpeed, getSpeedForOutputDuration, isSegmentSpeedValid, readSpeedPercent } from './segmentSpeed';
 import { createSegment, mapSaveableSegments } from './segments';
-import { getVideoPlaybackRate, stepUserPlaybackRate } from './previewPlaybackRate';
+import { getVideoPlaybackRate, isFrameLoopAhead, stepUserPlaybackRate } from './previewPlaybackRate';
 import { llcProjectV3Schema } from './types';
 
 describe('segment speed', () => {
@@ -136,5 +136,26 @@ describe('preview playback rate', () => {
     expect(userRate).toBeLessThan(0.5);
     // In a 10% clip J only ever slows down or stays at the floor.
     expect(getVideoPlaybackRate({ userRate, speeds: 0.1 })).toBe(1 / 16);
+  });
+
+  it("shows a speed without the float's noise and keeps it exactly when the field isn't edited", () => {
+    expect(formatSpeedPercent(0.29)).toBe('29');
+    expect(formatSpeedPercent(16)).toBe('1600');
+    for (const speed of [0.12345, 0.333, 1 / 3, 0.29, 1.5]) {
+      expect(readSpeedPercent(formatSpeedPercent(speed), speed)).toBe(speed);
+    }
+    expect(readSpeedPercent('250', 0.333)).toBe(2.5);
+  });
+
+  it("lets the playhead time set a clip's speed once it's past the last frame shown, or no frame has come for a while", () => {
+    const lastFrame = { at: 1000, mediaTime: 10.2 };
+    // A timeupdate from before the frame that started the next clip: the frame's speed stays.
+    expect(isFrameLoopAhead({ lastFrame, time: 10.1, now: 1100 })).toBe(true);
+    // A still stretch with no new frames: the playhead is past the last one.
+    expect(isFrameLoopAhead({ lastFrame, time: 10.45, now: 1250 })).toBe(false);
+    // Frames stopped (a minimised window).
+    expect(isFrameLoopAhead({ lastFrame, time: 10.1, now: 1600 })).toBe(false);
+    // No frame shown yet (playback just started, or a sound-only file).
+    expect(isFrameLoopAhead({ lastFrame: undefined, time: 0, now: 0 })).toBe(false);
   });
 });

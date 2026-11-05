@@ -18,3 +18,16 @@ export function getVideoPlaybackRate({ userRate, speeds }: { userRate: number, /
 export function stepUserPlaybackRate({ userRate, direction, multiplier }: { userRate: number, direction: number, multiplier?: number | undefined }) {
   return Math.min(maxUserPlaybackRate, Math.max(minVideoPlaybackRate, adjustRate(userRate, direction, multiplier)));
 }
+
+/** The last frame the preview showed while playing: when, and its time in the recording. */
+export interface PreviewFrame { at: number, mediaTime: number }
+
+/**
+ * Playing, the frame loop sets a clip's speed on its first frame, and the playhead time from `timeupdate` (every
+ * ~250 ms) can still be from before it. That time sets the speed only once it's past the last frame shown, or when
+ * no frame has come for a while: a still stretch of a recording that only stores changed frames, a minimised window,
+ * sound past the last frame.
+ */
+export function isFrameLoopAhead({ lastFrame, time, now }: { lastFrame: PreviewFrame | undefined, time: number, now: number }) {
+  return lastFrame != null && now - lastFrame.at < 500 && lastFrame.mediaTime >= time;
+}

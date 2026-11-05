@@ -62,6 +62,7 @@ import TextOverlayEditor from './components/TextOverlayEditor';
 import SegmentSpeedDialog from './components/SegmentSpeedDialog';
 import addSizeLimitedStrategyNotes from './sizeLimitedResultNotes';
 import { getPreviewSegment, getPreviewSegmentSpeed, getSegmentOutputDuration, getSegmentSpeed, isSegmentSpeedValid } from './segmentSpeed';
+import { isFrameLoopAhead, type PreviewFrame } from './previewPlaybackRate';
 import SegmentCropPreview from './components/SegmentCropPreview';
 import { getSegmentCrop, hasSegmentCrop } from './segmentCrop';
 import type { SegmentCrop } from './segmentCrop';
@@ -1532,22 +1533,25 @@ function App() {
   // ~250 ms (up to 4 s of a 1600% clip), so the frame loop below sets it then. Paused, seeking, once the last sped-up
   // clip is gone, or with no frames shown (an audio-only file), from the time above; applied again as playback stops.
   const hasSpedClips = !invertCutSegments && cutSegments.some((segment) => getSegmentSpeed(segment) !== 1);
-  const lastPreviewFrameAtRef = useRef(0);
+  const lastPreviewFrameRef = useRef<PreviewFrame>();
   useEffect(() => {
-    const frameLoopRunning = playing && hasSpedClips && performance.now() - lastPreviewFrameAtRef.current < 500;
-    if (!frameLoopRunning) setSegmentPreviewSpeed(previewSegmentSpeed);
-  }, [hasSpedClips, playing, previewSegmentSpeed, setSegmentPreviewSpeed]);
+    const frameLoopAhead = playing && hasSpedClips && isFrameLoopAhead({ lastFrame: lastPreviewFrameRef.current, time: relevantTime, now: performance.now() });
+    if (!frameLoopAhead) setSegmentPreviewSpeed(previewSegmentSpeed);
+  }, [hasSpedClips, playing, previewSegmentSpeed, relevantTime, setSegmentPreviewSpeed]);
   useEffect(() => {
     const video = videoRef.current;
     if (!playing || !hasSpedClips || video == null) return undefined;
     let handle = 0;
     const onFrame: VideoFrameRequestCallback = (now, { mediaTime }) => {
-      lastPreviewFrameAtRef.current = now;
+      lastPreviewFrameRef.current = { at: now, mediaTime };
       setSegmentPreviewSpeed(getPreviewSegmentSpeed(cutSegments, currentSegIndexSafe, mediaTime, fileDuration));
       handle = video.requestVideoFrameCallback(onFrame);
     };
     handle = video.requestVideoFrameCallback(onFrame);
-    return () => video.cancelVideoFrameCallback(handle);
+    return () => {
+      video.cancelVideoFrameCallback(handle);
+      lastPreviewFrameRef.current = undefined;
+    };
   }, [currentSegIndexSafe, cutSegments, fileDuration, hasSpedClips, playing, setSegmentPreviewSpeed, videoRef]);
   useEffect(() => {
     speedControlsHistory.reset({});

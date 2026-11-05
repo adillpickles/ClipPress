@@ -4,14 +4,11 @@ import { useTranslation } from 'react-i18next';
 import * as Dialog from './Dialog';
 import Button, { DialogButton } from './Button';
 import ScrubNumberInput from './ScrubNumberInput';
-import { getSegmentOutputDuration, getSegmentSpeed, isSegmentSpeedValid, maxSegmentSpeed, minSegmentSpeed } from '../segmentSpeed';
+import { formatSpeedPercent, getSegmentOutputDuration, getSegmentSpeed, isSegmentSpeedValid, maxSegmentSpeed, minSegmentSpeed, readSpeedPercent } from '../segmentSpeed';
 import type { FormatTimecode, StateSegment } from '../types';
 import useUserSettings from '../hooks/useUserSettings';
 import { formatClipLength } from '../util/clockTime';
 import styles from './SegmentSpeed.module.css';
-
-/** A speed as a percent, without the float's noise (a speed dragged on the band, 0.29, read "28.999999999999996"). */
-const formatSpeedPercent = (segment: StateSegment) => String(Math.round(getSegmentSpeed(segment) * 10_000) / 100);
 
 export default function SegmentSpeedDialog({ open, segment, fileDuration, formatTimecode, onApply, onClose }: {
   /** Kept mounted while it fades out after closing. */
@@ -26,14 +23,14 @@ export default function SegmentSpeedDialog({ open, segment, fileDuration, format
   const { simpleMode } = useUserSettings();
   // Simple mode says "clip" and writes every length as a clock time, like the speed band and the Clips panel.
   const formatDuration = (seconds: number) => (simpleMode ? formatClipLength(seconds) : formatTimecode({ seconds }));
-  const [percent, setPercent] = useState(formatSpeedPercent(segment));
+  const [percent, setPercent] = useState(formatSpeedPercent(getSegmentSpeed(segment)));
   // Opened again for the same clip: its current speed, not what was typed last time.
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
-    if (open) setPercent(formatSpeedPercent(segment));
+    if (open) setPercent(formatSpeedPercent(getSegmentSpeed(segment)));
   }
-  const speed = Number(percent) / 100;
+  const speed = readSpeedPercent(percent, getSegmentSpeed(segment));
   const valid = isSegmentSpeedValid(speed);
   const originalDuration = getSegmentOutputDuration({ ...segment, speed: 1 }, 1, fileDuration);
 
