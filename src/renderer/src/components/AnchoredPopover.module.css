@@ -1,3 +1,5 @@
+/* A caller changes its width cap or padding by setting these variables, not the properties: a caller's class weighs
+   the same as this one, so the bundle's CSS order would decide (sharedComponentOverrides.test.ts). */
 .popover {
   position: fixed;
   z-index: 60;
@@ -5,8 +7,8 @@
   flex-direction: column;
   gap: .7rem;
   min-width: 14rem;
-  max-width: 19rem;
-  padding: .8rem .85rem;
+  max-width: var(--popover-max-width, 19rem);
+  padding: var(--popover-padding, .8rem .85rem);
   border-radius: var(--cp-radius-lg);
   border: 1px solid var(--cp-line-strong);
   background: var(--cp-raised);

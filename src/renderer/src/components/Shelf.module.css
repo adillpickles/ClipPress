@@ -285,10 +285,10 @@
   font-size: .8125rem;
 }
 
-/* The popover around the shelf: a little roomier than the default. */
+/* The popover around the shelf: as wide as the list, a little roomier than the default (AnchoredPopover's variables). */
 .popover {
-  max-width: none;
-  padding: .75rem .85rem .6rem;
+  --popover-max-width: none;
+  --popover-padding: .75rem .85rem .6rem;
 }
 
 /* Welcome screen: the next clip from the shelf. */
