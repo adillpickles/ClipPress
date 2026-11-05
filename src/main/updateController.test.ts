@@ -192,7 +192,7 @@ describe('update policy', () => {
   });
 });
 
-// PR #56 re-audit: Windows ending the session does not stop a close already in progress from
+// Windows ending the session does not stop a close already in progress from
 // quitting normally, which would start the installer during the shutdown.
 describe('holding installation for the rest of a run', () => {
   it('disarms a ready update, and no later arming re-arms it', async () => {

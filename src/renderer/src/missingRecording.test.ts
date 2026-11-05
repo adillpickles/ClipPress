@@ -48,8 +48,8 @@ describe('the folder it was in', () => {
   });
 
   it('keeps its drive and last folders when long', () => {
-    const long = String.raw`D:\projects\ClipPress\notes\beta6-ux\runs\qa-edits-impl-relocate\moved`;
-    expect(shortenFolderPath(long)).toBe(String.raw`D:\…\beta6-ux\runs\qa-edits-impl-relocate\moved`);
+    const long = String.raw`D:\recorded\Captures\clips\valorant\2026\ranked-match-highlights\moved`;
+    expect(shortenFolderPath(long)).toBe(String.raw`D:\…\valorant\2026\ranked-match-highlights\moved`);
     expect(shortenFolderPath(long).length).toBeLessThanOrEqual(52);
     expect(shortenFolderPath('/home/me/very/long/path/to/some/videos/of/games/valorant/clips', 30)).toBe('/…/of/games/valorant/clips');
     expect(shortenFolderPath(String.raw`\\nas\share\recordings\2026\october\valorant\ranked`, 40)).toBe(String.raw`\\nas\share\…\october\valorant\ranked`);

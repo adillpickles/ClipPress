@@ -49,7 +49,7 @@ describe('isWindowsPathInside', () => {
   });
 });
 
-// PR #56 re-audit 3 finding 1: a settings folder was compared with the installation folder as
+// A settings folder was compared with the installation folder as
 // written, so another name of a folder inside it (a junction, `\\?\`, a short name...) let an
 // update delete it.
 describe('isWindowsFolderInside', () => {

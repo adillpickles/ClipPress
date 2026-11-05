@@ -277,7 +277,7 @@ describe('CloseGuard', () => {
     expect(t.requests).toEqual([1, 2]);
   });
 
-  // PR #56 re-audit finding 1: the renderer can accept a change after it answered 'close' and
+  // The renderer can accept a change after it answered 'close' and
   // before the window is gone. Its page then refuses to unload.
   describe('when the page refuses to unload after the renderer saved everything', () => {
     it('asks the renderer again, without confirming again, and closes once that is saved too', async () => {
@@ -351,7 +351,7 @@ describe('CloseGuard', () => {
     });
   });
 
-  // PR #56 re-audit finding 5: a reloaded page never answers the request the old page received.
+  // A reloaded page never answers the request the old page received.
   describe('a renderer that reloads while getting ready', () => {
     it('calls the close off, and asks the new page on the next close', async () => {
       const t = setup();
@@ -380,7 +380,7 @@ describe('CloseGuard', () => {
     });
   });
 
-  // Also re-audit finding 5: whatever keeps a responsive renderer from answering, closing again
+  // Whatever keeps a responsive renderer from answering, closing again
   // offers a way out.
   describe('closing again while the renderer is busy getting ready', () => {
     async function acknowledgedThenClosedAgain() {

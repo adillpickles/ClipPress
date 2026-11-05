@@ -146,8 +146,8 @@
   overflow: hidden;
 }
 
-/* Surges: bands of light running along the lit part into the edge, as the Simple bar's shimmer runs along its fill
-   (6.1 round 4). One layer, drawn once and only moved. */
+/* Surges: bands of light running along the lit part into the edge, as the Simple bar's shimmer runs along its fill.
+   One layer, drawn once and only moved. */
 .surges {
   position: absolute;
   top: 0;
@@ -206,8 +206,8 @@
   50% { opacity: .75; }
 }
 
-/* Sparks, many and fast (6.1 round 4: "a lot more... more frequency and speed"). Each .sparks is one moving layer
-   carrying three: itself and two copies drawn as its box-shadows, so twenty-four cost what eight would. */
+/* Sparks, many and fast. Each .sparks is one moving layer carrying three: itself and two copies drawn as its
+   box-shadows, so twenty-four cost what eight would. */
 .sparks {
   position: absolute;
   left: -1.5px;

@@ -139,7 +139,6 @@ export function combineSelectedSegments(existingSegments: StateSegment[]) {
   });
 }
 
-// Made by ChatGPT
 export function combineOverlappingSegments<T extends SegmentBase>(existingSegments: T[]): T[] {
   if (existingSegments.length === 0) return [];
 

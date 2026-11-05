@@ -23,7 +23,7 @@ const copyableAudioCodecs = new Set(['aac', 'mp3', 'opus']);
 
 /**
  * How much earlier than the clip a copy may start. A copy must start on a keyframe, and the one before the clip is
- * better than one after (the owner: "rather have a clip begin early than … slightly late"), but not by much.
+ * better than one after (a clip that begins a little early beats one that starts late), but not by much.
  */
 export const maxLosslessLeadIn = 2;
 

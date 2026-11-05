@@ -1,6 +1,6 @@
 /**
  * The parts of an export that the progress card has its own lines for. A second encode (sharper, or smaller) has
- * none: it's more of the same work as far as anyone can tell (6.1 round 4: nothing gives it away).
+ * none: it's more of the same work as far as anyone can tell (nothing gives it away).
  */
 export type ExportPhase = 'starting' | 'cutting' | 'encoding' | 'finishing';
 

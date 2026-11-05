@@ -23,7 +23,7 @@
 }
 
 /* On a shared baseline, not centred: the name is bigger than the menu words (and in another font), so centring their
-   boxes dropped its letters below theirs (6.1 round 5). */
+   boxes dropped its letters below theirs. */
 .left {
   min-width: 0;
   display: flex;
@@ -32,8 +32,8 @@
 }
 
 /* The app's name, first in the bar, on the menu words' line: a little bigger, in the display font (rounder, roomier
-   letters than the UI font's at this weight), "Press" in the accent (6.1 round 4). Less padding than the menu words,
-   so the bar keeps its height. */
+   letters than the UI font's at this weight), "Press" in the accent. Less padding than the menu words, so the bar
+   keeps its height. */
 .brand {
   display: inline-flex;
   align-items: center;
@@ -82,7 +82,7 @@
 }
 
 /* The clip that hides the word rolling out reaches a little below the line (padding taken back by the margin), so the
-   tail of the p in "Clip" isn't cut and nothing moves (6.1 round 5). */
+   tail of the p in "Clip" isn't cut and nothing moves. */
 .brandText {
   display: inline-grid;
   overflow: hidden;

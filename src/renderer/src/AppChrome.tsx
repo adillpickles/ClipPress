@@ -61,7 +61,7 @@ async function showBarMenu(context: BarMenuContext, index: number, keyboard: boo
       if (next != null) showBarMenu(context, next, true);
     },
     // While one is open, pointing at another button opens that one; pressing this one closes it. Off the bar's buttons
-    // and the menu, it closes (the owner, 6.1 round 4: moving on past Help, it should go away).
+    // and the menu, it closes (moving on past Help, it goes away).
     onOutsidePointer: ({ x, y, type }) => {
       const over = buttonAt(x, y);
       if (over == null) return false;

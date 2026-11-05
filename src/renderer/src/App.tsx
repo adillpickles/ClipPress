@@ -420,8 +420,8 @@ function App() {
   const [rotation, setRotation] = useState(360);
   const [progress, setProgressNow] = useState<number>();
   // FFmpeg reports progress ten times a second, and each new value re-renders the whole editor, the window title and
-  // the taskbar: a few a second is all the card needs, its strip gliding between them (6.1 round 4, CPU while
-  // exporting). A start, an end or a reset shows at once; in between, the latest value at most every progressStepMs.
+  // the taskbar, using CPU the export could have: a few a second is all the card needs, its strip gliding between them.
+  // A start, an end or a reset shows at once; in between, the latest value at most every progressStepMs.
   const progressThrottle = useRef<{ at: number, timer?: ReturnType<typeof setTimeout> | undefined }>({ at: 0 });
   const setProgress = useCallback((value: number | undefined) => {
     const throttle = progressThrottle.current;

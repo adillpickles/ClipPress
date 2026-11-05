@@ -96,7 +96,7 @@ describe('shelf', () => {
   });
 
   it('after exporting a clip from the middle, goes on to the one after it, not back to the top', () => {
-    // Oldest first: b, c, a, d. The owner exported a (third) and Next went to b, the oldest.
+    // Oldest first: b, c, a, d. Exporting a (third) used to send Next to b, the oldest.
     const exports = [{ source: a.path, outputs: [], exportedAt: 1 }];
     const queue = buildShelfQueue(files, { order: 'date', exports, caseInsensitive: true });
     expect(queue.map((item) => item.file)).toEqual([b, c, d, a]);

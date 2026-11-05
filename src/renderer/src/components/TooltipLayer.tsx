@@ -5,7 +5,7 @@ import renderKeys from './renderKeys';
 import { splitKeyboardKeys } from '../util';
 import styles from './TooltipLayer.module.css';
 
-/** Hovering waits this long, every time (6.1 round 4: hints that showed at once after another one felt jumpy). */
+/** Hovering waits this long, every time: hints that showed at once after another one felt jumpy. */
 const showDelayMs = 500;
 const margin = 8;
 const gap = 6;

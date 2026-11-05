@@ -10,8 +10,8 @@
 
 .content {
   /* Centred while it fits; scrolls from the top when it doesn't. A normal window keeps the 40rem column; a big one
-     (from 1600 px) widens it with the window, to 60rem on a 2560 screen, so it doesn't sit in a narrow strip (6.1
-     round 4). The row pictures grow along (Shelf.module.css .thumb). */
+     (from 1600 px) widens it with the window, to 60rem on a 2560 screen, so it doesn't sit in a narrow strip. The row
+     pictures grow along (Shelf.module.css .thumb). */
   margin: auto;
   width: min(100%, clamp(40rem, 40vw, 60rem));
   --shelf-thumb-width: clamp(64px, 3.125vw, 80px);

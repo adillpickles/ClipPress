@@ -107,7 +107,7 @@ describe('importInstallFolderConfig', () => {
   });
 });
 
-// PR #56 re-audit finding 2: the original used to be renamed before the import had finished, so a
+// The original used to be renamed before the import had finished, so a
 // failure after that left the settings unimported, and the next start found nothing to import.
 describe('importInstallFolderConfig when an attempt fails or is interrupted', () => {
   const later = new Date('2026-10-17T08:00:00.000Z');
@@ -222,7 +222,7 @@ describe('importInstallFolderConfig when an attempt fails or is interrupted', ()
     expect(await doImport()).toBeUndefined();
   });
 
-  // PR #56 re-audit 3 finding 3: the installer named its copy by the local time and the app by
+  // The installer named its copy by the local time and the app by
   // UTC, so west of UTC an installer's copy made after an interrupted start sorted before it, and
   // the older settings were imported. Both now use UTC, as the installer's names below do.
   it.each([
@@ -243,7 +243,7 @@ describe('importInstallFolderConfig when an attempt fails or is interrupted', ()
   });
 });
 
-// Re-audit 3: with --config-dir, the installer cannot know where settings are, so the app tells it.
+// With --config-dir, the installer cannot know where settings are, so the app tells it.
 describe('noteSettingsFoldersForInstaller', () => {
   const notePath = () => join(installDir, settingsFoldersNoteFileName);
   const note = (settingsDir: string | undefined, stillHasSettings: (dir: string) => Promise<boolean> = async () => true) => noteSettingsFoldersForInstaller({ installDir, settingsDir, stillHasSettings });
@@ -291,7 +291,7 @@ describe('noteSettingsFoldersForInstaller', () => {
   });
 });
 
-// PR #56 re-audit 2 finding 1: when the import failed before it could copy the settings, updates
+// When the import failed before it could copy the settings, updates
 // went on being installed, and installing one deletes the installation folder with the only copy.
 describe('moveSettingsOutOfInstallFolder', () => {
   const move = (at = now) => moveSettingsOutOfInstallFolder({ installDir, configDir, now: at, retryDelayMs: 1 });

@@ -4,7 +4,7 @@ const encodeShare = 0.9;
 /**
  * One export job's progress as the simple editor shows it, only ever moving forward. A size-limited job's first encode
  * fills 90% of its stretch; if a second one runs (sharper, or smaller), it carries on from there instead of starting
- * the strip again, so nothing gives it away (6.1 round 4). A job done in one encode goes from 90% to done as it
+ * the strip again, so nothing gives it away. A job done in one encode goes from 90% to done as it
  * finishes. Progress reported without an attempt (a lossless copy, a job that was skipped) is a step of its own like
  * an encode: a copy that turns out too big after all still leaves room for the encode that follows it.
  */
