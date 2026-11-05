@@ -10,6 +10,7 @@ import UpdateSettings from './UpdateSettings';
 import useUserSettings from '../hooks/useUserSettings';
 import { askForFfPath, showOpenDialog } from '../dialogs';
 import RevertButton from './RevertButton';
+import dropdownDefaults from '../settingDefaults';
 import { getEnableImportChaptersOptions, isMasBuild, isStoreBuild, isWindows } from '../util';
 import type { SupportedLanguage } from '../../../common/i18n';
 import { langNames } from '../../../common/i18n';
@@ -65,6 +66,9 @@ function Settings({
     const l = value !== '' ? value : null;
     setLanguage(l as SupportedLanguage | null);
   }, [setLanguage]);
+
+  // A dropdown off its default gets a ↺ beside its name, as the number settings do (NumberSettingRow).
+  const backTo = (changed: boolean, defaultText: string, revert: () => void) => (changed ? <RevertButton title={t('Back to {{value}}', { value: defaultText })} onClick={revert} /> : undefined);
 
   const timecodeFormatOptions = useMemo<Record<TimecodeFormat, string>>(() => ({
     frameCount: t('Frame counts'),
@@ -221,7 +225,7 @@ function Settings({
               <Switch checked={preferStrongColors} onCheckedChange={setPreferStrongColors} aria-label={t('Stronger colors')} />
             </SettingRow>
 
-            <SettingRow label={t('Reduce motion')} description={t('Turn off animations.')} controlId={reducedMotionId}>
+            <SettingRow label={t('Reduce motion')} description={t('Turn off animations.')} controlId={reducedMotionId} labelExtra={backTo(reducedMotion !== dropdownDefaults.reducedMotion, t('System default'), () => setReducedMotion(dropdownDefaults.reducedMotion))}>
               <Select id={reducedMotionId} value={reducedMotion} onChange={(e) => setReducedMotion(e.target.value as Config['reducedMotion'])}>
                 {Object.entries({ user: t('System default'), always: t('Yes'), never: t('No') } satisfies Record<Config['reducedMotion'], string>).map(([key, value]) => (
                   <option key={key} value={key}>{value}</option>
@@ -230,7 +234,7 @@ function Settings({
             </SettingRow>
 
             {/* The export card: the clip's own pictures lighting up (a waveform for sound only), or the plain bar. */}
-            <SettingRow label={t('Export progress')} description={t('What the card shows while a clip exports.')} controlId={exportProgressId}>
+            <SettingRow label={t('Export progress')} description={t('What the card shows while a clip exports.')} controlId={exportProgressId} labelExtra={backTo(exportProgressStyle !== dropdownDefaults.exportProgressStyle, t('Clip pictures with sparks'), () => setExportProgressStyle(dropdownDefaults.exportProgressStyle))}>
               <Select id={exportProgressId} value={exportProgressStyle} onChange={(e) => setExportProgressStyle(e.target.value as Config['exportProgressStyle'])}>
                 {Object.entries({ 'pictures-sparks': t('Clip pictures with sparks'), pictures: t('Clip pictures'), bar: t('Simple bar') } satisfies Record<Config['exportProgressStyle'], string>).map(([key, value]) => (
                   <option key={key} value={key}>{value}</option>
@@ -240,7 +244,7 @@ function Settings({
 
             {/* Simple mode writes times its own way, so this only matters with the advanced options. */}
             {showAdvancedSettings && (
-              <SettingRow label={t('Time format')} description={enableAdvancedMode ? t('How times are shown in advanced mode and in exported file names.') : t('How times are shown in exported file names.')} controlId={timecodeId}>
+              <SettingRow label={t('Time format')} description={enableAdvancedMode ? t('How times are shown in advanced mode and in exported file names.') : t('How times are shown in exported file names.')} controlId={timecodeId} labelExtra={backTo(timecodeFormat !== dropdownDefaults.timecodeFormat, timecodeFormatOptions[dropdownDefaults.timecodeFormat], () => setTimecodeFormat(dropdownDefaults.timecodeFormat))}>
                 <Select id={timecodeId} value={timecodeFormat} onChange={(e) => setTimecodeFormat(e.target.value as TimecodeFormat)}>
                   {Object.entries(timecodeFormatOptions).map(([key, value]) => (
                     <option key={key} value={key}>{value}</option>
@@ -265,6 +269,7 @@ function Settings({
 
             <SettingRow
               label={t('Clips are')}
+              labelExtra={backTo(invertCutSegments !== dropdownDefaults.invertCutSegments, t('Kept'), () => setInvertCutSegments(dropdownDefaults.invertCutSegments))}
               value={invertCutSegments ? t('The export keeps everything except the clips.') : t('The export contains only the clips.')}
               details={t('"Kept" is the usual way to make clips. "Removed" cuts the marked parts out of the recording instead, for example to drop a pause or a loading screen.')}
             >
@@ -287,7 +292,7 @@ function Settings({
             )}
 
             {showAdvancedSettings && (
-              <SettingRow label={t('Chapters as clips')} description={t('Turn a file\'s chapters into clips when opening it.')} controlId={chaptersId}>
+              <SettingRow label={t('Chapters as clips')} description={t('Turn a file\'s chapters into clips when opening it.')} controlId={chaptersId} labelExtra={backTo(enableImportChapters !== dropdownDefaults.enableImportChapters, getEnableImportChaptersOptions()[dropdownDefaults.enableImportChapters], () => setEnableImportChapters(dropdownDefaults.enableImportChapters))}>
                 <Select id={chaptersId} value={enableImportChapters} onChange={(e) => setEnableImportChapters(e.target.value as EnableImportChapters)}>
                   {Object.entries(getEnableImportChaptersOptions() satisfies Record<EnableImportChapters, string>).map(([key, name]) => (
                     <option key={key} value={key}>{name}</option>
@@ -313,9 +318,10 @@ function Settings({
             {/* What the size presets make (Custom settings pick their own encoder). The codec names are the same in every language. */}
             <SettingRow
               label={t('Video format')}
-              description={t('HEVC plays and saves on every phone, and on most PCs.')}
-              details={t('H.264 plays anywhere, even on old PCs, a little less sharp. AV1 can be a little sharper, but iPhones can\'t save it and older ones can\'t play it.')}
+              description={t('HEVC: sharp, and plays and saves on every phone.')}
+              details={t('AV1 is as sharp or a little sharper, but iPhones can\'t save it, and older phones and PCs can\'t play it. H.264 plays anywhere, a little less sharp.')}
               controlId={videoFormatId}
+              labelExtra={backTo(sizeLimitVideoFormat !== dropdownDefaults.sizeLimitVideoFormat, 'HEVC', () => setSizeLimitVideoFormat(dropdownDefaults.sizeLimitVideoFormat))}
               keywords="codec H.265 iPhone Android Discord"
             >
               <Select id={videoFormatId} value={sizeLimitVideoFormat} onChange={(e) => setSizeLimitVideoFormat(e.target.value as SizeLimitVideoFormat)}>
@@ -396,7 +402,7 @@ function Settings({
             )}
 
             {showAdvancedSettings && (
-              <SettingRow label={t('Date of exported files')} controlId={outputDateId}>
+              <SettingRow label={t('Date of exported files')} controlId={outputDateId} labelExtra={backTo(treatOutputFileModifiedTimeAsStart !== dropdownDefaults.treatOutputFileModifiedTimeAsStart, t('Recording time + clip start'), () => setTreatOutputFileModifiedTimeAsStart(dropdownDefaults.treatOutputFileModifiedTimeAsStart))}>
                 <Select id={outputDateId} value={typeof treatOutputFileModifiedTimeAsStart === 'boolean' ? String(treatOutputFileModifiedTimeAsStart) : 'disabled'} onChange={(e) => setTreatOutputFileModifiedTimeAsStart(e.target.value === 'disabled' ? null : (e.target.value === 'true'))}>
                   <option value="disabled">{t('Current time')}</option>
                   <option value="true">{t('Recording time + clip start')}</option>
@@ -406,7 +412,7 @@ function Settings({
             )}
 
             {showAdvancedSettings && (
-              <SettingRow label={t('Treat the recording\'s date as')} details={t('The recording file\'s modified date and time.')} controlId={sourceDateId}>
+              <SettingRow label={t('Treat the recording\'s date as')} details={t('The recording file\'s modified date and time.')} controlId={sourceDateId} labelExtra={backTo(treatOutputFileModifiedTimeAsStart != null && treatInputFileModifiedTimeAsStart !== dropdownDefaults.treatInputFileModifiedTimeAsStart, t('Start of video'), () => setTreatInputFileModifiedTimeAsStart(dropdownDefaults.treatInputFileModifiedTimeAsStart))}>
                 <Select id={sourceDateId} disabled={treatOutputFileModifiedTimeAsStart == null} value={String(treatInputFileModifiedTimeAsStart)} onChange={(e) => setTreatInputFileModifiedTimeAsStart((e.target.value === 'true'))}>
                   <option value="true">{t('Start of video')}</option>
                   <option value="false">{t('End of video')}</option>
@@ -420,7 +426,7 @@ function Settings({
       case 'snapshots': {
         return (
           <>
-            <SettingRow label={t('Image format')} description={t('For frames captured from the video.')} controlId={captureFormatId}>
+            <SettingRow label={t('Image format')} description={t('For frames captured from the video.')} controlId={captureFormatId} labelExtra={backTo(captureFormat !== dropdownDefaults.captureFormat, 'JPEG', () => setCaptureFormat(dropdownDefaults.captureFormat))}>
               <Select id={captureFormatId} value={captureFormat} onChange={(e) => setCaptureFormat(e.target.value as CaptureFormat)}>
                 <option value="jpeg">JPEG</option>
                 <option value="png">PNG</option>
@@ -453,6 +459,7 @@ function Settings({
             {showAdvancedSettings && (
               <SettingRow
                 label={t('Capture method')}
+                labelExtra={backTo(captureFrameMethod !== dropdownDefaults.captureFrameMethod, t('HTML video tag'), () => setCaptureFrameMethod(dropdownDefaults.captureFrameMethod))}
                 details={t('FFmpeg capture method might sometimes capture more correct colors, but the captured snapshot might be off by one or more frames, relative to the preview.')}
               >
                 <Select value={captureFrameMethod} onChange={(e) => setCaptureFrameMethod(e.target.value as typeof captureFrameMethod)} aria-label={t('Capture method')}>
@@ -465,6 +472,7 @@ function Settings({
             {showAdvancedSettings && (
               <SettingRow
                 label={t('Names of extracted frames')}
+                labelExtra={backTo(captureFrameFileNameFormat !== dropdownDefaults.captureFrameFileNameFormat, t('Frame timestamp'), () => setCaptureFrameFileNameFormat(dropdownDefaults.captureFrameFileNameFormat))}
                 details={t('Note that this only applies when extracting multiple frames. When "Frame number" is selected, frame numbers are relative to the start of the clip (starting from 1).')}
               >
                 <Select value={captureFrameFileNameFormat} onChange={(e) => setCaptureFrameFileNameFormat(e.target.value as typeof captureFrameFileNameFormat)} aria-label={t('Names of extracted frames')}>
@@ -499,6 +507,7 @@ function Settings({
 
             <SettingRow
               label={t('Where edits are kept')}
+              labelExtra={backTo(autoSaveProjectFile && projectFileLocation !== dropdownDefaults.projectFileLocation, t('In ClipPress'), () => { onProjectFileLocationChange(dropdownDefaults.projectFileLocation).catch(() => undefined); })}
               description={t('Where ClipPress saves the clips, text and settings for each recording.')}
               details={(
                 <>
