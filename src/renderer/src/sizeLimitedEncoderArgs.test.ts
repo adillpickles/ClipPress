@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getHevcLevel, getResolvedVideoArgs } from './sizeLimitedEncoderArgs';
+import { getEncodedFrameRate, getHevcLevel, getResolvedVideoArgs, parseFfprobeRate } from './sizeLimitedEncoderArgs';
 import type { SizeLimitedEncodedFrame } from './sizeLimitedEncoderArgs';
 import { resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import type { SizeLimitedEncoderCapabilities } from './sizeLimitedTypes';
@@ -468,5 +468,20 @@ describe('AMD and Intel HEVC, from their own recipes', () => {
     expect(basic).not.toContain('-extbrc');
     // H.264's are unchanged.
     expect(args({ h264Qsv: true })).not.toContain('-refs');
+  });
+});
+
+describe('getEncodedFrameRate', () => {
+  it("is FFmpeg's guess: the nominal rate, unless it's a time base, and never under the average", () => {
+    // A variable-rate recording that averages 30 but runs at 60 in places: FFmpeg encodes at 60.
+    expect(getEncodedFrameRate({ nominal: parseFfprobeRate('60/1'), average: 30 })).toBe(60);
+    expect(getEncodedFrameRate({ nominal: parseFfprobeRate('30000/1001'), average: 29.97 })).toBeCloseTo(29.97, 2);
+    // A time base reported as the rate: FFmpeg takes the average.
+    expect(getEncodedFrameRate({ nominal: parseFfprobeRate('1000/1'), average: 59.6 })).toBe(59.6);
+    expect(getEncodedFrameRate({ nominal: 24, average: 30 })).toBe(30);
+    expect(getEncodedFrameRate({ nominal: undefined, average: 30 })).toBe(30);
+    expect(getEncodedFrameRate({ nominal: undefined, average: undefined })).toBeUndefined();
+    expect(parseFfprobeRate('0/0')).toBeUndefined();
+    expect(parseFfprobeRate(undefined)).toBeUndefined();
   });
 });

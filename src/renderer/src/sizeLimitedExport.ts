@@ -25,7 +25,7 @@ import {
 } from './sizeLimitedFfmpegArgs';
 import { buildSizeLimitedVideoFilter, fitVideoProfileToEncoder, getSizeLimitedDisplayDimensions, resolveSizeLimitedVideoProfile, targetLowFps } from './sizeLimitedResolution';
 import { planSizeLimitedEncode, relaxQualityCapForGenerousBudget } from './sizeLimitedPlanner';
-import { getGpuProbeVideoArgs, hasQualityCap } from './sizeLimitedEncoderArgs';
+import { getEncodedFrameRate, getGpuProbeVideoArgs, hasQualityCap, parseFfprobeRate } from './sizeLimitedEncoderArgs';
 import type { SizeLimitedEncodedFrame } from './sizeLimitedEncoderArgs';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import { buildAudioMixFilter, buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
@@ -673,13 +673,14 @@ function resolveAttemptVideoProfile(args: Parameters<typeof resolveSizeLimitedVi
 
 /**
  * The picture an attempt encodes: its profile's size, else the source's as shown (a crop is scaled back to it), at its
- * frame rate, else the source's. Undefined when the source's isn't known.
+ * frame rate, else the one FFmpeg will use for the source (`nominalFps`: its `r_frame_rate`). Undefined when the
+ * source's isn't known.
  */
-function getAttemptFrame(videoProfile: ReturnType<typeof resolveAttemptVideoProfile>, args: Parameters<typeof resolveSizeLimitedVideoProfile>[0]): SizeLimitedEncodedFrame | undefined {
+function getAttemptFrame(videoProfile: ReturnType<typeof resolveAttemptVideoProfile>, args: Parameters<typeof resolveSizeLimitedVideoProfile>[0], nominalFps: number | undefined): SizeLimitedEncodedFrame | undefined {
   const display = getSizeLimitedDisplayDimensions(args);
   const width = videoProfile.outputWidth ?? display?.width;
   const height = videoProfile.outputHeight ?? display?.height;
-  const fps = videoProfile.outputFps ?? args.sourceFps;
+  const fps = videoProfile.outputFps ?? getEncodedFrameRate({ nominal: nominalFps, average: args.sourceFps });
   if (width == null || height == null || fps == null || !(fps > 0)) return undefined;
   return { width, height, fps };
 }
@@ -1125,7 +1126,7 @@ export async function exportSizeLimitedSegment({
   advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
   advancedHevcCpuPreset: SizeLimitAdvancedH264CpuPreset,
   advancedHevcNvencPreset: SizeLimitAdvancedNvencPreset,
-  videoStream: Pick<FFprobeStream, 'index' | 'width' | 'height' | 'codec_name' | 'pix_fmt'>,
+  videoStream: Pick<FFprobeStream, 'index' | 'width' | 'height' | 'codec_name' | 'pix_fmt'> & Partial<Pick<FFprobeStream, 'r_frame_rate'>>,
   audioStream: Pick<FFprobeStream, 'index' | 'codec_name'> | undefined,
   enableOverwriteOutput: boolean,
   ffmpegExperimental: boolean,
@@ -1273,7 +1274,7 @@ export async function exportSizeLimitedSegment({
               plannedVideoBitrate: attempt.videoBitrate,
             };
             const videoProfile = resolveAttemptVideoProfile(profileArgs, strategy.encoder);
-            const frame = getAttemptFrame(videoProfile, profileArgs);
+            const frame = getAttemptFrame(videoProfile, profileArgs, parseFfprobeRate(videoStream.r_frame_rate));
             const baseVideoFilter = buildSizeLimitedVideoFilter({ videoProfile });
             const dimensions = getRotatedVideoDimensions({ width: videoStream.width!, height: videoStream.height!, rotation: sourceRotation ?? rotation });
             const cropFilter = getSegmentCropFilter(segment, dimensions.width, dimensions.height);
@@ -1475,7 +1476,7 @@ export async function exportSizeLimitedMerge({
   advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
   advancedHevcCpuPreset: SizeLimitAdvancedH264CpuPreset,
   advancedHevcNvencPreset: SizeLimitAdvancedNvencPreset,
-  videoStream: Pick<FFprobeStream, 'index' | 'width' | 'height' | 'codec_name' | 'pix_fmt'>,
+  videoStream: Pick<FFprobeStream, 'index' | 'width' | 'height' | 'codec_name' | 'pix_fmt'> & Partial<Pick<FFprobeStream, 'r_frame_rate'>>,
   audioStream: Pick<FFprobeStream, 'index'> | undefined,
   enableOverwriteOutput: boolean,
   ffmpegExperimental: boolean,
@@ -1590,7 +1591,7 @@ export async function exportSizeLimitedMerge({
               plannedVideoBitrate: attempt.videoBitrate,
             };
             const videoProfile = resolveAttemptVideoProfile(profileArgs, strategy.encoder);
-            const frame = getAttemptFrame(videoProfile, profileArgs);
+            const frame = getAttemptFrame(videoProfile, profileArgs, parseFfprobeRate(videoStream.r_frame_rate));
             const dimensions = getRotatedVideoDimensions({ width: videoStream.width!, height: videoStream.height!, rotation: sourceRotation ?? rotation });
             const filterComplex = getConcatFilter({
               segments,

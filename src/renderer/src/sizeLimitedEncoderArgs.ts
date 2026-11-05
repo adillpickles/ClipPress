@@ -67,6 +67,26 @@ export function getHevcLevel({ width, height, fps, maxBitrate, bufferSize }: { w
     ?? hevcLevels.at(-1)!).idc;
 }
 
+/**
+ * The rate FFmpeg encodes a video at when nothing sets one, as its av_guess_frame_rate picks it: the stream's nominal
+ * rate (ffprobe's `r_frame_rate`), unless that's over 210 while the average is under 70 (a time base, not a rate);
+ * never below the average, so a level worked out from it is never too low (a variable-rate recording can average 30
+ * and still have 60 a second in places).
+ */
+export function getEncodedFrameRate({ nominal, average }: { nominal: number | undefined, average: number | undefined }) {
+  const guessed = nominal != null && nominal > 0 && !(nominal > 210 && average != null && average < 70) ? nominal : average;
+  if (guessed == null) return average;
+  return Math.max(guessed, average ?? 0);
+}
+
+/** A rate as ffprobe writes it ("60/1", "30000/1001"), or undefined. */
+export function parseFfprobeRate(value: string | undefined) {
+  const match = value?.match(/^(\d+)\/(\d+)$/u);
+  if (match == null) return undefined;
+  const den = Number(match[2]);
+  return den > 0 ? Number(match[1]) / den : undefined;
+}
+
 /** The encoded picture's size and rate, where known (AMD's HEVC declares its level from them). */
 export interface SizeLimitedEncodedFrame {
   width: number,
