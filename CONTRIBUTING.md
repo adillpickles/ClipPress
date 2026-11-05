@@ -26,6 +26,9 @@ yarn download-ffmpeg-win32-x64
 
 This needs [7-Zip](https://www.7-zip.org/download.html)'s `7z` in your `PATH`.
 
+On Linux (for development only; ClipPress ships for Windows), put an FFmpeg 9 `ffmpeg` and `ffprobe` in
+`ffmpeg/linux-x64/lib/`, or pick the folder with them under Settings > Custom FFmpeg.
+
 ### Running and checking
 
 ```bash
