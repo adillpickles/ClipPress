@@ -1099,6 +1099,12 @@ function KeyboardShortcutsDialog({
   const { t } = useTranslation();
   const { simpleMode } = useUserSettings();
   const [view, setView] = useState<'essentials' | 'all' | undefined>(initialView);
+  // It stays mounted once opened (so it can fade out): each opening starts from the view it's opened with.
+  const [wasShown, setWasShown] = useState(isShown);
+  if (isShown !== wasShown) {
+    setWasShown(isShown);
+    if (isShown) setView(initialView);
+  }
   // The simple editor shows only its own shortcuts: the full list is LosslessCut's every action, advanced mode's.
   const effectiveView = simpleMode ? 'essentials' : (view ?? 'all');
 

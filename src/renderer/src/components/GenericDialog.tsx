@@ -14,6 +14,7 @@ import ExportResult from './ExportResult';
 import { morphFromWorkingCard } from './Working';
 import HelpTip from './HelpTip';
 import styles from './GenericDialog.module.css';
+import useLastDefined from '../hooks/useLastDefined';
 
 
 export interface GenericDialogParams {
@@ -63,6 +64,9 @@ export default function GenericDialog({ dialog, onOpenChange }: {
   onOpenChange: (open: boolean) => void,
 }) {
   const context = useMemo(() => ({ onOpenChange }), [onOpenChange]);
+  // Each kind keeps showing its last dialog while it fades out (their contents belong to their own root).
+  const shownDialog = useLastDefined(dialog != null && !dialog.isAlert ? dialog : undefined);
+  const shownAlert = useLastDefined(dialog != null && dialog.isAlert ? dialog : undefined);
 
   return (
     <>
@@ -72,7 +76,7 @@ export default function GenericDialog({ dialog, onOpenChange }: {
           <Dialog.Overlay />
 
           <GenericDialogContext.Provider value={context}>
-            {dialog != null && !dialog.isAlert && dialog.render()}
+            {shownDialog?.render()}
           </GenericDialogContext.Provider>
         </Dialog.Portal>
       </Dialog.Root>
@@ -83,7 +87,7 @@ export default function GenericDialog({ dialog, onOpenChange }: {
           <AlertDialog.Overlay />
 
           <GenericDialogContext.Provider value={context}>
-            {dialog != null && dialog.isAlert && dialog.render()}
+            {shownAlert?.render()}
           </GenericDialogContext.Provider>
         </AlertDialog.Portal>
       </AlertDialog.Root>

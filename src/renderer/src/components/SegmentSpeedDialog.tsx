@@ -10,7 +10,9 @@ import useUserSettings from '../hooks/useUserSettings';
 import { formatClipLength } from '../util/clockTime';
 import styles from './SegmentSpeed.module.css';
 
-export default function SegmentSpeedDialog({ segment, fileDuration, formatTimecode, onApply, onClose }: {
+export default function SegmentSpeedDialog({ open, segment, fileDuration, formatTimecode, onApply, onClose }: {
+  /** Kept mounted while it fades out after closing. */
+  open: boolean,
   segment: StateSegment,
   fileDuration: number | undefined,
   formatTimecode: FormatTimecode,
@@ -22,12 +24,18 @@ export default function SegmentSpeedDialog({ segment, fileDuration, formatTimeco
   // Simple mode says "clip" and writes every length as a clock time, like the speed band and the Clips panel.
   const formatDuration = (seconds: number) => (simpleMode ? formatClipLength(seconds) : formatTimecode({ seconds }));
   const [percent, setPercent] = useState(String(getSegmentSpeed(segment) * 100));
+  // Opened again for the same clip: its current speed, not what was typed last time.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setPercent(String(getSegmentSpeed(segment) * 100));
+  }
   const speed = Number(percent) / 100;
   const valid = isSegmentSpeedValid(speed);
   const originalDuration = getSegmentOutputDuration({ ...segment, speed: 1 }, 1, fileDuration);
 
   return (
-    <Dialog.Root open onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog.Root open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
       <Dialog.Portal>
         <Dialog.Overlay />
         <Dialog.Content style={{ width: 380, maxWidth: 'calc(100vw - 48px)' }}>

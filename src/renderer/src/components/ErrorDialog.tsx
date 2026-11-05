@@ -4,6 +4,7 @@ import { FaExclamationTriangle } from 'react-icons/fa';
 import * as Dialog from './Dialog';
 import { DialogButton } from './Button';
 import { warningColor } from '../colors';
+import useLastDefined from '../hooks/useLastDefined';
 
 
 export interface GenericError {
@@ -19,21 +20,23 @@ export default function ErrorDialog({ error, onOpenChange }: {
   onOpenChange: (open: boolean) => void,
 }) {
   const { t } = useTranslation();
+  // The message stays while the dialog fades out.
+  const shownError = useLastDefined(error);
 
   return (
     <Dialog.Root open={error != null} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay />
         <Dialog.Content aria-describedby={t('An error has occurred.')} style={{ width: '40em' }}>
-          {error != null && (
+          {shownError != null && (
             <>
               <Dialog.Title>
                 <FaExclamationTriangle style={{ color: warningColor, marginRight: '.5em', verticalAlign: 'middle' }} />
-                {error.title ?? t('Error')}
+                {shownError.title ?? t('Error')}
               </Dialog.Title>
 
               <div style={{ overflow: 'auto', maxHeight: '50vh', whiteSpace: 'pre-wrap' }}>
-                {error.err instanceof Error ? error.err.message : String(error.err)}
+                {shownError.err instanceof Error ? shownError.err.message : String(shownError.err)}
               </div>
             </>
           )}

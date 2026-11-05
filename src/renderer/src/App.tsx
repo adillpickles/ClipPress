@@ -23,6 +23,8 @@ import { nanoid } from 'nanoid';
 
 import useTimelineScroll from './hooks/useTimelineScroll';
 import useUserSettingsRoot from './hooks/useUserSettingsRoot';
+import useLastDefined from './hooks/useLastDefined';
+import useStaysMounted from './hooks/useStaysMounted';
 import useFfmpegOperations, {
   maybeMkDeepOutDir,
   OutputNotWritableError,
@@ -500,6 +502,7 @@ function App() {
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>('general');
   const [keyboardShortcutsVisible, setKeyboardShortcutsVisible] = useState(false);
+  const keyboardShortcutsMounted = useStaysMounted(keyboardShortcutsVisible);
   const [keyboardShortcutsView, setKeyboardShortcutsView] = useState<'all'>();
   const [alwaysConcatMultipleFiles, setAlwaysConcatMultipleFiles] = useState(false);
   const [editingSegmentTagsSegmentIndex, setEditingSegmentTagsSegmentIndex] = useState<number>();
@@ -1391,6 +1394,7 @@ function App() {
 
   const [editingSpeedSegmentId, setEditingSpeedSegmentId] = useState<string>();
   const editingSpeedSegment = cutSegments.find((segment) => segment.segId === editingSpeedSegmentId);
+  const speedDialogSegment = useLastDefined(editingSpeedSegment);
   // Retimed segments show their speed bar until hidden; Ctrl+R toggles it like Resolve's retime controls.
   const speedControlsSegmentIds = useMemo(() => new Set(invertCutSegments ? [] : cutSegments
     .filter((segment) => segment.end != null && (speedControlsBySegment[segment.segId] ?? getSegmentSpeed(segment) !== 1))
@@ -8175,8 +8179,8 @@ function App() {
                 onOutputFormatUserChange={onOutputFormatUserChange}
               />
 
-              {/* Loaded the first time it's opened, not at every start */}
-              {keyboardShortcutsVisible && (
+              {/* Loaded the first time it's opened, not at every start; then kept, so it fades out when it closes. */}
+              {keyboardShortcutsMounted && (
                 <Suspense fallback={null}>
                   <KeyboardShortcuts
                     isShown={keyboardShortcutsVisible}
@@ -8227,14 +8231,16 @@ function App() {
                 onOpenChange={(open) => !open && closeGenericDialog()}
               />
 
-              {editingSpeedSegment != null && (
+              {/* Kept with its clip while it fades out. */}
+              {speedDialogSegment != null && (
                 <SegmentSpeedDialog
-                  key={editingSpeedSegment.segId}
-                  segment={editingSpeedSegment}
+                  key={speedDialogSegment.segId}
+                  open={editingSpeedSegment != null}
+                  segment={speedDialogSegment}
                   fileDuration={fileDuration}
                   formatTimecode={formatTimecode}
                   onApply={(speed) => {
-                    changeSegmentSpeed(editingSpeedSegment.segId, speed);
+                    changeSegmentSpeed(speedDialogSegment.segId, speed);
                     setEditingSpeedSegmentId(undefined);
                   }}
                   onClose={() => setEditingSpeedSegmentId(undefined)}

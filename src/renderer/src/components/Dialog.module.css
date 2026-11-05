@@ -43,6 +43,8 @@
 
 	&[data-state="closed"] {
 		animation: contentHide 120ms cubic-bezier(0.16, 1, 0.3, 1);
+		/* Fading out: its buttons can't be clicked a second time. */
+		pointer-events: none;
 	}
 }
 
