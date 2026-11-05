@@ -282,12 +282,25 @@ describe('result notes', () => {
     for (const videoFormat of ['hevc', 'h264'] as const) {
       for (const capabilities of pcs) {
         for (const preset of presets) {
-          const { notices, warnings } = notesFor(resolve(preset, capabilities, videoFormat));
-          expect(warnings, `${videoFormat} ${preset} ${JSON.stringify(capabilities)}`).toEqual([]);
-          expect(notices.length).toBe(1);
+          for (const gpuSwitchedOff of [false, true]) {
+            const strategy = resolve(preset, gpuSwitchedOff ? withoutGpuEncoders(capabilities) : capabilities, videoFormat);
+            const { notices, warnings } = notesFor(strategy, gpuSwitchedOff);
+            expect(warnings, `${videoFormat} ${preset} ${JSON.stringify(capabilities)} GPU off: ${gpuSwitchedOff}`).toEqual([]);
+            expect(notices.length).toBe(1);
+            // Never blames a missing AV1 encoder for an HEVC or H.264 export.
+            expect(notices[0]).not.toContain('AV1');
+          }
         }
       }
     }
+  });
+
+  it('say what happened in plain words for the common step-downs', () => {
+    expect(notesFor(resolve('quality', gtx750(16))).notices).toEqual(['This GPU has no HEVC encoder, so Quality used CPU HEVC (x265), which takes longer.']);
+    expect(notesFor(resolve('quality', gtx750(4))).notices).toEqual(['This GPU has no HEVC encoder, so Quality used NVIDIA H.264.']);
+    expect(notesFor(resolve('quality', withoutGpuEncoders(rtx40)), true).notices).toEqual(['Use the GPU is off, so CPU HEVC (x265) was used.']);
+    // AV1 keeps its own wording from before HEVC became the default.
+    expect(notesFor(resolve('quality', { ...gtx750(2), libx265: false }, 'av1')).notices).toEqual(['This GPU has no AV1 encoder, so Quality used NVIDIA H.264 to keep the export quick.']);
   });
 
   it("keep AV1's warning when it had to make H.264, as before", () => {
