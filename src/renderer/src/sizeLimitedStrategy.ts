@@ -54,14 +54,14 @@ function nvencUhqFields(gpu: NonNullable<ReturnType<typeof pickGpuEncoder>>, cap
 }
 
 /**
- * Quality on the graphics card's HEVC. With NVIDIA's "ultra high quality" tuning, p5: as quick as "hq" at p6 and better
- * on every test clip (measured on an RTX 5060 Ti, three game recordings at the same bitrate: VMAF +0.03 to +0.35 on
- * average, up to +8 on the worst 5% of frames, files 5% smaller). p6 with it was a little better again, but half as
- * slow.
+ * Quality on the graphics card's HEVC. With NVIDIA's "ultra high quality" tuning, p4: 25% quicker than "hq" at p6 on
+ * 1080p60 and 13% on 1440p30, for the same picture (measured on an RTX 5060 Ti, three game recordings at the same
+ * bitrate, read the way the app reads them: VMAF 0.1 lower on average, better on the hardest clip's worst frames). p5
+ * added 0.3 for 38% more time.
  */
 function gpuHevcQualityFields(gpu: NonNullable<ReturnType<typeof pickGpuEncoder>>, capabilities: SizeLimitedEncoderCapabilities) {
   const uhq = nvencUhqFields(gpu, capabilities);
-  return { encoderPreset: uhq.nvencUhq ? 'p5' : 'p6', ...gpuFields(gpu, false, capabilities), ...uhq } as const;
+  return { encoderPreset: uhq.nvencUhq ? 'p4' : 'p6', ...gpuFields(gpu, false, capabilities), ...uhq } as const;
 }
 
 /**

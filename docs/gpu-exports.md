@@ -43,10 +43,11 @@ Max Quality's first pass uses x265's quicker settings: the same result in a thir
 Main profile, tagged `hvc1` (Apple's players and Photos need it), in H.264's tight bitrate window.
 
 NVIDIA's HEVC was measured on an RTX 5060 Ti (three game recordings, 1080p60 and 1440p30, same bitrate, VMAF):
-- **Quality** uses NVIDIA's "ultra high quality" tuning at p5 where the card takes it. It's as quick as the `hq`
-  tuning at p6 and better on every clip: VMAF +0.03 to +0.35 on average, up to +8 on the worst 5% of frames, with
-  files about 5% smaller. NVIDIA doesn't say which cards before the RTX 40 take it, so the encoder check asks the
-  card. Without it, Quality stays on `hq` at p6. If it fails during an export, the export goes on with `hq`.
+- **Quality** uses NVIDIA's "ultra high quality" tuning at p4 where the card takes it. Read the way ClipPress reads a
+  recording, it's 25% quicker than the `hq` tuning at p6 on 1080p60 and 13% on 1440p30, for the same picture (VMAF
+  0.1 lower on average, better on the hardest clip's worst frames). p5 added 0.3 for 38% more time. NVIDIA doesn't say
+  which cards before the RTX 40 take it, so the encoder check asks the card. Without it, Quality stays on `hq` at p6.
+  If it fails during an export, the export goes on with `hq`.
 - **Fast** uses p4 rather than p3: VMAF +0.7 to +2 for 5% more time. AMD and Intel keep p3, since they read the preset
   on their own scales and weren't measured.
 - **Max Quality** stays on x265's two passes, 2–4 VMAF above the card's best settings. The card's HEVC (ultra high

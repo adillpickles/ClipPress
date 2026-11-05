@@ -55,13 +55,13 @@ describe('Video format HEVC (the default)', () => {
     expect(resolve('max_quality', rtx40)).toMatchObject({ id: 'max_quality_hevc_cpu', encoder: 'libx265', encoderPreset: 'slow', executionMode: 'ffmpeg_two_pass', usesGpu: false });
   });
 
-  it("gives Quality NVIDIA's ultra high quality tuning at p5 where the card takes it, else hq at p6", () => {
+  it("gives Quality NVIDIA's ultra high quality tuning at p4 where the card takes it, else hq at p6", () => {
     const uhqCard = { ...rtx40, hevcNvencUhq: true };
     const quality = resolve('quality', uhqCard);
-    expect(quality).toMatchObject({ id: 'quality_hevc_gpu', encoder: 'hevc_nvenc', encoderPreset: 'p5', nvencUhq: true });
+    expect(quality).toMatchObject({ id: 'quality_hevc_gpu', encoder: 'hevc_nvenc', encoderPreset: 'p4', nvencUhq: true });
     const args = getResolvedVideoArgs({ strategy: quality, videoBitrate: 3_000_000, twoPass: false, videoProfile, sourceFps: 60, outputPlaybackRate: 1 });
     expect(getArgValue(args, '-tune')).toBe('uhq');
-    expect(getArgValue(args, '-preset')).toBe('p5');
+    expect(getArgValue(args, '-preset')).toBe('p4');
     expect(getArgValue(args, '-tag:v')).toBe('hvc1');
     // Without it (an unknown or older card), today's tuned settings.
     const hq = resolve('quality', rtx40);
@@ -70,7 +70,7 @@ describe('Video format HEVC (the default)', () => {
     // Max quality on the card (an FFmpeg without x265) too, at p7 with the full-resolution first pass.
     expect(resolve('max_quality', { ...uhqCard, libx265: false })).toMatchObject({ id: 'max_quality_hevc_gpu', encoderPreset: 'p7', encoderMultipass: true, nvencUhq: true });
     // Also when Video format AV1 falls back to HEVC on a card without AV1.
-    expect(resolve('quality', { ...uhqCard, av1Nvenc: false }, 'av1')).toMatchObject({ id: 'quality_hevc_gpu', encoderPreset: 'p5', nvencUhq: true });
+    expect(resolve('quality', { ...uhqCard, av1Nvenc: false }, 'av1')).toMatchObject({ id: 'quality_hevc_gpu', encoderPreset: 'p4', nvencUhq: true });
     // Never for Fast, for basic settings, or on another maker's card.
     expect(resolve('fast', uhqCard).nvencUhq).toBeUndefined();
     expect(resolve('quality', { ...uhqCard, basicSettingsOnly: ['hevcNvenc'] })).toMatchObject({ encoderPreset: 'p6', basicEncoderSettings: true });

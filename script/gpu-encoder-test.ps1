@@ -45,9 +45,9 @@ if ($Vendor -eq 'nvidia') {
   $hevcUhq = @('-c:v', 'hevc_nvenc', '-tune', 'uhq', '-profile:v', 'main', '-rc', 'vbr')
   $hevcRest = @('-rc-lookahead', '20', '-temporal-aq', '1', '-strict_gop', '1', '-b_ref_mode', 'middle', '-spatial-aq', '1', '-aq-strength', '8', '-pix_fmt', 'yuv420p', '-tag:v', 'hvc1')
   # GPU HEVC as ClipPress runs it (the default for everyone with a card that makes HEVC). Quality: the "ultra high
-  # quality" tuning at p5 on a card that takes it (an RTX 40/50 does; an older one may refuse it: the case then fails),
+  # quality" tuning at p4 on a card that takes it (an RTX 40/50 does; an older one may refuse it: the case then fails),
   # otherwise hq at p6.
-  $cases['gpu-hevc-quality'] = $hevcUhq + @('-preset', 'p5', '-multipass', 'qres') + $hevcRest + $win
+  $cases['gpu-hevc-quality'] = $hevcUhq + @('-preset', 'p4', '-multipass', 'qres') + $hevcRest + $win
   $cases['gpu-hevc-quality-without-uhq'] = $hevc + @('-preset', 'p6', '-multipass', 'qres') + $hevcRest + $win
   $cases['gpu-hevc-fast'] = $hevc + @('-preset', 'p4', '-multipass', 'qres', '-rc-lookahead', '12', '-temporal-aq', '1', '-strict_gop', '1', '-spatial-aq', '1', '-aq-strength', '6', '-pix_fmt', 'yuv420p', '-tag:v', 'hvc1') + $win
   # Max quality on the card, as ClipPress runs it when this FFmpeg has no x265 (otherwise Max quality is x265, below).
