@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChromiumHTMLVideoElement, PlaybackMode } from '../types';
 import { showPlaybackFailedMessage } from '../swal';
 import { createSeekQueue } from '../seekQueue';
-import { getUserPlaybackRate, getVideoPlaybackRate } from '../previewPlaybackRate';
+import { getVideoPlaybackRate, stepUserPlaybackRate } from '../previewPlaybackRate';
 
 export default ({ filePath }: { filePath: string | undefined }) => {
   const [commandedTime, setCommandedTimeRaw] = useState(0);
@@ -28,7 +28,8 @@ export default ({ filePath }: { filePath: string | undefined }) => {
   const applyPlaybackRate = useCallback(() => {
     const rate = getVideoPlaybackRate({ userRate: userPlaybackRateRef.current, speeds: outputPlaybackRateRef.current * segmentPreviewSpeedRef.current });
     const video = videoRef.current;
-    if (video != null) {
+    // Set only when it changes: this runs for every frame of a sped-up preview.
+    if (video != null && video.playbackRate !== rate) {
       video.playbackRate = rate;
       video.preservesPitch = true;
     }
@@ -40,9 +41,9 @@ export default ({ filePath }: { filePath: string | undefined }) => {
     applyPlaybackRate();
   }, [applyPlaybackRate]);
 
-  /** The rate the video plays at (J and L work on it): their factor is what's left of it after the speeds. */
-  const setPlaybackRate = useCallback((rate: number) => {
-    userPlaybackRateRef.current = getUserPlaybackRate({ rate, speeds: outputPlaybackRateRef.current * segmentPreviewSpeedRef.current });
+  /** J (direction < 0) and L (> 0): their own factor, a step slower or faster. */
+  const changeUserPlaybackRate = useCallback((direction: number, multiplier?: number) => {
+    userPlaybackRateRef.current = stepUserPlaybackRate({ userRate: userPlaybackRateRef.current, direction, multiplier });
     applyPlaybackRate();
   }, [applyPlaybackRate]);
 
@@ -161,7 +162,7 @@ export default ({ filePath }: { filePath: string | undefined }) => {
     videoRef,
     videoContainerRef,
     playbackRate,
-    setPlaybackRate,
+    changeUserPlaybackRate,
     resetPlaybackRate,
     setSegmentPreviewSpeed,
     outputPlaybackRate,

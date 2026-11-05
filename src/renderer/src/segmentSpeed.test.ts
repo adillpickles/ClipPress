@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { getAudioTempoFilter, getPreviewSegmentSpeed, getSegmentOutputDuration, getSegmentPlaybackRate, getSegmentSpeed, getSpeedForOutputDuration, isSegmentSpeedValid } from './segmentSpeed';
 import { createSegment, mapSaveableSegments } from './segments';
-import { getUserPlaybackRate, getVideoPlaybackRate } from './previewPlaybackRate';
+import { getVideoPlaybackRate, stepUserPlaybackRate } from './previewPlaybackRate';
 import { llcProjectV3Schema } from './types';
 
 describe('segment speed', () => {
@@ -92,7 +92,9 @@ describe('clip speed from 10% to 1600%', () => {
       const project = llcProjectV3Schema.parse({ version: 3, mediaFileName: 'a.mp4', cutSegments: mapSaveableSegments([segment]) });
       expect(project.cutSegments[0]?.speed).toBe(speed);
     }
-    expect(() => llcProjectV3Schema.parse({ version: 3, mediaFileName: 'a.mp4', cutSegments: [{ start: 0, end: 1, speed: 17 }] })).toThrow();
+    // A speed from a newer version plays at 100% here, rather than the whole project failing to open.
+    const fromNewer = llcProjectV3Schema.parse({ version: 3, mediaFileName: 'a.mp4', cutSegments: [{ start: 0, end: 1, name: '', speed: 32 }] });
+    expect(getSegmentSpeed(fromNewer.cutSegments[0]!)).toBe(1);
   });
 });
 
@@ -105,13 +107,28 @@ describe('preview playback rate', () => {
     expect(getVideoPlaybackRate({ userRate: 1.5, speeds: 2 })).toBe(3);
   });
 
-  it("keeps J and L's own factor, up to 8×", () => {
-    expect(getUserPlaybackRate({ rate: 3, speeds: 2 })).toBe(1.5);
-    expect(getUserPlaybackRate({ rate: 20, speeds: 1 })).toBe(8);
-    // At a 1600% clip, the 16× the video already plays at leaves J and L at 1×: speeding up does nothing.
-    expect(getUserPlaybackRate({ rate: 16, speeds: 16 })).toBe(1);
-    // A clip moving from 1600% back to 100% then plays at J and L's own speed, not at a factor worked back from 16×.
-    const userRate = getUserPlaybackRate({ rate: 12.7, speeds: 16 });
-    expect(getVideoPlaybackRate({ userRate, speeds: 1 })).toBeCloseTo(12.7 / 16, 5);
+  it("steps J and L's own factor, up to 8×, whatever the capped rate the video plays at", () => {
+    // Three L presses: 2×.
+    let userRate = 1;
+    for (let i = 0; i < 3; i += 1) userRate = stepUserPlaybackRate({ userRate, direction: 1 });
+    expect(userRate).toBeCloseTo(2, 5);
+    // In a 1600% clip the video is capped at 16×; one more L is still a step up of J and L's own factor...
+    expect(getVideoPlaybackRate({ userRate, speeds: 16 })).toBe(16);
+    userRate = stepUserPlaybackRate({ userRate, direction: 1 });
+    expect(userRate).toBeCloseTo(2 ** (4 / 3), 5);
+    // ...so a 100% clip after it plays at that, not at a factor worked back from 16×.
+    expect(getVideoPlaybackRate({ userRate, speeds: 1 })).toBeCloseTo(2 ** (4 / 3), 5);
+    for (let i = 0; i < 20; i += 1) userRate = stepUserPlaybackRate({ userRate, direction: 1 });
+    expect(userRate).toBe(8);
+  });
+
+  it('slows J down from its own factor in a 10% clip, never speeding up', () => {
+    let userRate = 1;
+    for (let i = 0; i < 3; i += 1) userRate = stepUserPlaybackRate({ userRate, direction: -1 });
+    expect(userRate).toBeCloseTo(0.5, 5);
+    const before = getVideoPlaybackRate({ userRate, speeds: 0.1 });
+    userRate = stepUserPlaybackRate({ userRate, direction: -1 });
+    expect(getVideoPlaybackRate({ userRate, speeds: 0.1 })).toBeLessThanOrEqual(before);
+    expect(userRate).toBeLessThan(0.5);
   });
 });

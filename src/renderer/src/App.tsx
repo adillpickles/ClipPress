@@ -175,7 +175,6 @@ import getSwal, { errorToast, showPlaybackFailedMessage } from './swal';
 import { addRecentFile, removeRecentFile } from './util/recentFiles';
 import { assertOutPathsNotSource, getMergeProtectedPaths, isSourcePath, makeSafeOutFileNames } from './util/sourceProtection';
 import type { SourceSafeFileNameAdjustment } from './util/sourceProtection';
-import { adjustRate } from './util/rate-calculator';
 import { getWrittenExportPaths } from './util/exportResults';
 import type { ExportedFile } from './util/exportResults';
 import { askExtractFramesAsImages } from './dialogs/extractFrames';
@@ -719,7 +718,7 @@ function App() {
     videoRef,
     videoContainerRef,
     playbackRate,
-    setPlaybackRate,
+    changeUserPlaybackRate,
     resetPlaybackRate: resetVideoPlaybackRate,
     setSegmentPreviewSpeed,
     outputPlaybackRate,
@@ -1527,6 +1526,20 @@ function App() {
 
   const previewSegmentSpeed = invertCutSegments ? 1 : getPreviewSegmentSpeed(cutSegments, currentSegIndexSafe, relevantTime, fileDuration);
   useEffect(() => setSegmentPreviewSpeed(previewSegmentSpeed), [previewSegmentSpeed, setSegmentPreviewSpeed]);
+  // Playing, a clip's speed starts on its first frame: the time above follows `timeupdate`, which comes only every
+  // ~250 ms (up to 4 s of a 1600% clip).
+  const hasSpedClips = !invertCutSegments && cutSegments.some((segment) => getSegmentSpeed(segment) !== 1);
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!playing || !hasSpedClips || video == null) return undefined;
+    let handle = 0;
+    const onFrame: VideoFrameRequestCallback = (_now, { mediaTime }) => {
+      setSegmentPreviewSpeed(getPreviewSegmentSpeed(cutSegments, currentSegIndexSafe, mediaTime, fileDuration));
+      handle = video.requestVideoFrameCallback(onFrame);
+    };
+    handle = video.requestVideoFrameCallback(onFrame);
+    return () => video.cancelVideoFrameCallback(handle);
+  }, [currentSegIndexSafe, cutSegments, fileDuration, hasSpedClips, playing, setSegmentPreviewSpeed, videoRef]);
   useEffect(() => {
     speedControlsHistory.reset({});
     setEditingSpeedSegmentId(undefined);
@@ -5068,11 +5081,10 @@ function App() {
       if (!playingRef.current) {
         video!.play();
       } else {
-        const newRate = adjustRate(video!.playbackRate, dir, rateMultiplier);
-        setPlaybackRate(newRate);
+        changeUserPlaybackRate(dir, rateMultiplier);
       }
     },
-    [playingRef, setPlaybackRate, videoRef],
+    [changeUserPlaybackRate, playingRef, videoRef],
   );
 
   const loadEdlFile = useCallback(

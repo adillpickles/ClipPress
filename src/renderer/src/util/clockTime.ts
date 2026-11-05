@@ -28,6 +28,8 @@ export default function formatClockTime(seconds: number, { showHours = false, de
  * the clock.
  */
 export function formatClipLength(seconds: number) {
+  // A clip under a tenth of a second (a short one at 1600%) gets hundredths, so it never reads "0.0 s".
+  if (seconds > 0 && Math.abs(seconds) < 0.1) return `${Math.max(0.01, Math.floor(Math.abs(seconds) * 100 + 1e-6) / 100).toFixed(2)} s`;
   if (Math.abs(seconds) < 60) return `${(Math.floor(Math.abs(seconds) * 10 + 1e-6) / 10).toFixed(1)} s`;
   return formatClockTime(seconds, { decimals: 1 });
 }

@@ -72,7 +72,7 @@ export default function SegmentSpeedDialog({ open, segment, fileDuration, format
               <span>{t('Original duration')}</span><span>{formatDuration(originalDuration)}</span>
               <strong>{t('New duration')}</strong><strong>{valid ? formatDuration(originalDuration / speed) : '—'}</strong>
             </div>
-            {!valid && <div role="alert" className={styles['error']}>{t('Enter a speed between 25% and 400%.')}</div>}
+            {!valid && <div role="alert" className={styles['error']}>{t('Enter a speed between 10% and 1600%.')}</div>}
             <Dialog.ButtonRow>
               <DialogButton onClick={() => setPercent('100')}>{t('Reset')}</DialogButton>
               <DialogButton onClick={onClose}>{t('Cancel')}</DialogButton>

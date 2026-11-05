@@ -1,3 +1,5 @@
+import { adjustRate } from './util/rate-calculator';
+
 /**
  * The preview plays at the clip's speed times advanced mode's whole-export speed times J and L's. Chromium refuses a
  * rate above 16× or below 1/16×; up to 16× it keeps the sound, its pitch preserved (measured).
@@ -12,7 +14,7 @@ export function getVideoPlaybackRate({ userRate, speeds }: { userRate: number, /
   return Math.min(maxVideoPlaybackRate, Math.max(minVideoPlaybackRate, userRate * speeds));
 }
 
-/** J and L's factor in a rate the video is asked to play at, given the speeds it plays on top of. */
-export function getUserPlaybackRate({ rate, speeds }: { rate: number, speeds: number }) {
-  return Math.min(maxUserPlaybackRate, Math.max(minVideoPlaybackRate, rate / speeds));
+/** J and L's next factor, stepped on their own (never worked back out of a rate that was capped). */
+export function stepUserPlaybackRate({ userRate, direction, multiplier }: { userRate: number, direction: number, multiplier?: number | undefined }) {
+  return Math.min(maxUserPlaybackRate, Math.max(minVideoPlaybackRate, adjustRate(userRate, direction, multiplier)));
 }

@@ -110,6 +110,8 @@ export default function ScrubNumberInput({ id, value, onChange, onBlur, min, max
         type="text"
         inputMode="numeric"
         className={styles['input']}
+        // Wide enough for its longest value (four digits, a 1600% speed), never narrower than before.
+        style={compact ? undefined : { width: `${Math.max(3, String(max).length) + 0.2}ch` }}
         value={value}
         onChange={(e) => onChange(e.target.value.replaceAll(/[^\d.]/g, ''), { typed: true })}
         onBlur={onBlur}

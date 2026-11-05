@@ -453,7 +453,7 @@
   "Enter a JavaScript expression which will be evaluated for each segment. Segments for which the expression evaluates to \"true\" will be selected. <1>View available syntax.</1>": "Enter a JavaScript expression which will be evaluated for each segment. Segments for which the expression evaluates to \"true\" will be selected. <1>View available syntax.</1>",
   "Enter a JavaScript expression which will be evaluated for each selected segment. Returned properties will be edited. <1>View available syntax.</1>": "Enter a JavaScript expression which will be evaluated for each selected segment. Returned properties will be edited. <1>View available syntax.</1>",
   "Enter a JavaScript filter expression which will be evaluated for each track of the current file. Tracks for which the expression evaluates to \"true\" will be selected or deselected. You may also the <1></1> keyboard action to run this filter.": "Enter a JavaScript filter expression which will be evaluated for each track of the current file. Tracks for which the expression evaluates to \"true\" will be selected or deselected. You may also the <1></1> keyboard action to run this filter.",
-  "Enter a speed between 25% and 400%.": "Enter a speed between 25% and 400%.",
+  "Enter a speed between 10% and 1600%.": "Enter a speed between 10% and 1600%.",
   "Enter JavaScript expression": "Enter JavaScript expression",
   "Enter parameters": "Enter parameters",
   "Enter the max number of seconds between each image (decimal)": "Enter the max number of seconds between each image (decimal)",
