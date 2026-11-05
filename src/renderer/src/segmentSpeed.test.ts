@@ -141,9 +141,13 @@ describe('preview playback rate', () => {
   it("shows a speed without the float's noise and keeps it exactly when the field isn't edited", () => {
     expect(formatSpeedPercent(0.29)).toBe('29');
     expect(formatSpeedPercent(16)).toBe('1600');
-    for (const speed of [0.12345, 0.333, 1 / 3, 0.29, 1.5]) {
-      expect(readSpeedPercent(formatSpeedPercent(speed), speed)).toBe(speed);
-    }
+    expect(formatSpeedPercent(0.12345)).toBe('12.35');
+    expect(formatSpeedPercent(1 / 3)).toBe('33.33');
+    // Untouched, the clip's own speed, not the rounded one.
+    expect(readSpeedPercent('12.35', 0.12345)).toBe(0.12345);
+    expect(readSpeedPercent('33.33', 1 / 3)).toBe(1 / 3);
+    // Typed: what it says.
+    expect(readSpeedPercent('12.35', 0.5)).toBe(0.1235);
     expect(readSpeedPercent('250', 0.333)).toBe(2.5);
   });
 
@@ -153,8 +157,10 @@ describe('preview playback rate', () => {
     expect(isFrameLoopAhead({ lastFrame, time: 10.1, now: 1100 })).toBe(true);
     // A still stretch with no new frames: the playhead is past the last one.
     expect(isFrameLoopAhead({ lastFrame, time: 10.45, now: 1250 })).toBe(false);
-    // Frames stopped (a minimised window).
-    expect(isFrameLoopAhead({ lastFrame, time: 10.1, now: 1600 })).toBe(false);
+    // The frame at the playhead's own time is the newer word.
+    expect(isFrameLoopAhead({ lastFrame, time: 10.2, now: 1499 })).toBe(true);
+    // Frames stopped (a minimised window): half a second without one.
+    expect(isFrameLoopAhead({ lastFrame, time: 10.1, now: 1500 })).toBe(false);
     // No frame shown yet (playback just started, or a sound-only file).
     expect(isFrameLoopAhead({ lastFrame: undefined, time: 0, now: 0 })).toBe(false);
   });

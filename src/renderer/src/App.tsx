@@ -1530,8 +1530,9 @@ function App() {
 
   const previewSegmentSpeed = invertCutSegments ? 1 : getPreviewSegmentSpeed(cutSegments, currentSegIndexSafe, relevantTime, fileDuration);
   // Playing, a clip's speed starts on its first frame: the time above follows `timeupdate`, which comes only every
-  // ~250 ms (up to 4 s of a 1600% clip), so the frame loop below sets it then. Paused, seeking, once the last sped-up
-  // clip is gone, or with no frames shown (an audio-only file), from the time above; applied again as playback stops.
+  // ~250 ms (up to 4 s of a 1600% clip), so the frame loop below sets it then. Paused, once the last sped-up clip is
+  // gone, or with no new frames shown (an audio-only file, a still stretch), from the time above; applied again as
+  // playback stops.
   const hasSpedClips = !invertCutSegments && cutSegments.some((segment) => getSegmentSpeed(segment) !== 1);
   const lastPreviewFrameRef = useRef<PreviewFrame>();
   useEffect(() => {
