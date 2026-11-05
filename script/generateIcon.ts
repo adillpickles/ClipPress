@@ -1,27 +1,11 @@
-import sharp from 'sharp';
 import icongenRaw from 'icon-gen';
 
 const icongen = icongenRaw as unknown as typeof icongenRaw['default'];
 
-const svg2png = (from: string, to: string, width: number, height: number) => sharp(from)
-  .png()
-  .resize(width, height, {
-    fit: sharp.fit.contain,
-    background: { r: 0, g: 0, b: 0, alpha: 0 },
-  })
-  .toFile(to);
-
 const srcIcon = 'src/renderer/src/icon.svg';
-// Linux:
-await svg2png(srcIcon, './icon-build/app-512.png', 512, 512);
 
-// Note: the Windows Store (appx) logos are not generated any more. That target was
-// removed along with the upstream project's store identity, which ClipPress cannot
-// publish under.
-
-// MacOS:
-// https://github.com/mifi/lossless-cut/issues/1820
-await icongen('./src/renderer/src/icon-mac.svg', './icon-build', { icns: { sizes: [512, 1024] }, report: false });
+// Only Windows: ClipPress has only ever shipped there (the Mac and Linux packaging is gone; icon-mac.svg stays for a
+// port). The Windows Store (appx) logos aren't made either: that target left with the upstream store identity.
 
 // Windows ICO:
 // https://github.com/mifi/lossless-cut/issues/778

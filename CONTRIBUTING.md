@@ -40,8 +40,7 @@ on every push and pull request; run them before opening one.
 Only Windows x64 is built. GitHub Actions builds and publishes a release from its
 version tag.
 
-1. On a branch, set `version` in `package.json` (for example `0.1.0-beta.7`), and
-   run `node script/postversion.ts` to add it to `com.clippress.app.appdata.xml`.
+1. On a branch, set `version` in `package.json` (for example `0.1.0-beta.7`).
 2. Write the What's new notes in `versions/<version>.md`, run
    `node script/generateVersions.ts`, and commit the updated
    `src/renderer/src/versions.json` with them.
