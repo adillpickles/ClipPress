@@ -1029,7 +1029,7 @@ async function resolveSizeLimitedPlan({
   const plan = planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strategy });
   // Elsewhere the relaxation would change nothing but skip the top-up. Checked again after a GPU encoder fallback.
   if (!hasQualityCap(strategy.encoder)) return { capabilities, strategy, plan };
-  return { capabilities, strategy, plan: relaxQualityCapForGenerousBudget(plan, getOutputPixelRate(plan.initialAttempt.videoBitrate)) };
+  return { capabilities, strategy, plan: relaxQualityCapForGenerousBudget(plan, getOutputPixelRate(plan.initialAttempt.videoBitrate), strategy.encoder) };
 }
 
 /** The pixels an encode makes each second (its size and frame rate, else the source's), for judging a budget. */

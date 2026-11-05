@@ -52,6 +52,13 @@ NVIDIA's HEVC was measured on an RTX 5060 Ti (three game recordings, 1080p60 and
   on their own scales and weren't measured.
 - **Max Quality** stays on x265's two passes, 2–4 VMAF above the card's best settings. The card's HEVC (ultra high
   quality, p7, full-resolution first pass) is used only by an FFmpeg without x265.
+- **One encode, using the size.** Left to itself, NVIDIA's HEVC stops well short of the size on quiet footage (a third
+  of a 20 MB limit on a 12 s stretch of a 1440p30 recording), and ClipPress used to encode it a second time, "sharper",
+  for twice the time and about no visible gain. Unless the budget is tight (under 0.03 video bits per pixel), it now gets
+  the highest quality target (`-cq 1`) instead, at the same speed: on that 12 s clip at 20 MB, 15.5 MB in one encode
+  (2.1 s) instead of 18.3 MB in two (5.0 s), VMAF 91.0 against 91.3. On game recordings from 1 to 15 s it never passed
+  97.6% of the limit (`perf` measurements of r71); the encoder check tests it with the tuned settings, and the basic
+  settings leave it out. It's never encoded again "sharper"; a file over the limit is still made smaller.
 - Changes that made no difference: a 10 s keyframe interval, a deeper look-ahead, more B-frames, every B-frame as a
   reference, and a full-resolution first pass for Quality.
 

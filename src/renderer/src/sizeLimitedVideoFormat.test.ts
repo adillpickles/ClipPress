@@ -387,3 +387,22 @@ describe('which encoders are tested again at the next start', () => {
     expect(getEncodersToRetest({ capabilities: { ...base, h264Nvenc: true }, listed, unsure: none, failedBefore: none, adapters: ['nvidia'] })).not.toContain('h264Amf');
   });
 });
+
+describe("NVIDIA HEVC's quality target", () => {
+  const args = (strategy: ReturnType<typeof resolve>, qualityCapOffset?: number) => getResolvedVideoArgs({ strategy, videoBitrate: 12_000_000, twoPass: false, videoProfile, sourceFps: 30, outputPlaybackRate: 1, qualityCapOffset });
+
+  it('is -cq 1 once relaxed, and none otherwise or with the basic settings', () => {
+    const quality = resolve('quality', { ...rtx40, hevcNvencUhq: true });
+    expect(getArgValue(args(quality, 14), '-cq')).toBe('1');
+    expect(getArgValue(args(quality), '-cq')).toBeUndefined();
+    expect(getArgValue(args(resolve('fast', rtx40), 14), '-cq')).toBe('1');
+    expect(getArgValue(args(resolve('quality', { ...rtx40, basicSettingsOnly: ['hevcNvenc'] }), 14), '-cq')).toBeUndefined();
+  });
+
+  it("is part of the tuned settings the encoder check tries; AV1's check is unchanged", () => {
+    expect(getArgValue(getGpuProbeVideoArgs('hevc_nvenc'), '-cq')).toBe('1');
+    expect(getArgValue(getGpuProbeVideoArgs('hevc_nvenc', { nvencUhq: true }), '-cq')).toBe('1');
+    expect(getArgValue(getGpuProbeVideoArgs('av1_nvenc'), '-cq')).toBe('26');
+    expect(getArgValue(getGpuProbeVideoArgs('hevc_amf'), '-cq')).toBeUndefined();
+  });
+});

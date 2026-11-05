@@ -74,9 +74,12 @@ function getNvencMultipassArgs(strategy: SizeLimitedResolvedStrategy, { twoPass,
   return !twoPass && !isFast ? ['-multipass', 'qres'] : [];
 }
 
-/** Whether the encoder has a quality cap that `qualityCapOffset` relaxes (only AV1 NVENC's `-cq`). */
+/**
+ * Whether the encoder has a quality cap that `qualityCapOffset` relaxes: AV1 NVENC's `-cq`, and NVIDIA HEVC's own one
+ * (it has no `-cq` until relaxed, then `-cq 1`).
+ */
 export function hasQualityCap(encoder: SizeLimitedResolvedStrategy['encoder']) {
-  return encoder === 'av1_nvenc';
+  return encoder === 'av1_nvenc' || encoder === 'hevc_nvenc';
 }
 
 function resolveNvencCq({ baseCq, qualityCapOffset }: { baseCq: number, qualityCapOffset: number | undefined }) {
@@ -231,6 +234,9 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, passNumb
     // "hq" at the same bitrate: a little higher on average and far better on the worst frames, a slightly smaller file,
     // about half as fast. Basic: without the look-ahead, temporal AQ and B-frames as references a GTX 900 or 10 card
     // lacks for HEVC. `hvc1` so Apple's players (iPhones, Macs) play the MP4 too.
+    // Relaxed (a budget that isn't tight), the highest quality target: left to itself, NVIDIA's HEVC stops well short of
+    // the size on quiet footage (a third of it on a 12 s stretch at 20 MB); with `-cq 1` it uses about half again as
+    // much, at the same speed, and never ran over the limit (measured, perf/hevctune/cq-r71.mjs).
     case 'hevc_nvenc': {
       const isFast = strategy.tuningProfile === 'fast';
       return [
@@ -241,6 +247,7 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, passNumb
         '-rc', 'vbr',
         ...(strategy.basicEncoderSettings ? ['-multipass', 'qres'] : [
           ...getNvencMultipassArgs(strategy, { twoPass, isFast: false }),
+          ...(qualityCapOffset != null && qualityCapOffset > 0 ? ['-cq', '1'] : []),
           '-rc-lookahead', isFast ? '12' : '20',
           '-temporal-aq', '1',
           '-strict_gop', '1',
@@ -333,5 +340,7 @@ export function getGpuProbeVideoArgs(encoder: GpuEncoderName, { nvencUhq = false
     encoderMultipass: encoder.endsWith('_nvenc'),
     nvencUhq,
   } as SizeLimitedResolvedStrategy;
-  return getResolvedVideoArgs({ strategy, videoBitrate: 2_000_000, twoPass: false, videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: 30 }, sourceFps: 30, outputPlaybackRate: 1 });
+  // NVIDIA HEVC's tuned settings include its relaxed quality target.
+  const qualityCapOffset = encoder === 'hevc_nvenc' ? 1 : undefined;
+  return getResolvedVideoArgs({ strategy, videoBitrate: 2_000_000, twoPass: false, videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: 30 }, sourceFps: 30, outputPlaybackRate: 1, qualityCapOffset });
 }

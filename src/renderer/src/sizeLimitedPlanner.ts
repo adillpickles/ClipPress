@@ -410,6 +410,13 @@ const undershootQualityCapOffsets = [
  */
 const generousVideoBitsPerPixel = 1.1;
 
+/**
+ * The same for NVIDIA's HEVC, whose relaxed quality target (`-cq 1`) only takes away its own early stop. Measured on game
+ * recordings (perf/hevctune/cq-r71.mjs: 1080p60 and 1440p30, 1 to 15 s, 0.02 to 0.3 bits per pixel): from 0.035 it never
+ * passed 97.6% of the limit; at 0.02 it reached 99.4%, so tight budgets keep the usual settings.
+ */
+const generousHevcNvencVideoBitsPerPixel = 0.03;
+
 function getUndershootQualityCapOffset(growthFactor: number) {
   return undershootQualityCapOffsets.find((step) => growthFactor >= step.minGrowthFactor)?.offset
     ?? undershootQualityCapOffsets.at(-1)!.offset;
@@ -570,7 +577,9 @@ export function planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strate
     retryMinFactor: targetingProfile.retryMinFactor,
     retryMaxFactor: targetingProfile.retryMaxFactor,
     minTotalBitrate,
-    undershootRetryBelowBytes: Math.floor(hardTargetBytes * undershootRetryThresholdFactor),
+    // NVIDIA's HEVC isn't encoded again "sharper": with its quality target the first encode already uses what the footage
+    // can take (the second one added at most 0.8 VMAF, where 95 can't be told from the source, for twice the time).
+    undershootRetryBelowBytes: strategy.encoder === 'hevc_nvenc' ? 0 : Math.floor(hardTargetBytes * undershootRetryThresholdFactor),
     initialAttempt: buildRetryStep({
       attemptNumber: 1,
       totalBitrate: baseTotalBitrate,
@@ -585,9 +594,10 @@ export function planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strate
  * the pixels the encode makes each second (`outputPixelsPerSecond`, undefined when unknown), so it lands in one encode.
  * A relaxed attempt that still undershoots isn't topped up: the content doesn't need the bits.
  */
-export function relaxQualityCapForGenerousBudget<T extends SizeLimitedPlan>(plan: T, outputPixelsPerSecond: number | undefined): T {
+export function relaxQualityCapForGenerousBudget<T extends SizeLimitedPlan>(plan: T, outputPixelsPerSecond: number | undefined, encoder: SizeLimitedResolvedStrategy['encoder']): T {
   if (outputPixelsPerSecond == null || !(outputPixelsPerSecond > 0)) return plan;
-  if (plan.initialAttempt.videoBitrate / outputPixelsPerSecond < generousVideoBitsPerPixel) return plan;
+  const generous = encoder === 'hevc_nvenc' ? generousHevcNvencVideoBitsPerPixel : generousVideoBitsPerPixel;
+  if (plan.initialAttempt.videoBitrate / outputPixelsPerSecond < generous) return plan;
   return { ...plan, initialAttempt: { ...plan.initialAttempt, qualityCapOffset: undershootQualityCapOffsets[0].offset } };
 }
 
