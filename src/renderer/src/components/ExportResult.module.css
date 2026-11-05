@@ -88,8 +88,8 @@
   opacity: 0;
   transform: scale(.9);
   transition: opacity .15s ease, transform .15s ease;
-  /* On its own layer the whole time: at `transform: none` the browser took it off its layer once it had grown and
-     drew it again snapped to whole pixels, a pixel or two from where it grew (more at 125% and 150% scaling). */
+  /* On its own layer the whole time: the layer is drawn at a rounded position, and leaving it as the grow ended (at
+     `transform: none`) drew the icon a pixel away from where it grew (measured at 100% and 125% scaling). */
   will-change: transform, opacity;
   pointer-events: none;
 }
