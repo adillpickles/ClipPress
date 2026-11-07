@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildAddedAudioInputArgs, buildAudioMixFilter, buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow, isAudioMix, streamReachesTime } from './exportSegmentMath';
+import { buildAddedAudioInputArgs, buildAudioMixFilter, buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow, getSizeLimitedMp3Kbps, getSoundOnlyCopyFormat, isAudioMix, streamReachesTime } from './exportSegmentMath';
 
 describe('buildConcatSegmentInputArgs', () => {
   it('applies rotation before each input so the filter graph crops the displayed frame', () => {
@@ -288,5 +288,20 @@ describe('streamReachesTime (a sound shorter than the clip is padded)', () => {
   it('falls back to the file\'s length, and pads when nothing is known', () => {
     expect(streamReachesTime({ stream: { duration: 'N/A' }, format, end: 30 })).toBe(true);
     expect(streamReachesTime({ stream: {}, format: undefined, end: 5 })).toBe(false);
+  });
+});
+
+describe('sound-only files', () => {
+  it('keep a copied sound in its own kind of file', () => {
+    expect(getSoundOnlyCopyFormat('aac')).toEqual({ format: 'ipod', ext: 'm4a' });
+    expect(getSoundOnlyCopyFormat('opus')).toEqual({ format: 'ogg', ext: 'ogg' });
+    expect(getSoundOnlyCopyFormat('pcm_s16le')).toEqual({ format: 'wav', ext: 'wav' });
+    expect(getSoundOnlyCopyFormat('eac3')).toEqual({ format: 'matroska', ext: 'mka' });
+  });
+  it('fit a file size as an MP3 at the best bitrate that fits', () => {
+    expect(getSizeLimitedMp3Kbps({ sizeMb: 20, durationSeconds: 30 })).toBe(320);
+    // 10 MB over 10 minutes: about 128 kbit/s.
+    expect(getSizeLimitedMp3Kbps({ sizeMb: 10, durationSeconds: 600 })).toBe(128);
+    expect(getSizeLimitedMp3Kbps({ sizeMb: 1, durationSeconds: 3600 })).toBe(32);
   });
 });

@@ -215,3 +215,29 @@ export function buildSegmentConcatFilters({ segments, videoStreamIndex, audioStr
   });
   return { graph, labels: labels.join('') };
 }
+
+/**
+ * A sound file's type for a sound copied as it is (Original quality with the picture left out): its codec's own file,
+ * as a player expects it; AAC in .m4a. Anything else goes in Matroska audio.
+ */
+export function getSoundOnlyCopyFormat(codecName: string | undefined): { format: string, ext: string } {
+  if (codecName === 'aac') return { format: 'ipod', ext: 'm4a' };
+  if (codecName === 'mp3') return { format: 'mp3', ext: 'mp3' };
+  // Discord plays .ogg, not .opus.
+  if (codecName === 'opus' || codecName === 'vorbis') return { format: 'ogg', ext: 'ogg' };
+  if (codecName === 'flac') return { format: 'flac', ext: 'flac' };
+  if (codecName?.startsWith('pcm_') === true) return { format: 'wav', ext: 'wav' };
+  return { format: 'matroska', ext: 'mka' };
+}
+
+const mp3Bitrates = [320, 256, 224, 192, 160, 128, 112, 96, 80, 64, 56, 48, 40, 32] as const;
+
+/**
+ * Fit a file size with the picture left out: an MP3 (the one sound file Discord plays in the chat), at the highest
+ * standard bitrate that keeps `durationSeconds` under `sizeMb` (a little room for the file's own bytes), 32–320 kbit/s.
+ */
+export function getSizeLimitedMp3Kbps({ sizeMb, durationSeconds }: { sizeMb: number, durationSeconds: number }) {
+  if (!(durationSeconds > 0)) return mp3Bitrates[0];
+  const budgetKbps = (sizeMb * 1_000_000 * 8 * 0.96) / durationSeconds / 1000;
+  return mp3Bitrates.find((kbps) => kbps <= budgetKbps) ?? mp3Bitrates.at(-1)!;
+}

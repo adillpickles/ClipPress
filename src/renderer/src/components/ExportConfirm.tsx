@@ -344,6 +344,7 @@ function ExportConfirm({
   onExportConfirm,
   outFormat,
   renderOutFmt,
+  soundOnlyFileType,
   outputDir,
   numStreamsTotal,
   numStreamsToCopy,
@@ -382,6 +383,8 @@ function ExportConfirm({
   onExportConfirm: () => void;
   outFormat: string | undefined;
   renderOutFmt: (style: CSSProperties) => JSX.Element;
+  /** With every picture left out, the sound file's type ("MP3"), shown in place of the format. */
+  soundOnlyFileType?: string | undefined;
   outputDir: string | undefined;
   numStreamsTotal: number;
   numStreamsToCopy: number;
@@ -2046,13 +2049,15 @@ function ExportConfirm({
                   <div className={styles['fieldNameRow']}>
                     <div className={styles['fieldName']}>{t('Format')}</div>
                     <HelpTip>
-                      {isSizeLimited
+                      {soundOnlyFileType != null && t('With the picture left out, the export is a sound file.')}
+                      {soundOnlyFileType == null && (isSizeLimited
                         ? t('Fit a file size always makes an MP4, so it plays almost everywhere.')
-                        : t('The same as the recording unless you pick another. Not every format can hold every track.')}
+                        : t('The same as the recording unless you pick another. Not every format can hold every track.'))}
                     </HelpTip>
                   </div>
                   <div className={styles['fieldControl']}>
-                    {isSizeLimited ? <div className={styles['fieldValue']}>MP4</div> : renderOutFmt({})}
+                    {soundOnlyFileType != null && <div className={styles['fieldValue']}>{t('{{type}}, sound only', { type: soundOnlyFileType })}</div>}
+                    {soundOnlyFileType == null && (isSizeLimited ? <div className={styles['fieldValue']}>MP4</div> : renderOutFmt({}))}
                   </div>
                 </div>
 

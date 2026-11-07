@@ -15,7 +15,8 @@ import { combineAudioGain, getVolumeFilter } from '../util/audioGain';
 import { needsSmartCut, getCodecParams } from '../smartcut';
 import { getGuaranteedSegments, isDurationValid } from '../segments';
 import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } from '../textOverlays';
-import { buildOverlayImageInputArgs, getRelativeSegmentOverlapWindow, streamReachesTime } from '../exportSegmentMath';
+import { buildAddedAudioInputArgs, buildAudioMixFilter, buildOverlayImageInputArgs, getRelativeSegmentOverlapWindow, streamReachesTime } from '../exportSegmentMath';
+import type { MixedAudioTrack } from '../exportSegmentMath';
 import { getHardwareDecodeArgs, getRegularExportVideoArgs, maxGpuH264Side, pickGpuEncoder } from '../gpuEncoders';
 import { canUseHardwareDecode, getSizeLimitedEncoderCapabilities, markGpuEncoderBasicOnly, markGpuEncoderFailed, runWithGpuFallbacks } from '../sizeLimitedExport';
 import { getSegmentCropFilter } from '../segmentCrop';
@@ -918,6 +919,83 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     }
   }, [appendFfmpegCommandLog, assertOutPathIsNotSource, enableOverwriteOutput, exportGpuAcceleration, filePath, outputPlaybackRate, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
+  /**
+   * The simple editor's export with the picture left out: each clip as a sound file. `copy`: its one sound as it is
+   * (Original quality, nothing to change); else every kept sound mixed, each at its track's and the clip's volume, at
+   * the clip's speed, padded with silence to the clip's length, and encoded with `encodeArgs`.
+   */
+  const cutSoundOnlyClips = useCallback(async ({ outputDir, segments: segmentsIn, cutFileNames, getTracks, addedAudioFiles, copy, encodeArgs, outFormat, onProgress: onTotalProgress, signal, onClipWritten }: {
+    outputDir: string,
+    segments: SegmentToExport[],
+    cutFileNames: string[],
+    /** Every kept sound of a clip, with its volume (the track's and the clip's together). */
+    getTracks: (segment: SegmentToExport) => MixedAudioTrack[],
+    /** The added files whose sounds are kept, as `MixedAudioTrack.added` numbers them. */
+    addedAudioFiles: readonly string[],
+    copy: boolean,
+    encodeArgs: string[],
+    outFormat: string,
+    onProgress: (progress: number) => void,
+    signal?: AbortSignal | undefined,
+    onClipWritten?: ((path: string) => void) | undefined,
+  }) => {
+    invariant(filePath != null);
+    const progresses: Record<number, number> = {};
+    const onSingleProgress = (index: number, progress: number) => {
+      progresses[index] = progress;
+      onTotalProgress(sum(Object.values(progresses)) / segmentsIn.length);
+    };
+    return pMap(segmentsIn, async (segment, index) => {
+      signal?.throwIfAborted();
+      const { start, end } = segment;
+      const finalOutPath = join(outputDir, cutFileNames[index]!);
+      await assertOutPathIsNotSource(finalOutPath, [filePath, ...addedAudioFiles]);
+      if (await shouldSkipExistingFile(finalOutPath)) {
+        onSingleProgress(index, 1);
+        return { path: finalOutPath, created: false };
+      }
+      await maybeMkDeepOutDir({ outputDir, fileOutPath: finalOutPath });
+      const partialPath = getPartialPath(finalOutPath);
+      const rate = getSegmentPlaybackRate(segment, outputPlaybackRate);
+      const outputDuration = getSegmentOutputDuration(segment, outputPlaybackRate);
+      const tracks = getTracks(segment);
+      invariant(tracks.length > 0);
+      const inputArgs = [
+        '-ss', start.toFixed(5), '-t', (end - start).toFixed(5), '-i', filePath,
+        ...buildAddedAudioInputArgs({ files: addedAudioFiles, segments: [segment] }),
+      ];
+      const audioArgs = copy
+        ? ['-map', `0:${tracks[0]!.index}`, '-c:a', 'copy']
+        : [
+          '-filter_complex', buildAudioMixFilter({ inputIndex: 0, tracks, after: [getAudioTempoFilter(rate), 'apad'], outputLabel: '[sound]', getAddedInputIndex: (added) => 1 + added }).join(';'),
+          '-map', '[sound]',
+          ...encodeArgs,
+        ];
+      const ffmpegArgs = [
+        '-hide_banner',
+        ...inputArgs,
+        ...audioArgs,
+        '-vn', '-sn', '-dn',
+        '-map_metadata', '0',
+        '-t', outputDuration.toFixed(5),
+        '-f', outFormat,
+        '-y', partialPath,
+      ];
+      try {
+        appendFfmpegCommandLog(ffmpegArgs);
+        const result = await runFfmpegWithProgress({ ffmpegArgs, duration: outputDuration, onProgress: (progress) => onSingleProgress(index, progress) });
+        logStdoutStderr(result);
+        await moveExportWithRetry(partialPath, finalOutPath, enableOverwriteOutput);
+        onClipWritten?.(finalOutPath);
+      } finally {
+        await removePartial(partialPath);
+      }
+      await transferTimestamps({ inPath: filePath, outPath: finalOutPath, cutFrom: start, cutTo: end, duration: undefined, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart });
+      onSingleProgress(index, 1);
+      return { path: finalOutPath, created: true };
+    }, { concurrency: 1 });
+  }, [appendFfmpegCommandLog, assertOutPathIsNotSource, enableOverwriteOutput, filePath, outputPlaybackRate, shouldSkipExistingFile, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
+
   // inspired by https://gist.github.com/fernandoherreradelasheras/5eca67f4200f1a7cc8281747da08496e
   const cutEncodeSmartPart = useCallback(async ({ cutFrom, cutTo, outPath, outFormat, videoCodec, videoBitrate, videoTimebase, allFilesMeta, copyFileStreams, videoStreamIndex, paramsByStreamId, ffmpegExperimental, hasBFrames, clipVolume, forceAudioEncode }: {
     cutFrom: number,
@@ -1589,7 +1667,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
   }, [extractAttachmentStreams, extractNonAttachmentStreams, filePath]);
 
   return {
-    cutMultiple, cutMultipleWithTextOverlays, concatFiles, html5ify, html5ifyDummy, fixInvalidDuration, concatCutSegments, extractStreams, tryDeleteFiles,
+    cutMultiple, cutMultipleWithTextOverlays, cutSoundOnlyClips, concatFiles, html5ify, html5ifyDummy, fixInvalidDuration, concatCutSegments, extractStreams, tryDeleteFiles,
   };
 }
 

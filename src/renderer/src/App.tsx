@@ -345,7 +345,8 @@ import WhatsNew from './components/WhatsNew';
 import UpdateNotice from './components/UpdateNotice';
 import mainApi from './mainApi.js';
 import createForwardJobProgress from './exportProgress';
-import { isAudioMix } from './exportSegmentMath';
+import { getSizeLimitedMp3Kbps, getSoundOnlyCopyFormat, isAudioMix, streamReachesTime } from './exportSegmentMath';
+import type { MixedAudioTrack } from './exportSegmentMath';
 import type { AppEvent } from '../../main/index.js';
 
 import {
@@ -1726,27 +1727,28 @@ function App() {
   // Text, a speed change or a zoom is drawn on the picture, so an export with any of them always keeps it: the simple
   // editor's Tracks chip is locked on, and a picture left out before is put back (advanced mode keeps its own choice).
   const exportNeedsPicture = hasOverlayClips || hasSegmentSpeedChanges || hasSegmentCropChanges;
-  useEffect(() => {
-    // The picture playing (the first, unless advanced mode picked another) is the one the export draws on. Fit a file
-    // size picks its own (the first kept) and locks it itself.
-    const picture = activeVideoStream;
-    if (!simpleMode || !exportNeedsPicture || exportEncodeMode === 'size_limited' || filePath == null || picture == null || isCopyingStreamId(filePath, picture.index)) return;
-    setCopyStreamIdsForPath(filePath, (old) => ({ ...old, [picture.index]: true }));
-  }, [activeVideoStream, exportEncodeMode, exportNeedsPicture, filePath, isCopyingStreamId, setCopyStreamIdsForPath, simpleMode]);
   // Game and mic on separate tracks (an OBS recording): a Discord export mixes them into its one track, each at its
   // track volume, so the mic is never left out.
   const sizeLimitedAudioTracks = useMemo(() => mainCopiedStreams.filter((stream) => stream.codec_type === 'audio'), [mainCopiedStreams]);
-  const getMixedAudioTracks = useCallback((clip?: ClipVolume) => {
+  /** Every kept sound, the recording's then the added files', each at its track's volume (and the clip's, given one). */
+  const getKeptAudioTracks = useCallback((clip?: ClipVolume): MixedAudioTrack[] => {
     const gain = (path: string | undefined, index: number) => {
       const trackGainDb = path != null ? paramsByStreamId.get(path)?.get(index)?.audioGainDb : undefined;
       return clip != null ? combineAudioGain(trackGainDb, clip) : trackGainDb;
     };
-    const tracks = [
+    return [
       ...sizeLimitedAudioTracks.map((stream) => ({ index: stream.index, gainDb: gain(filePath, stream.index) })),
       ...sizeLimitedAddedAudio.tracks.map(({ path, file, stream }) => ({ index: stream.index, gainDb: gain(path, stream.index), added: file })),
     ];
-    return isAudioMix(tracks) ? tracks : undefined;
   }, [filePath, paramsByStreamId, sizeLimitedAddedAudio, sizeLimitedAudioTracks]);
+  const getMixedAudioTracks = useCallback((clip?: ClipVolume) => {
+    const tracks = getKeptAudioTracks(clip);
+    return isAudioMix(tracks) ? tracks : undefined;
+  }, [getKeptAudioTracks]);
+  // The simple editor with every picture left out exports a sound file, whatever the quality (owner, 2026-11-07).
+  const keepsNoPicture = getRealVideoStreams(mainCopiedStreams).length === 0
+    && !Object.entries(externalFilesMeta).some(([path, { streams }]) => getRealVideoStreams(streams).some((stream) => isCopyingStreamId(path, stream.index)));
+  const soundOnlyExport = simpleMode && keepsNoPicture && (sizeLimitedAudioTracks.length > 0 || sizeLimitedAddedAudio.tracks.length > 0);
   const sizeLimitedSourceFps = useMemo(
     () => (sizeLimitedStreams.videoStream != null
       ? getStreamFps(sizeLimitedStreams.videoStream)
@@ -2310,13 +2312,15 @@ function App() {
   // that one: Fit a file size takes the first picture kept, so with two kept either can go, and only the last one left
   // (or, with none kept, the one it takes) is locked; text, speed and zoom are drawn on the one playing.
   const lockedPicture = useMemo(() => {
+    // The simple editor: never; with every picture left out the export is a sound file.
+    if (simpleMode) return undefined;
     if (isSizeLimitedExport) {
       const { videoStream } = sizeLimitedStreams;
       if (videoStream == null || getRealVideoStreams(mainCopiedStreams).length > 1) return undefined;
       return { index: videoStream.index, hint: t('Fit a file size always keeps the picture.') };
     }
     return exportNeedsPicture && activeVideoStream != null ? { index: activeVideoStream.index, hint: t('Text, speed and zoom need the picture.') } : undefined;
-  }, [activeVideoStream, exportNeedsPicture, isSizeLimitedExport, mainCopiedStreams, sizeLimitedStreams, t]);
+  }, [activeVideoStream, exportNeedsPicture, isSizeLimitedExport, mainCopiedStreams, simpleMode, sizeLimitedStreams, t]);
   const needSmartCut = areWeCutting && enableSmartCut;
   const isEncoding = needSmartCut || lossyMode != null;
   const isEncodingUi = isEncoding || isSizeLimitedExport;
@@ -2326,6 +2330,7 @@ function App() {
     html5ifyDummy,
     cutMultiple,
     cutMultipleWithTextOverlays,
+    cutSoundOnlyClips,
     concatCutSegments,
     html5ify,
     fixInvalidDuration,
@@ -3510,6 +3515,28 @@ function App() {
   const closeExportConfirm = useCallback(() => setExportConfirmOpen(false), []);
 
   const willMerge = segmentsToExport.length > 1 && autoMerge;
+  /**
+   * What a sound file is made as. Its one sound copied as it is in Original quality when nothing about it changes; else
+   * every kept sound mixed and encoded: an MP3 sized to fit (Fit a file size; the one sound file Discord plays in the
+   * chat), or AAC.
+   */
+  const getSoundOnlyPlan = useCallback(({ isSizeLimited, sizeMb }: { isSizeLimited: boolean, sizeMb: number }) => {
+    const tracks = getKeptAudioTracks();
+    const single = tracks.length === 1 && tracks[0]!.added == null ? sizeLimitedAudioTracks[0] : undefined;
+    const copyable = !isSizeLimited && !willMerge && single != null && isNeutralAudioGain(tracks[0]!.gainDb)
+      && segmentsToExport.every((segment) => getSegmentSpeed(segment) === 1 && !isClipVolumeChanged(segment)
+        && streamReachesTime({ stream: single, format: mainFileFormat, end: segment.end }));
+    if (copyable) return { copy: true, encodeArgs: [], ...getSoundOnlyCopyFormat(single.codec_name) };
+    if (isSizeLimited) {
+      // One bitrate for every file: joined, the whole has to fit; apart, the longest clip.
+      const durations = segmentsToExport.map((segment) => getSegmentOutputDuration(segment, outputPlaybackRate));
+      const kbps = getSizeLimitedMp3Kbps({ sizeMb, durationSeconds: willMerge ? durations.reduce((a, b) => a + b, 0) : Math.max(0, ...durations) });
+      return { copy: false, encodeArgs: ['-c:a', 'libmp3lame', '-b:a', `${kbps}k`, ...(kbps < 64 ? ['-ar', '22050'] : [])], format: 'mp3', ext: 'mp3' };
+    }
+    return { copy: false, encodeArgs: ['-c:a', 'aac', '-b:a', '256k'], format: 'ipod', ext: 'm4a' };
+  }, [getKeptAudioTracks, mainFileFormat, outputPlaybackRate, segmentsToExport, sizeLimitedAudioTracks, willMerge]);
+  // Shown in the export options' Format row.
+  const soundOnlyFileType = soundOnlyExport ? getSoundOnlyPlan({ isSizeLimited: isSizeLimitedExport, sizeMb: sizeLimitMb }).ext.toUpperCase() : undefined;
 
   interface SizeLimitedResultSummary {
     requestedLimitLabel: string;
@@ -4058,7 +4085,8 @@ function App() {
         throw new UserFacingError(i18n.t('Choose a clip export mode to apply speed, crop and volume changes. Chapters-only export keeps the original video.'));
       }
 
-      if (quality.isSizeLimited) {
+      // With every picture left out, both qualities make a sound file (the plain cut below).
+      if (quality.isSizeLimited && !soundOnlyExport) {
         const notices = new Set<string>();
         const warnings = new Set<string>();
         const useAutoSeparateNaming = sizeLimitSeparateNamingMode === 'auto';
@@ -4380,7 +4408,7 @@ function App() {
         return;
       }
 
-      if (hasOverlayClips || hasSegmentSpeedChanges || hasSegmentCropChanges) {
+      if ((hasOverlayClips || hasSegmentSpeedChanges || hasSegmentCropChanges) && !soundOnlyExport) {
         if ((hasSegmentSpeedChanges || hasSegmentCropChanges) && !['mp4', 'mov', 'matroska'].includes(fileFormat ?? '')) {
           throw new UserFacingError(i18n.t('Speed and crop changes need an MP4, MOV or MKV file. Choose one of these, or Fit a file size.'));
         }
@@ -4393,7 +4421,11 @@ function App() {
             i18n.t('Text export requires a readable video track.'),
           );
         }
-        if (!isCopyingStreamId(filePath, activeVideoStream.index)) {
+        // The simple editor draws on the playing picture, or with that one left out on the first picture kept.
+        const textPicture = simpleMode && !isCopyingStreamId(filePath, activeVideoStream.index)
+          ? getRealVideoStreams(mainCopiedStreams)[0]
+          : activeVideoStream;
+        if (textPicture == null || !isCopyingStreamId(filePath, textPicture.index) || textPicture.width == null || textPicture.height == null) {
           throw new UserFacingError(
             i18n.t(
               'Text export requires the active video track to stay enabled.',
@@ -4447,7 +4479,7 @@ function App() {
         exportAbort.signal.throwIfAborted();
         setExportWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined), phase: 'cutting' });
         // Read here, where they're known to be set: the closure below can't see that.
-        const { index: videoStreamIndex, width: videoWidth, height: videoHeight } = activeVideoStream;
+        const { index: videoStreamIndex, width: videoWidth, height: videoHeight } = textPicture;
         const cutWithTexts = (segments: typeof segmentsToExport, names: string[], onClipWritten: ((path: string) => void) | undefined) => cutMultipleWithTextOverlays({
           outputDir,
           segments,
@@ -4628,17 +4660,20 @@ function App() {
       const notices = new Set<string>();
       const warnings = new Set<string>();
 
+      const soundOnly = soundOnlyExport ? getSoundOnlyPlan({ isSizeLimited: quality.isSizeLimited, sizeMb: quality.sizeLimitMb }) : undefined;
+      const withSoundExt = (names: string[]) => (soundOnly == null ? names : names.map((name) => `${name.replace(/\.[^./\\]+$/, '')}.${soundOnly.ext}`));
+
       let cutFileNames: string[];
       // When deleting merged segments, use the default template so that we e.g. don't risk creating a folder structure
       // https://github.com/mifi/lossless-cut/issues/2637
       if (willMerge && autoDeleteMergedSegments) {
         const generated = await generateCutFileNames(defaultCutFileTemplate);
         // Made and deleted again: never on a file already there (an earlier export's clips).
-        cutFileNames = await getMergePartNames(generated.fileNames, isOutputNameTaken);
+        cutFileNames = await getMergePartNames(withSoundExt(generated.fileNames), isOutputNameTaken);
         addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
       } else {
         const generated = await generateCutFileNames(cutFileTemplateOrDefault);
-        cutFileNames = await keepClipNamesFree(generated.fileNames);
+        cutFileNames = await keepClipNamesFree(withSoundExt(generated.fileNames));
         if (generated.problems.error != null) {
           console.warn(
             'Output segments file name invalid, using default instead',
@@ -4653,7 +4688,19 @@ function App() {
       // throw (() => { const err = new Error('test'); err.code = 'ENOENT'; return err; })();
       exportAbort.signal.throwIfAborted();
       setExportWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined), phase: 'cutting' });
-      const cutClips = (segments: typeof segmentsToExport, names: string[], onClipWritten: ((path: string) => void) | undefined) => cutMultiple({
+      const cutClips = (segments: typeof segmentsToExport, names: string[], onClipWritten: ((path: string) => void) | undefined) => (soundOnly != null ? cutSoundOnlyClips({
+        outputDir,
+        segments,
+        cutFileNames: names,
+        getTracks: (segment) => getKeptAudioTracks(segment),
+        addedAudioFiles: sizeLimitedAddedAudio.files,
+        copy: soundOnly.copy,
+        encodeArgs: soundOnly.encodeArgs,
+        outFormat: soundOnly.format,
+        onProgress: setProgress,
+        signal: exportAbort.signal,
+        onClipWritten,
+      }) : cutMultiple({
         outputDir,
         customOutDir,
         outFormat: fileFormat,
@@ -4681,7 +4728,7 @@ function App() {
         encodeAllAudio: willMerge && segmentsToExport.some((segment) => isClipVolumeChanged(segment)),
         signal: exportAbort.signal,
         onClipWritten,
-      });
+      }));
       const outFiles = await cutClips(segmentsToExport, cutFileNames, willMerge && autoDeleteMergedSegments ? onMergePartWritten : undefined);
 
       let mergedOutFilePath: string | undefined;
@@ -4714,14 +4761,14 @@ function App() {
         }
         addSourceSafetyNotice(problems.sourceSafetyAdjustments, notices);
 
-        const [fileName] = fileNames;
+        const [fileName] = withSoundExt(fileNames);
         invariant(fileName != null);
         mergedOutFilePath = getOutPath({ customOutDir, filePath, fileName });
 
         const { segmentPaths, freshParts } = await getMergeInputs(outFiles, cutFileNames, mergedOutFilePath, (segments, names) => cutClips(segments, names, onMergePartWritten));
         mergedResult = await concatCutSegments({
           customOutDir,
-          outFormat: fileFormat,
+          outFormat: soundOnly?.format ?? fileFormat,
           segmentPaths,
           ffmpegExperimental,
           preserveMovData,
@@ -4899,6 +4946,11 @@ function App() {
     }
   }, [
     sizeLimitedAddedAudio.files,
+    getSoundOnlyPlan,
+    cutSoundOnlyClips,
+    getKeptAudioTracks,
+    mainCopiedStreams,
+    soundOnlyExport,
     keepNonEmptyExports,
     showSimpleExportFailed,
     cutFileTemplate,
@@ -8153,6 +8205,7 @@ function App() {
                 onClosePress={closeExportConfirm}
                 onExportConfirm={onExportConfirm}
                 renderOutFmt={renderOutFmt}
+                soundOnlyFileType={soundOnlyFileType}
                 outputDir={outputDir}
                 numStreamsTotal={numStreamsTotal}
                 numStreamsToCopy={numStreamsToCopy}
