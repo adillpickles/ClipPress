@@ -1699,11 +1699,11 @@ function App() {
   // editor's Tracks chip is locked on, and a picture left out before is put back (advanced mode keeps its own choice).
   const exportNeedsPicture = hasOverlayClips || hasSegmentSpeedChanges || hasSegmentCropChanges;
   useEffect(() => {
-    if (!simpleMode || !exportNeedsPicture || filePath == null) return;
-    const [picture] = getRealVideoStreams(mainStreams);
-    if (picture == null || isCopyingStreamId(filePath, picture.index)) return;
+    // The picture playing (the first, unless advanced mode picked another) is the one the export draws on.
+    const picture = activeVideoStream;
+    if (!simpleMode || !exportNeedsPicture || filePath == null || picture == null || isCopyingStreamId(filePath, picture.index)) return;
     setCopyStreamIdsForPath(filePath, (old) => ({ ...old, [picture.index]: true }));
-  }, [exportNeedsPicture, filePath, isCopyingStreamId, mainStreams, setCopyStreamIdsForPath, simpleMode]);
+  }, [activeVideoStream, exportNeedsPicture, filePath, isCopyingStreamId, setCopyStreamIdsForPath, simpleMode]);
   // Game and mic on separate tracks (an OBS recording): a Discord export mixes them into its one track, each at its
   // track volume, so the mic is never left out.
   const sizeLimitedAudioTracks = useMemo(() => mainCopiedStreams.filter((stream) => stream.codec_type === 'audio'), [mainCopiedStreams]);
@@ -2279,16 +2279,15 @@ function App() {
   const isSizeLimitedExport = exportEncodeMode === 'size_limited';
   // The recording's picture the export can't do without, and why: locked on, on its chip and its row in Tracks. Only
   // that one: Fit a file size takes the first picture kept, so with two kept either can go, and only the last one left
-  // (or, with none kept, the one it takes) is locked; text, speed and zoom are drawn on the first.
+  // (or, with none kept, the one it takes) is locked; text, speed and zoom are drawn on the one playing.
   const lockedPicture = useMemo(() => {
     if (isSizeLimitedExport) {
       const { videoStream } = sizeLimitedStreams;
       if (videoStream == null || getRealVideoStreams(mainCopiedStreams).length > 1) return undefined;
       return { index: videoStream.index, hint: t('Fit a file size always keeps the picture.') };
     }
-    const [first] = getRealVideoStreams(mainStreams);
-    return exportNeedsPicture && first != null ? { index: first.index, hint: t('Text, speed and zoom need the picture.') } : undefined;
-  }, [exportNeedsPicture, isSizeLimitedExport, mainCopiedStreams, mainStreams, sizeLimitedStreams, t]);
+    return exportNeedsPicture && activeVideoStream != null ? { index: activeVideoStream.index, hint: t('Text, speed and zoom need the picture.') } : undefined;
+  }, [activeVideoStream, exportNeedsPicture, isSizeLimitedExport, mainCopiedStreams, sizeLimitedStreams, t]);
   const needSmartCut = areWeCutting && enableSmartCut;
   const isEncoding = needSmartCut || lossyMode != null;
   const isEncodingUi = isEncoding || isSizeLimitedExport;
