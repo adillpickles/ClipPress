@@ -269,10 +269,10 @@ export default function ShortcutSettings({ onAllShortcutsRequested, showAdvanced
         <div className={styles['rowText']}>
           <div className={styles['rowLabel']}>
             <SearchHighlight text={label} />
-            {changed && <RevertButton title={t('Back to {{value}}', { value: `${names[defaultMouseModifierKeys[gesture]]} + ${input}` })} onClick={() => restoreGesture(gesture)} />}
           </div>
         </div>
         <div className={[styles['rowControl'], styles['rowControlWide']].join(' ')}>
+          {changed && <RevertButton title={t('Back to {{value}}', { value: `${names[defaultMouseModifierKeys[gesture]]} + ${input}` })} onClick={() => restoreGesture(gesture)} />}
           <GestureField label={label} gesture={input} modifiers={modifiers} onChange={(next) => setGestureModifiers(gesture, next)} taken={taken} />
         </div>
       </div>
@@ -294,12 +294,12 @@ export default function ShortcutSettings({ onAllShortcutsRequested, showAdvanced
               <div className={styles['rowText']}>
                 <div className={styles['rowLabel']}>
                   <SearchHighlight text={label} />
-                  {!sameKeys(keyBindings.filter((binding) => binding.action === action), defaultKeyBindings.filter((binding) => binding.action === action)) && (
-                    <RevertButton title={t('Back to {{value}}', { value: keysInWords(getShownBindings(defaultKeyBindings.filter((binding) => binding.action === action))[0]?.keys) })} onClick={() => revertAction(action)} />
-                  )}
                 </div>
               </div>
               <div className={styles['rowControl']}>
+                {!sameKeys(keyBindings.filter((binding) => binding.action === action), defaultKeyBindings.filter((binding) => binding.action === action)) && (
+                  <RevertButton title={t('Back to {{value}}', { value: keysInWords(getShownBindings(defaultKeyBindings.filter((binding) => binding.action === action))[0]?.keys) })} onClick={() => revertAction(action)} />
+                )}
                 <ShortcutField
                   action={action}
                   label={label}

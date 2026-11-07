@@ -42,7 +42,7 @@ export default function NumberSettingRow({ label, description, value, setValue, 
     <SettingRow
       label={label}
       description={description}
-      labelExtra={changed ? <RevertButton title={t('Back to {{value}}', { value: defaultText })} onClick={() => { setDraft(undefined); setValue(defaultValue); }} /> : undefined}
+      revert={changed ? <RevertButton title={t('Back to {{value}}', { value: defaultText })} onClick={() => { setDraft(undefined); setValue(defaultValue); }} /> : undefined}
     >
       <ScrubNumberInput
         compact
