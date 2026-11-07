@@ -52,14 +52,6 @@
 }
 
 /* Kept small and quiet at the bottom of the list: most people never need it. */
-/* The bottom of the tabs: Reset all settings, then the advanced options' switch. */
-.navFooter {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: .35rem;
-}
-
 .advancedToggle {
   display: flex;
   align-items: center;

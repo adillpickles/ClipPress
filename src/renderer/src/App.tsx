@@ -4699,10 +4699,12 @@ function App() {
         cutFileNames = await getMergePartNames(withSoundExt(generated.fileNames), isOutputNameTaken);
         addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
       } else {
-        const generated = soundOnlyCustomNames && sizeLimitSeparateNamingMode !== 'auto'
+        const customSoundNames = soundOnlyCustomNames && sizeLimitSeparateNamingMode !== 'auto';
+        const generated = customSoundNames
           ? await generateSizeLimitedCustomCutFileNames(sizeLimitedCutFileTemplateOrDefault)
           : await generateCutFileNames(cutFileTemplateOrDefault);
-        cutFileNames = await keepClipNamesFree(withSoundExt(generated.fileNames));
+        // A name the user wrote is used as written (Overwrite decides), as Fit a file size does; clip names get a number.
+        cutFileNames = customSoundNames ? withSoundExt(generated.fileNames) : await keepClipNamesFree(withSoundExt(generated.fileNames));
         if (generated.problems.error != null) {
           console.warn(
             'Output segments file name invalid, using default instead',

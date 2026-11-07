@@ -204,6 +204,17 @@
 
 
 
+/* Fit a file size's picture settings: no box of their own, so the fields keep their layout; faded with the picture
+   left out (a sound file). */
+.pictureOnly {
+  display: contents;
+}
+
+.pictureOnly[data-off='true'] > * {
+  opacity: .4;
+  transition: opacity .15s ease;
+}
+
 .fieldHint {
   color: var(--cp-text-subtle);
   font-size: .75rem;

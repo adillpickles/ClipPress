@@ -224,6 +224,13 @@ function Settings({
                 <Switch checked={storeWindowBounds} onCheckedChange={setStoreWindowBounds} aria-label={t('Remember window size and position')} />
               </SettingRow>
             )}
+
+            {/* Tucked at the end of General, as apps keep a global reset (Chrome at the end of its settings); asks in
+                place, like Reset all shortcuts at the end of Shortcuts. */}
+            <SettingRow label={t('Reset all settings')} description={t('Every setting back to how ClipPress starts, shortcuts and folders included.')} keywords={t('default restore')}>
+              {/* Bordered, like the rows' other buttons (Change…); it grows into its question. */}
+              <ConfirmButton variant="default" grow question={t('Reset every setting?')} confirmLabel={t('Reset')} onConfirm={resetEverySetting}>{t('Reset…')}</ConfirmButton>
+            </SettingRow>
           </>
         );
       }
@@ -670,13 +677,9 @@ function Settings({
           </div>
         </div>
 
-        <div className={styles['navFooter']}>
-          {/* Like Reset all shortcuts: it asks in place. */}
-          <ConfirmButton question={t('Reset every setting?')} confirmLabel={t('Reset')} onConfirm={resetEverySetting}>{t('Reset all settings')}</ConfirmButton>
-          <div className={styles['advancedToggle']}>
-            <Switch id={advancedToggleId} checked={showAdvancedSettings} onCheckedChange={setShowAdvancedSettings} />
-            <label htmlFor={advancedToggleId}>{t('Show advanced options')}</label>
-          </div>
+        <div className={styles['advancedToggle']}>
+          <Switch id={advancedToggleId} checked={showAdvancedSettings} onCheckedChange={setShowAdvancedSettings} />
+          <label htmlFor={advancedToggleId}>{t('Show advanced options')}</label>
         </div>
       </nav>
 
