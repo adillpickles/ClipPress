@@ -507,7 +507,7 @@ const fileStyle: CSSProperties = { marginBottom: '2em', padding: '.5em 0', overf
 
 function StreamsSelector({
   mainFilePath, mainFileFormat, mainFileStreams, mainFileChapters, isCopyingStreamId, toggleCopyStreamId, setCopyStreamIdsForPath, onExtractStreamPress, onExtractAllStreamsPress, allFilesMeta, externalFilesMeta, setExternalFilesMeta, showAddStreamSourceDialog, shortestFlag, setShortestFlag, nonCopiedExtraStreams, customTagsByFile, setCustomTagsByFile, paramsByStreamId, updateStreamParams, formatTimecode, loadSubtitleTrackToSegments, toggleCopyStreamIds, changeEnabledStreamsFilter, toggleCopyAllStreamsForPath, onStreamSourceFileDrop,
-  simpleMode, lockedPictureHint,
+  simpleMode, lockedPicture,
 }: {
   mainFilePath: string,
   mainFileFormat: FFprobeFormat | undefined,
@@ -536,8 +536,8 @@ function StreamsSelector({
   toggleCopyAllStreamsForPath: (path: string) => void,
   onStreamSourceFileDrop: DragEventHandler<HTMLDivElement>,
   simpleMode: boolean,
-  /** Why the recording's picture can't be left out, when it can't: its row stays on, as its chip in the export options. */
-  lockedPictureHint?: string | undefined,
+  /** The recording's picture the export can't leave out, and why: its row stays on, as its chip in the export options. */
+  lockedPicture?: { index: number, hint: string } | undefined,
 }) {
   const [editingFile, setEditingFile] = useState<string>();
   const [editingStream, setEditingStream] = useState<EditingStream>();
@@ -598,7 +598,7 @@ function StreamsSelector({
               const Icon = stream.codec_type === 'video' ? FiFilm : FiVolume2;
               // As in the export options: blue is in the export, grey is left out; the recording's picture locked on when
               // the export needs it, saying why.
-              const locked = lockedPictureHint != null && path === mainFilePath && stream.codec_type === 'video';
+              const locked = lockedPicture != null && path === mainFilePath && stream.index === lockedPicture.index;
               const kept = locked || isCopyingStreamId(path, stream.index);
               return (
                 <button
@@ -606,7 +606,7 @@ function StreamsSelector({
                   type="button"
                   aria-pressed={kept}
                   aria-disabled={locked}
-                  title={locked ? lockedPictureHint : undefined}
+                  title={locked ? lockedPicture.hint : undefined}
                   className={[styles['simpleRow'], ...(kept ? [styles['simpleRowOn']] : []), ...(locked ? [styles['simpleRowLocked']] : [])].join(' ')}
                   onClick={locked ? undefined : () => toggleCopyStreamId(path, stream.index)}
                 >

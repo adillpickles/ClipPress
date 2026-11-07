@@ -2277,10 +2277,18 @@ function App() {
     [fileDuration, segmentsToExport],
   );
   const isSizeLimitedExport = exportEncodeMode === 'size_limited';
-  // Why the recording's picture can't be left out, when it can't: on its locked chip and on its row in Tracks.
-  const pictureLockedHint = isSizeLimitedExport
-    ? t('Fit a file size always keeps the picture.')
-    : (exportNeedsPicture ? t('Text, speed and zoom need the picture.') : undefined);
+  // The recording's picture the export can't do without, and why: locked on, on its chip and its row in Tracks. Only
+  // that one: Fit a file size takes the first picture kept, so with two kept either can go, and only the last one left
+  // (or, with none kept, the one it takes) is locked; text, speed and zoom are drawn on the first.
+  const lockedPicture = useMemo(() => {
+    if (isSizeLimitedExport) {
+      const { videoStream } = sizeLimitedStreams;
+      if (videoStream == null || getRealVideoStreams(mainCopiedStreams).length > 1) return undefined;
+      return { index: videoStream.index, hint: t('Fit a file size always keeps the picture.') };
+    }
+    const [first] = getRealVideoStreams(mainStreams);
+    return exportNeedsPicture && first != null ? { index: first.index, hint: t('Text, speed and zoom need the picture.') } : undefined;
+  }, [exportNeedsPicture, isSizeLimitedExport, mainCopiedStreams, mainStreams, sizeLimitedStreams, t]);
   const needSmartCut = areWeCutting && enableSmartCut;
   const isEncoding = needSmartCut || lossyMode != null;
   const isEncodingUi = isEncoding || isSizeLimitedExport;
@@ -8048,7 +8056,7 @@ function App() {
                 numStreamsToCopy={numStreamsToCopy}
                 onShowStreamsSelectorClick={handleShowStreamsSelectorClick}
                 tracks={exportTracks}
-                pictureLockedHint={pictureLockedHint}
+                lockedTrack={lockedPicture != null && filePath != null ? { key: `${filePath}:${lockedPicture.index}`, hint: lockedPicture.hint } : undefined}
                 outFormat={fileFormat}
                 cutFileTemplate={cutFileTemplate}
                 cutMergedFileTemplate={cutMergedFileTemplate}
@@ -8141,7 +8149,7 @@ function App() {
                         }
                         onStreamSourceFileDrop={handleStreamSourceFileDrop}
                         simpleMode={simpleMode}
-                        lockedPictureHint={pictureLockedHint}
+                        lockedPicture={lockedPicture}
                       />
                     )}
 
