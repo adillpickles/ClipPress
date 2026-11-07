@@ -446,14 +446,14 @@ async function deleteIfExists(path: string | undefined) {
 }
 
 /**
- * Every export reads from exactly one file, and nothing in this module may delete or
- * replace it. The naming layers upstream already refuse to produce such a destination;
+ * Every export reads from the recording and any added sound files, and nothing in this module may delete or replace
+ * them. The naming layers upstream already refuse to produce such a destination;
  * this is the innermost check, sitting directly on top of the calls that unlink and
  * rename, so a future caller cannot reintroduce the failure mode by constructing an
  * `outPath` some other way.
  */
-async function assertOutPathIsNotSource({ outPath, filePath }: { outPath: string, filePath: string }) {
-  await assertOutPathsNotSource({ outPaths: [outPath], protectedPaths: [filePath], message: 'ClipPress will not export onto the file it is reading from. Choose a different output name or folder.' });
+async function assertOutPathIsNotSource({ outPath, sourcePaths }: { outPath: string, sourcePaths: readonly string[] }) {
+  await assertOutPathsNotSource({ outPaths: [outPath], protectedPaths: sourcePaths, message: 'ClipPress will not export onto the file it is reading from. Choose a different output name or folder.' });
 }
 
 /**
@@ -494,16 +494,16 @@ async function keepFinishedExport(path: string, outPath: string) {
  * and report the problem, rather than throwing away a good file and telling the user the
  * export failed.
  */
-async function finalizeEncodedOutput({ result, outPath, filePath, enableOverwriteOutput }: {
+async function finalizeEncodedOutput({ result, outPath, sourcePaths, enableOverwriteOutput }: {
   result: SizeLimitedExecutionResult,
   outPath: string,
-  filePath: string,
+  sourcePaths: readonly string[],
   enableOverwriteOutput: boolean,
 }): Promise<{ result: SizeLimitedExecutionResult, postProcessingWarning?: string | undefined }> {
   if (result.path === outPath) return { result };
 
   try {
-    await assertOutPathIsNotSource({ outPath, filePath });
+    await assertOutPathIsNotSource({ outPath, sourcePaths });
     await moveExportWithRetry(result.path, outPath, enableOverwriteOutput);
     await rmdir(dirname(result.path)).catch(() => undefined);
     return { result: { ...result, path: outPath } };
@@ -1157,7 +1157,9 @@ export async function exportSizeLimitedSegment({
   signal?: AbortSignal | undefined,
 }) {
   await assertFileExists(filePath);
-  await assertOutPathIsNotSource({ outPath, filePath });
+  // The added sound files are read too: an output named after one would replace it.
+  const sourcePaths = [filePath, ...addedAudioFiles];
+  await assertOutPathIsNotSource({ outPath, sourcePaths });
   await ensureOutputDir(outPath);
 
   const segmentRate = getSegmentPlaybackRate(segment, outputPlaybackRate);
@@ -1414,7 +1416,7 @@ export async function exportSizeLimitedSegment({
   }
 
   await discardIfCancelled({ result, outPath, signal });
-  const { result: finalResult, postProcessingWarning } = await finalizeEncodedOutput({ result, outPath, filePath, enableOverwriteOutput });
+  const { result: finalResult, postProcessingWarning } = await finalizeEncodedOutput({ result, outPath, sourcePaths, enableOverwriteOutput });
 
   await transferTimestamps({
     inPath: filePath,
@@ -1514,7 +1516,9 @@ export async function exportSizeLimitedMerge({
   signal?: AbortSignal | undefined,
 }) {
   await assertFileExists(filePath);
-  await assertOutPathIsNotSource({ outPath, filePath });
+  // The added sound files are read too: an output named after one would replace it.
+  const sourcePaths = [filePath, ...addedAudioFiles];
+  await assertOutPathIsNotSource({ outPath, sourcePaths });
   await ensureOutputDir(outPath);
 
   // Two or more tracks, or an added file's (another input), are mixed into one.
@@ -1728,7 +1732,7 @@ export async function exportSizeLimitedMerge({
   }
 
   await discardIfCancelled({ result, outPath, signal });
-  const { result: finalResult, postProcessingWarning } = await finalizeEncodedOutput({ result, outPath, filePath, enableOverwriteOutput });
+  const { result: finalResult, postProcessingWarning } = await finalizeEncodedOutput({ result, outPath, sourcePaths, enableOverwriteOutput });
 
   const mergedDuration = segments.reduce((sum, segment) => sum + (segment.end - segment.start), 0);
   await transferTimestamps({

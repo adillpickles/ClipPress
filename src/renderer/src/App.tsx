@@ -1057,11 +1057,11 @@ function App() {
   /**
    * Files the running export reads from, and which therefore may never be a destination.
    * `exportNamingSourcePath` tracks the editable clip name rather than the file on disk,
-   * so both spellings have to be protected.
+   * so both spellings have to be protected. Added files (a mic, a sound) are read too.
    */
   const exportProtectedPaths = useMemo(
-    () => [filePath, exportNamingSourcePath],
-    [exportNamingSourcePath, filePath],
+    () => [filePath, exportNamingSourcePath, ...Object.keys(externalFilesMeta)],
+    [exportNamingSourcePath, externalFilesMeta, filePath],
   );
 
   const activeSubtitle = useMemo(
@@ -2864,8 +2864,8 @@ function App() {
         fileFormat: outputFormat,
         sourceFile: { path: exportNamingSourcePath, ...mainFileMeta },
         // The naming source path follows the (renameable) clip name, so it is not
-        // necessarily the file on disk. Both must be off limits as destinations.
-        protectedPaths: [filePath, exportNamingSourcePath],
+        // necessarily the file on disk. Both, and any added file, are off limits as destinations.
+        protectedPaths: exportProtectedPaths,
         outputDir,
         safeOutputFileName,
         maxLabelLength,
@@ -2880,6 +2880,7 @@ function App() {
       cutFileTemplate,
       exportCount,
       exportNamingSourcePath,
+      exportProtectedPaths,
       fileDuration,
       fileFormat,
       filePath,
@@ -2925,7 +2926,7 @@ function App() {
         fileFormat: outputFormat,
         // with its probe data and stats, as for the clips' names, or `FILES[0].size` etc. are missing
         sourceFile: { path: exportNamingSourcePath, ...mainFileMeta },
-        protectedPaths: [filePath, exportNamingSourcePath],
+        protectedPaths: exportProtectedPaths,
         outputDir,
         safeOutputFileName,
         maxLabelLength,
@@ -2939,6 +2940,7 @@ function App() {
       currentFileExportCount,
       exportCount,
       exportNamingSourcePath,
+      exportProtectedPaths,
       fileFormat,
       filePath,
       isCustomFormatSelected,
@@ -3688,11 +3690,12 @@ function App() {
             filePath,
             fileName: targetFileName,
           });
+          // A name that's taken moves on to the next number; so does one that is a file this export reads (an added
+          // sound may be an earlier export of this very clip).
           while (
             targetPath != null
           && targetPath !== candidate.currentPath
-          && keepExisting
-          && (await mainApi.pathExists(targetPath))
+          && (isSourcePath(targetPath, exportProtectedPaths) || (keepExisting && await mainApi.pathExists(targetPath)))
           ) {
             reservedFileNames.add(targetFileName);
             targetFileName = findAvailableSizeLimitedAutoFileName({
