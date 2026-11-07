@@ -135,7 +135,9 @@ $toast-tones: (
 }
 
 // The app's X, smaller (CloseButton.module.css). On the popup's class too, to outweigh the popups' X rules below.
+// Out of the grid area SweetAlert gives it, which would otherwise be what `top: 50%` centres it in (5px low).
 .swal2-popup.clippress-toast .swal2-close {
+  grid-area: auto !important;
   position: absolute !important;
   top: 50% !important;
   right: .35rem !important;
