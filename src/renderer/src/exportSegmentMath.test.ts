@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildAddedAudioInputArgs, buildAudioMixFilter, buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow, isAudioMix } from './exportSegmentMath';
+import { buildAddedAudioInputArgs, buildAudioMixFilter, buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow, isAudioMix, streamReachesTime } from './exportSegmentMath';
 
 describe('buildConcatSegmentInputArgs', () => {
   it('applies rotation before each input so the filter graph crops the displayed frame', () => {
@@ -268,5 +268,25 @@ describe("an added file's sound in the mix", () => {
     expect(graph.some((part) => part.startsWith('[4:0]'))).toBe(true);
     expect(graph.some((part) => part.startsWith('[5:0]'))).toBe(true);
     expect(graph.some((part) => part.startsWith('[1:1]aresample'))).toBe(true);
+  });
+});
+
+describe('streamReachesTime (a sound shorter than the clip is padded)', () => {
+  const format = { start_time: '0.000000', duration: '30.000000' };
+  it('uses the stream\'s own length', () => {
+    expect(streamReachesTime({ stream: { start_time: '0.000000', duration: '10.000000' }, format, end: 25 })).toBe(false);
+    expect(streamReachesTime({ stream: { start_time: '0.000000', duration: '29.980000' }, format, end: 30 })).toBe(true);
+  });
+  it('counts from the file\'s start, as the clip\'s times do', () => {
+    expect(streamReachesTime({ stream: { start_time: '1.500000', duration: '10.000000' }, format: { start_time: '1.500000' }, end: 10 })).toBe(true);
+    expect(streamReachesTime({ stream: { start_time: '1.500000', duration: '10.000000' }, format: { start_time: '1.500000' }, end: 11 })).toBe(false);
+  });
+  it('reads Matroska\'s DURATION tag when the stream has no length', () => {
+    expect(streamReachesTime({ stream: { start_time: '0.000000', tags: { DURATION: '00:00:10.023000000' } }, format, end: 25 })).toBe(false);
+    expect(streamReachesTime({ stream: { start_time: '0.000000', tags: { DURATION: '00:01:30.016000000' } }, format: { duration: '90.02' }, end: 90 })).toBe(true);
+  });
+  it('falls back to the file\'s length, and pads when nothing is known', () => {
+    expect(streamReachesTime({ stream: { duration: 'N/A' }, format, end: 30 })).toBe(true);
+    expect(streamReachesTime({ stream: {}, format: undefined, end: 5 })).toBe(false);
   });
 });

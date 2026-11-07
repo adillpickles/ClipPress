@@ -28,6 +28,37 @@ export function getRelativeSegmentOverlapWindow({
   };
 }
 
+/** A sound that stops this little before the clip's end (an AAC frame or two at the end of a recording) is left as is. */
+const reachTolerance = 0.1;
+
+const parseSeconds = (value: string | undefined) => {
+  const seconds = value != null ? Number.parseFloat(value) : Number.NaN;
+  return Number.isFinite(seconds) ? seconds : undefined;
+};
+
+/** Matroska's per-track DURATION tag, "HH:MM:SS.fraction". */
+const parseTagDuration = (value: string | undefined) => {
+  const match = value != null ? /^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$/.exec(value.trim()) : null;
+  if (match == null) return undefined;
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+};
+
+/**
+ * Whether a stream has media up to `end` (seconds from its file's start, as the clip's times are). From its own
+ * duration, else Matroska's DURATION tag (OBS's MKV recordings have no stream duration), else the file's. Unknown counts
+ * as not reaching it, so the caller pads to be safe.
+ */
+export function streamReachesTime({ stream, format, end }: {
+  stream: { start_time?: string | undefined, duration?: string | undefined, tags?: Record<string, string> | undefined },
+  format: { start_time?: string | undefined, duration?: string | undefined } | undefined,
+  end: number,
+}) {
+  const fileStart = parseSeconds(format?.start_time) ?? 0;
+  const duration = parseSeconds(stream.duration) ?? parseTagDuration(stream.tags?.['DURATION']);
+  const streamEnd = duration != null ? (parseSeconds(stream.start_time) ?? fileStart) - fileStart + duration : parseSeconds(format?.duration);
+  return streamEnd != null && streamEnd >= end - reachTolerance;
+}
+
 /**
  * Read each text image once. `overlay` repeats a finished input's last frame by default,
  * while `-loop 1` would decode the PNG again for every video frame and slow exports down.

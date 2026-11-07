@@ -15,7 +15,7 @@ import { combineAudioGain, getVolumeFilter } from '../util/audioGain';
 import { needsSmartCut, getCodecParams } from '../smartcut';
 import { getGuaranteedSegments, isDurationValid } from '../segments';
 import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } from '../textOverlays';
-import { buildOverlayImageInputArgs, getRelativeSegmentOverlapWindow } from '../exportSegmentMath';
+import { buildOverlayImageInputArgs, getRelativeSegmentOverlapWindow, streamReachesTime } from '../exportSegmentMath';
 import { getHardwareDecodeArgs, getRegularExportVideoArgs, maxGpuH264Side, pickGpuEncoder } from '../gpuEncoders';
 import { canUseHardwareDecode, getSizeLimitedEncoderCapabilities, markGpuEncoderBasicOnly, markGpuEncoderFailed, runWithGpuFallbacks } from '../sizeLimitedExport';
 import { getSegmentCropFilter } from '../segmentCrop';
@@ -829,10 +829,16 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
             needFlac: true,
             getAudioArgs: ({ path, streamIndex, outputIndex }) => {
               const audioGainDb = combineAudioGain(paramsByStreamId.get(path)?.get(streamIndex)?.audioGainDb, segment);
-              if (segmentRate === 1 && isNeutralAudioGain(audioGainDb) && !encodeAllAudio) return undefined;
+              // A sound that stops before the clip ends (an added sound, a recording whose sound cut out) is padded with
+              // silence to the clip's length; copied, it would bring in sound from before the clip.
+              const fileMeta = allFilesMeta[path];
+              const stream = fileMeta?.streams.find((candidate) => candidate.index === streamIndex);
+              const pad = stream == null || !streamReachesTime({ stream, format: fileMeta?.format, end });
+              if (segmentRate === 1 && isNeutralAudioGain(audioGainDb) && !encodeAllAudio && !pad) return undefined;
               const audioFilters = [
                 'asetpts=PTS-STARTPTS', getAudioTempoFilter(segmentRate),
                 !isNeutralAudioGain(audioGainDb) ? getVolumeFilter(audioGainDb) : '',
+                pad ? 'apad' : '',
               ].filter(Boolean);
               return [`-filter:${outputIndex}`, audioFilters.join(','), ...getAdjustedAudioEncodeArgs({ outFormat, outputIndex })];
             },
@@ -855,7 +861,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
             ...getMatroskaFlags(),
             '-ignore_unknown',
             ...getExperimentalArgs(ffmpegExperimental),
-            '-shortest',
+            // The clip's length alone ends the file (no `-shortest`): a sound shorter than the clip is padded above, and
+            // the text pictures are single frames the overlay holds.
             '-t', segmentDuration.toFixed(5),
             '-f', outFormat,
             '-y', partialPath,
