@@ -12,6 +12,7 @@ import { showItemInFolder } from '../util';
 import type { CleanupChoice, CleanupChoicesType } from '../dialogs';
 import Checkbox from './Checkbox';
 import ExportResult from './ExportResult';
+import ExportFailed from './ExportFailed';
 import { morphFromWorkingCard } from './Working';
 import HelpTip from './HelpTip';
 import styles from './GenericDialog.module.css';
@@ -323,6 +324,66 @@ export function useDialog() {
     });
   }), [showGenericDialog, t]);
 
+  /**
+   * The simple editor's card for an export that didn't work, grown from the progress card like the result: the clip, one
+   * line why, the full message behind Details. Resolves with 'retry' or 'report' when one was chosen.
+   */
+  const openExportFailedDialog = useCallback(({ name, picture, reason, details }: {
+    name: string,
+    picture?: string | undefined,
+    reason: string,
+    details?: string | undefined,
+  }) => new Promise<'retry' | 'report' | undefined>((resolve) => {
+    function ExportFailedDialog() {
+      const { onOpenChange } = useGenericDialogContext();
+      const retryRef = useRef<HTMLButtonElement>(null);
+      const reduceMotion = useReducedMotionConfig() === true;
+      const morphed = useRef(false);
+      const contentRef = useCallback((el: HTMLDivElement | null) => {
+        if (el == null || morphed.current) return;
+        morphed.current = true;
+        morphFromWorkingCard(el, { reduceMotion });
+      }, [reduceMotion]);
+
+      const handleOpenAutoFocus = useCallback((e: Event) => {
+        if (retryRef.current == null) return;
+        e.preventDefault();
+        retryRef.current.focus({ focusVisible: false } as FocusOptions);
+      }, []);
+
+      const choose = (choice: 'retry' | 'report') => {
+        resolve(choice);
+        onOpenChange(false);
+      };
+
+      return (
+        <Dialog.Content ref={contentRef} aria-describedby={undefined} className={styles['exportResult']} onOpenAutoFocus={handleOpenAutoFocus}>
+          <Dialog.Title className={styles['centredTitle']}>{t('Export failed')}</Dialog.Title>
+          <ExportFailed
+            name={name}
+            picture={picture}
+            reason={reason}
+            details={details}
+            // A panel: its X closes it; the buttons do something.
+            actions={(
+              <>
+                <DialogButton variant="ghost" onClick={() => choose('report')}>{t('Report')}</DialogButton>
+                <DialogButton primary ref={retryRef} onClick={() => choose('retry')}>{t('Try again')}</DialogButton>
+              </>
+            )}
+          />
+          <Dialog.CloseButton />
+        </Dialog.Content>
+      );
+    }
+
+    showGenericDialog({
+      kind: 'exportResult',
+      render: () => <ExportFailedDialog />,
+      onClose: () => resolve(undefined),
+    });
+  }), [showGenericDialog, t]);
+
   const openCutFinishedDialog = useCallback(({ filePaths, warnings, notices, highlight, showAdvice = true, ...extras }: {
     /** Every file the export made. */
     filePaths: string[],
@@ -507,6 +568,7 @@ export function useDialog() {
     showGenericDialog,
     confirmDialog,
     openExportFinishedDialog,
+    openExportFailedDialog,
     openCutFinishedDialog,
     openSizeLimitedFinishedDialog,
     openConcatFinishedDialog,

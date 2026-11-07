@@ -172,6 +172,7 @@ import {
   readFileStats,
   makeSourceFileAccessError,
   trashFile,
+  appVersion,
 } from './util';
 import getSwal, { errorToast, showPlaybackFailedMessage } from './swal';
 import { addRecentFile, removeRecentFile } from './util/recentFiles';
@@ -316,6 +317,7 @@ import getMergePartNames from './mergePartNames';
 import { getLastSettingsLabel, getQuickExportPresetLabel, isChaptersOnlyExport, resolveExportQuality } from './quickExport';
 import type { QuickExport } from './quickExport';
 import { normalizeQuickExportPresets } from '../../common/quickExport';
+import { publicBugReportUrl } from '../../common/constants';
 import { getProjectCopiesToRetire, getProjectLookupPaths, getProjectSavePaths, getProjectStoreEnv, isSameProjectPath } from './projectStore';
 import { filterOwnProjectFiles, findProjectFiles, keepBackupCopies, keepCopiesAboutToBeReplaced, keepCopiesNotOpened, logProjectFiles, readNewestProjectCopy, recycleRecordingProjectCopies } from './projectFilesIo';
 import { getClipsToRemove, pickClip, pickInBox } from './clipPicking';
@@ -333,7 +335,7 @@ import type { FileIdentity } from './originalRecycling';
 import { shouldRecycleEditsWithOriginal, shouldRecycleOriginalAfterExport } from './afterExportAction';
 import { fileExists, identifyFile, probeOutput, statOutput } from './originalRecyclingIo';
 import styles from './App.module.css';
-import { DirectoryAccessDeclinedError, UnsupportedFileError, UserFacingError } from '../errors';
+import { DirectoryAccessDeclinedError, EmptyExportError, UnsupportedFileError, UserFacingError } from '../errors';
 import SwalContainer from './components/SwalContainer';
 import ErrorDialog from './components/ErrorDialog';
 import useErrorHandling from './hooks/useErrorHandling';
@@ -355,6 +357,9 @@ import {
 import type { UndoableSetOptions } from './undoableHistory';
 
 const electron = window.require('electron');
+
+/** An export file smaller than this is empty: an MP4 header alone is a few hundred bytes, a second of sound several KB. */
+const emptyExportBytes = 1024;
 const { lstat } = window.require('fs/promises');
 const {
   parse: parsePath,
@@ -673,6 +678,7 @@ function App() {
     closeExportResultDialog,
     confirmDialog,
     openExportFinishedDialog,
+    openExportFailedDialog,
     openCutFinishedDialog,
     openSizeLimitedFinishedDialog,
     openConcatFinishedDialog,
@@ -3307,6 +3313,62 @@ function App() {
   }, [closeCurrentFileAfterExport, copyAfterExport, hideAllNotifications, nextClip, simpleMode]);
 
   /**
+   * An export that came out empty (an MP4 header with no picture or sound: a few hundred bytes) is never shown as
+   * exported. Only each file's size, which costs nothing next to the export; the file isn't read again. An empty file is
+   * removed; when every file is empty, the export failed.
+   */
+  const keepNonEmptyExports = useCallback(async (paths: string[], warnings: Set<string>) => {
+    const sizes = await Promise.all(paths.map(async (path) => lstat(path).then((stats: { size: number }) => Number(stats.size), () => undefined)));
+    const empty = paths.filter((_path, index) => sizes[index] != null && sizes[index]! < emptyExportBytes);
+    if (empty.length === 0) return paths;
+    await tryDeleteFiles(empty);
+    if (empty.length === paths.length) throw new EmptyExportError();
+    for (const path of empty) warnings.add(i18n.t('{{file}} came out empty and was removed.', { file: basename(path) }));
+    return paths.filter((path) => !empty.includes(path));
+  }, [tryDeleteFiles]);
+
+  /**
+   * The simple editor's "Export failed" card, for any export that didn't work: the clip, one plain line why, the full
+   * message behind Details. Try again runs the same export; Report copies the message and opens the bug report page.
+   */
+  const showSimpleExportFailed = useCallback((err: unknown, retry: () => void) => {
+    const first = segmentsToExport[0];
+    const name = segmentsToExport.length === 1 && first != null
+      ? (first.name || (filePath != null ? parsePath(filePath).name : ''))
+      : t('{{count}} clips', { count: segmentsToExport.length });
+    const picture = first != null && first.end != null
+      ? pickExportFrames(filmstrip.frames, [{ start: first.start, end: first.end, outputDuration: getSegmentOutputDuration(first, outputPlaybackRate) }], 1)[0]?.url
+      : undefined;
+    const reason = (() => {
+      if (err instanceof EmptyExportError) return t('The export came out empty.');
+      if (err instanceof OutputNotWritableError) return t('ClipPress can\'t save to that folder.');
+      if (err instanceof UserFacingError) return err.message;
+      if (isExecaError(err)) {
+        if (isOutOfSpaceError(err)) return t('The drive is full.');
+        if (isMuxNotSupported(err)) return t('This file type can\'t hold these tracks.');
+        // Ended by Windows rather than by FFmpeg itself (a crash, the card's driver).
+        if (err.signal != null || (err.exitCode != null && err.exitCode > 255)) return t('The encoder stopped unexpectedly.');
+      }
+      return t('Something went wrong while exporting.');
+    })();
+    // What went wrong first (FFmpeg's last lines), then the command that ran.
+    const details = [
+      `ClipPress ${appVersion}`,
+      ...(isExecaError(err)
+        ? [getStdioString(err.stderr)?.trim().split(/\r?\n/).slice(-40).join('\n') ?? '', '', err.shortMessage]
+        : [err instanceof Error ? err.message : String(err)]),
+    ].join('\n').trim();
+    openExportFailedDialog({ name, picture, reason, details }).then((choice) => {
+      if (choice === 'retry') retry();
+      if (choice === 'report') {
+        mainApi.writeClipboardText(details).catch((copyErr: unknown) => console.error('Could not copy to the clipboard', copyErr));
+        electron.shell.openExternal(publicBugReportUrl).catch((openErr: unknown) => console.error('Could not open the bug report page', openErr));
+        showNotification({ icon: 'info', text: t('The details are copied: paste them into the report.') });
+      }
+    }, (dialogErr: unknown) => console.error('Could not show the failed export', dialogErr));
+  }, [filePath, filmstrip.frames, openExportFailedDialog, outputPlaybackRate, segmentsToExport, showNotification, t]);
+
+  /**
    * Settings > Export > "Move the original to the Recycle Bin after export". Only after every planned file was
    * written and checked, only through the Recycle Bin, and never if the original changed during the export.
    * Returns whether the recording was closed for it.
@@ -3884,6 +3946,8 @@ function App() {
   );
 
   /** Exports with the sheet's settings, or a quick export preset's quality (see quickExport). */
+  // The failed export's Try again (its card opens from inside the export).
+  const onExportConfirmRef = useRef<(quickExport?: QuickExport) => void>();
   const onExportConfirm = useCallback(async (quickExport?: QuickExport) => {
     invariant(filePath != null && outputDir != null);
     emitEvent({ eventName: 'export-start', path: filePath });
@@ -4236,9 +4300,9 @@ function App() {
         );
         appendSizeLimitedResultNotices(finalizedResults, notices, warnings, !exportGpuAcceleration);
 
-        if (firstCreatedResult != null && simpleMode && !prefersReducedMotion) shootConfetti();
+        const exportedPaths = await keepNonEmptyExports(finalizedResults.filter((result) => result.created).map((result) => result.path), warnings);
 
-        const exportedPaths = finalizedResults.filter((result) => result.created).map((result) => result.path);
+        if (firstCreatedResult != null && simpleMode && !prefersReducedMotion) shootConfetti();
 
         // "Do this automatically after each export" in the clean-up dialog (asked first, when it asks).
         const askedForCleanup = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport === true && cleanupChoices.askForCleanup;
@@ -4468,9 +4532,9 @@ function App() {
           }
         }
 
-        if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti();
+        const exportedPaths = await keepNonEmptyExports(getWrittenExportPaths({ files: outFiles, merged: mergedResult, deletedSegments: autoDeleteMergedSegments && mergedResult?.created === true }), warnings);
 
-        const exportedPaths = getWrittenExportPaths({ files: outFiles, merged: mergedResult, deletedSegments: autoDeleteMergedSegments && mergedResult?.created === true });
+        if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti();
 
         // "Do this automatically after each export" in the clean-up dialog (asked first, when it asks).
         const askedForCleanup = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport === true && cleanupChoices.askForCleanup;
@@ -4709,10 +4773,10 @@ function App() {
 
       if (outFiles.some((file) => file.created) && areWeCutting) notices.add(i18n.t('Cutpoints may be inaccurate.'));
 
-      if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti();
-
       // Note: this should be after cleanup, so we don't accidentally open two dialogs at the same time, leading to error *and* success dialog simultaneously https://github.com/mifi/lossless-cut/issues/2609
-      const exportedPaths = getWrittenExportPaths({ files: outFiles, merged: mergedResult, deletedSegments: autoDeleteMergedSegments && mergedResult?.created === true });
+      const exportedPaths = await keepNonEmptyExports(getWrittenExportPaths({ files: outFiles, merged: mergedResult, deletedSegments: autoDeleteMergedSegments && mergedResult?.created === true }), warnings);
+
+      if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti();
 
       // "Do this automatically after each export" in the clean-up dialog (asked first, when it asks).
       const askedForCleanup = exportedPaths.length > 0 && cleanupChoices.cleanupAfterExport === true && cleanupChoices.askForCleanup;
@@ -4776,7 +4840,16 @@ function App() {
       if (isExecaError(err)) {
         console.log('stdout:', getStdioString(err.stdout));
         console.error('stderr:', getStdioString(err.stderr));
+      }
 
+      // The simple editor: one card for every failure, the "Exported" card's twin (opened, not waited for, so the
+      // progress card goes as it opens).
+      if (simpleMode) {
+        showSimpleExportFailed(err, () => { onExportConfirmRef.current?.(quickExport); });
+        return;
+      }
+
+      if (isExecaError(err)) {
         if (isOutOfSpaceError(err)) {
           showDiskFull();
           return;
@@ -4804,6 +4877,8 @@ function App() {
     }
   }, [
     sizeLimitedAddedAudio.files,
+    keepNonEmptyExports,
+    showSimpleExportFailed,
     cutFileTemplate,
     finishExport,
     getMixedAudioTracks,
@@ -4916,6 +4991,9 @@ function App() {
     willMerge,
     workingRef,
   ]);
+  useEffect(() => {
+    onExportConfirmRef.current = (quickExport) => { onExportConfirm(quickExport); };
+  }, [onExportConfirm]);
 
   const onExportPress = useCallback(async () => {
     if (!filePath) return;

@@ -1,0 +1,74 @@
+/* An export that didn't work (ExportFailed.tsx): the result card's look, with the clip's picture dimmed under a cross. */
+.picture {
+  cursor: default;
+  border-color: color-mix(in srgb, var(--cp-danger) 45%, transparent);
+}
+
+.picture img {
+  object-fit: cover;
+  filter: grayscale(.6) brightness(.38);
+}
+
+.cross {
+  position: absolute;
+  font-size: 2.1rem;
+  color: var(--cp-danger);
+  filter: drop-shadow(0 1px 6px rgb(0 0 0 / 60%));
+}
+
+/* Not a link: there is no file to show. */
+.name {
+  cursor: default;
+}
+
+.name:hover {
+  color: inherit;
+}
+
+.name:hover > span {
+  text-decoration: none;
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  padding: .35rem .3rem .5rem .7rem;
+  border-radius: var(--cp-radius);
+  background: var(--cp-bg);
+  border: 1px solid var(--cp-line);
+}
+
+/* Above the message, so it never sits on the text or its scrollbar. */
+.copy {
+  align-self: flex-end;
+}
+
+.message {
+  margin: 0;
+  padding-right: .4rem;
+  max-height: 11rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: Consolas, 'Cascadia Mono', monospace;
+  font-size: .72rem;
+  line-height: 1.45;
+  user-select: text;
+}
+
+/* The dialogs' slim scrollbar. */
+.message::-webkit-scrollbar {
+  width: 8px;
+}
+
+.message::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.message::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--gray-9) 55%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}

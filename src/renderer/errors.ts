@@ -18,3 +18,11 @@ export class UserFacingError extends Error {
     this.name = 'UserFacingError';
   }
 }
+
+/** Every file of an export came out empty (a header, no picture or sound), so it didn't work. */
+export class EmptyExportError extends Error {
+  constructor() {
+    super('The export came out empty');
+    this.name = 'EmptyExportError';
+  }
+}
