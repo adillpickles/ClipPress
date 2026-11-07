@@ -212,6 +212,12 @@
   background: var(--cp-accent-soft);
 }
 
+/* Locked on (the export needs it): no pointer, no hover change. */
+.simpleRowLocked,
+.simpleRowLocked:hover {
+  cursor: default;
+}
+
 /* Left out: greyed, the label struck through (the export options' toggles do the same). */
 .simpleRow:not(.simpleRowOn) {
   opacity: .55;

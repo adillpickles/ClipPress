@@ -507,7 +507,7 @@ const fileStyle: CSSProperties = { marginBottom: '2em', padding: '.5em 0', overf
 
 function StreamsSelector({
   mainFilePath, mainFileFormat, mainFileStreams, mainFileChapters, isCopyingStreamId, toggleCopyStreamId, setCopyStreamIdsForPath, onExtractStreamPress, onExtractAllStreamsPress, allFilesMeta, externalFilesMeta, setExternalFilesMeta, showAddStreamSourceDialog, shortestFlag, setShortestFlag, nonCopiedExtraStreams, customTagsByFile, setCustomTagsByFile, paramsByStreamId, updateStreamParams, formatTimecode, loadSubtitleTrackToSegments, toggleCopyStreamIds, changeEnabledStreamsFilter, toggleCopyAllStreamsForPath, onStreamSourceFileDrop,
-  simpleMode,
+  simpleMode, lockedPictureHint,
 }: {
   mainFilePath: string,
   mainFileFormat: FFprobeFormat | undefined,
@@ -536,6 +536,8 @@ function StreamsSelector({
   toggleCopyAllStreamsForPath: (path: string) => void,
   onStreamSourceFileDrop: DragEventHandler<HTMLDivElement>,
   simpleMode: boolean,
+  /** Why the recording's picture can't be left out, when it can't: its row stays on, as its chip in the export options. */
+  lockedPictureHint?: string | undefined,
 }) {
   const [editingFile, setEditingFile] = useState<string>();
   const [editingStream, setEditingStream] = useState<EditingStream>();
@@ -594,15 +596,19 @@ function StreamsSelector({
             {streams.map((stream) => {
               const label = getLabel(streams, stream);
               const Icon = stream.codec_type === 'video' ? FiFilm : FiVolume2;
-              // As in the export options: blue is in the export, grey is left out.
-              const kept = isCopyingStreamId(path, stream.index);
+              // As in the export options: blue is in the export, grey is left out; the recording's picture locked on when
+              // the export needs it, saying why.
+              const locked = lockedPictureHint != null && path === mainFilePath && stream.codec_type === 'video';
+              const kept = locked || isCopyingStreamId(path, stream.index);
               return (
                 <button
                   key={stream.index}
                   type="button"
                   aria-pressed={kept}
-                  className={[styles['simpleRow'], ...(kept ? [styles['simpleRowOn']] : [])].join(' ')}
-                  onClick={() => toggleCopyStreamId(path, stream.index)}
+                  aria-disabled={locked}
+                  title={locked ? lockedPictureHint : undefined}
+                  className={[styles['simpleRow'], ...(kept ? [styles['simpleRowOn']] : []), ...(locked ? [styles['simpleRowLocked']] : [])].join(' ')}
+                  onClick={locked ? undefined : () => toggleCopyStreamId(path, stream.index)}
                 >
                   <Icon aria-hidden className={styles['simpleRowIcon']} />
                   <span className={styles['simpleRowLabel']}>{label}</span>

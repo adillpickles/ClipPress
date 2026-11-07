@@ -2277,6 +2277,10 @@ function App() {
     [fileDuration, segmentsToExport],
   );
   const isSizeLimitedExport = exportEncodeMode === 'size_limited';
+  // Why the recording's picture can't be left out, when it can't: on its locked chip and on its row in Tracks.
+  const pictureLockedHint = isSizeLimitedExport
+    ? t('Fit a file size always keeps the picture.')
+    : (exportNeedsPicture ? t('Text, speed and zoom need the picture.') : undefined);
   const needSmartCut = areWeCutting && enableSmartCut;
   const isEncoding = needSmartCut || lossyMode != null;
   const isEncodingUi = isEncoding || isSizeLimitedExport;
@@ -8044,7 +8048,7 @@ function App() {
                 numStreamsToCopy={numStreamsToCopy}
                 onShowStreamsSelectorClick={handleShowStreamsSelectorClick}
                 tracks={exportTracks}
-                pictureLocked={exportNeedsPicture}
+                pictureLockedHint={pictureLockedHint}
                 outFormat={fileFormat}
                 cutFileTemplate={cutFileTemplate}
                 cutMergedFileTemplate={cutMergedFileTemplate}
@@ -8137,6 +8141,7 @@ function App() {
                         }
                         onStreamSourceFileDrop={handleStreamSourceFileDrop}
                         simpleMode={simpleMode}
+                        lockedPictureHint={pictureLockedHint}
                       />
                     )}
 

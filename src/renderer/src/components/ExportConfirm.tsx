@@ -349,7 +349,7 @@ function ExportConfirm({
   numStreamsToCopy,
   onShowStreamsSelectorClick,
   tracks,
-  pictureLocked,
+  pictureLockedHint,
   cutFileTemplate,
   cutMergedFileTemplate,
   generateCutFileNames,
@@ -388,8 +388,8 @@ function ExportConfirm({
   onShowStreamsSelectorClick: () => void;
   /** Every picture and sound, the recording's first, then each added file's (App's exportTracks). */
   tracks: { key: string, kind: 'video' | 'audio', label: string, title: string | undefined, added: boolean, kept: boolean, toggle: () => void }[],
-  /** The clips have text, a speed change or a zoom, drawn on the picture: it can't be left out. */
-  pictureLocked: boolean,
+  /** Why the recording's picture can't be left out (Fit a file size; text, speed or zoom drawn on it), when it can't. */
+  pictureLockedHint: string | undefined,
   cutFileTemplate: string | undefined;
   cutMergedFileTemplate: string | undefined;
   generateCutFileNames: GenerateOutFileNames;
@@ -1999,7 +1999,7 @@ function ExportConfirm({
                   <div className={styles['metaLabel']}>{t('Tracks')}</div>
                   <div className={styles['keepToggles']}>
                     {shownTracks.map(({ key, kind, label, kept, toggle }) => {
-                      const locked = (isSizeLimited || pictureLocked) && kind === 'video';
+                      const locked = pictureLockedHint != null && kind === 'video';
                       const Icon = kind === 'video' ? FiFilm : FiVolume2;
                       return (
                         <button
@@ -2008,7 +2008,7 @@ function ExportConfirm({
                           aria-pressed={kept || locked}
                           // Not `disabled`: a disabled button gets no hover, and its hint says why it stays.
                           aria-disabled={locked}
-                          title={locked ? (isSizeLimited ? t('Fit a file size always keeps the picture.') : t('Text, speed and zoom need the picture.')) : undefined}
+                          title={locked ? pictureLockedHint : undefined}
                           className={[styles['keepToggle'], ...(kept || locked ? [styles['keepToggleOn']] : []), ...(locked ? [styles['keepToggleLocked']] : [])].join(' ')}
                           onClick={locked ? undefined : toggle}
                         >
