@@ -127,3 +127,111 @@
   background: color-mix(in srgb, var(--red-4) 18%, transparent);
   color: var(--red-11);
 }
+
+/* The simple editor's Tracks: rows like Settings' (a name, a switch at the right), grouped by file. */
+.simpleGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  margin-top: .25rem;
+}
+
+.simpleGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.simpleGroupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  min-height: 1.75rem;
+  margin-bottom: .15rem;
+}
+
+.simpleGroupName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
+  font-weight: 600;
+}
+
+.simpleRemove {
+  all: unset;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: .2rem .5rem;
+  border-radius: var(--cp-radius-sm);
+  color: var(--cp-text-muted);
+  font-size: .75rem;
+  font-weight: 600;
+  transition: color .12s ease, background-color .12s ease;
+}
+
+.simpleRemove:hover {
+  color: var(--cp-danger);
+  background: var(--cp-danger-soft);
+}
+
+.simpleRemove:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.simpleRow {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  min-height: 2.5rem;
+  margin-top: .35rem;
+  padding: 0 .9rem 0 .8rem;
+  border-radius: var(--cp-radius-lg);
+  border: 1px solid var(--cp-line);
+  color: var(--cp-text-muted);
+  transition: background-color .12s ease, border-color .12s ease, color .12s ease, opacity .12s ease;
+}
+
+.simpleRow:hover {
+  border-color: var(--cp-line-strong);
+}
+
+.simpleRow:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.simpleRowOn,
+.simpleRowOn:hover {
+  color: var(--cp-text);
+  border-color: var(--accent-9);
+  background: var(--cp-accent-soft);
+}
+
+/* Left out: greyed, the label struck through (the export options' toggles do the same). */
+.simpleRow:not(.simpleRowOn) {
+  opacity: .55;
+}
+
+.simpleRow:not(.simpleRowOn) .simpleRowLabel {
+  text-decoration: line-through;
+}
+
+.simpleRowIcon {
+  flex-shrink: 0;
+}
+
+.simpleRowOn .simpleRowIcon {
+  color: var(--cp-accent-text);
+}
+
+.simpleRowLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: .875rem;
+  font-weight: 600;
+}

@@ -304,17 +304,22 @@
 
 /* Rows 36px apart (28px buttons + 8px): a whole number of screen pixels at 100%, 125%, 150% and 175% display scale,
    so both Change buttons draw alike (at 34.4px apart, one landed on a half pixel and its text looked off-centre). */
+/* One grid for every row, so each row's middle ends where the widest button (Save to's Change) begins. */
 .metaRows {
-  display: flex;
-  flex-direction: column;
-  gap: .5rem;
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr) auto;
+  gap: .5rem .75rem;
 }
 
 .metaRow {
   display: grid;
-  grid-template-columns: 6.5rem minmax(0, 1fr) auto;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: .75rem;
+}
+
+.metaRows > :not(.metaRow) {
+  grid-column: 1 / -1;
 }
 
 .metaLabel {
@@ -596,4 +601,67 @@ table.options td:nth-child(2) > div {
   border: 1px solid var(--accent-9);
   background: var(--cp-accent-soft);
   box-shadow: inset 0 0 0 1px var(--accent-9);
+}
+
+/* What the export keeps: picture and sound, each a toggle (the size picks' pill, with an icon). */
+.keepToggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem;
+}
+
+.keepToggle {
+  all: unset;
+  cursor: pointer;
+  box-sizing: border-box;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: 0 .8rem 0 .65rem;
+  border-radius: 999px;
+  border: 1px solid var(--cp-line);
+  color: var(--cp-text-muted);
+  font-size: .8125rem;
+  font-weight: 600;
+  transition: background-color .12s ease, border-color .12s ease, color .12s ease;
+}
+
+.keepToggle:hover {
+  color: var(--cp-text);
+  border-color: var(--cp-line-strong);
+}
+
+.keepToggle:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.keepToggleOn,
+.keepToggleOn:hover {
+  color: var(--cp-text);
+  border-color: var(--accent-9);
+  background: var(--cp-accent-soft);
+}
+
+.keepToggleOn svg {
+  color: var(--cp-accent-text);
+}
+
+/* "+N": the tracks that don't fit, a way into Tracks. */
+.moreTracks {
+  padding: 0 .75rem;
+  color: var(--cp-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Left out: greyed, the label struck through. */
+.keepToggle:not(.keepToggleOn):not(.moreTracks) {
+  opacity: .55;
+  text-decoration: line-through;
+}
+
+/* Locked on (the export needs it): no pointer, no hover change. */
+.keepToggleLocked,
+.keepToggleLocked:hover {
+  cursor: default;
 }

@@ -14,7 +14,7 @@ import {
 import i18n from 'i18next';
 import { useTranslation, Trans } from 'react-i18next';
 import { IoIosHelpCircle, IoIosSettings } from 'react-icons/io';
-import { FiChevronDown, FiChevronRight } from 'react-icons/fi';
+import { FiChevronDown, FiChevronRight, FiFilm, FiVolume2 } from 'react-icons/fi';
 import type { SweetAlertIcon } from 'sweetalert2';
 import { getSegmentOutputDuration, getSegmentSpeed } from '../segmentSpeed';
 import { hasSegmentCrop } from '../segmentCrop';
@@ -348,6 +348,8 @@ function ExportConfirm({
   numStreamsTotal,
   numStreamsToCopy,
   onShowStreamsSelectorClick,
+  tracks,
+  pictureLocked,
   cutFileTemplate,
   cutMergedFileTemplate,
   generateCutFileNames,
@@ -384,6 +386,10 @@ function ExportConfirm({
   numStreamsTotal: number;
   numStreamsToCopy: number;
   onShowStreamsSelectorClick: () => void;
+  /** Every picture and sound, the recording's first, then each added file's (App's exportTracks). */
+  tracks: { key: string, kind: 'video' | 'audio', label: string, title: string | undefined, added: boolean, kept: boolean, toggle: () => void }[],
+  /** The clips have text, a speed change or a zoom, drawn on the picture: it can't be left out. */
+  pictureLocked: boolean,
   cutFileTemplate: string | undefined;
   cutMergedFileTemplate: string | undefined;
   generateCutFileNames: GenerateOutFileNames;
@@ -1512,6 +1518,11 @@ function ExportConfirm({
     return parts.join(' · ');
   }, [areWeCutting, isSizeLimited, outputPlaybackRate, segmentsOrInverse.all.length, segmentsOrInverse.selected.length, segmentsToExport, sizeLimitMb, t, willMerge]);
 
+  // The Tracks row shows the recording's own tracks (up to three) and counts the rest, so it never outgrows its column.
+  const ownTracks = tracks.filter(({ added }) => !added);
+  const shownTracks = ownTracks.length <= 3 ? ownTracks : ownTracks.slice(0, 2);
+  const moreTracks = tracks.filter((track) => !shownTracks.includes(track));
+
   const isCustomSizeLimit = sizeLimitControlMode === 'advanced';
 
   // Opening Custom settings starts from the preset you were on: what it would encode with on this PC.
@@ -1981,14 +1992,42 @@ function ExportConfirm({
                   <div className={styles['metaValue']} title={outputDir}>{outputDir}</div>
                   <OutDirButtons size="sm">{t('Change')}</OutDirButtons>
                 </div>
+                {/* The recording's own tracks as toggles (blue is in the export, grey is left out), and one "+N" for the
+                    rest (added files, more sounds), which opens Tracks. Fit a file size, text, speed and zoom always
+                    need the recording's picture: its chip is locked on, and says why on hover. */}
                 <div className={styles['metaRow']}>
                   <div className={styles['metaLabel']}>{t('Tracks')}</div>
-                  <div className={styles['metaValue']}>
-                    {isSizeLimited
-                      ? (sizeLimitedHasAudio ? t('Video and one audio track') : t('Video only'))
-                      : t('{{count}} tracks', { count: numStreamsToCopy })}
+                  <div className={styles['keepToggles']}>
+                    {shownTracks.map(({ key, kind, label, kept, toggle }) => {
+                      const locked = (isSizeLimited || pictureLocked) && kind === 'video';
+                      const Icon = kind === 'video' ? FiFilm : FiVolume2;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          aria-pressed={kept || locked}
+                          // Not `disabled`: a disabled button gets no hover, and its hint says why it stays.
+                          aria-disabled={locked}
+                          title={locked ? (isSizeLimited ? t('Fit a file size always keeps the picture.') : t('Text, speed and zoom need the picture.')) : undefined}
+                          className={[styles['keepToggle'], ...(kept || locked ? [styles['keepToggleOn']] : []), ...(locked ? [styles['keepToggleLocked']] : [])].join(' ')}
+                          onClick={locked ? undefined : toggle}
+                        >
+                          <Icon aria-hidden />
+                          {label}
+                        </button>
+                      );
+                    })}
+                    {moreTracks.length > 0 && (
+                      <button
+                        type="button"
+                        className={[styles['keepToggle'], styles['moreTracks']].join(' ')}
+                        title={t('{{count}} more tracks', { count: moreTracks.length })}
+                        onClick={onShowStreamsSelectorClick}
+                      >
+                        {`+${moreTracks.length}`}
+                      </button>
+                    )}
                   </div>
-                  <Button size="sm" onClick={onShowStreamsSelectorClick}>{t('Change')}</Button>
                 </div>
                 {renderNotice(notices.specific['problematicStreams'], { style: { marginTop: '.25rem' } })}
               </div>

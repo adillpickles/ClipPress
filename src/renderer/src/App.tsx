@@ -343,6 +343,7 @@ import WhatsNew from './components/WhatsNew';
 import UpdateNotice from './components/UpdateNotice';
 import mainApi from './mainApi.js';
 import createForwardJobProgress from './exportProgress';
+import { isAudioMix } from './exportSegmentMath';
 import type { AppEvent } from '../../main/index.js';
 
 import {
@@ -1648,19 +1649,75 @@ function App() {
     showGenericDialog,
   });
 
-  const sizeLimitedStreams = useMemo(
-    () => pickSizeLimitedStreams(mainCopiedStreams),
-    [mainCopiedStreams],
-  );
+  // Added files' sounds kept for the export: Fit a file size mixes them in (getMixedAudioTracks), each file its own input.
+  const sizeLimitedAddedAudio = useMemo(() => {
+    const files = Object.entries(externalFilesMeta)
+      .map(([path, { streams }]) => ({ path, streams: streams.filter((stream) => stream.codec_type === 'audio' && isCopyingStreamId(path, stream.index)) }))
+      .filter(({ streams }) => streams.length > 0);
+    return { files: files.map(({ path }) => path), tracks: files.flatMap(({ path, streams }, file) => streams.map((stream) => ({ path, file, stream }))) };
+  }, [externalFilesMeta, isCopyingStreamId]);
+  // Fit a file size always takes the recording's picture (its toggle is locked on there, even if Original quality left
+  // it out); its sound, or with that left out an added file's.
+  const sizeLimitedStreams = useMemo(() => {
+    const picked = pickSizeLimitedStreams(mainCopiedStreams);
+    return {
+      videoStream: picked.videoStream ?? getRealVideoStreams(mainStreams)[0],
+      audioStream: picked.audioStream ?? sizeLimitedAddedAudio.tracks[0]?.stream,
+    };
+  }, [mainCopiedStreams, mainStreams, sizeLimitedAddedAudio]);
+  // The export options' Tracks: every picture and sound, the recording's first, then each added file's, kept or not.
+  const exportTracks = useMemo(() => {
+    if (filePath == null) return [];
+    const files = [
+      { path: filePath, streams: mainStreams, added: false },
+      ...Object.entries(externalFilesMeta).map(([path, { streams }]) => ({ path, streams, added: true })),
+    ];
+    return files.flatMap(({ path, streams, added }) => {
+      const pictures = getRealVideoStreams(streams);
+      const sounds = streams.filter((stream) => stream.codec_type === 'audio');
+      const name = (kind: 'video' | 'audio', number: number | undefined) => {
+        if (kind === 'video') return added ? t('Added picture') : (number != null ? t('Picture {{number}}', { number }) : t('Picture'));
+        return added ? t('Added sound') : (number != null ? t('Sound {{number}}', { number }) : t('Sound'));
+      };
+      return [...pictures, ...sounds].map((stream) => {
+        const kind = stream.codec_type === 'video' ? 'video' as const : 'audio' as const;
+        const sameKind = kind === 'video' ? pictures : sounds;
+        return {
+          key: `${path}:${stream.index}`,
+          kind,
+          label: name(kind, sameKind.length > 1 ? sameKind.indexOf(stream) + 1 : undefined),
+          // An added file's tracks say which file on hover.
+          title: added ? basename(path) : undefined,
+          added,
+          kept: isCopyingStreamId(path, stream.index),
+          toggle: () => toggleCopyStreamId(path, stream.index),
+        };
+      });
+    });
+  }, [externalFilesMeta, filePath, isCopyingStreamId, mainStreams, t, toggleCopyStreamId]);
+  // Text, a speed change or a zoom is drawn on the picture, so an export with any of them always keeps it: the simple
+  // editor's Tracks chip is locked on, and a picture left out before is put back (advanced mode keeps its own choice).
+  const exportNeedsPicture = hasOverlayClips || hasSegmentSpeedChanges || hasSegmentCropChanges;
+  useEffect(() => {
+    if (!simpleMode || !exportNeedsPicture || filePath == null) return;
+    const [picture] = getRealVideoStreams(mainStreams);
+    if (picture == null || isCopyingStreamId(filePath, picture.index)) return;
+    setCopyStreamIdsForPath(filePath, (old) => ({ ...old, [picture.index]: true }));
+  }, [exportNeedsPicture, filePath, isCopyingStreamId, mainStreams, setCopyStreamIdsForPath, simpleMode]);
   // Game and mic on separate tracks (an OBS recording): a Discord export mixes them into its one track, each at its
   // track volume, so the mic is never left out.
   const sizeLimitedAudioTracks = useMemo(() => mainCopiedStreams.filter((stream) => stream.codec_type === 'audio'), [mainCopiedStreams]);
-  const getMixedAudioTracks = useCallback((clip?: ClipVolume) => (sizeLimitedAudioTracks.length > 1
-    ? sizeLimitedAudioTracks.map((stream) => {
-      const trackGainDb = filePath != null ? paramsByStreamId.get(filePath)?.get(stream.index)?.audioGainDb : undefined;
-      return { index: stream.index, gainDb: clip != null ? combineAudioGain(trackGainDb, clip) : trackGainDb };
-    })
-    : undefined), [filePath, paramsByStreamId, sizeLimitedAudioTracks]);
+  const getMixedAudioTracks = useCallback((clip?: ClipVolume) => {
+    const gain = (path: string | undefined, index: number) => {
+      const trackGainDb = path != null ? paramsByStreamId.get(path)?.get(index)?.audioGainDb : undefined;
+      return clip != null ? combineAudioGain(trackGainDb, clip) : trackGainDb;
+    };
+    const tracks = [
+      ...sizeLimitedAudioTracks.map((stream) => ({ index: stream.index, gainDb: gain(filePath, stream.index) })),
+      ...sizeLimitedAddedAudio.tracks.map(({ path, file, stream }) => ({ index: stream.index, gainDb: gain(path, stream.index), added: file })),
+    ];
+    return isAudioMix(tracks) ? tracks : undefined;
+  }, [filePath, paramsByStreamId, sizeLimitedAddedAudio, sizeLimitedAudioTracks]);
   const sizeLimitedSourceFps = useMemo(
     () => (sizeLimitedStreams.videoStream != null
       ? getStreamFps(sizeLimitedStreams.videoStream)
@@ -4056,6 +4113,7 @@ function App() {
               appendFfmpegCommandLog,
               audioGainDb: combineAudioGain(sizeLimitedAudioGainDb, segment),
               mixedAudioTracks: getMixedAudioTracks(segment),
+              addedAudioFiles: sizeLimitedAddedAudio.files,
               overlayClips: hasOverlayClips ? overlayClips : undefined,
               overlayVideoWidth: sizeLimitedVideoStream.width,
               overlayVideoHeight: sizeLimitedVideoStream.height,
@@ -4133,6 +4191,7 @@ function App() {
             audioGainDb: sizeLimitedAudioGainDb,
             // Each clip's own volume is applied after its mix (exportSegmentMath.ts).
             mixedAudioTracks: getMixedAudioTracks(),
+            addedAudioFiles: sizeLimitedAddedAudio.files,
             overlayClips: hasOverlayClips ? overlayClips : undefined,
             overlayVideoWidth: sizeLimitedVideoStream.width,
             overlayVideoHeight: sizeLimitedVideoStream.height,
@@ -4729,6 +4788,7 @@ function App() {
       setProgress(undefined);
     }
   }, [
+    sizeLimitedAddedAudio.files,
     cutFileTemplate,
     finishExport,
     getMixedAudioTracks,
@@ -7980,6 +8040,8 @@ function App() {
                 numStreamsTotal={numStreamsTotal}
                 numStreamsToCopy={numStreamsToCopy}
                 onShowStreamsSelectorClick={handleShowStreamsSelectorClick}
+                tracks={exportTracks}
+                pictureLocked={exportNeedsPicture}
                 outFormat={fileFormat}
                 cutFileTemplate={cutFileTemplate}
                 cutMergedFileTemplate={cutMergedFileTemplate}
@@ -8027,11 +8089,11 @@ function App() {
               >
                 <Dialog.Portal>
                   <Dialog.Overlay />
-                  <Dialog.Content style={{ width: simpleMode ? '34em' : '80em' }}>
+                  <Dialog.Content style={{ width: simpleMode ? '28rem' : '80em' }}>
                     <Dialog.Title>{t('Tracks')}</Dialog.Title>
                     <Dialog.Description>
                       {simpleMode
-                        ? t('Choose which video and audio tracks to keep.')
+                        ? t('What the export keeps.')
                         : t(
                           'Click to select which tracks to keep when exporting:',
                         )}

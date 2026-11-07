@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildAudioMixFilter, buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
+import { buildAddedAudioInputArgs, buildAudioMixFilter, buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow, isAudioMix } from './exportSegmentMath';
 
 describe('buildConcatSegmentInputArgs', () => {
   it('applies rotation before each input so the filter graph crops the displayed frame', () => {
@@ -224,5 +224,49 @@ describe('mixing audio tracks', () => {
       '[0:2]aresample=async=1:first_pts=0,volume=-3.00dB[mix0t1]',
       '[mix0t0][mix0t1]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=1:level=0:latency=1,asetpts=PTS-STARTPTS,atempo=2[segmenta0]',
     ]);
+  });
+});
+
+describe("an added file's sound in the mix", () => {
+  it("mixes any added track, and two or more of the recording's", () => {
+    expect(isAudioMix(undefined)).toBe(false);
+    expect(isAudioMix([{ index: 1, gainDb: undefined }])).toBe(false);
+    expect(isAudioMix([{ index: 1, gainDb: undefined }, { index: 2, gainDb: undefined }])).toBe(true);
+    // An added sound alone (the recording's left out) still comes from its own input.
+    expect(isAudioMix([{ index: 1, gainDb: undefined, added: 0 }])).toBe(true);
+  });
+
+  it("cuts each added file at each clip's times, clip by clip", () => {
+    expect(buildAddedAudioInputArgs({ files: ['a.mp3', 'b.mkv'], segments: [{ start: 1, end: 3 }, { start: 10, end: 11.5 }] })).toEqual([
+      '-ss', '1.00000', '-t', '2.00000', '-i', 'a.mp3',
+      '-ss', '1.00000', '-t', '2.00000', '-i', 'b.mkv',
+      '-ss', '10.00000', '-t', '1.50000', '-i', 'a.mp3',
+      '-ss', '10.00000', '-t', '1.50000', '-i', 'b.mkv',
+    ]);
+    expect(buildAddedAudioInputArgs({ files: [], segments: [{ start: 1, end: 3 }] })).toEqual([]);
+  });
+
+  it("takes an added track from its file's input", () => {
+    const graph = buildAudioMixFilter({ inputIndex: 0, tracks: [{ index: 1, gainDb: undefined }, { index: 0, gainDb: -6, added: 1 }], outputLabel: '[amixed]', getAddedInputIndex: (added) => 1 + added });
+    expect(graph[0]).toMatch(/^\[0:1\]aresample/);
+    expect(graph[1]).toMatch(/^\[2:0\]aresample=async=1:first_pts=0,volume=-6\.00dB/);
+    expect(graph[2]).toMatch(/^\[mix0t0\]\[mix0t1\]amix=inputs=2/);
+  });
+
+  it('gives each joined clip its own added inputs, after all the clips', () => {
+    const { graph } = buildSegmentConcatFilters({
+      segments: [{ start: 0, end: 2 }, { start: 5, end: 7 }],
+      videoStreamIndex: 0,
+      audioStreamIndex: 1,
+      outputPlaybackRate: 1,
+      mixedAudioTracks: [{ index: 1, gainDb: undefined }, { index: 0, gainDb: undefined, added: 0 }, { index: 0, gainDb: undefined, added: 1 }],
+      addedInputs: { first: 2, files: 2 },
+    });
+    // Clip 0: added files at inputs 2 and 3; clip 1: at 4 and 5.
+    expect(graph.some((part) => part.startsWith('[2:0]'))).toBe(true);
+    expect(graph.some((part) => part.startsWith('[3:0]'))).toBe(true);
+    expect(graph.some((part) => part.startsWith('[4:0]'))).toBe(true);
+    expect(graph.some((part) => part.startsWith('[5:0]'))).toBe(true);
+    expect(graph.some((part) => part.startsWith('[1:1]aresample'))).toBe(true);
   });
 });

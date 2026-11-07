@@ -102,8 +102,28 @@ export function buildMergedOverlayFilters({ overlayAssets, segments, outputPlayb
   return { graph, videoOutputLabel: currentLabel };
 }
 
-/** An audio track mixed into an export's one track, at its own volume (dB; undefined for as recorded). */
-export interface MixedAudioTrack { index: number, gainDb: number | undefined }
+/**
+ * An audio track mixed into an export's one track, at its own volume (dB; undefined for as recorded). `added`: from the
+ * file added at that place in the export's list of added files (its own input), not from the recording.
+ */
+export interface MixedAudioTrack { index: number, gainDb: number | undefined, added?: number | undefined }
+
+/** Tracks that have to be mixed: two or more, or any from an added file (another input). */
+export function isAudioMix(tracks: readonly MixedAudioTrack[] | undefined): tracks is readonly MixedAudioTrack[] {
+  return tracks != null && (tracks.length > 1 || tracks.some(({ added }) => added != null));
+}
+
+/**
+ * Each added file's input for each clip, cut at the clip's times as the recording is (an added file lines up with the
+ * recording from its start). For clip `c` and file `f` the input comes at `first + c * files.length + f`.
+ */
+export function buildAddedAudioInputArgs({ files, segments }: { files: readonly string[], segments: readonly Pick<DefiniteSegmentBase, 'start' | 'end'>[] }) {
+  return segments.flatMap((segment) => files.flatMap((path) => [
+    '-ss', segment.start.toFixed(5),
+    '-t', (segment.end - segment.start).toFixed(5),
+    '-i', path,
+  ]));
+}
 
 /**
  * Every audio track of a recording mixed into one (game and mic on separate tracks, as OBS can record them, each at
@@ -112,19 +132,21 @@ export interface MixedAudioTrack { index: number, gainDb: number | undefined }
  * compensated). Each track first starts where it starts in the clip (a mic track that begins late keeps its silence:
  * `amix` alone would pull it to the start). `after` runs on the mix; the graph ends at `outputLabel`.
  */
-export function buildAudioMixFilter({ inputIndex, tracks, after = [], outputLabel }: {
+export function buildAudioMixFilter({ inputIndex, tracks, after = [], outputLabel, getAddedInputIndex }: {
   inputIndex: number,
   tracks: readonly MixedAudioTrack[],
   after?: readonly string[] | undefined,
   outputLabel: string,
+  /** The input of an added file's track, by its place in the added files. */
+  getAddedInputIndex?: ((added: number) => number) | undefined,
 }) {
-  const graph = tracks.map(({ index, gainDb }, track) => `[${inputIndex}:${index}]${['aresample=async=1:first_pts=0', ...(isNeutralAudioGain(gainDb) ? [] : [getVolumeFilter(gainDb!)])].join(',')}[mix${inputIndex}t${track}]`);
+  const graph = tracks.map(({ index, gainDb, added }, track) => `[${added != null && getAddedInputIndex != null ? getAddedInputIndex(added) : inputIndex}:${index}]${['aresample=async=1:first_pts=0', ...(isNeutralAudioGain(gainDb) ? [] : [getVolumeFilter(gainDb!)])].join(',')}[mix${inputIndex}t${track}]`);
   const mix = [`amix=inputs=${tracks.length}:duration=longest:normalize=0`, 'alimiter=limit=1:level=0:latency=1', ...after.filter(Boolean)];
   graph.push(`${tracks.map((_, track) => `[mix${inputIndex}t${track}]`).join('')}${mix.join(',')}${outputLabel}`);
   return graph;
 }
 
-export function buildSegmentConcatFilters({ segments, videoStreamIndex, audioStreamIndex, outputPlaybackRate, videoWidth, videoHeight, gpuFrames, mixedAudioTracks }: {
+export function buildSegmentConcatFilters({ segments, videoStreamIndex, audioStreamIndex, outputPlaybackRate, videoWidth, videoHeight, gpuFrames, mixedAudioTracks, addedInputs }: {
   segments: DefiniteSegmentBase[],
   videoStreamIndex: number,
   audioStreamIndex: number | undefined,
@@ -135,6 +157,8 @@ export function buildSegmentConcatFilters({ segments, videoStreamIndex, audioStr
   gpuFrames?: { downloadFormat: string, outputFps: number | undefined } | undefined,
   /** Two or more audio tracks, each with its track volume, mixed into one before the clip's speed and volume. */
   mixedAudioTracks?: readonly MixedAudioTrack[] | undefined,
+  /** Where the added files' inputs start, and how many files (buildAddedAudioInputArgs). */
+  addedInputs?: { first: number, files: number } | undefined,
 }) {
   const graph: string[] = [];
   const labels = segments.map((segment, index) => {
@@ -146,10 +170,11 @@ export function buildSegmentConcatFilters({ segments, videoStreamIndex, audioStr
     if (audioStreamIndex == null) return videoLabel;
     const audioLabel = `[segmenta${index}]`;
     const tempo = getAudioTempoFilter(rate);
-    if (mixedAudioTracks != null && mixedAudioTracks.length > 1) {
+    if (isAudioMix(mixedAudioTracks)) {
       // Mixed: the clip's volume goes into each track's, before the mix and its limiter (as for one clip).
       const tracks = mixedAudioTracks.map((track) => ({ ...track, gainDb: combineAudioGain(track.gainDb, segment) }));
-      graph.push(...buildAudioMixFilter({ inputIndex: index, tracks, after: ['asetpts=PTS-STARTPTS', tempo], outputLabel: audioLabel }));
+      const getAddedInputIndex = addedInputs != null ? (added: number) => addedInputs.first + index * addedInputs.files + added : undefined;
+      graph.push(...buildAudioMixFilter({ inputIndex: index, tracks, after: ['asetpts=PTS-STARTPTS', tempo], outputLabel: audioLabel, getAddedInputIndex }));
       return `${videoLabel}${audioLabel}`;
     }
     // The clip's own volume; the track volume is applied once, after the concat.

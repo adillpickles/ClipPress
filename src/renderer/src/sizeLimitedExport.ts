@@ -28,7 +28,7 @@ import { planSizeLimitedEncode, relaxQualityCapForGenerousBudget } from './sizeL
 import { getEncodedFrameRate, getGpuProbeVideoArgs, hasQualityCap, parseFfprobeRate } from './sizeLimitedEncoderArgs';
 import type { SizeLimitedEncodedFrame } from './sizeLimitedEncoderArgs';
 import { parseFfmpegEncoderNames, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
-import { buildAudioMixFilter, buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
+import { buildAddedAudioInputArgs, buildAudioMixFilter, buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow, isAudioMix } from './exportSegmentMath';
 import type { MixedAudioTrack } from './exportSegmentMath';
 import { getAudioTempoFilter, getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from './segmentSpeed';
 import type { OverlayClip, SegmentToExport, SizeLimitedEncoderCapabilities, SizeLimitedExecutionResult, SizeLimitedProgressMetadata, SizeLimitedResolvedStrategy, SizeLimitedRetryStep } from './types';
@@ -709,7 +709,7 @@ async function resolveNextEncoder(strategy: SizeLimitedResolvedStrategy, resolve
   }
 }
 
-function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoProfile, overlayAssets, outputPlaybackRate, audioGainDb, videoWidth, videoHeight, gpuFramesFormat, mixedAudioTracks }: {
+function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoProfile, overlayAssets, outputPlaybackRate, audioGainDb, videoWidth, videoHeight, gpuFramesFormat, mixedAudioTracks, addedFileCount }: {
   segments: SegmentToExport[],
   videoStreamIndex: number,
   audioStreamIndex: number | undefined,
@@ -722,18 +722,21 @@ function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoPr
   gpuFramesFormat: string | undefined,
   /** Two or more audio tracks mixed into one, each at its own track volume (instead of `audioGainDb`). */
   mixedAudioTracks: readonly MixedAudioTrack[] | undefined,
+  /** Added files whose sound is mixed in: their inputs come after the clips' (buildAddedAudioInputArgs). */
+  addedFileCount: number,
 }) {
   const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
+  const addedInputs = addedFileCount > 0 ? { first: segments.length, files: addedFileCount } : undefined;
   const mergedOverlayFilters = buildMergedOverlayFilters({
     overlayAssets: overlayAssets ?? [],
     segments,
     outputPlaybackRate,
-    imageInputStartIndex: segments.length,
+    imageInputStartIndex: segments.length + segments.length * addedFileCount,
     videoInputLabel: '[vconcat]',
     videoOutputLabel: videoFilter != null ? '[voverlay]' : '[v]',
   });
   const gpuFrames = gpuFramesFormat != null ? { downloadFormat: gpuFramesFormat, outputFps: videoProfile.outputFps } : undefined;
-  const { graph, labels } = buildSegmentConcatFilters({ segments, videoStreamIndex, audioStreamIndex, outputPlaybackRate, videoWidth, videoHeight, gpuFrames, mixedAudioTracks });
+  const { graph, labels } = buildSegmentConcatFilters({ segments, videoStreamIndex, audioStreamIndex, outputPlaybackRate, videoWidth, videoHeight, gpuFrames, mixedAudioTracks, addedInputs });
   const needsVideoPostProcessing = mergedOverlayFilters.graph.length > 0 || videoFilter != null;
   const concatVideoLabel = needsVideoPostProcessing ? '[vconcat]' : '[v]';
   // Mixed tracks had their volumes applied one by one, before the mix.
@@ -1090,6 +1093,7 @@ export async function exportSizeLimitedSegment({
   videoStream,
   audioStream,
   mixedAudioTracks,
+  addedAudioFiles = [],
   enableOverwriteOutput,
   ffmpegExperimental,
   treatInputFileModifiedTimeAsStart,
@@ -1147,6 +1151,8 @@ export async function exportSizeLimitedSegment({
   gpuAcceleration?: boolean | undefined,
   /** The recording's audio tracks when it has two or more: mixed into the export's one track (exportSegmentMath.ts). */
   mixedAudioTracks?: readonly MixedAudioTrack[] | undefined,
+  /** The added files whose sound `mixedAudioTracks` mixes in (their `added` indexes). */
+  addedAudioFiles?: readonly string[] | undefined,
   /** The export's Cancel. */
   signal?: AbortSignal | undefined,
 }) {
@@ -1196,7 +1202,9 @@ export async function exportSizeLimitedSegment({
 
   // Lossless when it fits: a clip with nothing to re-encode whose own bytes already fit is copied as it is.
   // Two or more audio tracks are mixed into one (encoded), so a straight copy won't do.
-  const mixing = audioStream != null && mixedAudioTracks != null && mixedAudioTracks.length > 1;
+  // Two or more tracks, or an added file's (another input), are mixed into one.
+  const mixing = audioStream != null && isAudioMix(mixedAudioTracks);
+  const addedFiles = mixing ? addedAudioFiles : [];
   const copyable = !mixing && canCopyLosslessly({
     playbackRate: segmentRate,
     cropped: hasSegmentCrop(segment),
@@ -1239,7 +1247,8 @@ export async function exportSizeLimitedSegment({
     : [];
 
   // The tracks mixed into one, then the clip's speed (each track's volume already has the clip's in it).
-  const audioMixGraph = mixing ? buildAudioMixFilter({ inputIndex: 0, tracks: mixedAudioTracks!, after: [getAudioTempoFilter(segmentRate)], outputLabel: '[amixed]' }).join(';') : undefined;
+  const audioMixGraph = mixing ? buildAudioMixFilter({ inputIndex: 0, tracks: mixedAudioTracks!, after: [getAudioTempoFilter(segmentRate)], outputLabel: '[amixed]', getAddedInputIndex: (added) => 1 + added }).join(';') : undefined;
+  const addedInputArgs = buildAddedAudioInputArgs({ files: addedFiles, segments: [segment] });
   const audioInputLabel = audioStream == null ? undefined : (mixing ? '[amixed]' : `0:${audioStream.index}`);
 
   let result: SizeLimitedExecutionResult;
@@ -1287,7 +1296,7 @@ export async function exportSizeLimitedSegment({
               overlayAssets: segmentOverlayAssets,
               segmentStart: segment.start,
               segmentEnd: segment.end,
-              imageInputStartIndex: 1,
+              imageInputStartIndex: 1 + addedFiles.length,
               outputPlaybackRate: segmentRate,
               videoFilter: baseVideoFilter,
               cropFilter,
@@ -1299,6 +1308,7 @@ export async function exportSizeLimitedSegment({
               const graph = [overlayFilter?.filterComplex, audioMixGraph, ...(sinkAudio && audioMixGraph != null ? ['[amixed]anullsink'] : [])].filter(Boolean).join(';');
               return [
                 ...inputArgs,
+                ...addedInputArgs,
                 ...overlayInputArgs,
                 ...(graph !== '' ? ['-filter_complex', graph] : []),
                 ...(overlayFilter == null ? ['-vf', videoFilter] : []),
@@ -1441,6 +1451,7 @@ export async function exportSizeLimitedMerge({
   videoStream,
   audioStream,
   mixedAudioTracks,
+  addedAudioFiles = [],
   enableOverwriteOutput,
   ffmpegExperimental,
   treatInputFileModifiedTimeAsStart,
@@ -1497,6 +1508,8 @@ export async function exportSizeLimitedMerge({
   gpuAcceleration?: boolean | undefined,
   /** The recording's audio tracks when it has two or more: mixed into the export's one track (exportSegmentMath.ts). */
   mixedAudioTracks?: readonly MixedAudioTrack[] | undefined,
+  /** The added files whose sound `mixedAudioTracks` mixes in (their `added` indexes). */
+  addedAudioFiles?: readonly string[] | undefined,
   /** The export's Cancel. */
   signal?: AbortSignal | undefined,
 }) {
@@ -1504,7 +1517,9 @@ export async function exportSizeLimitedMerge({
   await assertOutPathIsNotSource({ outPath, filePath });
   await ensureOutputDir(outPath);
 
-  const mixing = audioStream != null && mixedAudioTracks != null && mixedAudioTracks.length > 1;
+  // Two or more tracks, or an added file's (another input), are mixed into one.
+  const mixing = audioStream != null && isAudioMix(mixedAudioTracks);
+  const addedFiles = mixing ? addedAudioFiles : [];
   const plannedDuration = segments.reduce((sum, segment) => sum + getSegmentOutputDuration(segment, outputPlaybackRate), 0);
   const resolvePlan = () => resolveSizeLimitedPlan({
     gpuAcceleration,
@@ -1605,11 +1620,13 @@ export async function exportSizeLimitedMerge({
               videoHeight: dimensions.height,
               gpuFramesFormat,
               mixedAudioTracks: mixing ? mixedAudioTracks : undefined,
+              addedFileCount: addedFiles.length,
             });
             const applyAudioGainInFilterGraph = audioStream != null && (mixing || !isNeutralAudioGain(audioGainDb));
 
             const commonArgs = [
               ...inputArgs,
+              ...buildAddedAudioInputArgs({ files: addedFiles, segments }),
               ...overlayInputArgs,
             ];
 

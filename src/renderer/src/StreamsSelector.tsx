@@ -3,6 +3,7 @@ import { lazy, Suspense, memo, useState, useMemo, useCallback } from 'react';
 
 import { FaImage, FaPaperclip, FaVideo, FaVideoSlash, FaFileImport, FaVolumeUp, FaVolumeMute, FaBan, FaFileExport, FaBook, FaInfoCircle, FaFilter, FaEye, FaEdit, FaTrash, FaSortNumericDown, FaSortNumericUp, FaHamburger, FaMap, FaLanguage } from 'react-icons/fa';
 import { GoFileBinary } from 'react-icons/go';
+import { FiFilm, FiVolume2 } from 'react-icons/fi';
 import { MdSubtitles } from 'react-icons/md';
 import { useTranslation, Trans } from 'react-i18next';
 import prettyBytes from 'pretty-bytes';
@@ -562,69 +563,54 @@ function StreamsSelector({
     () => mainFileStreams.filter((stream) => stream.codec_type === 'video' || stream.codec_type === 'audio'),
     [mainFileStreams],
   );
-  const simpleModeAudioStreams = useMemo(
-    () => simpleModeStreams.filter((stream) => stream.codec_type === 'audio'),
-    [simpleModeStreams],
-  );
 
   if (simpleMode) {
-    // A file's tracks added from the open-file question ("Its sound" and so on) are listed after the recording's own,
-    // so what was added can be seen and skipped.
-    const rows = [
-      ...simpleModeStreams.map((stream, index) => ({
-        path: mainFilePath,
-        stream,
-        label: stream.codec_type === 'video'
-          ? (index === 0 ? t('Video') : t('Video {{index}}', { index: index + 1 }))
-          : (simpleModeAudioStreams.length === 1
-            ? t('Audio')
-            : t('Audio {{index}}', { index: simpleModeAudioStreams.findIndex((item) => item.index === stream.index) + 1 })),
+    // The recording's own tracks, then each added file's (from the open-file question's Add buttons), each a switch.
+    const groups = [
+      { path: mainFilePath, name: undefined, streams: simpleModeStreams },
+      ...externalFilesEntries.map(([path, { streams }]) => ({
+        path,
+        name: basename(path),
+        streams: streams.filter((stream) => stream.codec_type === 'video' || stream.codec_type === 'audio'),
       })),
-      ...externalFilesEntries.flatMap(([path, { streams }]) => streams
-        .filter((stream) => stream.codec_type === 'video' || stream.codec_type === 'audio')
-        .map((stream) => ({
-          path,
-          stream,
-          label: stream.codec_type === 'video'
-            ? t('Video from {{name}}', { name: basename(path) })
-            : t('Audio from {{name}}', { name: basename(path) }),
-        }))),
     ];
+    const getLabel = (streams: FFprobeStream[], stream: FFprobeStream) => {
+      const sameKind = streams.filter((other) => other.codec_type === stream.codec_type);
+      const number = sameKind.length > 1 ? sameKind.indexOf(stream) + 1 : undefined;
+      if (stream.codec_type === 'video') return number != null ? t('Picture {{number}}', { number }) : t('Picture');
+      return number != null ? t('Sound {{number}}', { number }) : t('Sound');
+    };
 
     return (
-      <div className={styles['simpleList']}>
-        {rows.map(({ path, stream, label }) => {
-          const copyStream = isCopyingStreamId(path, stream.index);
-          const isVideoStream = stream.codec_type === 'video';
-          const Icon = isVideoStream ? FaVideo : FaVolumeUp;
-
-          return (
-            <button
-              key={`${path}:${stream.index}`}
-              type="button"
-              onClick={() => toggleCopyStreamId(path, stream.index)}
-              className={[
-                styles['simpleStreamButton'],
-                ...(copyStream ? [styles['simpleStreamButtonActive']] : [styles['simpleStreamButtonInactive']]),
-              ].join(' ')}
-            >
-              <span className={styles['simpleStreamMain']}>
-                <span className={styles['simpleStreamIcon']}>
-                  <Icon size={15} />
-                </span>
-                <span className={styles['simpleStreamLabel']}>{label}</span>
-              </span>
-              <span
-                className={[
-                  styles['simpleStreamState'],
-                  ...(copyStream ? [styles['simpleStreamStateActive']] : [styles['simpleStreamStateInactive']]),
-                ].join(' ')}
-              >
-                {copyStream ? t('Keep') : t('Skip')}
-              </span>
-            </button>
-          );
-        })}
+      <div className={styles['simpleGroups']}>
+        {groups.map(({ path, name, streams }) => (
+          <section key={path} className={styles['simpleGroup']}>
+            {groups.length > 1 && (
+              <div className={styles['simpleGroupHeader']}>
+                <span className={styles['simpleGroupName']} title={name}>{name != null ? t('Added from {{name}}', { name }) : t('This recording')}</span>
+                {name != null && <button type="button" className={styles['simpleRemove']} onClick={() => removeFile(path)}>{t('Remove')}</button>}
+              </div>
+            )}
+            {streams.map((stream) => {
+              const label = getLabel(streams, stream);
+              const Icon = stream.codec_type === 'video' ? FiFilm : FiVolume2;
+              // As in the export options: blue is in the export, grey is left out.
+              const kept = isCopyingStreamId(path, stream.index);
+              return (
+                <button
+                  key={stream.index}
+                  type="button"
+                  aria-pressed={kept}
+                  className={[styles['simpleRow'], ...(kept ? [styles['simpleRowOn']] : [])].join(' ')}
+                  onClick={() => toggleCopyStreamId(path, stream.index)}
+                >
+                  <Icon aria-hidden className={styles['simpleRowIcon']} />
+                  <span className={styles['simpleRowLabel']}>{label}</span>
+                </button>
+              );
+            })}
+          </section>
+        ))}
       </div>
     );
   }
