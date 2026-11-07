@@ -183,11 +183,17 @@ export async function askForFileOpenAction(inputOptions: Record<string, string>)
   return value;
 }
 
-/** The simple editor's version: open the dropped file, add it to this recording, or cancel. */
-export async function askForFileOpenChoice({ fileName, openLabel, extras }: { fileName: string, openLabel?: string, extras: FileOpenExtra[] }) {
+/**
+ * The simple editor's version: open the dropped file, add it to this recording, or cancel. A small question: its
+ * title is the file's name, it has a quiet Cancel and no close button; Escape and a click outside close it too.
+ */
+export async function askForFileOpenChoice({ fileName, openLabel, extras }: {
+  fileName: string,
+  openLabel?: string,
+  extras: FileOpenExtra[],
+}) {
   let value: string | undefined;
   const swal = getSwal().ReactSwal.fire({
-    title: i18n.t('Open new file'),
     html: (
       <FileOpenChoice
         fileName={fileName}
@@ -201,11 +207,12 @@ export async function askForFileOpenChoice({ fileName, openLabel, extras }: { fi
     ),
     showCancelButton: false,
     showConfirmButton: false,
-    showCloseButton: true,
+    showCloseButton: false,
     customClass: {
       popup: 'clippress-choice-popup clippress-open-choice',
-      closeButton: 'clippress-choice-close',
     },
+    // Its title is inside the content.
+    didOpen: (popup) => popup.setAttribute('aria-labelledby', 'clippress-open-choice-title'),
   });
   await swal;
   return value;

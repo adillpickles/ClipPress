@@ -6182,9 +6182,9 @@ function App() {
               fileName: basename(firstNewFilePath),
               openLabel: i18n.t('Open it'),
               extras: inputOptions.tracks != null && isMedia ? [
-                { key: 'tracksAudio', label: i18n.t('Its sound'), add: 'audio' as const },
-                { key: 'tracksVideo', label: i18n.t('Its picture'), add: 'video' as const },
-                { key: 'tracks', label: i18n.t('Both'), add: 'both' as const },
+                { key: 'tracksAudio', label: i18n.t('Add its sound'), add: 'audio' as const },
+                { key: 'tracksVideo', label: i18n.t('Add its picture'), add: 'video' as const },
+                { key: 'tracks', label: i18n.t('Add both'), add: 'both' as const },
               ] : [],
             });
           } else if (enableAskForFileOpenAction && simpleMode && isFileOpened && newFilePaths.length > 1) {
@@ -6192,6 +6192,7 @@ function App() {
             // Open opens the first; the others wait in the file list, as when several are opened with nothing open.
             const choice = await askForFileOpenChoice({
               fileName: i18n.t('{{name}} and {{count}} more', { name: basename(firstNewFilePath), count: newFilePaths.length - 1 }),
+              openLabel: i18n.t('Open the first'),
               extras: [{ key: 'mergeWithCurrentFile', label: i18n.t('Join them after this recording') }],
             });
             openFileResponse = choice === 'open' ? 'openFirstOfSeveral' : choice;
@@ -6212,12 +6213,12 @@ function App() {
           }
           if (openFileResponse === 'tracks') {
             await addStreamSourceFile(firstNewFilePath);
-            setStreamsSelectorShown(true);
+            // Advanced mode's "Include all tracks" goes on to choose them; the simple editor's "Add both" has said it all.
+            if (!simpleMode) setStreamsSelectorShown(true);
             return;
           }
           if (openFileResponse === 'tracksAudio' || openFileResponse === 'tracksVideo') {
             await addStreamSourceFile(firstNewFilePath, openFileResponse === 'tracksAudio' ? 'audio' : 'video');
-            setStreamsSelectorShown(true);
             return;
           }
           if (openFileResponse === 'addToBatch') {
@@ -7239,8 +7240,7 @@ function App() {
     openWorkPendingRef.current = openWorkPending;
   }, [openWorkPending]);
 
-  // The shortcuts list's code, once the start is over and the page is idle: loaded on its first opening, it held the
-  // dialog back about 100 ms.
+  // The shortcuts list's code, once the start is over and the page is idle, so its first opening doesn't wait to load it.
   useEffect(() => {
     let idle: number | undefined;
     const timer = setTimeout(() => {

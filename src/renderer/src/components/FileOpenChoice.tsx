@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FiChevronLeft, FiChevronRight, FiFilm, FiFilePlus, FiLayers, FiMusic, FiPlus } from 'react-icons/fi';
+import { FiChevronLeft, FiChevronRight, FiFilm, FiLayers, FiMusic, FiPlus } from 'react-icons/fi';
 
-import HelpTip from './HelpTip';
 import styles from './FileOpenChoice.module.css';
 
 export interface FileOpenExtra {
@@ -16,8 +15,8 @@ const addIcons = { audio: FiMusic, video: FiFilm, both: FiLayers };
 
 /**
  * What to do with a file dropped while a recording is open (simple mode): open it, add its sound, picture or both to
- * this recording, or cancel. Any other choices are under "More options", which swaps in place: the dialog keeps its
- * size.
+ * this recording, or cancel. It's a small question, so it has a quiet Cancel and no close button, like the others.
+ * Any other choices are under "More options", which swaps in place: the dialog keeps its size.
  */
 export default function FileOpenChoice({ fileName, openLabel, extras, onChoose }: {
   fileName: string,
@@ -34,10 +33,10 @@ export default function FileOpenChoice({ fileName, openLabel, extras, onChoose }
 
   return (
     <div className={styles['choice']}>
-      <div className={styles['file']} title={fileName}>
-        <FiFilePlus aria-hidden className={styles['fileIcon']} />
-        <span className={styles['fileName']}>{fileName}</span>
-      </div>
+      {/* The question is about this file, so its name is the title. */}
+      <h2 className={styles['title']} id="clippress-open-choice-title" title={fileName} data-tip-if-cut="">
+        <span className={styles['fileName']} data-cuttable="">{fileName}</span>
+      </h2>
 
       {/* Both pages share one spot, so swapping doesn't resize the dialog. */}
       <div className={styles['pages']}>
@@ -47,27 +46,17 @@ export default function FileOpenChoice({ fileName, openLabel, extras, onChoose }
             {openLabel ?? t('Open new file')}
           </button>
           {adds.length > 0 && (
-            <>
-              {/* As found by trying it: added tracks are extra tracks, not mixed in. */}
-              <div className={styles['heading']}>
-                {t('Add to this recording')}
-                <HelpTip label={t('About adding to this recording')}>
-                  <p>{t('Original quality exports keep them as extra tracks: most players play only the first sound track.')}</p>
-                  <p>{t('Exports that fit a file size keep one sound track, and the preview plays only this recording.')}</p>
-                </HelpTip>
-              </div>
-              <div className={styles['adds']}>
-                {adds.map(({ key, label, add }) => {
-                  const Icon = addIcons[add!];
-                  return (
-                    <button key={key} type="button" className={styles['add']} onClick={() => onChoose(key)} tabIndex={firstPageTab}>
-                      <Icon aria-hidden />
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
+            <div className={styles['adds']}>
+              {adds.map(({ key, label, add }) => {
+                const Icon = addIcons[add!];
+                return (
+                  <button key={key} type="button" className={styles['add']} onClick={() => onChoose(key)} tabIndex={firstPageTab}>
+                    <Icon aria-hidden />
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
           )}
           {/* Under the add buttons, a bordered Cancel would read as a fourth choice: there it's a quiet one. */}
           <button type="button" className={adds.length > 0 ? styles['quietCancel'] : styles['secondary']} onClick={() => onChoose(undefined)} tabIndex={firstPageTab}>
