@@ -61,7 +61,7 @@ import ExportConfirm from './components/ExportConfirm';
 import TextOverlayEditor from './components/TextOverlayEditor';
 import SegmentSpeedDialog from './components/SegmentSpeedDialog';
 import addSizeLimitedStrategyNotes from './sizeLimitedResultNotes';
-import { getPreviewSegment, getPreviewSegmentSpeed, getSegmentOutputDuration, getSegmentSpeed, isSegmentSpeedValid } from './segmentSpeed';
+import { getPreviewSegment, getPreviewSegmentSpeed, getSegmentOutputDuration, getSegmentPlaybackRate, getSegmentSpeed, isSegmentSpeedValid } from './segmentSpeed';
 import { isFrameLoopAhead, type PreviewFrame } from './previewPlaybackRate';
 import SegmentCropPreview from './components/SegmentCropPreview';
 import { getSegmentCrop, hasSegmentCrop } from './segmentCrop';
@@ -345,7 +345,8 @@ import WhatsNew from './components/WhatsNew';
 import UpdateNotice from './components/UpdateNotice';
 import mainApi from './mainApi.js';
 import createForwardJobProgress from './exportProgress';
-import { getSizeLimitedMp3Kbps, getSoundOnlyCopyFormat, isAudioMix, streamReachesTime } from './exportSegmentMath';
+import { getSizeLimitedMp3Settings, getSoundOnlyCopyFormat, isAudioMix, streamReachesTime } from './exportSegmentMath';
+import { getGuaranteedSegments } from './segments';
 import type { MixedAudioTrack } from './exportSegmentMath';
 import type { AppEvent } from '../../main/index.js';
 
@@ -3347,11 +3348,12 @@ function App() {
   const keepNonEmptyExports = useCallback(async (paths: string[], warnings: Set<string>) => {
     const sizes = await Promise.all(paths.map(async (path) => lstat(path).then((stats: { size: number }) => Number(stats.size), () => undefined)));
     const empty = paths.filter((_path, index) => sizes[index] != null && sizes[index]! < emptyExportBytes);
-    if (empty.length === 0) return paths;
+    if (empty.length === 0) return { kept: paths, removedAny: false };
     await tryDeleteFiles(empty);
     if (empty.length === paths.length) throw new EmptyExportError();
     for (const path of empty) warnings.add(i18n.t('{{file}} came out empty and was removed.', { file: basename(path) }));
-    return paths.filter((path) => !empty.includes(path));
+    // A file removed: not every planned file was made, so the original is never recycled for this export.
+    return { kept: paths.filter((path) => !empty.includes(path)), removedAny: true };
   }, [tryDeleteFiles]);
 
   /**
@@ -3523,18 +3525,20 @@ function App() {
   const getSoundOnlyPlan = useCallback(({ isSizeLimited, sizeMb }: { isSizeLimited: boolean, sizeMb: number }) => {
     const tracks = getKeptAudioTracks();
     const single = tracks.length === 1 && tracks[0]!.added == null ? sizeLimitedAudioTracks[0] : undefined;
+    // No clip made: the whole recording, as the cut does.
+    const segments: (Pick<SegmentToExport, 'start' | 'end'> & Partial<SegmentToExport>)[] = getGuaranteedSegments(segmentsToExport, fileDuration);
     const copyable = !isSizeLimited && !willMerge && single != null && isNeutralAudioGain(tracks[0]!.gainDb)
-      && segmentsToExport.every((segment) => getSegmentSpeed(segment) === 1 && !isClipVolumeChanged(segment)
+      && segments.every((segment) => getSegmentPlaybackRate(segment, outputPlaybackRate) === 1 && !isClipVolumeChanged(segment)
         && streamReachesTime({ stream: single, format: mainFileFormat, end: segment.end }));
-    if (copyable) return { copy: true, encodeArgs: [], ...getSoundOnlyCopyFormat(single.codec_name) };
+    if (copyable) return { copy: true, encodeArgs: [], tooSmall: false, ...getSoundOnlyCopyFormat(single.codec_name) };
     if (isSizeLimited) {
       // One bitrate for every file: joined, the whole has to fit; apart, the longest clip.
-      const durations = segmentsToExport.map((segment) => getSegmentOutputDuration(segment, outputPlaybackRate));
-      const kbps = getSizeLimitedMp3Kbps({ sizeMb, durationSeconds: willMerge ? durations.reduce((a, b) => a + b, 0) : Math.max(0, ...durations) });
-      return { copy: false, encodeArgs: ['-c:a', 'libmp3lame', '-b:a', `${kbps}k`, ...(kbps < 64 ? ['-ar', '22050'] : [])], format: 'mp3', ext: 'mp3' };
+      const durations = segments.map((segment) => getSegmentOutputDuration(segment, outputPlaybackRate));
+      const mp3 = getSizeLimitedMp3Settings({ sizeMb, durationSeconds: willMerge ? durations.reduce((a, b) => a + b, 0) : Math.max(0, ...durations) });
+      return { copy: false, encodeArgs: ['-c:a', 'libmp3lame', '-b:a', `${mp3?.kbps ?? 8}k`, ...(mp3?.args ?? [])], tooSmall: mp3 == null, format: 'mp3', ext: 'mp3' };
     }
-    return { copy: false, encodeArgs: ['-c:a', 'aac', '-b:a', '256k'], format: 'ipod', ext: 'm4a' };
-  }, [getKeptAudioTracks, mainFileFormat, outputPlaybackRate, segmentsToExport, sizeLimitedAudioTracks, willMerge]);
+    return { copy: false, encodeArgs: ['-c:a', 'aac', '-b:a', '256k'], tooSmall: false, format: 'ipod', ext: 'm4a' };
+  }, [fileDuration, getKeptAudioTracks, mainFileFormat, outputPlaybackRate, segmentsToExport, sizeLimitedAudioTracks, willMerge]);
   // Shown in the export options' Format row.
   const soundOnlyFileType = soundOnlyExport ? getSoundOnlyPlan({ isSizeLimited: isSizeLimitedExport, sizeMb: sizeLimitMb }).ext.toUpperCase() : undefined;
 
@@ -3720,6 +3724,25 @@ function App() {
     buildSizeLimitedAutoFileNames,
     getSizeLimitedAutoNameProblems,
   ]);
+
+  // A sound file's names: the export's own, with the sound's extension (Fit a file size's auto names stamp a video's size,
+  // so a sound file is named as Original quality names it).
+  const withSoundFileExt = useCallback((fileNames: string[], ext: string) => fileNames.map((name) => `${name.replace(/\.[^./\\]+$/, '')}.${ext}`), []);
+  const soundOnlyNames = useMemo(() => {
+    const ext = soundOnlyFileType?.toLowerCase();
+    const swap = <T extends unknown[]>(generate: (...args: T) => Promise<GeneratedOutFileNames>) => (ext == null ? generate : async (...args: T) => {
+      const generated = await generate(...args);
+      return { ...generated, fileNames: withSoundFileExt(generated.fileNames, ext) };
+    });
+    return {
+      cut: swap(generateCutFileNames),
+      merged: swap(generateCutMergedFileNames),
+      custom: swap(generateSizeLimitedCustomCutFileNames),
+      customMerged: swap(generateSizeLimitedCustomCutMergedFileNames),
+      auto: ext == null ? generateSizeLimitedAutoCutFileNames : swap(async () => generateCutFileNames(cutFileTemplateOrDefault)),
+      autoMerged: ext == null ? generateSizeLimitedAutoCutMergedFileNames : swap(async () => generateCutMergedFileNames(cutMergedFileTemplateOrDefault)),
+    };
+  }, [cutFileTemplateOrDefault, cutMergedFileTemplateOrDefault, generateCutFileNames, generateCutMergedFileNames, generateSizeLimitedAutoCutFileNames, generateSizeLimitedAutoCutMergedFileNames, generateSizeLimitedCustomCutFileNames, generateSizeLimitedCustomCutMergedFileNames, soundOnlyFileType, withSoundFileExt]);
 
   const maybeRenameSizeLimitedOutputs = useCallback(
     async ({
@@ -4350,7 +4373,7 @@ function App() {
         );
         appendSizeLimitedResultNotices(finalizedResults, notices, warnings, !exportGpuAcceleration);
 
-        const exportedPaths = await keepNonEmptyExports(finalizedResults.filter((result) => result.created).map((result) => result.path), warnings);
+        const { kept: exportedPaths, removedAny: removedEmptyExports } = await keepNonEmptyExports(finalizedResults.filter((result) => result.created).map((result) => result.path), warnings);
 
         if (firstCreatedResult != null && simpleMode && !prefersReducedMotion) shootConfetti();
 
@@ -4371,7 +4394,7 @@ function App() {
           sourcePath: filePath,
           sourceIdentity,
           // An export kept under a temporary name (it couldn't be put in place) doesn't count: the original stays.
-          allPlannedCreated: finalizedResults.length > 0 && finalizedResults.every((result) => result.created && result.postProcessingWarning == null),
+          allPlannedCreated: !removedEmptyExports && finalizedResults.length > 0 && finalizedResults.every((result) => result.created && result.postProcessingWarning == null),
           exportedPaths,
           notices,
           warnings,
@@ -4545,6 +4568,7 @@ function App() {
             preserveMetadataOnMerge,
             mergedOutFilePath,
             signal: exportAbort.signal,
+            alsoProtect: exportProtectedPaths,
           });
 
           const createdOutFiles = outFiles.flatMap((file) => (file.created ? [file.path] : []));
@@ -4586,7 +4610,7 @@ function App() {
           }
         }
 
-        const exportedPaths = await keepNonEmptyExports(getWrittenExportPaths({ files: outFiles, merged: mergedResult, deletedSegments: autoDeleteMergedSegments && mergedResult?.created === true }), warnings);
+        const { kept: exportedPaths, removedAny: removedEmptyExports } = await keepNonEmptyExports(getWrittenExportPaths({ files: outFiles, merged: mergedResult, deletedSegments: autoDeleteMergedSegments && mergedResult?.created === true }), warnings);
 
         if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti();
 
@@ -4606,7 +4630,7 @@ function App() {
           cleanupAfter: newCleanupChoices,
           sourcePath: filePath,
           sourceIdentity,
-          allPlannedCreated: !extraStreamsFailed && outFiles.length > 0 && outFiles.every((file) => file.created) && (mergedResult == null || mergedResult.created),
+          allPlannedCreated: !removedEmptyExports && !extraStreamsFailed && outFiles.length > 0 && outFiles.every((file) => file.created) && (mergedResult == null || mergedResult.created),
           exportedPaths,
           notices,
           warnings,
@@ -4661,7 +4685,10 @@ function App() {
       const warnings = new Set<string>();
 
       const soundOnly = soundOnlyExport ? getSoundOnlyPlan({ isSizeLimited: quality.isSizeLimited, sizeMb: quality.sizeLimitMb }) : undefined;
-      const withSoundExt = (names: string[]) => (soundOnly == null ? names : names.map((name) => `${name.replace(/\.[^./\\]+$/, '')}.${soundOnly.ext}`));
+      if (soundOnly?.tooSmall) throw new UserFacingError(i18n.t("This clip can't be made that small. Try a bigger size or a shorter clip."));
+      const withSoundExt = (names: string[]) => (soundOnly == null ? names : withSoundFileExt(names, soundOnly.ext));
+      // Fit a file size's own name templates, when the user set them (as the options show them).
+      const soundOnlyCustomNames = soundOnly != null && quality.isSizeLimited;
 
       let cutFileNames: string[];
       // When deleting merged segments, use the default template so that we e.g. don't risk creating a folder structure
@@ -4672,7 +4699,9 @@ function App() {
         cutFileNames = await getMergePartNames(withSoundExt(generated.fileNames), isOutputNameTaken);
         addSourceSafetyNotice(generated.problems.sourceSafetyAdjustments, notices);
       } else {
-        const generated = await generateCutFileNames(cutFileTemplateOrDefault);
+        const generated = soundOnlyCustomNames && sizeLimitSeparateNamingMode !== 'auto'
+          ? await generateSizeLimitedCustomCutFileNames(sizeLimitedCutFileTemplateOrDefault)
+          : await generateCutFileNames(cutFileTemplateOrDefault);
         cutFileNames = await keepClipNamesFree(withSoundExt(generated.fileNames));
         if (generated.problems.error != null) {
           console.warn(
@@ -4691,6 +4720,7 @@ function App() {
       const cutClips = (segments: typeof segmentsToExport, names: string[], onClipWritten: ((path: string) => void) | undefined) => (soundOnly != null ? cutSoundOnlyClips({
         outputDir,
         segments,
+        fileDuration,
         cutFileNames: names,
         getTracks: (segment) => getKeptAudioTracks(segment),
         addedAudioFiles: sizeLimitedAddedAudio.files,
@@ -4748,9 +4778,11 @@ function App() {
           ? segmentsToExport.map((s) => s.name)
           : undefined;
 
-        const { fileNames, problems } = await generateCutMergedFileNames(
-          cutMergedFileTemplateOrDefault,
-        );
+        const { fileNames, problems } = soundOnlyCustomNames && sizeLimitMergedNamingMode !== 'auto'
+          ? await generateSizeLimitedCustomCutMergedFileNames(sizeLimitedCutMergedFileTemplateOrDefault)
+          : await generateCutMergedFileNames(
+            cutMergedFileTemplateOrDefault,
+          );
         if (problems.error != null) {
           console.warn(
             'Merged file name invalid, using default instead',
@@ -4778,6 +4810,7 @@ function App() {
           preserveMetadataOnMerge,
           mergedOutFilePath,
           signal: exportAbort.signal,
+          alsoProtect: exportProtectedPaths,
         });
 
         // don't delete existing files that were not created by losslesscut now (due to overwrite disabled) https://github.com/mifi/lossless-cut/issues/2436
@@ -4843,7 +4876,7 @@ function App() {
       if (outFiles.some((file) => file.created) && areWeCutting) notices.add(i18n.t('Cutpoints may be inaccurate.'));
 
       // Note: this should be after cleanup, so we don't accidentally open two dialogs at the same time, leading to error *and* success dialog simultaneously https://github.com/mifi/lossless-cut/issues/2609
-      const exportedPaths = await keepNonEmptyExports(getWrittenExportPaths({ files: outFiles, merged: mergedResult, deletedSegments: autoDeleteMergedSegments && mergedResult?.created === true }), warnings);
+      const { kept: exportedPaths, removedAny: removedEmptyExports } = await keepNonEmptyExports(getWrittenExportPaths({ files: outFiles, merged: mergedResult, deletedSegments: autoDeleteMergedSegments && mergedResult?.created === true }), warnings);
 
       if ((outFiles.some((file) => file.created) || mergedResult?.created) && simpleMode && !prefersReducedMotion) shootConfetti();
 
@@ -4863,7 +4896,7 @@ function App() {
         cleanupAfter: newCleanupChoices,
         sourcePath: filePath,
         sourceIdentity,
-        allPlannedCreated: !extraStreamsFailed && outFiles.length > 0 && outFiles.every((file) => file.created) && (mergedResult == null || mergedResult.created),
+        allPlannedCreated: !removedEmptyExports && !extraStreamsFailed && outFiles.length > 0 && outFiles.every((file) => file.created) && (mergedResult == null || mergedResult.created),
         exportedPaths,
         notices,
         warnings,
@@ -4947,6 +4980,8 @@ function App() {
   }, [
     sizeLimitedAddedAudio.files,
     getSoundOnlyPlan,
+    exportProtectedPaths,
+    withSoundFileExt,
     cutSoundOnlyClips,
     getKeptAudioTracks,
     mainCopiedStreams,
@@ -8217,22 +8252,22 @@ function App() {
                 cutMergedFileTemplate={cutMergedFileTemplate}
                 generateCutFileNames={
                   isSizeLimitedExport
-                    ? generateSizeLimitedCustomCutFileNames
-                    : generateCutFileNames
+                    ? soundOnlyNames.custom
+                    : soundOnlyNames.cut
                 }
                 generateCutMergedFileNames={
                   isSizeLimitedExport
-                    ? generateSizeLimitedCustomCutMergedFileNames
-                    : generateCutMergedFileNames
+                    ? soundOnlyNames.customMerged
+                    : soundOnlyNames.merged
                 }
                 generateAutoCutFileNames={
                   isSizeLimitedExport
-                    ? generateSizeLimitedAutoCutFileNames
+                    ? soundOnlyNames.auto
                     : undefined
                 }
                 generateAutoCutMergedFileNames={
                   isSizeLimitedExport
-                    ? generateSizeLimitedAutoCutMergedFileNames
+                    ? soundOnlyNames.autoMerged
                     : undefined
                 }
                 currentSegIndexSafe={currentSegIndexSafe}

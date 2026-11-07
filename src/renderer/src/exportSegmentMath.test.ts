@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildAddedAudioInputArgs, buildAudioMixFilter, buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow, getSizeLimitedMp3Kbps, getSoundOnlyCopyFormat, isAudioMix, streamReachesTime } from './exportSegmentMath';
+import { buildAddedAudioInputArgs, buildAudioMixFilter, buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow, getSizeLimitedMp3Settings, getSoundOnlyCopyFormat, isAudioMix, streamReachesTime } from './exportSegmentMath';
 
 describe('buildConcatSegmentInputArgs', () => {
   it('applies rotation before each input so the filter graph crops the displayed frame', () => {
@@ -299,9 +299,14 @@ describe('sound-only files', () => {
     expect(getSoundOnlyCopyFormat('eac3')).toEqual({ format: 'matroska', ext: 'mka' });
   });
   it('fit a file size as an MP3 at the best bitrate that fits', () => {
-    expect(getSizeLimitedMp3Kbps({ sizeMb: 20, durationSeconds: 30 })).toBe(320);
+    expect(getSizeLimitedMp3Settings({ sizeMb: 20, durationSeconds: 30 })?.kbps).toBe(320);
     // 10 MB over 10 minutes: about 128 kbit/s.
-    expect(getSizeLimitedMp3Kbps({ sizeMb: 10, durationSeconds: 600 })).toBe(128);
-    expect(getSizeLimitedMp3Kbps({ sizeMb: 1, durationSeconds: 3600 })).toBe(32);
+    expect(getSizeLimitedMp3Settings({ sizeMb: 10, durationSeconds: 600 })?.kbps).toBe(128);
+    // 1 MB over 10 minutes: 8 kbit/s, mono at 8 kHz; it fits.
+    expect(getSizeLimitedMp3Settings({ sizeMb: 1, durationSeconds: 600 })).toEqual({ kbps: 8, args: ['-ar', '8000', '-ac', '1'] });
+    expect((8 * 600) / 8 / 1000).toBeLessThan(1);
+  });
+  it('says when nothing fits', () => {
+    expect(getSizeLimitedMp3Settings({ sizeMb: 1, durationSeconds: 3600 })).toBeUndefined();
   });
 });

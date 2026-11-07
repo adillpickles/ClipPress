@@ -837,7 +837,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
               const pad = stream == null || !streamReachesTime({ stream, format: fileMeta?.format, end });
               if (segmentRate === 1 && isNeutralAudioGain(audioGainDb) && !encodeAllAudio && !pad) return undefined;
               const audioFilters = [
-                'asetpts=PTS-STARTPTS', getAudioTempoFilter(segmentRate),
+                // Padded: a sound that starts late in the clip keeps its silence before it (as the mix does).
+                pad ? 'aresample=async=1:first_pts=0' : 'asetpts=PTS-STARTPTS', getAudioTempoFilter(segmentRate),
                 !isNeutralAudioGain(audioGainDb) ? getVolumeFilter(audioGainDb) : '',
                 pad ? 'apad' : '',
               ].filter(Boolean);
@@ -924,9 +925,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
    * (Original quality, nothing to change); else every kept sound mixed, each at its track's and the clip's volume, at
    * the clip's speed, padded with silence to the clip's length, and encoded with `encodeArgs`.
    */
-  const cutSoundOnlyClips = useCallback(async ({ outputDir, segments: segmentsIn, cutFileNames, getTracks, addedAudioFiles, copy, encodeArgs, outFormat, onProgress: onTotalProgress, signal, onClipWritten }: {
+  const cutSoundOnlyClips = useCallback(async ({ outputDir, segments: segmentsIn, fileDuration, cutFileNames, getTracks, addedAudioFiles, copy, encodeArgs, outFormat, onProgress: onTotalProgress, signal, onClipWritten }: {
     outputDir: string,
     segments: SegmentToExport[],
+    fileDuration: number | undefined,
     cutFileNames: string[],
     /** Every kept sound of a clip, with its volume (the track's and the clip's together). */
     getTracks: (segment: SegmentToExport) => MixedAudioTrack[],
@@ -940,12 +942,14 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     onClipWritten?: ((path: string) => void) | undefined,
   }) => {
     invariant(filePath != null);
+    // No clip made: the whole recording, as the other cuts do.
+    const segments = getGuaranteedSegments(segmentsIn, fileDuration);
     const progresses: Record<number, number> = {};
     const onSingleProgress = (index: number, progress: number) => {
       progresses[index] = progress;
-      onTotalProgress(sum(Object.values(progresses)) / segmentsIn.length);
+      onTotalProgress(sum(Object.values(progresses)) / segments.length);
     };
-    return pMap(segmentsIn, async (segment, index) => {
+    return pMap(segments, async (segment, index) => {
       signal?.throwIfAborted();
       const { start, end } = segment;
       const finalOutPath = join(outputDir, cutFileNames[index]!);
@@ -1291,7 +1295,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     }
   }, [shouldSkipExistingFile, assertOutPathIsNotSource, isEncoding, filePath, lossyMode, losslessCutSingle, cutEncodeSmartPart, encCustomBitrate, concatFiles, enableOverwriteOutput, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart]);
 
-  const concatCutSegments = useCallback(async ({ customOutDir, outFormat, segmentPaths, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapterNames, preserveMetadataOnMerge, mergedOutFilePath, signal }: {
+  const concatCutSegments = useCallback(async ({ customOutDir, outFormat, segmentPaths, ffmpegExperimental, onProgress, preserveMovData, movFastStart, chapterNames, preserveMetadataOnMerge, mergedOutFilePath, signal, alsoProtect }: {
     customOutDir: string | undefined,
     outFormat: string | undefined,
     segmentPaths: string[],
@@ -1303,9 +1307,11 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     preserveMetadataOnMerge: boolean,
     mergedOutFilePath: string,
     signal?: AbortSignal | undefined,
+    /** More files the merged file must never replace (added files the parts were made from). */
+    alsoProtect?: readonly (string | undefined)[] | undefined,
   }) => {
     const outDir = getOutDir(customOutDir, filePath);
-    await assertOutPathIsNotSource(mergedOutFilePath, segmentPaths);
+    await assertOutPathIsNotSource(mergedOutFilePath, [...segmentPaths, ...(alsoProtect ?? [])]);
 
     if (await shouldSkipExistingFile(mergedOutFilePath)) {
       onProgress(1);

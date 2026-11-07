@@ -230,14 +230,22 @@ export function getSoundOnlyCopyFormat(codecName: string | undefined): { format:
   return { format: 'matroska', ext: 'mka' };
 }
 
-const mp3Bitrates = [320, 256, 224, 192, 160, 128, 112, 96, 80, 64, 56, 48, 40, 32] as const;
+// MPEG-1 rates (32–48 kHz), then MPEG-2 / 2.5 ones at lower sample rates, which is what makes them good for their size.
+const mp3Steps = [
+  ...[320, 256, 224, 192, 160, 128, 112, 96, 80, 64].map((kbps) => ({ kbps, args: [] as string[] })),
+  ...[56, 48, 40, 32].map((kbps) => ({ kbps, args: ['-ar', '22050'] })),
+  { kbps: 24, args: ['-ar', '16000', '-ac', '1'] },
+  { kbps: 16, args: ['-ar', '16000', '-ac', '1'] },
+  { kbps: 8, args: ['-ar', '8000', '-ac', '1'] },
+];
 
 /**
  * Fit a file size with the picture left out: an MP3 (the one sound file Discord plays in the chat), at the highest
- * standard bitrate that keeps `durationSeconds` under `sizeMb` (a little room for the file's own bytes), 32–320 kbit/s.
+ * standard bitrate that keeps `durationSeconds` under `sizeMb` (a little room for the file's own bytes). Undefined when
+ * even 8 kbit/s wouldn't fit.
  */
-export function getSizeLimitedMp3Kbps({ sizeMb, durationSeconds }: { sizeMb: number, durationSeconds: number }) {
-  if (!(durationSeconds > 0)) return mp3Bitrates[0];
+export function getSizeLimitedMp3Settings({ sizeMb, durationSeconds }: { sizeMb: number, durationSeconds: number }) {
+  if (!(durationSeconds > 0)) return mp3Steps[0]!;
   const budgetKbps = (sizeMb * 1_000_000 * 8 * 0.96) / durationSeconds / 1000;
-  return mp3Bitrates.find((kbps) => kbps <= budgetKbps) ?? mp3Bitrates.at(-1)!;
+  return mp3Steps.find(({ kbps }) => kbps <= budgetKbps);
 }
