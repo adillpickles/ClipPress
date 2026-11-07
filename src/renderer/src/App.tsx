@@ -1699,11 +1699,12 @@ function App() {
   // editor's Tracks chip is locked on, and a picture left out before is put back (advanced mode keeps its own choice).
   const exportNeedsPicture = hasOverlayClips || hasSegmentSpeedChanges || hasSegmentCropChanges;
   useEffect(() => {
-    // The picture playing (the first, unless advanced mode picked another) is the one the export draws on.
+    // The picture playing (the first, unless advanced mode picked another) is the one the export draws on. Fit a file
+    // size picks its own (the first kept) and locks it itself.
     const picture = activeVideoStream;
-    if (!simpleMode || !exportNeedsPicture || filePath == null || picture == null || isCopyingStreamId(filePath, picture.index)) return;
+    if (!simpleMode || !exportNeedsPicture || exportEncodeMode === 'size_limited' || filePath == null || picture == null || isCopyingStreamId(filePath, picture.index)) return;
     setCopyStreamIdsForPath(filePath, (old) => ({ ...old, [picture.index]: true }));
-  }, [activeVideoStream, exportNeedsPicture, filePath, isCopyingStreamId, setCopyStreamIdsForPath, simpleMode]);
+  }, [activeVideoStream, exportEncodeMode, exportNeedsPicture, filePath, isCopyingStreamId, setCopyStreamIdsForPath, simpleMode]);
   // Game and mic on separate tracks (an OBS recording): a Discord export mixes them into its one track, each at its
   // track volume, so the mic is never left out.
   const sizeLimitedAudioTracks = useMemo(() => mainCopiedStreams.filter((stream) => stream.codec_type === 'audio'), [mainCopiedStreams]);
