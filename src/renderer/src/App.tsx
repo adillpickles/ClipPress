@@ -716,6 +716,8 @@ function App() {
     setCutStart: keyBindingByAction['setCutStart']?.keys,
     setCutEnd: keyBindingByAction['setCutEnd']?.keys,
     goToTimecode: keyBindingByAction['goToTimecode']?.keys,
+    changeSpeed: keyBindingByAction['changeCurrentSegmentSpeed']?.keys,
+    crop: keyBindingByAction['editCurrentSegmentCrop']?.keys,
   }), [keyBindingByAction]);
   const clipMenuKeys = useMemo(() => ({
     rename: keyBindingByAction['labelCurrentSegment']?.keys,
@@ -1475,9 +1477,30 @@ function App() {
     const segment = cutSegments[index];
     if (segment?.end == null || invertCutSegments || workingRef.current) return;
     setCurrentSegIndex(index);
-    setSpeedControlsBySegment((existing) => (existing[segment.segId] ? existing : { ...existing, [segment.segId]: true }), { merge: true });
+    // Advanced mode opens the clip's speed lane with it; the simple editor's band shows once the speed isn't 100%.
+    if (!simpleMode) setSpeedControlsBySegment((existing) => (existing[segment.segId] ? existing : { ...existing, [segment.segId]: true }), { merge: true });
     setEditingSpeedSegmentId(segment.segId);
-  }, [cutSegments, invertCutSegments, setCurrentSegIndex, setSpeedControlsBySegment, workingRef]);
+  }, [cutSegments, invertCutSegments, setCurrentSegIndex, setSpeedControlsBySegment, simpleMode, workingRef]);
+
+  /**
+   * The speed window's Apply. In the simple editor the band then shows only when the speed isn't 100%, whatever Ctrl+R
+   * last did to it (one undo step with the speed); advanced mode keeps its lane open, as a drag does.
+   */
+  const applySegmentSpeed = useCallback((segmentId: string, speed: number) => {
+    if (!simpleMode) {
+      changeSegmentSpeed(segmentId, speed);
+      return;
+    }
+    if (!isSegmentSpeedValid(speed) || workingRef.current) return;
+    const index = cutSegments.findIndex((segment) => segment.segId === segmentId);
+    if (index === -1 || cutSegments[index]?.end == null) return;
+    const speedChanged = (cutSegments[index]!.speed ?? 1) !== speed;
+    if (speedChanged) updateSegAtIndex(index, { speed });
+    setSpeedControlsBySegment((existing) => {
+      if (!(segmentId in existing)) return existing;
+      return Object.fromEntries(Object.entries(existing).filter(([id]) => id !== segmentId));
+    }, { merge: speedChanged });
+  }, [changeSegmentSpeed, cutSegments, setSpeedControlsBySegment, simpleMode, updateSegAtIndex, workingRef]);
 
   /** Like deleting a retime in Resolve: back to 100%, and the bar returns to its default (hidden). One undo step. */
   const removeSegmentSpeed = useCallback((segmentId: string) => {
@@ -6678,6 +6701,7 @@ function App() {
       addSegment,
       duplicateCurrentSegment,
       toggleSegmentSpeedControls,
+      changeCurrentSegmentSpeed: () => editSegmentSpeed(currentSegIndexSafe),
       addTextOverlay: addTextOverlayNow,
       // The same key finishes, as Done does.
       // Its shortcut closes the crop editor again, like Done (keeping a zoom that's still settling).
@@ -6781,6 +6805,7 @@ function App() {
     return ret;
   }, [
     editingCropSegmentId,
+    editSegmentSpeed,
     removeSelectedClips,
     startOver,
     batchFiles.length,
@@ -8359,7 +8384,7 @@ function App() {
                   fileDuration={fileDuration}
                   formatTimecode={formatTimecode}
                   onApply={(speed) => {
-                    changeSegmentSpeed(speedDialogSegment.segId, speed);
+                    applySegmentSpeed(speedDialogSegment.segId, speed);
                     setEditingSpeedSegmentId(undefined);
                   }}
                   onClose={() => setEditingSpeedSegmentId(undefined)}

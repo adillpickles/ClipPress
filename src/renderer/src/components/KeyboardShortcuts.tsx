@@ -397,6 +397,10 @@ const KeyboardShortcuts = memo(({
         name: t('Toggle segment speed controls'),
         category: segmentsAndCutpointsCategory,
       },
+      changeCurrentSegmentSpeed: {
+        name: t('Change the clip\'s speed'),
+        category: segmentsAndCutpointsCategory,
+      },
       addTextOverlay: {
         name: t('Add text'),
         category: segmentsAndCutpointsCategory,
@@ -1000,6 +1004,7 @@ function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
       title: t('Editing'),
       items: [
         { label: t('Add text'), actions: ['addTextOverlay'] },
+        { label: t('Change the clip\'s speed'), actions: ['changeCurrentSegmentSpeed'] },
         { label: t('Speed controls'), actions: ['toggleSegmentSpeedControls'] },
         { label: t('Undo / redo'), actions: ['undo', 'redo'] },
         { label: t('Zoom the timeline in / out'), actions: ['timelineZoomIn', 'timelineZoomOut'] },

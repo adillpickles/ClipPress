@@ -97,8 +97,9 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
         </span>
       </div>
 
-      {isActive && !dragging && !overlay && (
-        <LaneDeleteButton title={t('Remove speed change (back to 100%)')} onDelete={onRemove} style={{ right: 12 }} />
+      {/* The selected clip's band, like a selected text: its X puts the clip back to 100% (Ctrl+Z brings it back). */}
+      {isActive && !dragging && (
+        <LaneDeleteButton title={t('Remove speed change (back to 100%)')} onDelete={onRemove} style={{ right: 12 }} className={overlay ? styles['overlayDelete'] : undefined} />
       )}
 
       <button

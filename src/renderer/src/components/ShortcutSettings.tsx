@@ -98,6 +98,7 @@ export function useShortcutGroups() {
         { action: 'undo', label: t('Undo') },
         { action: 'redo', label: t('Redo') },
         { action: 'addTextOverlay', label: t('Add text') },
+        { action: 'changeCurrentSegmentSpeed', label: t('Change the clip\'s speed') },
         { action: 'toggleSegmentSpeedControls', label: t('Speed controls') },
         { action: 'editCurrentSegmentCrop', label: t('Zoom / crop the clip') },
         { action: 'captureSnapshot', label: t('Save a still frame') },

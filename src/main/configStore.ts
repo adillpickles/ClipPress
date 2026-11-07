@@ -713,4 +713,15 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
     if (added.length > 0) set('keyBindings', [...existingBindings, ...added]);
     setStored('panelDuplicateShortcutsMigrated', true);
   }
+
+  // Ctrl+Shift+R opens the clip's speed window, for existing settings too, where the key is still free and the action
+  // has none.
+  if (store.get('changeSpeedShortcutMigrated') !== true) {
+    const existingBindings = store.get('keyBindings') as KeyBinding[];
+    const normalize = (keys: string) => keys.split('+').map((key) => key.replace(/^(Control|Shift|Alt|Meta)Right$/, '$1Left')).sort().join('+');
+    const added = defaultKeyBindings.filter((binding) => binding.action === 'changeCurrentSegmentSpeed'
+      && !existingBindings.some((existing) => normalize(existing.keys) === normalize(binding.keys) || existing.action === binding.action));
+    if (added.length > 0) set('keyBindings', [...existingBindings, ...added]);
+    setStored('changeSpeedShortcutMigrated', true);
+  }
 }

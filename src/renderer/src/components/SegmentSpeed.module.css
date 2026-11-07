@@ -171,3 +171,10 @@
   padding-left: 6px;
   font-size: 10px;
 }
+/* The selected band's X sits before the drag handle; the length moves over for it. */
+.retimeBar[data-overlay="true"][data-active="true"]:not([data-dragging="true"]) .retimeDuration { margin-right: 34px; }
+/* Too narrow for the percentage and the X: the X goes (the band's menu still removes the speed). */
+@container (max-width: 76px) {
+  .retimeBar[data-overlay="true"] .overlayDelete { display: none; }
+  .retimeBar[data-overlay="true"][data-active="true"]:not([data-dragging="true"]) .retimeDuration { margin-right: 12px; }
+}

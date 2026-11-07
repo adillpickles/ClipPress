@@ -305,7 +305,7 @@ function Timeline({
   /** The keys that remove the selected clip, shown in the clip menu. */
   removeSegmentKeys?: string | undefined,
   /** The keys of the timeline menu's items (I, O, G by default). */
-  menuKeys?: { setCutStart?: string | undefined, setCutEnd?: string | undefined, goToTimecode?: string | undefined } | undefined,
+  menuKeys?: { setCutStart?: string | undefined, setCutEnd?: string | undefined, goToTimecode?: string | undefined, changeSpeed?: string | undefined, crop?: string | undefined } | undefined,
   /** Clips picked in the Clips panel for Delete. */
   pickedClipIds?: readonly string[] | undefined,
   /** Media with video can have text: its lane is then always shown, so adding text doesn't resize the preview. */
@@ -1091,6 +1091,8 @@ function Timeline({
                     onTrimHandleMouseDown={simpleMode ? onTrimHandleMouseDown : undefined}
                     onRemove={simpleMode ? onRemoveSegment : undefined}
                     removeKeys={removeSegmentKeys}
+                    speedKeys={menuKeys?.changeSpeed}
+                    cropKeys={menuKeys?.crop}
                   />
                 );
               })}
