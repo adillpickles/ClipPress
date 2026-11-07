@@ -140,9 +140,7 @@
 	}
 }
 
-@media (prefers-reduced-motion: reduce) {
-	.AlertDialogContent,
-	.AlertDialogOverlay {
-		animation-duration: 1ms !important;
-	}
+:global(html.reduce-motion) .AlertDialogContent,
+:global(html.reduce-motion) .AlertDialogOverlay {
+	animation-duration: 1ms !important;
 }

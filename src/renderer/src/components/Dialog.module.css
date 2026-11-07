@@ -128,9 +128,7 @@
 	}
 }
 
-@media (prefers-reduced-motion: reduce) {
-	.DialogContent,
-	.DialogOverlay {
-		animation-duration: 1ms !important;
-	}
+:global(html.reduce-motion) .DialogContent,
+:global(html.reduce-motion) .DialogOverlay {
+	animation-duration: 1ms !important;
 }

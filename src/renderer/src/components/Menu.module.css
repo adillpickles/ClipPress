@@ -108,11 +108,9 @@
   visibility: hidden;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .itemConfirm[data-confirm='locked']::before {
-    transition: none;
-    transform: scaleX(0);
-  }
+:global(html.reduce-motion) .itemConfirm[data-confirm='locked']::before {
+  transition: none;
+  transform: scaleX(0);
 }
 
 .itemDisabled {
@@ -173,8 +171,6 @@
   to { opacity: 1; transform: none; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .menu {
-    animation: none;
-  }
+:global(html.reduce-motion) .menu {
+  animation: none;
 }

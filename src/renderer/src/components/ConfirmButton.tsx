@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useReducedMotionConfig } from 'motion/react';
 
 import Button from './Button';
 import type { ButtonSize } from './Button';
@@ -36,6 +37,8 @@ export default function ConfirmButton({ children, question, confirmLabel, onConf
   }, [state]);
 
   const asking = state !== 'idle';
+  // Settings > Reduce motion (not Windows' setting).
+  const reduceMotion = useReducedMotionConfig() === true;
   const widthRef = useRef<number>();
   useLayoutEffect(() => {
     const button = buttonRef.current;
@@ -43,10 +46,10 @@ export default function ConfirmButton({ children, question, confirmLabel, onConf
     const from = widthRef.current;
     const to = button.offsetWidth;
     widthRef.current = to;
-    if (from != null && from !== to && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (from != null && from !== to && !reduceMotion) {
       button.animate([{ width: `${from}px` }, { width: `${to}px` }], { duration: 160, easing: 'cubic-bezier(.2, .8, .2, 1)' });
     }
-  }, [asking, grow]);
+  }, [asking, grow, reduceMotion]);
 
   useEffect(() => {
     if (!asking) return undefined;

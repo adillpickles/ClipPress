@@ -79,14 +79,12 @@
   opacity: .8;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .button[data-state='locked']::before {
-    transition: none;
-    transform: scaleX(0);
-  }
+:global(html.reduce-motion) .button[data-state='locked']::before {
+  transition: none;
+  transform: scaleX(0);
+}
 
-  .idleLabel,
-  .question {
-    transition: none;
-  }
+:global(html.reduce-motion) .idleLabel,
+:global(html.reduce-motion) .question {
+  transition: none;
 }

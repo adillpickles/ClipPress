@@ -10,8 +10,6 @@
   display: flow-root;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .outer {
-    transition: none;
-  }
+:global(html.reduce-motion) .outer {
+  transition: none;
 }

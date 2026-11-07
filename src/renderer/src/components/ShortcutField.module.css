@@ -66,10 +66,8 @@
   50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-9) 22%, transparent); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .recordingSlot {
-    animation: none;
-  }
+:global(html.reduce-motion) .recordingSlot {
+  animation: none;
 }
 
 .prompt {

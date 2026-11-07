@@ -106,7 +106,8 @@ const defaults: Config = {
   waveformMode: undefined,
   thumbnailsEnabled: false,
   keyframesEnabled: true,
-  reducedMotion: 'user',
+  // Off unless turned on in Settings (Windows' own setting isn't followed).
+  reducedMotion: 'never',
   ffmpegHwaccel: 'none',
   exportGpuAcceleration: true,
   exportEncodeMode: 'lossless',

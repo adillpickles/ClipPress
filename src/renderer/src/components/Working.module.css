@@ -477,14 +477,12 @@
   animation: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .progressFill::after {
-    display: none;
-  }
+:global(html.reduce-motion) .progressFill::after {
+  display: none;
+}
 
-  .indeterminate::after {
-    width: 100%;
-    opacity: .55;
-    animation: none;
-  }
+:global(html.reduce-motion) .indeterminate::after {
+  width: 100%;
+  opacity: .55;
+  animation: none;
 }

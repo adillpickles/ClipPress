@@ -10,7 +10,8 @@ import UpdateSettings from './UpdateSettings';
 import useUserSettings from '../hooks/useUserSettings';
 import { askForFfPath, showOpenDialog } from '../dialogs';
 import RevertButton from './RevertButton';
-import dropdownDefaults from '../settingDefaults';
+import ConfirmButton from './ConfirmButton';
+import settingDefaults from '../settingDefaults';
 import { getEnableImportChaptersOptions, isMasBuild, isStoreBuild, isWindows } from '../util';
 import type { SupportedLanguage } from '../../../common/i18n';
 import { langNames } from '../../../common/i18n';
@@ -59,7 +60,7 @@ function Settings({
     window.require('electron').shell.openPath(getProjectsDir(getProjectStoreEnv())).catch?.(() => undefined);
   }, []);
 
-  const { customOutDir, clipsFolder, setClipsFolder, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, waveformHeight, setWaveformHeight, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, exportProgressStyle, setExportProgressStyle, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, sizeLimitVideoFormat, setSizeLimitVideoFormat, trashSourceAfterExport, setTrashSourceAfterExport, enableAdvancedMode, setEnableAdvancedMode, trashProjectWithSource, setTrashProjectWithSource, copyAfterExport, setCopyAfterExport, playOnOpen, setPlayOnOpen } = useUserSettings();
+  const { customOutDir, clipsFolder, setClipsFolder, cleanupChoices, simpleMode, captureFormat, setCaptureFormat, waveformHeight, setWaveformHeight, keyframeCut, toggleKeyframeCut, timecodeFormat, setTimecodeFormat, invertCutSegments, setInvertCutSegments, askBeforeClose, setAskBeforeClose, enableImportChapters, setEnableImportChapters, enableAskForFileOpenAction, setEnableAskForFileOpenAction, autoSaveProjectFile, setAutoSaveProjectFile, language, setLanguage, hideNotifications, setHideNotifications, hideOsNotifications, setHideOsNotifications, autoLoadTimecode, setAutoLoadTimecode, enableAutoHtml5ify, setEnableAutoHtml5ify, customFfPath, setCustomFfPath, projectFileLocation, captureFrameMethod, setCaptureFrameMethod, captureFrameQuality, setCaptureFrameQuality, captureFrameFileNameFormat, setCaptureFrameFileNameFormat, enableNativeHevc, setEnableNativeHevc, allowMultipleInstances, setAllowMultipleInstances, preferStrongColors, setPreferStrongColors, treatInputFileModifiedTimeAsStart, setTreatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart, setTreatOutputFileModifiedTimeAsStart, exportConfirmEnabled, toggleExportConfirmEnabled, storeWindowBounds, setStoreWindowBounds, reducedMotion, setReducedMotion, exportProgressStyle, setExportProgressStyle, ffmpegHwaccel, setFfmpegHwaccel, exportGpuAcceleration, setExportGpuAcceleration, sizeLimitVideoFormat, setSizeLimitVideoFormat, trashSourceAfterExport, setTrashSourceAfterExport, enableAdvancedMode, setEnableAdvancedMode, trashProjectWithSource, setTrashProjectWithSource, copyAfterExport, setCopyAfterExport, playOnOpen, setPlayOnOpen, resetAllSettings } = useUserSettings();
 
   const onLangChange = useCallback<ChangeEventHandler<HTMLSelectElement>>((e) => {
     const { value } = e.target;
@@ -69,6 +70,15 @@ function Settings({
 
   // A dropdown off its default gets a ↺ just before it, as every setting does (SettingRow's `revert`).
   const backTo = (changed: boolean, defaultText: string, revert: () => void) => (changed ? <RevertButton title={t('Back to {{value}}', { value: defaultText })} onClick={revert} /> : undefined);
+  // A switch off its default too: the ↺ turns it back.
+  const switchBack = (checked: boolean, defaultChecked: boolean, setChecked: (value: boolean) => void) => backTo(checked !== defaultChecked, defaultChecked ? t('On') : t('Off'), () => setChecked(defaultChecked));
+
+  // Reset all settings: everything here back to its default, shortcuts included; where projects are kept goes back the
+  // way its ↺ does (moving them).
+  const resetEverySetting = useCallback(() => {
+    resetAllSettings();
+    if (projectFileLocation !== settingDefaults.projectFileLocation) onProjectFileLocationChange(settingDefaults.projectFileLocation).catch(() => undefined);
+  }, [onProjectFileLocationChange, projectFileLocation, resetAllSettings]);
 
   const timecodeFormatOptions = useMemo<Record<TimecodeFormat, string>>(() => ({
     frameCount: t('Frame counts'),
@@ -123,7 +133,6 @@ function Settings({
     const [folder] = filePaths;
     if (!canceled && folder != null) setClipsFolder(folder);
   }, [clipsFolder, setClipsFolder, t]);
-  const reducedMotionId = useId();
   const exportProgressId = useId();
   const timecodeId = useId();
   const outputDateId = useId();
@@ -158,7 +167,7 @@ function Settings({
       case 'general': {
         return (
           <>
-            <SettingRow label={t('Language')} controlId={languageId} revert={backTo(language !== dropdownDefaults.language, langNames[dropdownDefaults.language], () => setLanguage(dropdownDefaults.language))}>
+            <SettingRow label={t('Language')} controlId={languageId} revert={backTo(language !== settingDefaults.language, langNames[settingDefaults.language], () => setLanguage(settingDefaults.language))}>
               <Select id={languageId} value={language ?? ''} onChange={onLangChange}>
                 <option key="" value="">{t('System language')}</option>
                 {Object.keys(langNames).map((lang) => <option key={lang} value={lang}>{langNames[lang as keyof typeof langNames]}</option>)}
@@ -183,34 +192,35 @@ function Settings({
               label={t('Review before exporting')}
               description={t('Show the export options each time you export.')}
               details={t('The export options let you choose the quality or file size, how clips are saved and what they are called. Without them, Export uses your last choices straight away.')}
+              revert={switchBack(exportConfirmEnabled, settingDefaults.exportConfirmEnabled, toggleExportConfirmEnabled)}
             >
               <Switch checked={exportConfirmEnabled} onCheckedChange={toggleExportConfirmEnabled} aria-label={t('Review before exporting')} />
             </SettingRow>
 
-            <SettingRow label={t('System notifications')} description={t('Tell me when an export finishes.')}>
+            <SettingRow label={t('System notifications')} description={t('Tell me when an export finishes.')} revert={switchBack(!hideOsNotifications, settingDefaults.hideOsNotifications == null, (v) => setHideOsNotifications(v ? undefined : 'all'))}>
               <Switch checked={!hideOsNotifications} onCheckedChange={(v) => setHideOsNotifications(v ? undefined : 'all')} aria-label={t('System notifications')} />
             </SettingRow>
 
-            <SettingRow label={t('In-app messages')} description={t('Short messages about what just happened.')}>
+            <SettingRow label={t('In-app messages')} description={t('Short messages about what just happened.')} revert={switchBack(!hideNotifications, settingDefaults.hideNotifications == null, (v) => setHideNotifications(v ? undefined : 'all'))}>
               <Switch checked={!hideNotifications} onCheckedChange={(v) => setHideNotifications(v ? undefined : 'all')} aria-label={t('In-app messages')} />
             </SettingRow>
 
-            <SettingRow label={t('Confirm before closing')} description={t('Ask before closing ClipPress or a recording.')}>
+            <SettingRow label={t('Confirm before closing')} description={t('Ask before closing ClipPress or a recording.')} revert={switchBack(askBeforeClose, settingDefaults.askBeforeClose, setAskBeforeClose)}>
               <Switch checked={askBeforeClose} onCheckedChange={setAskBeforeClose} aria-label={t('Confirm before closing')} />
             </SettingRow>
 
-            <SettingRow label={t('Advanced mode')} description={t('Adds a switch to the top bar for the classic editor, with frame-by-frame tools and every export option. Still unfinished.')}>
+            <SettingRow label={t('Advanced mode')} description={t('Adds a switch to the top bar for the classic editor, with frame-by-frame tools and every export option. Still unfinished.')} revert={switchBack(enableAdvancedMode, settingDefaults.enableAdvancedMode, setEnableAdvancedMode)}>
               <Switch checked={enableAdvancedMode} onCheckedChange={setEnableAdvancedMode} aria-label={t('Advanced mode')} />
             </SettingRow>
 
             {showAdvancedSettings && (
-              <SettingRow label={t('Ask when opening another file')} description={t('Choose what happens when a file is opened while another is open.')}>
+              <SettingRow label={t('Ask when opening another file')} description={t('Choose what happens when a file is opened while another is open.')} revert={switchBack(enableAskForFileOpenAction, settingDefaults.enableAskForFileOpenAction, setEnableAskForFileOpenAction)}>
                 <Switch checked={enableAskForFileOpenAction} onCheckedChange={setEnableAskForFileOpenAction} aria-label={t('Ask when opening another file')} />
               </SettingRow>
             )}
 
             {showAdvancedSettings && (
-              <SettingRow label={t('Remember window size and position')}>
+              <SettingRow label={t('Remember window size and position')} revert={switchBack(storeWindowBounds, settingDefaults.storeWindowBounds, setStoreWindowBounds)}>
                 <Switch checked={storeWindowBounds} onCheckedChange={setStoreWindowBounds} aria-label={t('Remember window size and position')} />
               </SettingRow>
             )}
@@ -221,20 +231,17 @@ function Settings({
       case 'interface': {
         return (
           <>
-            <SettingRow label={t('Stronger colors')} description={t('More saturated colors for clips on the timeline.')}>
+            <SettingRow label={t('Stronger colors')} description={t('More saturated colors for clips on the timeline.')} revert={switchBack(preferStrongColors, settingDefaults.preferStrongColors, setPreferStrongColors)}>
               <Switch checked={preferStrongColors} onCheckedChange={setPreferStrongColors} aria-label={t('Stronger colors')} />
             </SettingRow>
 
-            <SettingRow label={t('Reduce motion')} description={t('Turn off animations.')} controlId={reducedMotionId} revert={backTo(reducedMotion !== dropdownDefaults.reducedMotion, t('System default'), () => setReducedMotion(dropdownDefaults.reducedMotion))}>
-              <Select id={reducedMotionId} value={reducedMotion} onChange={(e) => setReducedMotion(e.target.value as Config['reducedMotion'])}>
-                {Object.entries({ user: t('System default'), always: t('Yes'), never: t('No') } satisfies Record<Config['reducedMotion'], string>).map(([key, value]) => (
-                  <option key={key} value={key}>{value}</option>
-                ))}
-              </Select>
+            {/* Off unless turned on here (Windows' own setting isn't followed); an older "System default" counts as off. */}
+            <SettingRow label={t('Reduce motion')} description={t('Turn off animations.')} revert={switchBack(reducedMotion === 'always', (settingDefaults.reducedMotion as Config['reducedMotion']) === 'always', (v) => setReducedMotion(v ? 'always' : 'never'))}>
+              <Switch checked={reducedMotion === 'always'} onCheckedChange={(v) => setReducedMotion(v ? 'always' : 'never')} aria-label={t('Reduce motion')} />
             </SettingRow>
 
             {/* The export card: the clip's own pictures lighting up (a waveform for sound only), or the plain bar. */}
-            <SettingRow label={t('Export progress')} description={t('What the card shows while a clip exports.')} controlId={exportProgressId} revert={backTo(exportProgressStyle !== dropdownDefaults.exportProgressStyle, t('Clip pictures with sparks'), () => setExportProgressStyle(dropdownDefaults.exportProgressStyle))}>
+            <SettingRow label={t('Export progress')} description={t('What the card shows while a clip exports.')} controlId={exportProgressId} revert={backTo(exportProgressStyle !== settingDefaults.exportProgressStyle, t('Clip pictures with sparks'), () => setExportProgressStyle(settingDefaults.exportProgressStyle))}>
               <Select id={exportProgressId} value={exportProgressStyle} onChange={(e) => setExportProgressStyle(e.target.value as Config['exportProgressStyle'])}>
                 {Object.entries({ 'pictures-sparks': t('Clip pictures with sparks'), pictures: t('Clip pictures'), bar: t('Simple bar') } satisfies Record<Config['exportProgressStyle'], string>).map(([key, value]) => (
                   <option key={key} value={key}>{value}</option>
@@ -244,7 +251,7 @@ function Settings({
 
             {/* Simple mode writes times its own way, so this only matters with the advanced options. */}
             {showAdvancedSettings && (
-              <SettingRow label={t('Time format')} description={enableAdvancedMode ? t('How times are shown in advanced mode and in exported file names.') : t('How times are shown in exported file names.')} controlId={timecodeId} revert={backTo(timecodeFormat !== dropdownDefaults.timecodeFormat, timecodeFormatOptions[dropdownDefaults.timecodeFormat], () => setTimecodeFormat(dropdownDefaults.timecodeFormat))}>
+              <SettingRow label={t('Time format')} description={enableAdvancedMode ? t('How times are shown in advanced mode and in exported file names.') : t('How times are shown in exported file names.')} controlId={timecodeId} revert={backTo(timecodeFormat !== settingDefaults.timecodeFormat, timecodeFormatOptions[settingDefaults.timecodeFormat], () => setTimecodeFormat(settingDefaults.timecodeFormat))}>
                 <Select id={timecodeId} value={timecodeFormat} onChange={(e) => setTimecodeFormat(e.target.value as TimecodeFormat)}>
                   {Object.entries(timecodeFormatOptions).map(([key, value]) => (
                     <option key={key} value={key}>{value}</option>
@@ -263,13 +270,13 @@ function Settings({
       case 'editing': {
         return (
           <>
-            <SettingRow label={t('Start playing when a clip opens')}>
+            <SettingRow label={t('Start playing when a clip opens')} revert={switchBack(playOnOpen, settingDefaults.playOnOpen, setPlayOnOpen)}>
               <Switch checked={playOnOpen} onCheckedChange={setPlayOnOpen} aria-label={t('Start playing when a clip opens')} />
             </SettingRow>
 
             <SettingRow
               label={t('Clips are')}
-              revert={backTo(invertCutSegments !== dropdownDefaults.invertCutSegments, t('Kept'), () => setInvertCutSegments(dropdownDefaults.invertCutSegments))}
+              revert={backTo(invertCutSegments !== settingDefaults.invertCutSegments, t('Kept'), () => setInvertCutSegments(settingDefaults.invertCutSegments))}
               value={invertCutSegments ? t('The export keeps everything except the clips.') : t('The export contains only the clips.')}
               details={t('"Kept" is the usual way to make clips. "Removed" cuts the marked parts out of the recording instead, for example to drop a pause or a loading screen.')}
             >
@@ -280,19 +287,19 @@ function Settings({
             </SettingRow>
 
             {showAdvancedSettings && (
-              <SettingRow label={t('Convert unsupported files')} description={t('Make a playable preview when a file cannot be played directly.')}>
+              <SettingRow label={t('Convert unsupported files')} description={t('Make a playable preview when a file cannot be played directly.')} revert={switchBack(enableAutoHtml5ify, settingDefaults.enableAutoHtml5ify, setEnableAutoHtml5ify)}>
                 <Switch checked={enableAutoHtml5ify} onCheckedChange={setEnableAutoHtml5ify} aria-label={t('Convert unsupported files')} />
               </SettingRow>
             )}
 
             {showAdvancedSettings && (
-              <SettingRow label={t('Use the file\'s timecode')} description={t('Start the timeline at the timecode stored in the file.')}>
+              <SettingRow label={t('Use the file\'s timecode')} description={t('Start the timeline at the timecode stored in the file.')} revert={switchBack(autoLoadTimecode, settingDefaults.autoLoadTimecode, setAutoLoadTimecode)}>
                 <Switch checked={autoLoadTimecode} onCheckedChange={setAutoLoadTimecode} aria-label={t('Use the file\'s timecode')} />
               </SettingRow>
             )}
 
             {showAdvancedSettings && (
-              <SettingRow label={t('Chapters as clips')} description={t('Turn a file\'s chapters into clips when opening it.')} controlId={chaptersId} revert={backTo(enableImportChapters !== dropdownDefaults.enableImportChapters, getEnableImportChaptersOptions()[dropdownDefaults.enableImportChapters], () => setEnableImportChapters(dropdownDefaults.enableImportChapters))}>
+              <SettingRow label={t('Chapters as clips')} description={t('Turn a file\'s chapters into clips when opening it.')} controlId={chaptersId} revert={backTo(enableImportChapters !== settingDefaults.enableImportChapters, getEnableImportChaptersOptions()[settingDefaults.enableImportChapters], () => setEnableImportChapters(settingDefaults.enableImportChapters))}>
                 <Select id={chaptersId} value={enableImportChapters} onChange={(e) => setEnableImportChapters(e.target.value as EnableImportChapters)}>
                   {Object.entries(getEnableImportChaptersOptions() satisfies Record<EnableImportChapters, string>).map(([key, name]) => (
                     <option key={key} value={key}>{name}</option>
@@ -311,6 +318,7 @@ function Settings({
               label={t('Use the GPU')}
               description={t('Reads and encodes video on the graphics card (NVIDIA, AMD or Intel), which makes most exports several times faster.')}
               keywords="hardware acceleration"
+              revert={switchBack(exportGpuAcceleration, settingDefaults.exportGpuAcceleration, setExportGpuAcceleration)}
             >
               <Switch checked={exportGpuAcceleration} onCheckedChange={setExportGpuAcceleration} aria-label={t('Use the GPU')} />
             </SettingRow>
@@ -329,7 +337,7 @@ function Settings({
                 </>
               )}
               controlId={videoFormatId}
-              revert={backTo(sizeLimitVideoFormat !== dropdownDefaults.sizeLimitVideoFormat, 'HEVC', () => setSizeLimitVideoFormat(dropdownDefaults.sizeLimitVideoFormat))}
+              revert={backTo(sizeLimitVideoFormat !== settingDefaults.sizeLimitVideoFormat, 'HEVC', () => setSizeLimitVideoFormat(settingDefaults.sizeLimitVideoFormat))}
               keywords="codec H.265 iPhone Android Discord"
             >
               <Select id={videoFormatId} value={sizeLimitVideoFormat} onChange={(e) => setSizeLimitVideoFormat(e.target.value as SizeLimitVideoFormat)}>
@@ -351,7 +359,7 @@ function Settings({
 
             {/* Files go on the clipboard through Windows (see src/main/fileClipboard.ts). */}
             {isWindows && (
-              <SettingRow label={t('Copy the video after exporting')} description={t('Puts the exported video on the clipboard.')}>
+              <SettingRow label={t('Copy the video after exporting')} description={t('Puts the exported video on the clipboard.')} revert={switchBack(copyAfterExport, settingDefaults.copyAfterExport, setCopyAfterExport)}>
                 <Switch checked={copyAfterExport} onCheckedChange={setCopyAfterExport} aria-label={t('Copy the video after exporting')} />
               </SettingRow>
             )}
@@ -360,6 +368,7 @@ function Settings({
               label={t('Move the original to the Recycle Bin after export')}
               description={t('Only after every exported file is saved and checked. Your clip keeps its own name.')}
               details={t('Never deleted permanently: if the Recycle Bin can\'t take the recording (too large, a drive without one, or in use), ClipPress keeps it and tells you.')}
+              revert={switchBack(trashSourceAfterExport, settingDefaults.trashSourceAfterExport, setTrashSourceAfterExport)}
             >
               <Switch checked={trashSourceAfterExport} onCheckedChange={setTrashSourceAfterExport} aria-label={t('Move the original to the Recycle Bin after export')} />
             </SettingRow>
@@ -394,6 +403,7 @@ function Settings({
                     {t('Accurate time but could leave an empty portion at the beginning of the video. Equiv to')}: <code className="highlighted">ffmpeg -i input -ss N</code>
                   </>
                 )}
+                revert={switchBack(keyframeCut, settingDefaults.keyframeCut, () => toggleKeyframeCut())}
               >
                 <Switch checked={keyframeCut} onCheckedChange={() => toggleKeyframeCut()} aria-label={t('Keyframe cut')} />
               </SettingRow>
@@ -410,7 +420,7 @@ function Settings({
             )}
 
             {showAdvancedSettings && (
-              <SettingRow label={t('Date of exported files')} controlId={outputDateId} revert={backTo(treatOutputFileModifiedTimeAsStart !== dropdownDefaults.treatOutputFileModifiedTimeAsStart, t('Recording time + clip start'), () => setTreatOutputFileModifiedTimeAsStart(dropdownDefaults.treatOutputFileModifiedTimeAsStart))}>
+              <SettingRow label={t('Date of exported files')} controlId={outputDateId} revert={backTo(treatOutputFileModifiedTimeAsStart !== settingDefaults.treatOutputFileModifiedTimeAsStart, t('Recording time + clip start'), () => setTreatOutputFileModifiedTimeAsStart(settingDefaults.treatOutputFileModifiedTimeAsStart))}>
                 <Select id={outputDateId} value={typeof treatOutputFileModifiedTimeAsStart === 'boolean' ? String(treatOutputFileModifiedTimeAsStart) : 'disabled'} onChange={(e) => setTreatOutputFileModifiedTimeAsStart(e.target.value === 'disabled' ? null : (e.target.value === 'true'))}>
                   <option value="disabled">{t('Current time')}</option>
                   <option value="true">{t('Recording time + clip start')}</option>
@@ -420,7 +430,7 @@ function Settings({
             )}
 
             {showAdvancedSettings && (
-              <SettingRow label={t('Treat the recording\'s date as')} details={t('The recording file\'s modified date and time.')} controlId={sourceDateId} revert={backTo(treatOutputFileModifiedTimeAsStart != null && treatInputFileModifiedTimeAsStart !== dropdownDefaults.treatInputFileModifiedTimeAsStart, t('Start of video'), () => setTreatInputFileModifiedTimeAsStart(dropdownDefaults.treatInputFileModifiedTimeAsStart))}>
+              <SettingRow label={t('Treat the recording\'s date as')} details={t('The recording file\'s modified date and time.')} controlId={sourceDateId} revert={backTo(treatOutputFileModifiedTimeAsStart != null && treatInputFileModifiedTimeAsStart !== settingDefaults.treatInputFileModifiedTimeAsStart, t('Start of video'), () => setTreatInputFileModifiedTimeAsStart(settingDefaults.treatInputFileModifiedTimeAsStart))}>
                 <Select id={sourceDateId} disabled={treatOutputFileModifiedTimeAsStart == null} value={String(treatInputFileModifiedTimeAsStart)} onChange={(e) => setTreatInputFileModifiedTimeAsStart((e.target.value === 'true'))}>
                   <option value="true">{t('Start of video')}</option>
                   <option value="false">{t('End of video')}</option>
@@ -434,7 +444,7 @@ function Settings({
       case 'snapshots': {
         return (
           <>
-            <SettingRow label={t('Image format')} description={t('For frames captured from the video.')} controlId={captureFormatId} revert={backTo(captureFormat !== dropdownDefaults.captureFormat, 'JPEG', () => setCaptureFormat(dropdownDefaults.captureFormat))}>
+            <SettingRow label={t('Image format')} description={t('For frames captured from the video.')} controlId={captureFormatId} revert={backTo(captureFormat !== settingDefaults.captureFormat, 'JPEG', () => setCaptureFormat(settingDefaults.captureFormat))}>
               <Select id={captureFormatId} value={captureFormat} onChange={(e) => setCaptureFormat(e.target.value as CaptureFormat)}>
                 <option value="jpeg">JPEG</option>
                 <option value="png">PNG</option>
@@ -467,7 +477,7 @@ function Settings({
             {showAdvancedSettings && (
               <SettingRow
                 label={t('Capture method')}
-                revert={backTo(captureFrameMethod !== dropdownDefaults.captureFrameMethod, t('HTML video tag'), () => setCaptureFrameMethod(dropdownDefaults.captureFrameMethod))}
+                revert={backTo(captureFrameMethod !== settingDefaults.captureFrameMethod, t('HTML video tag'), () => setCaptureFrameMethod(settingDefaults.captureFrameMethod))}
                 details={t('FFmpeg capture method might sometimes capture more correct colors, but the captured snapshot might be off by one or more frames, relative to the preview.')}
               >
                 <Select value={captureFrameMethod} onChange={(e) => setCaptureFrameMethod(e.target.value as typeof captureFrameMethod)} aria-label={t('Capture method')}>
@@ -480,7 +490,7 @@ function Settings({
             {showAdvancedSettings && (
               <SettingRow
                 label={t('Names of extracted frames')}
-                revert={backTo(captureFrameFileNameFormat !== dropdownDefaults.captureFrameFileNameFormat, t('Frame timestamp'), () => setCaptureFrameFileNameFormat(dropdownDefaults.captureFrameFileNameFormat))}
+                revert={backTo(captureFrameFileNameFormat !== settingDefaults.captureFrameFileNameFormat, t('Frame timestamp'), () => setCaptureFrameFileNameFormat(settingDefaults.captureFrameFileNameFormat))}
                 details={t('Note that this only applies when extracting multiple frames. When "Frame number" is selected, frame numbers are relative to the start of the clip (starting from 1).')}
               >
                 <Select value={captureFrameFileNameFormat} onChange={(e) => setCaptureFrameFileNameFormat(e.target.value as typeof captureFrameFileNameFormat)} aria-label={t('Names of extracted frames')}>
@@ -509,13 +519,14 @@ function Settings({
               label={t('Save edits automatically')}
               description={t('Opening the same recording again brings back your clips, text and settings.')}
               details={t('Edits of recordings that have been gone for 30 days, and backups older than that, move to the Recycle Bin.')}
+              revert={switchBack(autoSaveProjectFile, settingDefaults.autoSaveProjectFile, setAutoSaveProjectFile)}
             >
               <Switch checked={autoSaveProjectFile} onCheckedChange={setAutoSaveProjectFile} aria-label={t('Save edits automatically')} />
             </SettingRow>
 
             <SettingRow
               label={t('Where edits are kept')}
-              revert={backTo(autoSaveProjectFile && projectFileLocation !== dropdownDefaults.projectFileLocation, t('In ClipPress'), () => { onProjectFileLocationChange(dropdownDefaults.projectFileLocation).catch(() => undefined); })}
+              revert={backTo(autoSaveProjectFile && projectFileLocation !== settingDefaults.projectFileLocation, t('In ClipPress'), () => { onProjectFileLocationChange(settingDefaults.projectFileLocation).catch(() => undefined); })}
               description={t('Where ClipPress saves the clips, text and settings for each recording.')}
               details={(
                 <>
@@ -564,6 +575,7 @@ function Settings({
                   {t('A clean-up after exporting follows its own "Move the project file" choice instead.')}
                 </>
               )}
+              revert={switchBack(trashProjectWithSource, settingDefaults.trashProjectWithSource, setTrashProjectWithSource)}
             >
               <Switch checked={trashProjectWithSource} onCheckedChange={setTrashProjectWithSource} aria-label={t('Recycle edits with the original')} />
             </SettingRow>
@@ -598,6 +610,7 @@ function Settings({
             <SettingRow
               label={t('HEVC hardware decoding')}
               description={t('Turn off if H.265 recordings show problems.')}
+              revert={switchBack(enableNativeHevc, settingDefaults.enableNativeHevc, setEnableNativeHevc)}
             >
               <Switch checked={enableNativeHevc} onCheckedChange={setEnableNativeHevc} aria-label={t('HEVC hardware decoding')} />
             </SettingRow>
@@ -605,6 +618,7 @@ function Settings({
             <SettingRow
               label={t('FFmpeg hardware acceleration')}
               description={t('Lets FFmpeg use the graphics card to read recordings, for detection and the assisted player.')}
+              revert={switchBack(ffmpegHwaccel === 'auto', (settingDefaults.ffmpegHwaccel as Config['ffmpegHwaccel']) === 'auto', (v) => setFfmpegHwaccel(v ? 'auto' : 'none'))}
             >
               <Switch checked={ffmpegHwaccel === 'auto'} onCheckedChange={(v) => setFfmpegHwaccel(v ? 'auto' : 'none')} aria-label={t('FFmpeg hardware acceleration')} />
             </SettingRow>
@@ -612,6 +626,7 @@ function Settings({
             <SettingRow
               label={t('Allow several windows')}
               description={t('Run more than one ClipPress at a time (experimental).')}
+              revert={switchBack(allowMultipleInstances, settingDefaults.allowMultipleInstances, setAllowMultipleInstances)}
             >
               <Switch checked={allowMultipleInstances} onCheckedChange={setAllowMultipleInstances} aria-label={t('Allow several windows')} />
             </SettingRow>
@@ -655,9 +670,13 @@ function Settings({
           </div>
         </div>
 
-        <div className={styles['advancedToggle']}>
-          <Switch id={advancedToggleId} checked={showAdvancedSettings} onCheckedChange={setShowAdvancedSettings} />
-          <label htmlFor={advancedToggleId}>{t('Show advanced options')}</label>
+        <div className={styles['navFooter']}>
+          {/* Like Reset all shortcuts: it asks in place. */}
+          <ConfirmButton question={t('Reset every setting?')} confirmLabel={t('Reset')} onConfirm={resetEverySetting}>{t('Reset all settings')}</ConfirmButton>
+          <div className={styles['advancedToggle']}>
+            <Switch id={advancedToggleId} checked={showAdvancedSettings} onCheckedChange={setShowAdvancedSettings} />
+            <label htmlFor={advancedToggleId}>{t('Show advanced options')}</label>
+          </div>
         </div>
       </nav>
 

@@ -120,12 +120,10 @@
   transform: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .brandName,
-  .brandHome {
-    transition: opacity .12s ease;
-    transform: none !important;
-  }
+:global(html.reduce-motion) .brandName,
+:global(html.reduce-motion) .brandHome {
+  transition: opacity .12s ease;
+  transform: none !important;
 }
 
 .menuBar {

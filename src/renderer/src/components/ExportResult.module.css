@@ -350,7 +350,11 @@
   color: var(--cp-text-muted);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .thumbCopied { animation: none; }
-  .copyIcon, .checkIcon { transition: none; }
+:global(html.reduce-motion) .thumbCopied {
+  animation: none;
+}
+
+:global(html.reduce-motion) .copyIcon,
+:global(html.reduce-motion) .checkIcon {
+  transition: none;
 }

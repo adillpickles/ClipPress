@@ -607,7 +607,6 @@ function App() {
     waveformMode: waveformModePreference,
     thumbnailsEnabled,
     keyframesEnabled,
-    reducedMotion,
     ffmpegHwaccel,
     exportGpuAcceleration,
     exportEncodeMode,
@@ -7609,7 +7608,7 @@ function App() {
   );
 
   return (
-    <MotionConfig reducedMotion={reducedMotion}>
+    <MotionConfig reducedMotion={prefersReducedMotion ? 'always' : 'never'}>
       <AppContext.Provider value={appContext}>
         <SegColorsContext.Provider value={segColorsContext}>
           <UserSettingsContext.Provider value={userSettingsContext}>

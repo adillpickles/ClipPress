@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import i18n from 'i18next';
 import { FiArrowLeft, FiCopy, FiMinus, FiSquare, FiX } from 'react-icons/fi';
 
 import { openMenu } from './components/Menu';
@@ -15,9 +16,15 @@ const shouldUseCustomChrome = process.platform !== 'darwin';
 
 const brandName = <>Clip<span className={styles['brandPress']}>Press</span></>;
 
+/** Items that throw edits away ask first, in place, like the Clips panel's Start over. */
+const confirmById: Record<string, () => string> = {
+  clearSegments: () => i18n.t('Really clear all clips?'),
+};
+
 /** The menu bar's items as the app's menu shows them: an item running an app action shows that action's real keys. */
 const toMenuEntries = (items: AppMenuItem[], keyBindingByAction: Record<string, KeyBinding>): MenuEntry[] => items.map((item) => ({
   label: item.label,
+  ...(item.id != null && confirmById[item.id] != null ? { confirm: confirmById[item.id]!(), danger: true } : {}),
   type: item.type as MenuEntry['type'],
   checked: item.checked,
   enabled: item.enabled,

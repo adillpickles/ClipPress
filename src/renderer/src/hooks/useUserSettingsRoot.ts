@@ -11,9 +11,6 @@ import mainApi from '../mainApi';
 import { mySpring, emitter as animationsEmitter } from '../animations';
 
 const { configStore } = window.require('@electron/remote').require('./index.js');
-const { systemPreferences } = window.require('@electron/remote');
-
-const animationSettings = systemPreferences.getAnimationSettings();
 
 export default function useUserSettingsRoot() {
   const firstUpdateRef = useRef(true);
@@ -285,6 +282,63 @@ export default function useUserSettingsRoot() {
     setKeyBindings((JSON.parse(configStore.getSnapshotJson()) as Config).keyBindings);
   }, []);
 
+  /**
+   * Settings' "Reset all settings": everything the Settings screen sets, back to its default (configStore's), shortcuts
+   * included. Not what isn't set there: recent files, the clips list's order, the window, the theme. Where projects are
+   * kept is changed by Settings itself, which moves them.
+   */
+  const resetAllSettings = useCallback(() => {
+    const setters: { [K in keyof Config]?: (value: Config[K]) => void } = {
+      language: setLanguage,
+      clipsFolder: setClipsFolder,
+      exportConfirmEnabled: setExportConfirmEnabled,
+      hideOsNotifications: setHideOsNotifications,
+      hideNotifications: setHideNotifications,
+      askBeforeClose: setAskBeforeClose,
+      enableAdvancedMode: setEnableAdvancedMode,
+      enableAskForFileOpenAction: setEnableAskForFileOpenAction,
+      storeWindowBounds: setStoreWindowBounds,
+      preferStrongColors: setPreferStrongColors,
+      reducedMotion: setReducedMotion,
+      exportProgressStyle: setExportProgressStyle,
+      timecodeFormat: setTimecodeFormat,
+      waveformHeight: setWaveformHeight,
+      playOnOpen: setPlayOnOpen,
+      invertCutSegments: setInvertCutSegments,
+      enableAutoHtml5ify: setEnableAutoHtml5ify,
+      autoLoadTimecode: setAutoLoadTimecode,
+      enableImportChapters: setEnableImportChapters,
+      keyframeCut: setKeyframeCut,
+      sizeLimitVideoFormat: setSizeLimitVideoFormat,
+      exportGpuAcceleration: setExportGpuAcceleration,
+      enableCustomOutDir: setEnableCustomOutDir,
+      cleanupChoices: setCleanupChoices,
+      copyAfterExport: setCopyAfterExport,
+      trashSourceAfterExport: setTrashSourceAfterExport,
+      quickExportPresets: setQuickExportPresets,
+      autoExportExtraStreams: setAutoExportExtraStreams,
+      treatInputFileModifiedTimeAsStart: setTreatInputFileModifiedTimeAsStart,
+      treatOutputFileModifiedTimeAsStart: setTreatOutputFileModifiedTimeAsStart,
+      captureFormat: setCaptureFormat,
+      captureFrameMethod: setCaptureFrameMethod,
+      captureFrameQuality: setCaptureFrameQuality,
+      captureFrameFileNameFormat: setCaptureFrameFileNameFormat,
+      keyBindings: setKeyBindings,
+      autoSaveProjectFile: setAutoSaveProjectFile,
+      trashProjectWithSource: setTrashProjectWithSource,
+      enableUpdateCheck: setEnableUpdateCheck,
+      updateMode: setUpdateMode,
+      customFfPath: setCustomFfPath,
+      enableNativeHevc: setEnableNativeHevc,
+      ffmpegHwaccel: setFfmpegHwaccel,
+      allowMultipleInstances: setAllowMultipleInstances,
+    };
+    const keys = Object.keys(setters) as (keyof Config)[];
+    keys.forEach((key) => configStore.reset(key));
+    const fresh = JSON.parse(configStore.getSnapshotJson()) as Config;
+    keys.forEach((key) => (setters[key] as (value: unknown) => void)(fresh[key]));
+  }, []);
+
   // NOTE! This useEffect must be placed after all usages of firstUpdateRef.current (safeSetConfig)
   useEffect(() => {
     firstUpdateRef.current = false;
@@ -295,15 +349,14 @@ export default function useUserSettingsRoot() {
 
   const toggleDarkMode = useCallback(() => setDarkMode((v) => !v), []);
 
-  const prefersReducedMotion = useMemo(() => {
-    if (reducedMotion !== 'user') return reducedMotion === 'always';
-    // fallback to electron detected system setting
-    // note: user has to restart app for changes here to be detected
-    return animationSettings.prefersReducedMotion;
-  }, [reducedMotion]);
+  // Settings > Appearance > Reduce motion, off unless turned on: Windows' own setting isn't followed, so nobody sees a
+  // stiller ClipPress without having asked for it (owner, 2026-11-07). An older "System default" counts as off.
+  const prefersReducedMotion = reducedMotion === 'always';
 
   useEffect(() => {
     animationsEmitter.emit('reducedMotion', prefersReducedMotion);
+    // The stylesheets' reduced-motion rules hang off this class, not the system's media query.
+    document.documentElement.classList.toggle('reduce-motion', prefersReducedMotion);
   }, [prefersReducedMotion]);
 
   const springAnimation = useMemo<Transition>(() => (prefersReducedMotion ? { duration: 0 } : mySpring), [prefersReducedMotion]);
@@ -608,6 +661,7 @@ export default function useUserSettingsRoot() {
     setSegmentsToChaptersOnly,
     setKeyBindings,
     resetKeyBindings,
+    resetAllSettings,
     setEnableSmartCut,
     setCustomFfPath,
     setClipsFolder,
@@ -665,7 +719,7 @@ export default function useUserSettingsRoot() {
     setSizeLimitCutFileTemplate,
     setSizeLimitCutMergedFileTemplate,
     setQuickExportPresets,
-  }), [settings, springAnimation, customOutDir, setCustomOutDir, resetKeyBindings, toggleDarkMode, prefersReducedMotion, recentFiles, shelfExports, shelfOrder, clipsFolder]);
+  }), [settings, springAnimation, customOutDir, setCustomOutDir, resetKeyBindings, resetAllSettings, toggleDarkMode, prefersReducedMotion, recentFiles, shelfExports, shelfOrder, clipsFolder]);
 }
 
 export type UserSettingsRoot = ReturnType<typeof useUserSettingsRoot>;

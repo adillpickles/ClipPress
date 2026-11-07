@@ -73,10 +73,8 @@
   transition: transform .24s cubic-bezier(.3, .7, .2, 1), width .24s cubic-bezier(.3, .7, .2, 1);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .orderThumbAnimate {
-    transition: none;
-  }
+:global(html.reduce-motion) .orderThumbAnimate {
+  transition: none;
 }
 
 .orderOption {
@@ -213,13 +211,11 @@
   to { background-position: 0 0, 0 0; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .thumb img,
-  .thumbLoading,
-  .orderArrow {
-    animation: none;
-    transition: none;
-  }
+:global(html.reduce-motion) .thumb img,
+:global(html.reduce-motion) .thumbLoading,
+:global(html.reduce-motion) .orderArrow {
+  animation: none;
+  transition: none;
 }
 
 .text {
