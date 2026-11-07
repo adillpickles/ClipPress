@@ -122,7 +122,7 @@ const defaults: Config = {
   sizeLimitSimpleFpsTouched: false,
   sizeLimitAdvancedResolution: 'source',
   sizeLimitAdvancedFps: 'source',
-  sizeLimitAdvancedEncoder: 'av1_nvenc',
+  sizeLimitAdvancedEncoder: 'hevc_nvenc',
   sizeLimitAdvancedTwoPass: false,
   sizeLimitAdvancedAv1CpuPreset: 6,
   sizeLimitAdvancedAv1NvencPreset: 'p6',

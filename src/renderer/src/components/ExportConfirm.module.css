@@ -576,8 +576,10 @@ table.options td:nth-child(2) > div {
   background: var(--cp-hover);
 }
 
-.customToggleActive {
-  color: var(--cp-text);
+/* Open, Custom settings are what the export uses: the chosen card's blue (.presetCardActive). */
+.customToggleActive,
+.customToggleActive:hover {
+  color: var(--cp-accent-text);
 }
 
 .customToggle:focus-visible {
@@ -591,5 +593,7 @@ table.options td:nth-child(2) > div {
   margin-top: -.2rem;
   padding: .75rem .85rem;
   border-radius: var(--cp-radius-lg);
-  border: 1px dashed var(--cp-line-strong);
+  border: 1px solid var(--accent-9);
+  background: var(--cp-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-9);
 }

@@ -74,8 +74,8 @@ import OutDirButtons from './OutDirButtons';
 import { shouldWarnAboutTightAdvancedH264Target } from '../sizeLimitedExecutionPolicy';
 import { planSizeLimitedEncode } from '../sizeLimitedPlanner';
 import { getSizeLimitedEncoderCapabilities } from '../sizeLimitedExport';
-import { resolveSizeLimitedStrategy } from '../sizeLimitedStrategy';
-import { gpuVendorLabels, pickGpuEncoder } from '../gpuEncoders';
+import { getCustomSettingsFromStrategy, resolveSizeLimitedStrategy } from '../sizeLimitedStrategy';
+import { gpuVendorLabels, pickGpuEncoder, withoutGpuEncoders } from '../gpuEncoders';
 import formatClockTime from '../util/clockTime';
 import SizeLimitMbInput from './SizeLimitMbInput';
 import {
@@ -496,6 +496,7 @@ function ExportConfirm({
     sizeLimitCutMergedFileTemplate,
     setSizeLimitCutMergedFileTemplate,
     customFfPath,
+    exportGpuAcceleration,
   } = useUserSettings();
 
   const [showAdvancedOverride, setShowAdvancedOverride] = useState<
@@ -1513,18 +1514,50 @@ function ExportConfirm({
 
   const isCustomSizeLimit = sizeLimitControlMode === 'advanced';
 
+  // Opening Custom settings starts from the preset you were on: what it would encode with on this PC.
+  const startCustomFromPreset = useCallback(() => {
+    if (encoderCapabilities == null) return;
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: sizeLimitPreset,
+      videoFormat: sizeLimitVideoFormat,
+      advancedEncoder: sizeLimitAdvancedEncoder,
+      advancedTwoPass: sizeLimitAdvancedTwoPass,
+      advancedAv1CpuPreset: sizeLimitAdvancedAv1CpuPreset,
+      advancedAv1NvencPreset: sizeLimitAdvancedAv1NvencPreset,
+      advancedH264CpuPreset: sizeLimitAdvancedH264CpuPreset,
+      advancedH264NvencPreset: sizeLimitAdvancedH264NvencPreset,
+      advancedHevcCpuPreset: sizeLimitAdvancedHevcCpuPreset,
+      advancedHevcNvencPreset: sizeLimitAdvancedHevcNvencPreset,
+      // As the export reads it (sizeLimitedExport.ts): with "Use the GPU" off, the presets stay on the CPU.
+      capabilities: exportGpuAcceleration ? encoderCapabilities : withoutGpuEncoders(encoderCapabilities),
+    });
+    const { encoder, encoderPreset, twoPass } = getCustomSettingsFromStrategy(strategy);
+    setSizeLimitAdvancedEncoder(encoder);
+    setSizeLimitAdvancedTwoPass(twoPass);
+    switch (encoder) {
+      case 'av1_cpu': { setSizeLimitAdvancedAv1CpuPreset(Number(encoderPreset)); break; }
+      case 'av1_nvenc': { setSizeLimitAdvancedAv1NvencPreset(encoderPreset as SizeLimitAdvancedNvencPreset); break; }
+      case 'hevc_nvenc': { setSizeLimitAdvancedHevcNvencPreset(encoderPreset as SizeLimitAdvancedNvencPreset); break; }
+      case 'h264_nvenc': { setSizeLimitAdvancedH264NvencPreset(encoderPreset as SizeLimitAdvancedNvencPreset); break; }
+      case 'hevc_cpu': { setSizeLimitAdvancedHevcCpuPreset(encoderPreset as SizeLimitAdvancedH264CpuPreset); break; }
+      default: { setSizeLimitAdvancedH264CpuPreset(encoderPreset as SizeLimitAdvancedH264CpuPreset); }
+    }
+  }, [encoderCapabilities, exportGpuAcceleration, setSizeLimitAdvancedAv1CpuPreset, setSizeLimitAdvancedAv1NvencPreset, setSizeLimitAdvancedEncoder, setSizeLimitAdvancedH264CpuPreset, setSizeLimitAdvancedH264NvencPreset, setSizeLimitAdvancedHevcCpuPreset, setSizeLimitAdvancedHevcNvencPreset, setSizeLimitAdvancedTwoPass, sizeLimitAdvancedAv1CpuPreset, sizeLimitAdvancedAv1NvencPreset, sizeLimitAdvancedEncoder, sizeLimitAdvancedH264CpuPreset, sizeLimitAdvancedH264NvencPreset, sizeLimitAdvancedHevcCpuPreset, sizeLimitAdvancedHevcNvencPreset, sizeLimitAdvancedTwoPass, sizeLimitPreset, sizeLimitVideoFormat]);
+
   const handlePresetChoice = useCallback((value: SizeLimitPreset | 'custom') => {
     if (value === 'custom') {
       // Custom keeps its own Resolution and Frame rate. Start them from what's on screen, so opening Custom
       // doesn't quietly switch them (e.g. from Auto to Keep source, which looks worse under a tight limit).
       setSizeLimitAdvancedResolution(selectedSizeLimitedResolution);
       setSizeLimitAdvancedFps(selectedSizeLimitedFps);
+      startCustomFromPreset();
       setSizeLimitControlMode('advanced');
       return;
     }
     setSizeLimitControlMode('simple');
     setSizeLimitPreset(value);
-  }, [selectedSizeLimitedFps, selectedSizeLimitedResolution, setSizeLimitAdvancedFps, setSizeLimitAdvancedResolution, setSizeLimitControlMode, setSizeLimitPreset]);
+  }, [selectedSizeLimitedFps, selectedSizeLimitedResolution, setSizeLimitAdvancedFps, setSizeLimitAdvancedResolution, setSizeLimitControlMode, setSizeLimitPreset, startCustomFromPreset]);
   // Simple mode has its own short "More options" panel; the full table is for advanced mode.
   const shouldRenderAdvancedTable = !simpleMode;
 
@@ -1807,18 +1840,19 @@ function ExportConfirm({
                                   value={sizeLimitAdvancedEncoder}
                                   onChange={withBlur((e) => setSizeLimitAdvancedEncoder(e.target.value as SizeLimitAdvancedEncoder))}
                                 >
-                                  <option value="av1_cpu" disabled={encoderCapabilities != null && !encoderCapabilities.libsvtav1}>{t('AV1 CPU (SVT-AV1)')}</option>
-                                  <option value="av1_nvenc" disabled={encoderCapabilities != null && gpuAv1Encoder == null}>
-                                    {gpuAv1Encoder != null ? t('AV1 GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuAv1Encoder.vendor] }) : t('AV1 GPU')}
-                                  </option>
-                                  <option value="hevc_cpu" disabled={encoderCapabilities != null && encoderCapabilities.libx265 !== true}>{t('HEVC CPU (x265)')}</option>
+                                  {/* HEVC first, the presets' format; in each pair the card's first, as the presets use it. */}
                                   <option value="hevc_nvenc" disabled={encoderCapabilities != null && gpuHevcEncoder == null}>
                                     {gpuHevcEncoder != null ? t('HEVC GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuHevcEncoder.vendor] }) : t('HEVC GPU')}
                                   </option>
-                                  <option value="h264_cpu" disabled={encoderCapabilities != null && !encoderCapabilities.libx264}>{t('H.264 CPU (x264)')}</option>
+                                  <option value="hevc_cpu" disabled={encoderCapabilities != null && encoderCapabilities.libx265 !== true}>{t('HEVC CPU (x265)')}</option>
+                                  <option value="av1_nvenc" disabled={encoderCapabilities != null && gpuAv1Encoder == null}>
+                                    {gpuAv1Encoder != null ? t('AV1 GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuAv1Encoder.vendor] }) : t('AV1 GPU')}
+                                  </option>
+                                  <option value="av1_cpu" disabled={encoderCapabilities != null && !encoderCapabilities.libsvtav1}>{t('AV1 CPU (SVT-AV1)')}</option>
                                   <option value="h264_nvenc" disabled={encoderCapabilities != null && gpuH264Encoder == null}>
                                     {gpuH264Encoder != null ? t('H.264 GPU ({{vendor}})', { vendor: gpuVendorLabels[gpuH264Encoder.vendor] }) : t('H.264 GPU')}
                                   </option>
+                                  <option value="h264_cpu" disabled={encoderCapabilities != null && !encoderCapabilities.libx264}>{t('H.264 CPU (x264)')}</option>
                                 </Select>
                                 {advancedEncoderUnavailableMessage != null && (
                                   <div className={styles['fieldWarning']}>{advancedEncoderUnavailableMessage}</div>

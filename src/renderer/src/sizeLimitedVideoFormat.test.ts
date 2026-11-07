@@ -8,7 +8,7 @@ import addSizeLimitedStrategyNotes from './sizeLimitedResultNotes';
 import { getEncodersToRetest, isSavedEncoderCheck } from './savedEncoderCheck';
 import { getGpuProbeVideoArgs, getResolvedVideoArgs } from './sizeLimitedEncoderArgs';
 import { planSizeLimitedEncode } from './sizeLimitedPlanner';
-import { resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
+import { getCustomSettingsFromStrategy, resolveSizeLimitedStrategy } from './sizeLimitedStrategy';
 import type { SizeLimitedEncoderCapabilities } from './sizeLimitedTypes';
 
 const presets: SizeLimitPreset[] = ['max_quality', 'quality', 'fast'];
@@ -385,6 +385,27 @@ describe('which encoders are tested again at the next start', () => {
 
   it("never tests a maker's encoders when it has no card here", () => {
     expect(getEncodersToRetest({ capabilities: { ...base, h264Nvenc: true }, listed, unsure: none, failedBefore: none, adapters: ['nvidia'] })).not.toContain('h264Amf');
+  });
+});
+
+describe('Custom settings opened from a preset', () => {
+  const custom = (preset: SizeLimitPreset, capabilities: SizeLimitedEncoderCapabilities, videoFormat: SizeLimitVideoFormat = 'hevc') => getCustomSettingsFromStrategy(resolve(preset, capabilities, videoFormat));
+
+  it("start from the preset's encoder, speed and passes", () => {
+    const uhqCard = { ...rtx40, hevcNvencUhq: true };
+    expect(custom('quality', uhqCard)).toEqual({ encoder: 'hevc_nvenc', encoderPreset: 'p4', twoPass: false });
+    expect(custom('fast', uhqCard)).toEqual({ encoder: 'hevc_nvenc', encoderPreset: 'p4', twoPass: false });
+    expect(custom('max_quality', uhqCard)).toEqual({ encoder: 'hevc_cpu', encoderPreset: 'slow', twoPass: true });
+    // The card's own multipass counts as two passes.
+    expect(custom('max_quality', { ...uhqCard, libx265: false })).toEqual({ encoder: 'hevc_nvenc', encoderPreset: 'p7', twoPass: true });
+    expect(custom('quality', rtx40, 'av1')).toEqual({ encoder: 'av1_nvenc', encoderPreset: 'p6', twoPass: false });
+    expect(custom('max_quality', rtx40, 'av1')).toEqual({ encoder: 'av1_cpu', encoderPreset: 5, twoPass: true });
+  });
+
+  it('use the "NVIDIA" choice for an AMD or Intel card, and the CPU with the graphics card off', () => {
+    const amd: SizeLimitedEncoderCapabilities = { ...noGpu, hevcAmf: true, h264Amf: true };
+    expect(custom('fast', amd)).toEqual({ encoder: 'hevc_nvenc', encoderPreset: 'p3', twoPass: false });
+    expect(custom('quality', withoutGpuEncoders(rtx40))).toEqual({ encoder: 'hevc_cpu', encoderPreset: 'fast', twoPass: false });
   });
 });
 

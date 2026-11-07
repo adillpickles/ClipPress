@@ -685,3 +685,19 @@ export function resolveSizeLimitedStrategy({
     capabilities,
   });
 }
+
+/**
+ * Custom settings opened from a preset start where the preset is: its encoder, speed and passes (the encoder's own
+ * multipass counts as two passes, as in Custom settings). The "NVIDIA" choices cover AMD and Intel cards too.
+ */
+export function getCustomSettingsFromStrategy(strategy: SizeLimitedResolvedStrategy): {
+  encoder: SizeLimitAdvancedEncoder,
+  encoderPreset: SizeLimitedResolvedStrategy['encoderPreset'],
+  twoPass: boolean,
+} {
+  return {
+    encoder: `${strategy.effectiveCodec}_${strategy.hardware === 'cpu' ? 'cpu' : 'nvenc'}`,
+    encoderPreset: strategy.encoderPreset,
+    twoPass: strategy.executionMode === 'ffmpeg_two_pass' || strategy.encoderMultipass === true,
+  };
+}
