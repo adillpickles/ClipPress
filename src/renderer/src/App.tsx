@@ -6178,14 +6178,19 @@ function App() {
             // One page: open it, or add its sound, picture or both to this recording. Joining is in the menu (Join
             // files…); a project's or subtitles' own choices, and the batch list, stay in advanced mode.
             const isMedia = inputOptions.project == null && inputOptions.subtitles == null;
+            // Only what the file has: a sound file offers its sound, a silent video its picture; one that can't be read
+            // offers neither (opening it says why).
+            const droppedStreams = inputOptions.tracks != null && isMedia ? (await readFileFfprobeMeta(firstNewFilePath).catch(() => undefined))?.streams ?? [] : [];
+            const hasPicture = getRealVideoStreams(droppedStreams).length > 0;
+            const hasSound = droppedStreams.some((stream) => stream.codec_type === 'audio');
             openFileResponse = await askForFileOpenChoice({
               fileName: basename(firstNewFilePath),
               openLabel: i18n.t('Open it'),
-              extras: inputOptions.tracks != null && isMedia ? [
-                { key: 'tracksAudio', label: i18n.t('Add its sound'), add: 'audio' as const },
-                { key: 'tracksVideo', label: i18n.t('Add its picture'), add: 'video' as const },
-                { key: 'tracks', label: i18n.t('Add both'), add: 'both' as const },
-              ] : [],
+              extras: [
+                ...(hasSound ? [{ key: 'tracksAudio', label: i18n.t('Add its sound'), add: 'audio' as const }] : []),
+                ...(hasPicture ? [{ key: 'tracksVideo', label: i18n.t('Add its picture'), add: 'video' as const }] : []),
+                ...(hasSound && hasPicture ? [{ key: 'tracks', label: i18n.t('Add both'), add: 'both' as const }] : []),
+              ],
             });
           } else if (enableAskForFileOpenAction && simpleMode && isFileOpened && newFilePaths.length > 1) {
             // Several files onto an open recording: the same question as for one, not LosslessCut's batch list wording.
