@@ -47,7 +47,6 @@ export default function ErrorDialog({ error, onOpenChange }: {
             </Dialog.Close>
           </Dialog.ButtonRow>
 
-          <Dialog.CloseButton />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

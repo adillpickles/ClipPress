@@ -281,10 +281,6 @@ function ConcatDialog({ isShown, onHide, paths, mergedFileTemplate, generateMerg
           <Dialog.ButtonRow>
             <Checkbox checked={enableReadFileMeta} onCheckedChange={handleReadFileMetaCheckedChange} label={t('Check compatibility')} />
 
-            <Dialog.Close asChild>
-              <DialogButton>{t('Cancel')}</DialogButton>
-            </Dialog.Close>
-
             <Dialog.Root>
               <Dialog.Trigger asChild>
                 <Button style={{ padding: '.3em .5em' }}><FaCog style={{ verticalAlign: 'middle', fontSize: '1.4em', marginRight: '.2em' }} /> {t('Options')}</Button>
@@ -308,12 +304,6 @@ function ConcatDialog({ isShown, onHide, paths, mergedFileTemplate, generateMerg
                   <Checkbox checked={clearBatchFilesAfterConcat} onCheckedChange={(checked) => setClearBatchFilesAfterConcat(checked === true)} label={t('Clear batch file list after merge')} />
 
                   <p>{t('Note that also other settings from the normal export dialog apply to this merge function. For more information about all options, see the export dialog.')}</p>
-
-                  <Dialog.ButtonRow>
-                    <Dialog.Close asChild>
-                      <DialogButton primary>{t('Close')}</DialogButton>
-                    </Dialog.Close>
-                  </Dialog.ButtonRow>
 
                   <Dialog.CloseButton />
                 </Dialog.Content>

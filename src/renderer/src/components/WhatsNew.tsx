@@ -96,7 +96,6 @@ export default function WhatsNew() {
             </Dialog.Close>
           </Dialog.ButtonRow>
 
-          <Dialog.CloseButton />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

@@ -74,8 +74,8 @@ export default function SegmentSpeedDialog({ open, segment, fileDuration, format
             </div>
             {!valid && <div role="alert" className={styles['error']}>{t('Enter a speed between 10% and 1600%.')}</div>}
             <Dialog.ButtonRow>
+              {/* Its X closes it without a change. */}
               <DialogButton onClick={() => setPercent('100')}>{t('Reset')}</DialogButton>
-              <DialogButton onClick={onClose}>{t('Cancel')}</DialogButton>
               <DialogButton primary type="submit" disabled={!valid}>{t('Apply')}</DialogButton>
             </Dialog.ButtonRow>
           </form>

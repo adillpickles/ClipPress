@@ -274,17 +274,21 @@ export function useDialog() {
 
       // It grows out of the export's progress card, once, as it first mounts.
       const morphed = useRef(false);
+      const cardRef = useRef<HTMLDivElement | null>(null);
       const contentRef = useCallback((el: HTMLDivElement | null) => {
+        cardRef.current = el;
         if (el == null || morphed.current) return;
         morphed.current = true;
         morphFromWorkingCard(el, { reduceMotion });
       }, [reduceMotion]);
 
-      // Start on the main button rather than on the first focusable thing (the picture).
+      // Start on the main button (Next clip), else on the card itself, rather than on the first focusable thing (the
+      // picture).
       const handleOpenAutoFocus = useCallback((e: Event) => {
-        if (mainRef.current == null) return;
+        const target = mainRef.current ?? cardRef.current;
+        if (target == null) return;
         e.preventDefault();
-        mainRef.current.focus({ focusVisible: false } as FocusOptions);
+        target.focus({ focusVisible: false } as FocusOptions);
       }, []);
 
       const onNextClick = useCallback(() => {
@@ -302,15 +306,9 @@ export function useDialog() {
             highlight={highlight}
             details={details}
             autoCopied={autoCopied}
-            actions={(
-              <>
-                <Dialog.Close asChild>
-                  <DialogButton primary={nextClipName == null} ref={nextClipName == null ? mainRef : undefined}>{t('Close')}</DialogButton>
-                </Dialog.Close>
-                {nextClipName != null && (
-                  <DialogButton primary ref={mainRef} onClick={onNextClick} title={nextClipName}>{t('Next clip')}</DialogButton>
-                )}
-              </>
+            // A panel: its X closes it; the only button is the one that does something.
+            actions={nextClipName != null && (
+              <DialogButton primary ref={mainRef} onClick={onNextClick} title={nextClipName}>{t('Next clip')}</DialogButton>
             )}
           />
           <Dialog.CloseButton />
