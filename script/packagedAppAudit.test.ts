@@ -5,6 +5,8 @@ import {
   bytesPerMib,
   getPackagedModuleNames,
   maxAsarBytes,
+  requiredChromiumFilesByPlatform,
+  unusedChromiumFiles,
   type AsarEntry,
   type AsarManifest,
 } from './packagedAppAudit.ts';
@@ -17,7 +19,7 @@ const healthyEntries: AsarEntry[] = [
   { path: 'LICENSE', size: 10_000 },
   { path: 'out/renderer/index.html', size: 2_000 },
   { path: 'package.json', size: 1_500 },
-  { path: 'node_modules/zod/index.js', size: 4_000_000 },
+  { path: 'node_modules/semver/index.js', size: 4_000_000 },
   { path: 'node_modules/@electron/remote/main/index.js', size: 40_000 },
 ];
 
@@ -46,7 +48,7 @@ const audit = (entries: AsarEntry[], overrides: Partial<Parameters<typeof auditP
 
 describe('getPackagedModuleNames', () => {
   it('reads plain and scoped package names', () => {
-    expect(getPackagedModuleNames(healthyEntries)).toEqual(new Set(['zod', '@electron/remote']));
+    expect(getPackagedModuleNames(healthyEntries)).toEqual(new Set(['semver', '@electron/remote']));
   });
 
   it('ignores files that are not under node_modules', () => {
@@ -59,7 +61,7 @@ describe('auditPackagedApp', () => {
     expect(audit(healthyEntries).problems).toEqual([]);
   });
 
-  it.each(['electron', 'typescript', 'electron-devtools-installer', '@electron/get', 'extract-zip', 'node-gyp', 'npmlog'])('rejects the build-time-only package %s', (name) => {
+  it.each(['electron', 'typescript', 'electron-devtools-installer', '@electron/get', 'extract-zip', 'node-gyp', 'npmlog', 'zod'])('rejects the build-time-only package %s', (name) => {
     const result = audit([...healthyEntries, { path: `node_modules/${name}/index.js`, size: 1_000 }]);
     expect(result.problems).toHaveLength(1);
     expect(result.problems[0]).toContain(name);
@@ -95,9 +97,27 @@ describe('auditPackagedApp', () => {
     expect(result.problems).toEqual([]);
   });
 
+  const windowsAppFiles = ['ClipPress.exe', 'chrome_100_percent.pak', ...requiredChromiumFilesByPlatform['win32']!, 'locales/de.pak'];
+
+  it("passes a Windows app folder without Chromium's unused files", () => {
+    expect(audit(healthyEntries, { appFileNames: windowsAppFiles }).problems).toEqual([]);
+  });
+
+  it.each(unusedChromiumFiles)('rejects a Windows app folder that still has %s', (name) => {
+    const result = audit(healthyEntries, { appFileNames: [...windowsAppFiles, name] });
+    expect(result.problems).toHaveLength(1);
+    expect(result.problems[0]).toContain(name);
+  });
+
+  it.each(['d3dcompiler_47.dll', 'ffmpeg.dll', 'locales/en-US.pak'])('rejects a Windows app folder missing %s', (missing) => {
+    const result = audit(healthyEntries, { appFileNames: windowsAppFiles.filter((name) => name !== missing) });
+    expect(result.problems).toHaveLength(1);
+    expect(result.problems[0]).toContain(missing);
+  });
+
   it('reports the largest packaged dependencies so a regression is easy to read', () => {
     expect(audit(healthyEntries).largestModules).toEqual([
-      { name: 'zod', bytes: 4_000_000 },
+      { name: 'semver', bytes: 4_000_000 },
       { name: '@electron/remote', bytes: 40_000 },
     ]);
   });

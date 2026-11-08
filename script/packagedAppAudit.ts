@@ -94,7 +94,20 @@ export const bytesPerMib = 1024 * 1024;
  */
 // Electron's own install-time helpers (extract-zip was renamed @electron-internal/extract-zip in Electron 45), which
 // the dependency collector picks up through @electron/remote's peer dependency on electron.
-export const disallowedPackagedModules = ['electron', 'typescript', 'electron-devtools-installer', '@electron/get', 'extract-zip', '@electron-internal/extract-zip', 'undici', 'node-gyp', 'npmlog'];
+// zod: only the renderer uses it, and Vite bundles it in (main leaves it out on purpose, for its start time).
+export const disallowedPackagedModules = ['electron', 'typescript', 'electron-devtools-installer', '@electron/get', 'extract-zip', '@electron-internal/extract-zip', 'undici', 'node-gyp', 'npmlog', 'zod'];
+
+/**
+ * Chromium files ClipPress never loads, removed by `script/afterPack.ts` (~32 MB installed): WebGPU's DirectX shader
+ * compiler (ClipPress has no WebGPU or WebGL; Chromium only preloads it, best effort), and the SwiftShader Vulkan
+ * software renderer and Vulkan loader (Chromium's software fallback on Windows is Windows' own D3D11 WARP).
+ */
+export const unusedChromiumFiles = ['dxcompiler.dll', 'dxil.dll', 'vk_swiftshader.dll', 'vk_swiftshader_icd.json', 'vulkan-1.dll'];
+
+/** Chromium files next to the app's exe that it can't start, draw or play without: what the removal must never take. */
+export const requiredChromiumFilesByPlatform: Record<string, string[]> = {
+  win32: ['ffmpeg.dll', 'd3dcompiler_47.dll', 'icudtl.dat', 'resources.pak', 'snapshot_blob.bin', 'v8_context_snapshot.bin', 'locales/en-US.pak'],
+};
 
 /**
  * Generous enough that ordinary dependency growth will not trip it, tight enough that
@@ -125,6 +138,8 @@ export interface PackagedAppAuditInput {
   manifest: AsarManifest,
   /** File names present next to the ASAR, in `resources/`. */
   resourceFileNames: readonly string[],
+  /** Files in the app's own folder (next to its exe), with `locales/` ones as `locales/<name>`; only checked on Windows. */
+  appFileNames?: readonly string[] | undefined,
   platform: string,
 }
 
@@ -135,7 +150,7 @@ export interface PackagedAppAuditResult {
   largestModules: { name: string, bytes: number }[],
 }
 
-export function auditPackagedApp({ manifest, resourceFileNames, platform }: PackagedAppAuditInput): PackagedAppAuditResult {
+export function auditPackagedApp({ manifest, resourceFileNames, appFileNames, platform }: PackagedAppAuditInput): PackagedAppAuditResult {
   const problems: string[] = [];
   const moduleNames = getPackagedModuleNames(manifest.entries);
 
@@ -161,6 +176,16 @@ export function auditPackagedApp({ manifest, resourceFileNames, platform }: Pack
   for (const required of requiredResources) {
     if (!presentResources.has(required)) {
       problems.push(`Packaged resources are missing "${required}", which media playback or export needs.`);
+    }
+  }
+
+  if (appFileNames != null && platform === 'win32') {
+    const presentAppFiles = new Set(appFileNames);
+    for (const name of unusedChromiumFiles) {
+      if (presentAppFiles.has(name)) problems.push(`The app folder still has "${name}", which script/afterPack.ts should remove.`);
+    }
+    for (const name of requiredChromiumFilesByPlatform[platform] ?? []) {
+      if (!presentAppFiles.has(name)) problems.push(`The app folder is missing "${name}", which Electron needs to start, draw or play.`);
     }
   }
 
