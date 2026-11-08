@@ -69,13 +69,15 @@ jobs:
             npx electron-builder --win nsis --x64 --publish never -c.extraMetadata.version="$version" -c.directories.output="dist-upgrade/$version"
           done
 
-      # A crash of the app then leaves a minidump with the results.
-      - name: Keep crash dumps of ClipPress
+      # Any crash (the app or the installer) then leaves a minidump with the results.
+      - name: Keep crash dumps
         run: |
-          $key = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\ClipPress.exe'
-          New-Item -Path $key -Force | Out-Null
-          New-ItemProperty -Path $key -Name DumpFolder -PropertyType ExpandString -Value "$env:GITHUB_WORKSPACE\upgrade-results\crash-dumps" -Force | Out-Null
-          New-ItemProperty -Path $key -Name DumpType -PropertyType DWord -Value 1 -Force | Out-Null
+          # The second key is for 32-bit programs, which the installer and uninstaller are.
+          foreach ($key in 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\Windows Error Reporting\LocalDumps') {
+            New-Item -Path $key -Force | Out-Null
+            New-ItemProperty -Path $key -Name DumpFolder -PropertyType ExpandString -Value "$env:GITHUB_WORKSPACE\upgrade-results\crash-dumps" -Force | Out-Null
+            New-ItemProperty -Path $key -Name DumpType -PropertyType DWord -Value 1 -Force | Out-Null
+          }
 
       - name: Install and update in this disposable VM
         run: node script/installerUpgradeTest.ts dist-upgrade upgrade-results

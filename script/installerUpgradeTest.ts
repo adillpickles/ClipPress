@@ -117,8 +117,9 @@ async function registryVersion() {
 
 /** A registry value under HKCU\Software\Classes, or undefined when it (or its key) isn't there. */
 async function classesValue(key: string, valueName = '') {
-  // Through .NET: `reg query /ve` prints "(value not set)" for a key without a default, which reads as a value.
-  const output = await powershell(`$k = Get-Item -LiteralPath 'HKCU:\\Software\\Classes\\${key}' -ErrorAction SilentlyContinue; if ($k -and ($k.GetValueNames() -contains '${valueName}')) { 'VALUE:' + [string]$k.GetValue('${valueName}') }`);
+  // Through .NET: `reg query /ve` prints "(value not set)" for a key without a default, which reads as a value. A key
+  // that isn't there comes back null, which is an answer; one that can't be read throws, and fails the step.
+  const output = await powershell(`$ErrorActionPreference = 'Stop'; $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\\Classes\\${key}'); if ($k -and ($k.GetValueNames() -contains '${valueName}')) { 'VALUE:' + [string]$k.GetValue('${valueName}') }`);
   return output.startsWith('VALUE:') ? output.slice('VALUE:'.length) : undefined;
 }
 
@@ -359,15 +360,34 @@ $h = (Get-Process -Id ${child.pid}).MainWindowHandle
 if ($h -eq 0) { 'no-window' } else { [ClipPressTest.User32]::PostMessage($h, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) }`);
     assert.equal(result, 'True', `Could not post WM_CLOSE: ${result}`);
   };
+  const sendMessageApi = String.raw`Add-Type -Namespace ClipPressTest -Name User32Send -MemberDefinition '[DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);'
+$h = (Get-Process -Id ${child.pid}).MainWindowHandle`;
+  /** Asks the window whether the session may end (WM_QUERYENDSESSION), how a shutdown starts. Only this message: this VM is not shut down. */
+  const querySessionEnd = async () => {
+    const result = await powershell(String.raw`${sendMessageApi}
+if ($h -eq 0) { 'no-window' } else { [ClipPressTest.User32Send]::SendMessage($h, 0x11, [IntPtr]::Zero, [IntPtr]::Zero) }`);
+    assert.equal(result, '1', `Unexpected answer to the session-end question: ${result}`);
+  };
   /**
-   * Tells the window that Windows is ending the session (WM_QUERYENDSESSION, then WM_ENDSESSION), as
-   * a shutdown would. Only these messages: this VM is not shut down.
+   * Readies the messages of a session really ending (WM_QUERYENDSESSION, then WM_ENDSESSION), and returns what sends them
+   * at once: starting PowerShell takes longer than autosave waits, and an edit made just before has to still be waiting.
    */
-  const endSession = async () => {
-    const result = await powershell(String.raw`Add-Type -Namespace ClipPressTest -Name User32Send -MemberDefinition '[DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);'
-$h = (Get-Process -Id ${child.pid}).MainWindowHandle
-if ($h -eq 0) { 'no-window' } else { "$([ClipPressTest.User32Send]::SendMessage($h, 0x11, [IntPtr]::Zero, [IntPtr]::Zero)) $([ClipPressTest.User32Send]::SendMessage($h, 0x16, [IntPtr]1, [IntPtr]::Zero))" }`);
-    assert.equal(result, '1 0', `Unexpected answers to the session-end messages: ${result}`);
+  const prepareSessionEnd = async () => {
+    const trigger = join(resultsDir, `send-session-end-${Date.now()}`);
+    const shell = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', String.raw`${sendMessageApi}
+'ready'
+while (-not (Test-Path -LiteralPath '${trigger}')) { Start-Sleep -Milliseconds 5 }
+if ($h -eq 0) { 'no-window' } else { "$([ClipPressTest.User32Send]::SendMessage($h, 0x11, [IntPtr]::Zero, [IntPtr]::Zero)) $([ClipPressTest.User32Send]::SendMessage($h, 0x16, [IntPtr]1, [IntPtr]::Zero))" }`], { windowsHide: true, stdio: ['ignore', 'pipe', 'inherit'] });
+    let output = '';
+    shell.stdout.on('data', (data: Buffer) => { output += data.toString(); });
+    const finished = new Promise((resolveExit) => { shell.on('exit', resolveExit); });
+    await waitFor('the session-end messages to be ready', async () => output.includes('ready'), 60_000, 50);
+    return async () => {
+      await writeFile(trigger, '');
+      await finished;
+      const result = output.replace('ready', '').trim();
+      assert.equal(result, '1 0', `Unexpected answers to the session-end messages: ${result}`);
+    };
   };
   const waitExit = async (timeoutMs: number) => Promise.race([exited, timers.setTimeout(timeoutMs, undefined, { ref: false }).then(() => undefined)]);
   const screenshot = async (name: string) => {
@@ -390,7 +410,7 @@ if ($h -eq 0) { 'no-window' } else { "$([ClipPressTest.User32Send]::SendMessage(
     }
     await timers.setTimeout(1000);
   }
-  return { child, evaluate, fire, action, updateStatus, dialogText, clickDialogButton, closeWindow, endSession, waitExit, screenshot, kill, get exit() { return exit; } };
+  return { child, evaluate, fire, action, updateStatus, dialogText, clickDialogButton, closeWindow, querySessionEnd, prepareSessionEnd, waitExit, screenshot, kill, get exit() { return exit; } };
 }
 
 type App = Awaited<ReturnType<typeof launchApp>>;
@@ -602,7 +622,7 @@ async function main() {
       assert(app);
       await execFileAsync('attrib', ['-R', projectPath]);
       assert.equal((await app.updateStatus()).installOnQuit, true);
-      await app.endSession();
+      await app.querySessionEnd();
       await waitFor('installing to be held', async () => (await app!.updateStatus()).installOnQuit === false, 10_000);
       await app.action('addSegment');
       await app.closeWindow();
@@ -613,6 +633,24 @@ async function main() {
       assert.deepEqual(await installerProcesses(), [], 'An installer started during the session end');
       assert.equal(await registryVersion(), b.version, 'An update was installed during the session end');
       assert.equal(await projectSegments(), segmentsBefore.savedSegments + 3, 'The edits were not saved');
+    });
+
+    // When the session really ends, Electron exits by itself (on WM_ENDSESSION, without closing the window): the edit
+    // still waiting for autosave is saved when Windows asks, just before.
+    await step('When Windows ends the session, the app ends with it and an edit just made is saved', async () => {
+      app = await launchApp(exePath);
+      await openClip(app);
+      const endSession = await app.prepareSessionEnd();
+      await app.action('addSegment');
+      assert.equal(await projectSegments(), segmentsBefore.savedSegments + 3, 'The edit was already saved, so this proves nothing');
+      await endSession();
+      const exit = await app.waitExit(60_000);
+      assert.ok(exit != null, 'The app did not end with the session');
+      await timers.setTimeout(15_000);
+      assert.deepEqual(await installerProcesses(), [], 'An installer started when the session ended');
+      assert.equal(await registryVersion(), b.version, 'An update was installed when the session ended');
+      assert.equal(await projectSegments(), segmentsBefore.savedSegments + 4, 'The edit made just before was lost');
+      return { exitCode: exit.code };
     });
 
     await step(`Ask: the next run installs ${c.version} on closing, once approved again`, async () => {
@@ -636,7 +674,7 @@ async function main() {
       const installed = await waitForInstalled(c);
       assert.ok(installed.appAsarMatches);
       await assertNotRunning();
-      assert.equal(await projectSegments(), segmentsBefore.savedSegments + 3);
+      assert.equal(await projectSegments(), segmentsBefore.savedSegments + 4);
     });
 
     await step(`${c.version} launches with settings and project intact, and still finds a newer release (${d})`, async () => {
@@ -648,7 +686,7 @@ async function main() {
       const settings = await readSettings();
       assert.equal(settings['sizeLimitMb'], sizeLimitMarker);
       assert.equal(settings['updateMode'], 'ask');
-      assert.equal(await projectSegments(), segmentsBefore.savedSegments + 3);
+      assert.equal(await projectSegments(), segmentsBefore.savedSegments + 4);
       const available = await waitFor('a newer release to be found', async () => {
         const status = await app!.updateStatus();
         return status.phase === 'available' ? status : undefined;
@@ -831,7 +869,7 @@ async function main() {
       assert.equal(await classesValue('ClipPress.Video'), undefined, 'The file class outlived the uninstall');
       assert.equal(await classesValue(String.raw`.mp4\OpenWithProgids`, 'ClipPress.Video'), undefined);
       assert.equal((await readSettings())['sizeLimitMb'], reinstallMarker);
-      assert.equal(await projectSegments(), segmentsBefore.savedSegments + 3);
+      assert.equal(await projectSegments(), segmentsBefore.savedSegments + 4);
     });
   } finally {
     if (app != null) {
