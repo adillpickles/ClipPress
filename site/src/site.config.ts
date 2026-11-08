@@ -40,10 +40,10 @@ export const PREVIEW = {
   status: 'ready' as PreviewStatus,
   // Static no-JS fallback copy in index.html mirrors `tag`, `releaseLabel`,
   // `platform` and `assetFileName` — scripts/lint.mjs enforces the sync.
-  tag: 'v0.1.0-beta.6',
-  releaseLabel: 'v0.1.0 Beta 6',
-  assetFileName: 'ClipPress-Setup-0.1.0-beta.6.exe',
-  assetSize: '150 MB',
+  tag: 'v0.1.0-beta.6.7',
+  releaseLabel: 'v0.1.0 Beta 6.7',
+  assetFileName: 'ClipPress-Setup-0.1.0-beta.6.7.exe',
+  assetSize: '157 MB',
   platform: 'Windows 10/11 x64',
 } as const;
 
