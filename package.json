@@ -2,7 +2,7 @@
   "name": "clippress",
   "productName": "ClipPress",
   "description": "Fast clip editor for turning long recordings into clean, shareable clips",
-  "version": "0.1.0-beta.6",
+  "version": "0.1.0-beta.6.7",
   "main": "./out/main/index.js",
   "homepage": "https://github.com/adillpickles/ClipPress",
   "type": "module",
