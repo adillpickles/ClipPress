@@ -5,6 +5,8 @@
   z-index: 10002;
   /* A modal dialog turns pointer events off for the rest of the page: a menu over it (a text field's) still takes them. */
   pointer-events: auto;
+  /* Over the title bar too: there Windows would take a click as a window drag, and the menu would stay open. */
+  -webkit-app-region: no-drag;
 }
 
 /* As wide as its items: one with a shortcut adds room for the keys. */
@@ -106,11 +108,9 @@
   visibility: hidden;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .itemConfirm[data-confirm='locked']::before {
-    transition: none;
-    transform: scaleX(0);
-  }
+:global(html.reduce-motion) .itemConfirm[data-confirm='locked']::before {
+  transition: none;
+  transform: scaleX(0);
 }
 
 .itemDisabled {
@@ -171,8 +171,6 @@
   to { opacity: 1; transform: none; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .menu {
-    animation: none;
-  }
+:global(html.reduce-motion) .menu {
+  animation: none;
 }

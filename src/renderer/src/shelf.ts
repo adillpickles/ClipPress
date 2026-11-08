@@ -14,6 +14,8 @@ export interface ShelfFile {
 export interface ShelfItem {
   file: ShelfFile,
   exported: boolean,
+  /** Its place in the chosen order, exported clips counted where they'd sort, so Next follows on from a clip that has just been exported and moved down. */
+  position: number,
 }
 
 /** Exports remembered for the shelf: enough for months of clips, small enough to stay a short list. */
@@ -91,16 +93,19 @@ export function buildShelfQueue(files: readonly ShelfFile[], { order, exports, c
   const items = files
     .filter((file) => !outputs.has(shelfPathKey(file.path, caseInsensitive)))
     .sort(compare)
-    .map((file) => ({ file, exported: isExported(file) }));
+    .map((file, position) => ({ file, exported: isExported(file), position }));
   return [...items.filter((item) => !item.exported), ...items.filter((item) => item.exported)];
 }
 
-/** The clip to edit after the current one: the next one not yet exported, wrapping round to the top. */
+/** The clip to edit after the current one: the next one not yet exported in the order shown, wrapping round to the top. */
 export function pickNextClip(queue: readonly ShelfItem[], currentPath: string | undefined, caseInsensitive: boolean, unopenable: ReadonlySet<string> = new Set()) {
   const currentKey = currentPath != null ? shelfPathKey(currentPath, caseInsensitive) : undefined;
-  const index = queue.findIndex((item) => shelfPathKey(item.file.path, caseInsensitive) === currentKey);
+  const current = queue.find((item) => shelfPathKey(item.file.path, caseInsensitive) === currentKey);
   // A recording that couldn't be opened this session (damaged, say) isn't offered again, unless it changes.
   const isCandidate = (item: ShelfItem) => !item.exported && shelfPathKey(item.file.path, caseInsensitive) !== currentKey && !unopenable.has(shelfThumbnailKey(item.file));
-  if (index === -1) return queue.find((item) => isCandidate(item))?.file;
-  return (queue.slice(index + 1).find((item) => isCandidate(item)) ?? queue.slice(0, index).find((item) => isCandidate(item)))?.file;
+  // The clips still to do, in the order shown.
+  const candidates = queue.filter((item) => isCandidate(item));
+  if (current == null) return candidates[0]?.file;
+  // Follow on from where the open clip sorts, even once its export has moved it to the bottom.
+  return (candidates.find((item) => item.position > current.position) ?? candidates[0])?.file;
 }

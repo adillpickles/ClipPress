@@ -5,8 +5,8 @@
   margin: 1.2rem 0 .7rem;
 }
 .speedField > label { flex: 1; }
-.presets { display: flex; gap: .35rem; flex-wrap: wrap; }
-.presets button { flex: 1; padding: .35rem .5rem; font-size: .8rem; }
+.presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: .55rem .5rem; }
+.presets button { padding: .45rem .5rem; font-size: .8rem; }
 .presets button[aria-pressed="true"] { border-color: var(--accent-9); background: var(--accent-4); }
 .durations {
   display: grid;
@@ -86,6 +86,8 @@
   border-radius: 3px;
 }
 .retimeSpeed:hover { background: var(--gray-5); }
+/* Only the simple editor's band gives the length a box of its own (below); in the lane it's as if it weren't there. */
+.retimeDurationSlot { display: contents; }
 .retimeDuration {
   position: absolute;
   right: 12px;
@@ -110,7 +112,7 @@
 /* Make room for the delete button on the selected bar. */
 .retimeBar[data-active="true"] .retimeDuration { right: 34px; }
 @container (max-width: 160px) {
-  .retimeDuration { display: none; }
+  .retimeBar:not([data-overlay="true"]) .retimeDuration { display: none; }
 }
 
 /* Simple mode: a slim band along the bottom of the clip block instead of a lane of its own, so turning speed
@@ -143,7 +145,36 @@
   opacity: .3;
   pointer-events: none;
 }
-.retimeBar[data-overlay="true"] .retimeBody { justify-content: flex-start; padding-left: 2px; }
+/* min-width 0: the row shrinks to the band, so the length's box gets only the room that's really left. */
+.retimeBar[data-overlay="true"] .retimeBody { justify-content: flex-start; padding-left: 2px; min-width: 0; }
 .retimeBar[data-overlay="true"] .retimeSpeed { font-size: 11px; }
-.retimeBar[data-overlay="true"] .retimeDuration { font-size: 10px; }
-.retimeBar[data-overlay="true"][data-active="true"] .retimeDuration { right: 12px; }
+/* The clip's new length shows whenever it fits, at any zoom: in a box of its own whose first line is the band's full
+   height (the empty ::before), it drops onto a second, clipped line when there's no room, never showing half of it. */
+.retimeBar[data-overlay="true"] .retimeDurationSlot {
+  display: flex;
+  flex: 1 1 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-content: flex-start;
+  align-self: stretch;
+  min-width: 0;
+  overflow: hidden;
+}
+.retimeBar[data-overlay="true"] .retimeDurationSlot::before {
+  content: '';
+  height: 100%;
+}
+.retimeBar[data-overlay="true"] .retimeDuration {
+  position: static;
+  align-self: center;
+  margin-right: 12px;
+  padding-left: 6px;
+  font-size: 10px;
+}
+/* The selected band's X sits before the drag handle; the length moves over for it. */
+.retimeBar[data-overlay="true"][data-active="true"]:not([data-dragging="true"]) .retimeDuration { margin-right: 34px; }
+/* Too narrow for the percentage and the X: the X goes (the band's menu still removes the speed). */
+@container (max-width: 76px) {
+  .retimeBar[data-overlay="true"] .overlayDelete { display: none; }
+  .retimeBar[data-overlay="true"][data-active="true"]:not([data-dragging="true"]) .retimeDuration { margin-right: 12px; }
+}

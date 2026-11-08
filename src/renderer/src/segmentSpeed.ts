@@ -5,8 +5,12 @@ export interface SpeedSegment {
   initial?: true,
 }
 
-export const minSegmentSpeed = 0.25;
-export const maxSegmentSpeed = 4;
+/**
+ * 10% to 1600%. The preview plays up to 16× (Chromium refuses faster) with its sound, pitch kept (measured); the
+ * export chains atempo stages (getAudioTempoFilter).
+ */
+export const minSegmentSpeed = 0.1;
+export const maxSegmentSpeed = 16;
 
 export function isSegmentSpeedValid(speed: number) {
   return Number.isFinite(speed) && speed >= minSegmentSpeed && speed <= maxSegmentSpeed;
@@ -21,7 +25,13 @@ export function getSegmentPlaybackRate(segment: { speed?: number | undefined }, 
   return getSegmentSpeed(segment) * outputPlaybackRate;
 }
 
-export const segmentSpeedPresets = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
+/** A speed as a percent, without the float's noise (a speed dragged on the band, 0.29, read "28.999999999999996"). */
+export const formatSpeedPercent = (speed: number) => String(Math.round(speed * 10_000) / 100);
+
+/** The speed a percent field means: the clip's own while it still shows it untouched (12.345% shows "12.35"). */
+export const readSpeedPercent = (percent: string, speed: number) => (percent === formatSpeedPercent(speed) ? speed : Number(percent) / 100);
+
+export const segmentSpeedPresets = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 8, 16];
 
 const retimeSnapTolerance = 0.03;
 

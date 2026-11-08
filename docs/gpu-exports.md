@@ -2,22 +2,76 @@
 
 ClipPress uses the graphics card automatically. The bundled FFmpeg includes the NVIDIA
 (NVENC), AMD (AMF) and Intel (Quick Sync) encoders, and each needs only the normal graphics
-driver, so there is nothing extra to install. Each encoder is tested by opening it once
-(cached for five minutes), because a card can be present without an AV1 encoder.
+driver, so there is nothing extra to install. Each encoder is tested by opening it once (the answer is kept
+until the graphics card, its driver, FFmpeg or ClipPress changes), because a card can be present without an
+AV1 or HEVC encoder.
 
 ## Which encoder a target-size export uses
 
-AV1 encoding needs an NVIDIA RTX 40-series, AMD RX 7000-series, Intel Arc or newer GPU.
+**Settings > Export > Video format** picks the codec the size presets make:
+
+- **HEVC** (the default) plays and saves on every iPhone and Android phone, and plays on every PC with an HEVC
+  decoder (Discord's app plays video on the graphics card only: GTX 970/980 and older cards, Intel graphics before
+  the 6th generation and most virtual machines show a still picture).
+- **H.264** plays anywhere, old PCs included, a little less sharp.
+- **AV1** can be a little sharper at the same size, but an iPhone's Photos won't save it, and iPhones before the
+  15 Pro can't play it.
+
 Where several GPUs are present, NVIDIA is preferred, then AMD, then Intel.
 
-| Preset | First choice | Without GPU AV1 | Without any GPU encoder |
-| --- | --- | --- | --- |
-| Max Quality | CPU AV1 (SVT-AV1) 2-pass | (unchanged) | (unchanged) |
-| Quality | GPU AV1 | CPU AV1 on 8+ CPU threads, otherwise GPU H.264 | CPU AV1 |
-| Fast | GPU AV1 | GPU H.264 | CPU AV1 (fast preset), then CPU H.264 |
+HEVC (every step stays phone-safe, never AV1):
 
-In Custom settings, the **AV1 GPU** and **H.264 GPU** choices use whichever vendor is present, mapping
-the p1–p7 preset to the vendor's own scale. NVIDIA **2-pass** now runs as one encode with the
+| Preset | First choice | Without GPU HEVC | Without any GPU encoder |
+| --- | --- | --- | --- |
+| Max Quality | CPU HEVC (x265 `slow`) 2-pass | (unchanged) | (unchanged) |
+| Quality | GPU HEVC | x265 `fast` on 6+ CPU threads, otherwise GPU H.264 | x265 `fast` |
+| Fast | GPU HEVC | GPU H.264 | x265 `veryfast` |
+
+H.264: GPU H.264 for Quality and Fast (x264 without one), x264 `slow` 2-pass for Max Quality.
+
+AV1 (as before HEVC became the default):
+
+| Preset | First choice | Without GPU AV1 | Without GPU AV1 or HEVC | Without any GPU encoder |
+| --- | --- | --- | --- | --- |
+| Max Quality | CPU AV1 (SVT-AV1) 2-pass | (unchanged) | (unchanged) | (unchanged) |
+| Quality | GPU AV1 | GPU HEVC | CPU AV1 on 4+ CPU threads, otherwise GPU H.264 | CPU AV1 |
+| Fast | GPU AV1 | GPU HEVC | GPU H.264 | CPU AV1 (fast preset), then CPU H.264 |
+
+x265's settings were measured on 1080p60 game footage at 5 Mbps (VMAF, three games, same size): Quality's `fast`
+with slow's psychovisual RDOQ is 1.3-3.1 sharper than plain `fast`, in `medium`'s time; SAO is off (never worse).
+Max Quality's first pass uses x265's quicker settings: the same result in a third less time. Every HEVC export is
+Main profile, tagged `hvc1` (Apple's players and Photos need it), in H.264's tight bitrate window.
+
+NVIDIA's HEVC was measured on an RTX 5060 Ti (three game recordings, 1080p60 and 1440p30, same bitrate, VMAF):
+- **Quality** uses NVIDIA's "ultra high quality" tuning at p4 where the card takes it. Read the way ClipPress reads a
+  recording, it's 25% quicker than the `hq` tuning at p6 on 1080p60 and 13% on 1440p30, for the same picture (VMAF
+  0.1 lower on average, better on the hardest clip's worst frames). p5 added 0.3 for 38% more time. NVIDIA doesn't say
+  which cards before the RTX 40 take it, so the encoder check asks the card. Without it, Quality stays on `hq` at p6.
+  If it fails during an export, the export goes on with `hq`.
+- **Fast** uses p4 rather than p3: VMAF +0.7 to +2 for 5% more time. AMD and Intel keep p3, since they read the preset
+  on their own scales and weren't measured.
+- **Max Quality** stays on x265's two passes, 2–4 VMAF above the card's best settings. The card's HEVC (ultra high
+  quality, p7, full-resolution first pass) is used only by an FFmpeg without x265.
+- **One encode, using the size.** Left to itself, NVIDIA's HEVC stops well short of the size on quiet footage (a third
+  of a 20 MB limit on a 12 s stretch of a 1440p30 recording), and ClipPress used to encode it a second time, "sharper",
+  for twice the time and about no visible gain. Unless the budget is tight (under 0.03 video bits per pixel), it now gets
+  the highest quality target (`-cq 1`) instead, at the same speed: on that 12 s clip at 20 MB, 15.5 MB in one encode
+  (2.1 s) instead of 18.3 MB in two (5.0 s), VMAF 91.0 against 91.3. On game recordings from 1 to 15 s it never passed
+  97.6% of the limit (`perf` measurements of r71); the encoder check tests it with the tuned settings, and the basic
+  settings leave it out. It's never encoded again "sharper"; a file over the limit is still made smaller.
+- Changes that made no difference: a 10 s keyframe interval, a deeper look-ahead, more B-frames, every B-frame as a
+  reference, and a full-resolution first pass for Quality.
+
+Both 2-pass encoders are real ones with the bundled FFmpeg (9.0): the second pass reads the first pass's statistics,
+puts the bits where the clip needs them and lands just under the target size. (FFmpeg before 8.1 couldn't pass those
+statistics to SVT-AV1, so its "2-pass" was one pass done twice; one without `-x265-stats` gets one x265 pass.)
+
+A clip that already fits is copied as it is only when phones take its codec: H.264 or HEVC (and AV1 with AV1
+chosen; only H.264 with H.264 chosen), 8-bit 4:2:0. An HEVC copy, and an HEVC recording cut to MP4 or MOV with
+Original quality, is tagged `hvc1` too.
+
+In Custom settings, the **AV1 GPU**, **HEVC GPU** and **H.264 GPU** choices use whichever vendor is present, mapping
+the **Speed** setting (p1–p7) to the vendor's own scale. NVIDIA **2-pass** now runs as one encode with the
 encoder's full multipass: FFmpeg 2-pass logs do nothing for hardware encoders, so the old second
 run produced an identical file. That removed 24–42% of the time in benchmarks at the same size
 and quality.
@@ -35,15 +89,36 @@ speed, text and scaling behave exactly as before. Measured on 1440p60 HEVC:
 | Single clip | 12.4 s → 7.2 s | 6.8 s → 6.0 s | unchanged |
 | 3-clip merge | 7.8 s → 5.0 s | slower | slower |
 
-Merges therefore decode on the GPU only on CPUs with fewer than 8 threads, and only while the
-inputs fit a video-memory budget (each open decoder holds about 250 MB at 1440p).
+Merges decode on the GPU too, whatever the CPU, while the inputs fit a video-memory budget (each open decoder holds
+about 250 MB at 1440p). Measured again in 6.1 on a 16-thread PC with 1440p30 AV1 and 1080p60 HEVC recordings, GPU
+decoding made merges 1.75-3.1× quicker (a three-clip merge 1.75×); the "slower" above was 1440p60 HEVC and wasn't
+measured again that way.
 
 ## When the GPU fails
 
-If an export fails, ClipPress retries it with CPU decoding, then (for Simple presets and regular
-exports) on the next encoder in line, and skips a failed encoder for the rest of the session.
-Cancelling is never retried, and an encoder picked in Custom settings reports its error instead.
+Each GPU encoder has tuned settings (look-ahead, adaptive quantisation, B-frames: what NVIDIA, AMD and
+Intel recommend) and basic ones every driver accepts. The first export check tries both, and an older card
+or driver that turns the tuned ones down gets the basic ones.
 
-**Settings → Use the GPU to speed up exports** turns off GPU decoding and GPU encoding for regular
-exports. Target-size presets keep choosing their encoder as above; to force a CPU encoder, pick one in
-Custom settings.
+If an export fails, ClipPress retries it with CPU decoding, then with the same encoder's basic settings,
+then (for the size presets and regular exports) on the next encoder in line, and skips a failed encoder
+for the rest of the session once another one worked. Cancelling and a full disk are never retried, and an
+encoder picked in Custom settings keeps to it (its basic settings included).
+
+AMD's and Intel's HEVC settings come from their own documentation (not measured: there's no AMD or Intel card
+to test on). AMD: its recipe for files in the AMF wiki ("Recommended FFmpeg Encoder Settings"): pre-analysis with
+a 40-frame look-ahead (the FFmpeg deadlock that kept it under 16 is fixed in FFmpeg 9.0), VBAQ, pre-encode, the
+high-motion boost (Fast too), but not temporal AQ, which AMD advises against when the bitrate must hold. AMD's
+HEVC has no B-frames. Every AMD HEVC file declares the smallest HEVC level its picture, frame rate and bitrate
+fit (1080p60 is 4.1): AMD's default, 5.2 or higher, made some players refuse files (OBS fixed the same in
+2024). Intel: its HEVC recipe from Intel's media-delivery quality guide (look-ahead rate control, adaptive I
+and B frames, 7 B-frames, 4 references), but not its CRA keyframes (coarser seeking) or its HRD switch-off
+(the size limit needs it); the basic settings keep Main profile and the 10 s keyframe interval.
+
+AMD's AV1 encoder on RX 7000 cards and current Ryzen chips pads the picture to blocks of 64×16 pixels,
+which players show as black bars, so its exports are sized to those blocks (scaled a little, at most a few
+pixels cropped from the middle).
+
+Turning off **Settings > Export > Use the GPU** keeps every export off the graphics card: decoding,
+regular exports and the target-size presets, which then choose from the CPU encoders. An encoder picked
+in Custom settings is still used.

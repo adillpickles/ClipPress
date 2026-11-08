@@ -1,11 +1,10 @@
 /* ClipPress site — restrained dark system. Neutral near-black, one accent,
    hairline separators, no cards. Keep it that way.
 
-   The type scale and spacing below are deliberately sized against the
-   reference the design follows: hero clamp(38-76px) at weight 500, section
-   headings clamp(32-48px), closing heading clamp(40-72px), 96px bands, and a
-   1240px container. Shrinking these was the last pass's mistake — the page
-   read as too small for the whitespace around it. */
+   The type scale and spacing below are deliberately large: hero clamp(38-76px)
+   at weight 500, section headings clamp(32-48px), closing heading
+   clamp(40-72px), 96px bands, and a 1240px container. Smaller, the page reads
+   as too small for the whitespace around it. */
 
 :root {
   --bg: #09090b;
@@ -236,9 +235,9 @@ a {
 .hero__title {
   max-width: 20ch;
   margin: 40px auto 22px;
-  /* A touch larger than the last pass, with breathing room between the lines
-     so the "p" descender and "S" cap never feel like they touch. Weight stays
-     at the lighter T3-style 500 from .display. */
+  /* Large, with breathing room between the lines so the "p" descender and "S"
+     cap never feel like they touch. Weight stays at the lighter 500 from
+     .display. */
   font-size: clamp(44px, 6.2vw, 84px);
   line-height: 1.14;
 }
@@ -261,8 +260,8 @@ a {
   gap: 12px;
 }
 
-/* Source link sits directly under the primary CTA, the way the reference
-   pairs its install button with its repository link. */
+/* Source link sits directly under the primary CTA, paired with the download
+   button as its repository link. */
 .cta__source {
   display: inline-flex;
   align-items: center;

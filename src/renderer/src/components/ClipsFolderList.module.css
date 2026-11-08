@@ -1,0 +1,33 @@
+/* The offer to show a recorder's folder: one line in the list's own frame. */
+.offer {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  padding: .55rem .5rem .55rem .8rem;
+  border: 1px solid var(--cp-line);
+  border-radius: var(--cp-radius-lg);
+  background: var(--cp-bg);
+}
+
+.dismiss {
+  all: unset;
+  flex-shrink: 0;
+  width: 1.6rem;
+  height: 1.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--cp-radius-sm);
+  color: var(--cp-text-subtle);
+  cursor: pointer;
+  transition: background-color .12s ease, color .12s ease;
+}
+
+.dismiss:hover {
+  background: var(--cp-active);
+  color: var(--cp-text);
+}
+
+.dismiss:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}

@@ -42,18 +42,22 @@ function useKeyframes({ keyframesEnabled, filePath, commandedTime, videoStream, 
     return map;
   }, [detectedFps, neighbouringKeyFrames]);
 
-  const findNearestKeyFrameTime = useCallback(({ time, direction }: { time: number, direction: number }) => ffmpegFindNearestKeyFrameTime({ frames: neighbouringKeyFrames, time, direction, fps: detectedFps }), [neighbouringKeyFrames, detectedFps]);
+  const findNearestKeyFrameTime = useCallback(({ time, direction }: { time: number, direction: number }) => ffmpegFindNearestKeyFrameTime({ frames: neighbouringKeyFrames, time, direction }), [neighbouringKeyFrames]);
 
   // Stretches already read: seeking around inside them needs no new ffprobe run (each one takes ~150 ms).
   const coveredRef = useRef<{ from: number, to: number }[]>([]);
+  // Which recording a read was for: one still running when the next recording opens must neither land in it nor
+  // hold up its first read.
+  const fileGenerationRef = useRef(0);
   useEffect(() => {
+    fileGenerationRef.current += 1;
+    readingKeyframesPromise.current = undefined;
     coveredRef.current = [];
     setNeighbouringKeyFrames({});
   }, [filePath, videoStream]);
 
+  // (react-use's debounce ignores a returned cleanup, so a read can't be cancelled from here: see fileGenerationRef.)
   useDebounceOld(() => {
-    let aborted = false;
-
     (async () => {
       // See getIntervalAroundTime
       // We still want to calculate keyframes even if not shouldShowKeyframes because maybe we want to be able to step to the closest keyframe
@@ -64,11 +68,12 @@ function useKeyframes({ keyframesEnabled, filePath, commandedTime, videoStream, 
       const wantTo = commandedTime + ffmpegExtractWindow / 4;
       if (coveredRef.current.some(({ from, to }) => from <= wantFrom && to >= wantTo)) return;
 
+      const generation = fileGenerationRef.current;
+      const promise = readFramesAroundTime({ filePath, aroundTime: commandedTime, streamIndex: videoStream.index, window: ffmpegExtractWindow });
       try {
-        const promise = readFramesAroundTime({ filePath, aroundTime: commandedTime, streamIndex: videoStream.index, window: ffmpegExtractWindow });
         readingKeyframesPromise.current = promise;
         const newFrames = await promise;
-        if (aborted) return;
+        if (generation !== fileGenerationRef.current) return;
         const newKeyFrames = newFrames.filter((frame) => frame.keyframe);
         const interval = { from: Math.max(commandedTime - ffmpegExtractWindow / 2, 0), to: commandedTime + ffmpegExtractWindow / 2 };
         coveredRef.current.push(interval);
@@ -90,13 +95,9 @@ function useKeyframes({ keyframesEnabled, filePath, commandedTime, videoStream, 
       } catch (err) {
         console.error('Failed to read keyframes', err);
       } finally {
-        readingKeyframesPromise.current = undefined;
+        if (readingKeyframesPromise.current === promise) readingKeyframesPromise.current = undefined;
       }
     })();
-
-    return () => {
-      aborted = true;
-    };
     // NOTE: you have to manually pass dependencies here, eslint doesn't recognize it
   }, 500, [keyframesEnabled, filePath, commandedTime, videoStream, ffmpegExtractWindow, maxKeyframes]);
 

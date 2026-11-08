@@ -15,6 +15,10 @@ const defaultStrategyArgs = {
   advancedAv1NvencPreset: 'p6',
   advancedH264CpuPreset: 'slow',
   advancedH264NvencPreset: 'p4',
+  advancedHevcCpuPreset: 'fast',
+  advancedHevcNvencPreset: 'p6',
+  // These cases check the AV1 order, as it was before HEVC became the default (that has its own tests).
+  videoFormat: 'av1',
 } as const;
 
 describe('shouldWarnAboutTightAdvancedH264Target', () => {
@@ -136,6 +140,21 @@ describe('finalizeSizeLimitedExecutionResult', () => {
       metTarget: false,
       created: true,
       strategy,
-    })).toThrow("H.264 couldn't get this clip that small. Try AV1, a lower resolution or frame rate, or a bigger size.");
+    })).toThrow("H.264 couldn't get this clip that small. Try HEVC, a lower resolution or frame rate, or a bigger size.");
+  });
+
+  it("doesn't name H.264 when a preset stepped down to it", () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'quality',
+      advancedEncoder: 'av1_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      videoFormat: 'hevc',
+      capabilities: { h264Nvenc: true, av1Nvenc: false, libx264: true, libsvtav1: true },
+    });
+    expect(strategy.effectiveCodec).toBe('h264');
+    expect(() => finalizeSizeLimitedExecutionResult({ path: 'clip.mp4', size: 3_000, targetBytes: 2_000, attemptCount: 4, metTarget: false, created: true, strategy }))
+      .toThrow("This clip can't be made that small. Try a bigger size or a shorter clip.");
   });
 });

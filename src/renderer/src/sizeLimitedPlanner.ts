@@ -23,27 +23,29 @@ interface StrategyProfile {
 
 type StrategyTargetingProfile = Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 
+// AV1 retries follow how far the last try went over (SVT-AV1's one-pass VBR overshoots a 5 s clip by 22-34%, measured),
+// so the floor only stops a wild jump; a third try catches what's still over instead of failing the export.
 const av1TwoPassRetryProfile = {
   firstAttemptTargetFactor: 0.95,
   retryTargetFactor: 0.92,
-  maxAttempts: 2,
-  retryMinFactor: 0.9,
+  maxAttempts: 3,
+  retryMinFactor: 0.6,
   retryMaxFactor: 0.97,
 } satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 
 const av1SinglePassRetryProfile = {
   firstAttemptTargetFactor: 0.93,
   retryTargetFactor: 0.9,
-  maxAttempts: 2,
-  retryMinFactor: 0.88,
+  maxAttempts: 3,
+  retryMinFactor: 0.6,
   retryMaxFactor: 0.97,
 } satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 
 const fastSinglePassRetryProfile = {
   firstAttemptTargetFactor: 0.9,
   retryTargetFactor: 0.87,
-  maxAttempts: 2,
-  retryMinFactor: 0.85,
+  maxAttempts: 3,
+  retryMinFactor: 0.6,
   retryMaxFactor: 0.97,
 } satisfies Pick<StrategyProfile, 'firstAttemptTargetFactor' | 'retryTargetFactor' | 'maxAttempts' | 'retryMinFactor' | 'retryMaxFactor'>;
 
@@ -69,10 +71,12 @@ function createProfile(profile: StrategyProfile) {
 
 type CalibratedStrategyId = Exclude<SizeLimitedStrategyId,
   | 'max_quality_av1_gpu' | 'max_quality_h264_gpu' | 'quality_av1_gpu' | 'quality_h264_gpu' | 'fast_av1_gpu'
-  | 'fast_h264_gpu' | 'fast_av1_cpu' | 'fast_h264_cpu' | 'advanced_av1_gpu' | 'advanced_h264_gpu'>;
+  | 'fast_h264_gpu' | 'fast_av1_cpu' | 'fast_h264_cpu' | 'advanced_av1_gpu' | 'advanced_h264_gpu' | 'quality_hevc_gpu'
+  | 'fast_hevc_gpu' | 'max_quality_hevc_cpu' | 'quality_hevc_cpu' | 'fast_hevc_cpu' | 'max_quality_hevc_gpu' | 'advanced_hevc_gpu'
+  | 'advanced_hevc_cpu_single_pass' | 'advanced_hevc_cpu_two_pass' | 'advanced_hevc_nvenc_single_pass' | 'advanced_hevc_nvenc_two_pass'>;
 
 const calibratedProfiles: Record<CalibratedStrategyId, StrategyProfile> = {
-  max_quality_av1_cpu_two_pass: createProfile({
+  max_quality_av1_cpu: createProfile({
     overheadRatio: 0.017,
     minOverheadBytes: 20 * 1024,
     maxOverheadBytes: 160 * 1024,
@@ -276,6 +280,18 @@ const strategyProfiles: Record<SizeLimitedStrategyId, StrategyProfile> = {
   quality_h264_gpu: calibratedProfiles.advanced_h264_nvenc_single_pass,
   fast_av1_gpu: calibratedProfiles.fast_av1_nvenc,
   fast_h264_gpu: calibratedProfiles.advanced_h264_nvenc_single_pass,
+  // HEVC's container overhead and audio share match AV1's; its retries take the AV1 path (not H.264's).
+  quality_hevc_gpu: calibratedProfiles.quality_av1_nvenc,
+  fast_hevc_gpu: calibratedProfiles.fast_av1_nvenc,
+  max_quality_hevc_gpu: calibratedProfiles.max_quality_av1_nvenc_two_pass,
+  max_quality_hevc_cpu: calibratedProfiles.max_quality_av1_cpu,
+  quality_hevc_cpu: calibratedProfiles.quality_av1_cpu,
+  fast_hevc_cpu: calibratedProfiles.quality_av1_cpu,
+  advanced_hevc_gpu: calibratedProfiles.advanced_av1_nvenc_single_pass,
+  advanced_hevc_nvenc_single_pass: calibratedProfiles.advanced_av1_nvenc_single_pass,
+  advanced_hevc_nvenc_two_pass: calibratedProfiles.advanced_av1_nvenc_two_pass,
+  advanced_hevc_cpu_single_pass: calibratedProfiles.advanced_av1_cpu_single_pass,
+  advanced_hevc_cpu_two_pass: calibratedProfiles.advanced_av1_cpu_two_pass,
   fast_av1_cpu: calibratedProfiles.quality_av1_cpu,
   fast_h264_cpu: calibratedProfiles.quality_h264_cpu,
   advanced_av1_gpu: calibratedProfiles.advanced_av1_nvenc_single_pass,
@@ -311,7 +327,13 @@ function getSimplePresetTargetingProfile(preset: SizeLimitedResolvedStrategy['pr
   }
 }
 
-function getTargetingProfile(strategy: SizeLimitedResolvedStrategy, budgetProfile: StrategyProfile): StrategyTargetingProfile {
+/**
+ * AMD's rate control lands above its target more often than NVENC's (+1-10% on current drivers, more on early RX 9000
+ * ones), so its first try aims a little lower: one encode, not two.
+ */
+const amdFirstAttemptTargetFactor = 0.88;
+
+function getEncoderTargetingProfile(strategy: SizeLimitedResolvedStrategy, budgetProfile: StrategyProfile): StrategyTargetingProfile {
   if (strategy.controlMode === 'simple') {
     const simplePresetProfile = getSimplePresetTargetingProfile(strategy.preset);
 
@@ -334,6 +356,21 @@ function getTargetingProfile(strategy: SizeLimitedResolvedStrategy, budgetProfil
     retryMinFactor: budgetProfile.retryMinFactor,
     retryMaxFactor: budgetProfile.retryMaxFactor,
   };
+}
+
+/**
+ * SVT-AV1's real two-pass lands within about 1% of its bitrate (98.9-99.6% measured), so it can aim closer. x265's
+ * two-pass lands a little under it (96.5-99.5% on 1080p60 game footage, never over).
+ */
+const svtTwoPassFirstAttemptTargetFactor = 0.97;
+
+function getTargetingProfile(strategy: SizeLimitedResolvedStrategy, budgetProfile: StrategyProfile): StrategyTargetingProfile {
+  const profile = getEncoderTargetingProfile(strategy, budgetProfile);
+  if ((strategy.encoder === 'libsvtav1' || strategy.encoder === 'libx265') && strategy.executionMode === 'ffmpeg_two_pass') {
+    return { ...profile, firstAttemptTargetFactor: Math.max(profile.firstAttemptTargetFactor, svtTwoPassFirstAttemptTargetFactor) };
+  }
+  if (strategy.hardware !== 'amd') return profile;
+  return { ...profile, firstAttemptTargetFactor: Math.min(profile.firstAttemptTargetFactor, amdFirstAttemptTargetFactor) };
 }
 
 /**
@@ -372,6 +409,13 @@ const undershootQualityCapOffsets = [
  * a short clip can overshoot: those budgets keep the usual first attempt and top-up.
  */
 const generousVideoBitsPerPixel = 1.1;
+
+/**
+ * The same for NVIDIA's HEVC, whose relaxed quality target (`-cq 1`) only takes away its own early stop. Measured on game
+ * recordings (perf/hevctune/cq-r71.mjs: 1080p60 and 1440p30, 1 to 15 s, 0.02 to 0.3 bits per pixel): from 0.035 it never
+ * passed 97.6% of the limit; at 0.02 it reached 99.4%, so tight budgets keep the usual settings.
+ */
+const generousHevcNvencVideoBitsPerPixel = 0.03;
 
 function getUndershootQualityCapOffset(growthFactor: number) {
   return undershootQualityCapOffsets.find((step) => growthFactor >= step.minGrowthFactor)?.offset
@@ -533,7 +577,9 @@ export function planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strate
     retryMinFactor: targetingProfile.retryMinFactor,
     retryMaxFactor: targetingProfile.retryMaxFactor,
     minTotalBitrate,
-    undershootRetryBelowBytes: Math.floor(hardTargetBytes * undershootRetryThresholdFactor),
+    // NVIDIA's HEVC isn't encoded again "sharper": with its quality target the first encode already uses what the footage
+    // can take (the second one added at most 0.8 VMAF, where 95 can't be told from the source, for twice the time).
+    undershootRetryBelowBytes: strategy.encoder === 'hevc_nvenc' ? 0 : Math.floor(hardTargetBytes * undershootRetryThresholdFactor),
     initialAttempt: buildRetryStep({
       attemptNumber: 1,
       totalBitrate: baseTotalBitrate,
@@ -548,9 +594,10 @@ export function planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strate
  * the pixels the encode makes each second (`outputPixelsPerSecond`, undefined when unknown), so it lands in one encode.
  * A relaxed attempt that still undershoots isn't topped up: the content doesn't need the bits.
  */
-export function relaxQualityCapForGenerousBudget<T extends SizeLimitedPlan>(plan: T, outputPixelsPerSecond: number | undefined): T {
+export function relaxQualityCapForGenerousBudget<T extends SizeLimitedPlan>(plan: T, outputPixelsPerSecond: number | undefined, encoder: SizeLimitedResolvedStrategy['encoder']): T {
   if (outputPixelsPerSecond == null || !(outputPixelsPerSecond > 0)) return plan;
-  if (plan.initialAttempt.videoBitrate / outputPixelsPerSecond < generousVideoBitsPerPixel) return plan;
+  const generous = encoder === 'hevc_nvenc' ? generousHevcNvencVideoBitsPerPixel : generousVideoBitsPerPixel;
+  if (plan.initialAttempt.videoBitrate / outputPixelsPerSecond < generous) return plan;
   return { ...plan, initialAttempt: { ...plan.initialAttempt, qualityCapOffset: undershootQualityCapOffsets[0].offset } };
 }
 

@@ -3,7 +3,8 @@ import type { SizeLimitControlMode, SizeLimitPreset, SizeLimitSimpleFps, SizeLim
 const simpleResolutionSteps = [1440, 1080, 720] as const;
 const maxAutoDisplayHeight = 1440;
 const autoBitratePerPixelFrameThreshold = 0.035;
-const targetLowFps = 30;
+/** The frame rate a size-limited export is lowered to when its bitrate is low. */
+export const targetLowFps = 30;
 export const sizeLimitedSwsFlags = 'lanczos+accurate_rnd';
 
 export type SizeLimitedResolutionDecision = 'keep_source' | 'scale_to_720p' | 'scale_to_1080p' | 'scale_to_1440p';
@@ -31,6 +32,21 @@ export interface SizeLimitedVideoTransformProfile {
   outputWidth: number | undefined,
   outputHeight: number | undefined,
   outputFps: number | undefined,
+  /** Fill the output size without stretching: scaled to cover it, the few pixels over cropped from the middle. */
+  fillOutput?: boolean | undefined,
+}
+
+/** What an encoder needs of the picture's size. */
+export interface EncoderSizeRules {
+  /**
+   * The size must be a multiple of these. AMD's AV1 encoder on RX 7000 cards and current Ryzen chips pads the picture
+   * to 64×16 blocks, and players (Discord's too) show the padding as black bars: 2 rows at 1080p, 32 columns at 1440
+   * wide.
+   */
+  alignWidth: number,
+  alignHeight: number,
+  /** The longest side it encodes (every GPU's H.264 encoder stops at 4096). */
+  maxSide?: number | undefined,
 }
 
 export interface ResolvedSizeLimitedTransformSettings {
@@ -475,9 +491,59 @@ export function resolveSizeLimitedOutputDimensions({
   } satisfies SizeLimitedOutputDimensions;
 }
 
-export function buildSizeLimitedScaleFilter(outputWidth: number | undefined, outputHeight: number | undefined) {
+export function buildSizeLimitedScaleFilter(outputWidth: number | undefined, outputHeight: number | undefined, fillOutput?: boolean) {
   if (outputWidth == null || outputHeight == null) return undefined;
+  if (fillOutput) return `scale=${outputWidth}:${outputHeight}:flags=${sizeLimitedSwsFlags}:force_original_aspect_ratio=increase,crop=${outputWidth}:${outputHeight}`;
   return `scale=${outputWidth}:${outputHeight}:flags=${sizeLimitedSwsFlags}`;
+}
+
+/** Up to this share of the picture's height (or width) is cropped to fit an encoder's size rules without a smaller size. */
+const preferredEncoderFitCrop = 0.01;
+/** Never more than this: a tiny picture keeps its size (and the encoder its padding) rather than lose more. */
+const maxEncoderFitCrop = 0.03;
+/** Nor a size below this share of the width. */
+const minEncoderFitScale = 0.9;
+
+/**
+ * The video profile with a size the encoder takes as it is: within its longest side, and on its block alignment. The
+ * aligned size closest to the picture's shape is used (a step or two smaller if that needs less cropping), so at most
+ * a few pixels are cropped from the middle and nothing is stretched or padded.
+ */
+export function fitVideoProfileToEncoder<T extends SizeLimitedVideoTransformProfile>({ videoProfile, displayDimensions, rules }: {
+  videoProfile: T,
+  /** The picture's size as shown (turned, after any crop's scaling back). */
+  displayDimensions: SizeLimitedDisplayDimensions | undefined,
+  rules: EncoderSizeRules | undefined,
+}): T {
+  if (rules == null || displayDimensions == null) return videoProfile;
+  const { alignWidth, alignHeight, maxSide } = rules;
+  let width = videoProfile.outputWidth ?? displayDimensions.width;
+  let height = videoProfile.outputHeight ?? displayDimensions.height;
+  let resized = false;
+  if (maxSide != null && Math.max(width, height) > maxSide) {
+    const scale = maxSide / Math.max(width, height);
+    width = roundDownToEven(width * scale);
+    height = roundDownToEven(height * scale);
+    resized = true;
+  }
+  if (width % alignWidth === 0 && height % alignHeight === 0) {
+    return resized ? { ...videoProfile, outputWidth: width, outputHeight: height } : videoProfile;
+  }
+
+  let best: { width: number, height: number, crop: number } | undefined;
+  for (let step = 0; ; step += 1) {
+    const candidateWidth = (Math.floor(width / alignWidth) - step) * alignWidth;
+    if (candidateWidth < alignWidth || candidateWidth < width * minEncoderFitScale) break;
+    const exactHeight = (candidateWidth * height) / width;
+    const candidateHeight = Math.min(Math.floor(height / alignHeight) * alignHeight, Math.round(exactHeight / alignHeight) * alignHeight);
+    if (candidateHeight >= alignHeight) {
+      const crop = Math.abs(candidateHeight - exactHeight) / exactHeight;
+      if (best == null || crop < best.crop) best = { width: candidateWidth, height: candidateHeight, crop };
+      if (crop <= preferredEncoderFitCrop) break;
+    }
+  }
+  if (best == null || best.crop > maxEncoderFitCrop) return resized ? { ...videoProfile, outputWidth: width, outputHeight: height } : videoProfile;
+  return { ...videoProfile, outputWidth: best.width, outputHeight: best.height, fillOutput: true };
 }
 
 export function buildSizeLimitedVideoTransformFilters({
@@ -490,7 +556,7 @@ export function buildSizeLimitedVideoTransformFilters({
   // Resolution is chosen before FPS reduction, but fps runs first so we avoid scaling frames we will discard.
   if (videoProfile.outputFps != null) filters.push(`fps=${videoProfile.outputFps}`);
 
-  const scaleFilter = buildSizeLimitedScaleFilter(videoProfile.outputWidth, videoProfile.outputHeight);
+  const scaleFilter = buildSizeLimitedScaleFilter(videoProfile.outputWidth, videoProfile.outputHeight, videoProfile.fillOutput);
   if (scaleFilter != null) filters.push(scaleFilter);
 
   return filters;

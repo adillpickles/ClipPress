@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChromiumHTMLVideoElement, PlaybackMode } from '../types';
 import { showPlaybackFailedMessage } from '../swal';
 import { createSeekQueue } from '../seekQueue';
+import { getVideoPlaybackRate, stepUserPlaybackRate } from '../previewPlaybackRate';
 
 export default ({ filePath }: { filePath: string | undefined }) => {
   const [commandedTime, setCommandedTimeRaw] = useState(0);
@@ -20,30 +21,58 @@ export default ({ filePath }: { filePath: string | undefined }) => {
   const videoRef = useRef<ChromiumHTMLVideoElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const segmentPreviewSpeedRef = useRef(1);
-  const previewSpeedVideoRef = useRef<HTMLVideoElement>();
+  const outputPlaybackRateRef = useRef(1);
+  // J and L's own factor, kept apart: worked back out of a rate that was capped at 16×, it would come out wrong.
+  const userPlaybackRateRef = useRef(1);
+  // What the readout shows, so a rate set while nothing changed on the video still corrects it.
+  const shownPlaybackRateRef = useRef(1);
 
-  const setSegmentPreviewSpeed = useCallback((speed: number) => {
+  const applyPlaybackRate = useCallback(() => {
+    const rate = getVideoPlaybackRate({ userRate: userPlaybackRateRef.current, speeds: outputPlaybackRateRef.current * segmentPreviewSpeedRef.current });
     const video = videoRef.current;
-    if (video != null) {
-      const previousSpeed = previewSpeedVideoRef.current === video ? segmentPreviewSpeedRef.current : 1;
-      const rate = (video.playbackRate / previousSpeed) * speed;
-      previewSpeedVideoRef.current = video;
+    // Set only when it changes: this runs for every frame of a sped-up preview.
+    if (video != null && video.playbackRate !== rate) {
       video.playbackRate = rate;
       video.preservesPitch = true;
-      setPlaybackRateState(rate);
     }
-    segmentPreviewSpeedRef.current = speed;
+    shownPlaybackRateRef.current = rate;
+    setPlaybackRateState(rate);
   }, []);
 
-  const setPlaybackRate = useCallback((rate: number) => {
-    if (videoRef.current) videoRef.current.playbackRate = rate;
-    setPlaybackRateState(rate);
+  const setSegmentPreviewSpeed = useCallback((speed: number) => {
+    // Called for every frame of a sped-up preview: nothing to do (not even a render) when nothing changed.
+    const rate = getVideoPlaybackRate({ userRate: userPlaybackRateRef.current, speeds: outputPlaybackRateRef.current * speed });
+    const unchanged = speed === segmentPreviewSpeedRef.current && videoRef.current?.playbackRate === rate && shownPlaybackRateRef.current === rate;
+    if (unchanged) return;
+    segmentPreviewSpeedRef.current = speed;
+    applyPlaybackRate();
+  }, [applyPlaybackRate]);
+
+  /** J (direction < 0) and L (> 0): their own factor, a step slower or faster. */
+  const changeUserPlaybackRate = useCallback((direction: number, multiplier?: number) => {
+    userPlaybackRateRef.current = stepUserPlaybackRate({ userRate: userPlaybackRateRef.current, direction, multiplier });
+    applyPlaybackRate();
+  }, [applyPlaybackRate]);
+
+  /** Back to the speeds alone, without J and L's. */
+  const resetPlaybackRate = useCallback(() => {
+    userPlaybackRateRef.current = 1;
+    applyPlaybackRate();
+  }, [applyPlaybackRate]);
+
+  /** Without touching the video (a file closing): the next rate set reads it. */
+  const setOutputPlaybackRateQuietly = useCallback((rate: number) => {
+    outputPlaybackRateRef.current = rate;
+    setOutputPlaybackRateState(rate);
   }, []);
 
   const setOutputPlaybackRate = useCallback((rate: number) => {
     setOutputPlaybackRateState(rate);
-    if (videoRef.current) videoRef.current.playbackRate = rate * segmentPreviewSpeedRef.current;
-  }, []);
+    outputPlaybackRateRef.current = rate;
+    // As before: a new whole-export speed starts without J and L's.
+    userPlaybackRateRef.current = 1;
+    applyPlaybackRate();
+  }, [applyPlaybackRate]);
 
   const [playing, setPlaying] = useState(false);
   const playingRef = useRef(false);
@@ -117,7 +146,7 @@ export default ({ filePath }: { filePath: string | undefined }) => {
     videoRef.current?.pause();
   }, [filePath, playingRef, videoRef]);
 
-  const play = useCallback((resetPlaybackRate?: boolean) => {
+  const play = useCallback((withoutUserRate?: boolean) => {
     if (!filePath || playingRef.current) return;
 
     const video = videoRef.current;
@@ -125,7 +154,7 @@ export default ({ filePath }: { filePath: string | undefined }) => {
     // This was added to re-sync time if file gets reloaded #1674 - but I had to remove this because it broke loop-selected-segments https://github.com/mifi/lossless-cut/discussions/1785#discussioncomment-7852134
     // if (Math.abs(commandedTimeRef.current - video.currentTime) > 1) video.currentTime = commandedTimeRef.current;
 
-    if (resetPlaybackRate) setPlaybackRate(outputPlaybackRate * segmentPreviewSpeedRef.current);
+    if (withoutUserRate) resetPlaybackRate();
     video?.play().catch((err) => {
       if (err instanceof Error && err.name === 'AbortError' && 'code' in err && err.code === 20) { // Probably "DOMException: The play() request was interrupted by a call to pause()."
         console.error(err);
@@ -133,14 +162,15 @@ export default ({ filePath }: { filePath: string | undefined }) => {
         showPlaybackFailedMessage();
       }
     });
-  }, [filePath, outputPlaybackRate, playingRef, setPlaybackRate, videoRef]);
+  }, [filePath, playingRef, resetPlaybackRate, videoRef]);
 
 
   return {
     videoRef,
     videoContainerRef,
     playbackRate,
-    setPlaybackRate,
+    changeUserPlaybackRate,
+    resetPlaybackRate,
     setSegmentPreviewSpeed,
     outputPlaybackRate,
     setOutputPlaybackRate,
@@ -160,7 +190,7 @@ export default ({ filePath }: { filePath: string | undefined }) => {
     relevantTime,
     getRelevantTime,
     onVideoAbort,
-    setOutputPlaybackRateState,
+    setOutputPlaybackRateState: setOutputPlaybackRateQuietly,
     playbackMode,
     setPlaybackMode,
     playbackModeRef,

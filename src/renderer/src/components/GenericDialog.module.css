@@ -66,14 +66,16 @@
 
 /* After an export (ExportResult): one file, or several in rows. */
 .exportResult {
-  width: min(29rem, 92vw);
+  --dialog-width: min(29rem, 92vw);
 }
 
 .exportResultWide {
-  width: min(32rem, 92vw);
+  --dialog-width: min(32rem, 92vw);
 }
 
-.centredTitle {
+/* Inside its dialog, so it outweighs the dialog title's own margin whatever the CSS order. */
+.exportResult .centredTitle,
+.exportResultWide .centredTitle {
   margin-left: 2.5rem;
   text-align: center;
 }

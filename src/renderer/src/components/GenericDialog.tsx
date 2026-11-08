@@ -1,5 +1,6 @@
 import type { MouseEventHandler, ReactNode } from 'react';
-import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import invariant from 'tiny-invariant';
 import { useReducedMotionConfig } from 'motion/react';
@@ -11,9 +12,11 @@ import { showItemInFolder } from '../util';
 import type { CleanupChoice, CleanupChoicesType } from '../dialogs';
 import Checkbox from './Checkbox';
 import ExportResult from './ExportResult';
+import ExportFailed from './ExportFailed';
 import { morphFromWorkingCard } from './Working';
 import HelpTip from './HelpTip';
 import styles from './GenericDialog.module.css';
+import useLastDefined from '../hooks/useLastDefined';
 
 
 export interface GenericDialogParams {
@@ -58,34 +61,62 @@ export function useGenericDialogContext() {
   return context;
 }
 
+/** Longer than the dialogs' close animation (150 ms, Dialog.module.css), with room for a busy moment. */
+const closeFadeMs = 400;
+
+// Each dialog shown gets its own instance: one component used by several dialogs (ExpressionDialog) would otherwise
+// carry the last one's text into the next, opened while it faded.
+const dialogKeys = new WeakMap<GenericDialogParams, number>();
+let lastDialogKey = 0;
+function getDialogKey(dialog: GenericDialogParams) {
+  let key = dialogKeys.get(dialog);
+  if (key == null) {
+    lastDialogKey += 1;
+    key = lastDialogKey;
+    dialogKeys.set(dialog, key);
+  }
+  return key;
+}
+
 export default function GenericDialog({ dialog, onOpenChange }: {
   dialog: GenericDialogParams | undefined,
   onOpenChange: (open: boolean) => void,
 }) {
   const context = useMemo(() => ({ onOpenChange }), [onOpenChange]);
+  // Each kind keeps showing its last dialog while it fades out (their contents belong to their own root), then lets go.
+  const shownDialog = useLastDefined(dialog != null && !dialog.isAlert ? dialog : undefined, closeFadeMs);
+  const shownAlert = useLastDefined(dialog != null && dialog.isAlert ? dialog : undefined, closeFadeMs);
+  const portalTarget = document.getElementById('app-root') ?? document.body;
 
   return (
     <>
       {/* Non-alert dialog */ }
+      {/* Portalled by React, not Dialog.Portal: that one only keeps a child whose element it can see for the close animation
+          (this content is the dialog's own component), so the content vanished at once; this way the overlay and the
+          content each fade on their own. */}
       <Dialog.Root open={dialog != null && !dialog.isAlert} onOpenChange={onOpenChange}>
-        <Dialog.Portal>
-          <Dialog.Overlay />
-
-          <GenericDialogContext.Provider value={context}>
-            {dialog != null && !dialog.isAlert && dialog.render()}
-          </GenericDialogContext.Provider>
-        </Dialog.Portal>
+        {createPortal(
+          <>
+            <Dialog.Overlay />
+            <GenericDialogContext.Provider value={context}>
+              {shownDialog != null && <Fragment key={getDialogKey(shownDialog)}>{shownDialog.render()}</Fragment>}
+            </GenericDialogContext.Provider>
+          </>,
+          portalTarget,
+        )}
       </Dialog.Root>
 
       {/* Alert dialog */ }
       <AlertDialog.Root open={dialog != null && !!dialog.isAlert} onOpenChange={onOpenChange}>
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay />
-
-          <GenericDialogContext.Provider value={context}>
-            {dialog != null && dialog.isAlert && dialog.render()}
-          </GenericDialogContext.Provider>
-        </AlertDialog.Portal>
+        {createPortal(
+          <>
+            <AlertDialog.Overlay />
+            <GenericDialogContext.Provider value={context}>
+              {shownAlert != null && <Fragment key={getDialogKey(shownAlert)}>{shownAlert.render()}</Fragment>}
+            </GenericDialogContext.Provider>
+          </>,
+          portalTarget,
+        )}
       </AlertDialog.Root>
     </>
   );
@@ -244,17 +275,21 @@ export function useDialog() {
 
       // It grows out of the export's progress card, once, as it first mounts.
       const morphed = useRef(false);
+      const cardRef = useRef<HTMLDivElement | null>(null);
       const contentRef = useCallback((el: HTMLDivElement | null) => {
+        cardRef.current = el;
         if (el == null || morphed.current) return;
         morphed.current = true;
         morphFromWorkingCard(el, { reduceMotion });
       }, [reduceMotion]);
 
-      // Start on the main button rather than on the first focusable thing (the picture).
+      // Start on the main button (Next clip), else on the card itself, rather than on the first focusable thing (the
+      // picture).
       const handleOpenAutoFocus = useCallback((e: Event) => {
-        if (mainRef.current == null) return;
+        const target = mainRef.current ?? cardRef.current;
+        if (target == null) return;
         e.preventDefault();
-        mainRef.current.focus({ focusVisible: false } as FocusOptions);
+        target.focus({ focusVisible: false } as FocusOptions);
       }, []);
 
       const onNextClick = useCallback(() => {
@@ -272,15 +307,9 @@ export function useDialog() {
             highlight={highlight}
             details={details}
             autoCopied={autoCopied}
-            actions={(
-              <>
-                <Dialog.Close asChild>
-                  <DialogButton primary={nextClipName == null} ref={nextClipName == null ? mainRef : undefined}>{t('Close')}</DialogButton>
-                </Dialog.Close>
-                {nextClipName != null && (
-                  <DialogButton primary ref={mainRef} onClick={onNextClick} title={nextClipName}>{t('Next clip')}</DialogButton>
-                )}
-              </>
+            // A panel: its X closes it; the only button is the one that does something.
+            actions={nextClipName != null && (
+              <DialogButton primary ref={mainRef} onClick={onNextClick} title={nextClipName}>{t('Next clip')}</DialogButton>
             )}
           />
           <Dialog.CloseButton />
@@ -291,6 +320,66 @@ export function useDialog() {
     showGenericDialog({
       kind: 'exportResult',
       render: () => <ExportResultDialog />,
+      onClose: () => resolve(undefined),
+    });
+  }), [showGenericDialog, t]);
+
+  /**
+   * The simple editor's card for an export that didn't work, grown from the progress card like the result: the clip, one
+   * line why, the full message behind Details. Resolves with 'retry' or 'report' when one was chosen.
+   */
+  const openExportFailedDialog = useCallback(({ name, picture, reason, details }: {
+    name: string,
+    picture?: string | undefined,
+    reason: string,
+    details?: string | undefined,
+  }) => new Promise<'retry' | 'report' | undefined>((resolve) => {
+    function ExportFailedDialog() {
+      const { onOpenChange } = useGenericDialogContext();
+      const retryRef = useRef<HTMLButtonElement>(null);
+      const reduceMotion = useReducedMotionConfig() === true;
+      const morphed = useRef(false);
+      const contentRef = useCallback((el: HTMLDivElement | null) => {
+        if (el == null || morphed.current) return;
+        morphed.current = true;
+        morphFromWorkingCard(el, { reduceMotion });
+      }, [reduceMotion]);
+
+      const handleOpenAutoFocus = useCallback((e: Event) => {
+        if (retryRef.current == null) return;
+        e.preventDefault();
+        retryRef.current.focus({ focusVisible: false } as FocusOptions);
+      }, []);
+
+      const choose = (choice: 'retry' | 'report') => {
+        resolve(choice);
+        onOpenChange(false);
+      };
+
+      return (
+        <Dialog.Content ref={contentRef} aria-describedby={undefined} className={styles['exportResult']} onOpenAutoFocus={handleOpenAutoFocus}>
+          <Dialog.Title className={styles['centredTitle']}>{t('Export failed')}</Dialog.Title>
+          <ExportFailed
+            name={name}
+            picture={picture}
+            reason={reason}
+            details={details}
+            // A panel: its X closes it; the buttons do something.
+            actions={(
+              <>
+                <DialogButton variant="ghost" onClick={() => choose('report')}>{t('Report')}</DialogButton>
+                <DialogButton primary ref={retryRef} onClick={() => choose('retry')}>{t('Try again')}</DialogButton>
+              </>
+            )}
+          />
+          <Dialog.CloseButton />
+        </Dialog.Content>
+      );
+    }
+
+    showGenericDialog({
+      kind: 'exportResult',
+      render: () => <ExportFailedDialog />,
       onClose: () => resolve(undefined),
     });
   }), [showGenericDialog, t]);
@@ -442,7 +531,7 @@ export function useDialog() {
               </div>
               <Checkbox label={t('Move temporary preview files to the Recycle Bin')} checked={trashTmpFiles} onCheckedChange={(checked) => onChange('trashTmpFiles', checked)} />
               <Checkbox label={t('Move the original recording to the Recycle Bin')} checked={trashSourceFile} onCheckedChange={(checked) => onChange('trashSourceFile', checked)} />
-              <Checkbox label={t('Move the project file (.llc) to the Recycle Bin')} checked={trashProjectFile} onCheckedChange={(checked) => onChange('trashProjectFile', checked)} />
+              <Checkbox label={t('Move the project file to the Recycle Bin')} checked={trashProjectFile} onCheckedChange={(checked) => onChange('trashProjectFile', checked)} />
               <Checkbox label={t('Delete temporary and project files permanently if the Recycle Bin can\'t take them')} disabled={!(trashTmpFiles || trashProjectFile || trashSourceFile)} checked={deleteIfTrashFails} onCheckedChange={(checked) => onChange('deleteIfTrashFails', checked)} />
             </div>
 
@@ -479,6 +568,7 @@ export function useDialog() {
     showGenericDialog,
     confirmDialog,
     openExportFinishedDialog,
+    openExportFailedDialog,
     openCutFinishedDialog,
     openSizeLimitedFinishedDialog,
     openConcatFinishedDialog,

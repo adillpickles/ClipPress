@@ -29,7 +29,12 @@ const resourcesDir = process.platform === 'darwin'
 const manifest = await readAsarManifest(join(resourcesDir, 'app.asar'));
 const resourceFileNames = await readdir(resourcesDir);
 
-const result = auditPackagedApp({ manifest, resourceFileNames, platform: process.platform });
+// Windows keeps Electron's own files beside the exe, and its languages in `locales/`.
+const appFileNames = process.platform === 'win32'
+  ? [...await readdir(unpackedDir), ...(await readdir(join(unpackedDir, 'locales'))).map((name) => `locales/${name}`)]
+  : undefined;
+
+const result = auditPackagedApp({ manifest, resourceFileNames, appFileNames, platform: process.platform });
 
 console.log(`app.asar: ${(result.asarBytes / bytesPerMib).toFixed(1)} MiB across ${result.packagedModuleCount} packages`);
 console.log('Largest packaged dependencies:');

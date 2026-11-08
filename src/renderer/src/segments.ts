@@ -139,7 +139,6 @@ export function combineSelectedSegments(existingSegments: StateSegment[]) {
   });
 }
 
-// Made by ChatGPT
 export function combineOverlappingSegments<T extends SegmentBase>(existingSegments: T[]): T[] {
   if (existingSegments.length === 0) return [];
 
@@ -317,6 +316,37 @@ export function makeDurationSegments(segmentDuration: number, totalDuration: num
     edl.push({ start, end: Math.min(end, totalDuration) });
   }
   return edl;
+}
+
+/**
+ * Clips as they're stored after an edit: edges within the recording, a clip of no length made a marker, and `initial`
+ * dropped (the clips are the user's now). A clip this changes nothing in stays the same object, so the clips an edit
+ * didn't touch don't draw again.
+ */
+export function clampSegments(segments: StateSegment[], clampDuration: number | undefined): StateSegment[] {
+  function clampValue(val: number | undefined) {
+    if (val == null || Number.isNaN(val)) return undefined;
+    const clamped = Math.max(val, 0);
+    if (clampDuration == null) return clamped;
+    return Math.min(clamped, clampDuration);
+  }
+
+  return segments.flatMap((segment) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { start, end, initial: _ignored, ...rest } = segment;
+    const startClamped = clampValue(start) ?? 0;
+    const endClamped = clampValue(end);
+    const unchanged = !('initial' in segment) && start === startClamped;
+
+    // convert 0 length segments into a markers
+    if (endClamped == null || endClamped <= startClamped) {
+      if (unchanged && !('end' in segment)) return [segment];
+      return [{ ...rest, start: startClamped }];
+    }
+
+    if (unchanged && end === endClamped) return [segment];
+    return [{ ...rest, start: startClamped, end: endClamped }];
+  });
 }
 
 export const isInitialSegment = (segments: StateSegment[]) => segments.length === 0 || (segments.length === 1 && segments[0]!.initial);

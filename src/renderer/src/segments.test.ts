@@ -1,6 +1,7 @@
 import { test, it, expect, describe } from 'vitest';
 
-import { convertSegmentsToChaptersWithGaps, partitionIntoOverlappingRanges, formatSegNum, combineOverlappingSegments, invertSegments } from './segments';
+import { convertSegmentsToChaptersWithGaps, partitionIntoOverlappingRanges, formatSegNum, combineOverlappingSegments, invertSegments, clampSegments } from './segments';
+import type { StateSegment } from './types';
 
 it('converts segments to chapters with gaps', () => {
   expect(convertSegmentsToChaptersWithGaps([
@@ -211,5 +212,30 @@ describe('invertSegments', () => {
     expect(invertSegments([
       { start: 3 },
     ], false, false)).toMatchSnapshot();
+  });
+});
+
+describe('clampSegments', () => {
+  const clip = (props: Partial<StateSegment>) => ({ segId: 'a', segColorIndex: 0, name: '', selected: true, start: 1, end: 5, ...props }) as StateSegment;
+
+  it('keeps a clip it changes nothing in as the same object', () => {
+    const untouched = clip({});
+    const marker: StateSegment = { segId: 'm', segColorIndex: 1, name: '', selected: true, start: 2 };
+    const [first, second] = clampSegments([untouched, marker], 10);
+    expect(first).toBe(untouched);
+    expect(second).toBe(marker);
+  });
+
+  it('makes a new object when it clamps, drops initial or makes a marker', () => {
+    expect(clampSegments([clip({ start: -1 })], 10)).toEqual([clip({ start: 0 })]);
+    expect(clampSegments([clip({ end: 12 })], 10)).toEqual([clip({ end: 10 })]);
+    const initial = clip({ initial: true });
+    const [kept] = clampSegments([initial], 10);
+    expect(kept).not.toBe(initial);
+    expect(kept).toEqual(clip({}));
+    expect('initial' in kept!).toBe(false);
+    const [marker] = clampSegments([clip({ start: 3, end: 3 })], 10);
+    expect(marker).toEqual({ segId: 'a', segColorIndex: 0, name: '', selected: true, start: 3 });
+    expect('end' in marker!).toBe(false);
   });
 });

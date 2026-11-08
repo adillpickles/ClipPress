@@ -5,9 +5,8 @@ import renderKeys from './renderKeys';
 import { splitKeyboardKeys } from '../util';
 import styles from './TooltipLayer.module.css';
 
-/** Hovering waits this long; moving on to another hint soon after one shows it at once. */
-const showDelayMs = 450;
-const skipDelayMs = 400;
+/** Hovering waits this long, every time: hints that showed at once after another one felt jumpy. */
+const showDelayMs = 500;
 const margin = 8;
 const gap = 6;
 /** How long a hint follows its element after showing, for one still sliding in (the Clips panel's slide is 0.28 s). */
@@ -21,6 +20,9 @@ const followMs = 400;
  * moves to `data-tip` and the attribute stays, empty (React then still changes or removes it, and that's followed).
  * Its text stays readable to screen readers: as the element's name if the title was its only one, else as its
  * description.
+ *
+ * `data-tip-if-cut` on the element: its hint only spells out text cut short with "…" (a list row's full name or
+ * path), so it shows only while one of its `data-cuttable` parts actually is.
  */
 /** Whether the element has a name of its own, so a title only describes it. */
 function hasOwnName(el: HTMLElement | SVGElement) {
@@ -66,9 +68,12 @@ function adoptTree(node: Node) {
 
 interface Tip { el: HTMLElement, text: string, keys: string | undefined }
 
+const isCut = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('[data-cuttable]')].some((part) => part.scrollWidth > part.clientWidth);
+
 const readTip = (el: HTMLElement): Tip | undefined => {
   const text = el.dataset['tip'];
-  return text ? { el, text, keys: el.dataset['tipKeys'] || undefined } : undefined;
+  if (!text || (el.dataset['tipIfCut'] != null && !isCut(el))) return undefined;
+  return { el, text, keys: el.dataset['tipKeys'] || undefined };
 };
 
 export default function TooltipLayer() {
@@ -103,20 +108,23 @@ export default function TooltipLayer() {
     let target: HTMLElement | undefined;
     // Pressed: its hint stays away until the pointer leaves it.
     let pressed: HTMLElement | undefined;
-    let hiddenAt = 0;
 
     const hide = () => {
       clearTimeout(timer);
-      if (tipRef.current != null) hiddenAt = Date.now();
       target = undefined;
       setTip(undefined);
     };
+    // Straight from one hint to the next, the old one goes and the new one waits its turn like any other.
     const showFor = (el: HTMLElement, immediately: boolean) => {
       clearTimeout(timer);
       target = el;
       const show = () => setTip(readTip(el));
-      if (immediately || tipRef.current != null || Date.now() - hiddenAt < skipDelayMs) show();
-      else timer = setTimeout(show, showDelayMs);
+      if (immediately) {
+        show();
+      } else {
+        setTip(undefined);
+        timer = setTimeout(show, showDelayMs);
+      }
     };
     const findTip = (node: EventTarget | null) => (node instanceof Element ? node.closest<HTMLElement>('[data-tip]') ?? undefined : undefined);
 

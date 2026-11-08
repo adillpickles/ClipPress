@@ -2,14 +2,13 @@ import { dataUriToBuffer } from 'data-uri-to-buffer';
 import pMap from 'p-map';
 import { useCallback } from 'react';
 
-import { getSuffixedOutPath, getOutDir, transferTimestamps, getSuffixedFileName, getOutPath, escapeRegExp, fsOperationWithRetry } from '../util';
+import { getSuffixedOutPath, getOutDir, transferTimestamps, getSuffixedFileName, getOutPath, escapeRegExp, fsOperationWithRetry, assertFileExists } from '../util';
 import { getNumDigits, isDurationValid } from '../segments';
 
 import * as ffmpeg from '../ffmpeg';
 import type { FormatTimecode } from '../types';
 import type { CaptureFormat } from '../../../common/types';
 
-const mime = window.require('mime-types');
 const { rename, readdir, writeFile } = window.require('fs/promises');
 
 
@@ -45,6 +44,9 @@ export default ({ appendFfmpegCommandLog, formatTimecode, treatInputFileModified
     onProgress: (a: number) => void,
     outputTimestamps: boolean,
   }) => {
+    // fail fast with a helpful message if the source file has been moved/deleted since it was opened
+    await assertFileExists(filePath);
+
     const getSuffix = (prefix: string) => `${prefix}.${captureFormat}`;
 
     if (!outputTimestamps) {
@@ -98,10 +100,12 @@ export default ({ appendFfmpegCommandLog, formatTimecode, treatInputFileModified
     captureFormat: CaptureFormat,
     quality: number,
   }) => {
+    await assertFileExists(filePath);
+
     const timecode = formatTimecode({ seconds: time, fileNameFriendly: true });
     const nameSuffix = `${timecode}.${captureFormat}`;
     const outPath = getSuffixedOutPath({ customOutDir, filePath, nameSuffix });
-    const args = await ffmpeg.captureFrameToFile({ timestamp: time, videoPath: filePath, outPath, quality });
+    const args = await ffmpeg.captureFrameToFile({ timestamp: time, videoPath: filePath, outPath, quality, captureFormat });
     appendFfmpegCommandLog(args);
 
     await transferTimestamps({ inPath: filePath, outPath, cutFrom: time, cutTo: time, duration: isDurationValid(fileDuration) ? fileDuration : undefined, treatInputFileModifiedTimeAsStart, treatOutputFileModifiedTimeAsStart });
@@ -118,7 +122,8 @@ export default ({ appendFfmpegCommandLog, formatTimecode, treatInputFileModified
   }) => {
     const dataUri = getFrameFromVideo(video, captureFormat, quality);
 
-    const ext = mime.extension(dataUri.type);
+    // Required here, not at the top: loading it took ~6 ms of every start, for snapshots only.
+    const ext = window.require('mime-types').extension(dataUri.type);
     const timecode = formatTimecode({ seconds: time, fileNameFriendly: true });
 
     const outPath = getSuffixedOutPath({ customOutDir, filePath, nameSuffix: `${timecode}.${ext}` });

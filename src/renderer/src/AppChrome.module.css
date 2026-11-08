@@ -6,7 +6,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0 .35rem 0 .8rem;
+  padding: 0 .35rem 0 .3rem;
   background: transparent;
   color: var(--cp-text);
   flex-shrink: 0;
@@ -22,39 +22,108 @@
   padding-right: 0;
 }
 
+/* On a shared baseline, not centred: the name is bigger than the menu words (and in another font), so centring their
+   boxes dropped its letters below theirs. */
 .left {
   min-width: 0;
   display: flex;
-  align-items: center;
-  gap: .95rem;
+  align-items: baseline;
+  gap: .18rem;
 }
 
+/* The app's name, first in the bar, on the menu words' line: a little bigger, in the display font (rounder, roomier
+   letters than the UI font's at this weight), "Press" in the accent. Less padding than the menu words, so the bar
+   keeps its height. */
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: .55rem;
   min-width: 0;
+  padding: .36rem .66rem;
+  border-radius: .7rem;
+  font-family: var(--cp-font-display);
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--cp-text);
 }
 
-.brandMark {
-  width: 1.4rem;
-  height: 1.4rem;
-  border-radius: 7px;
+.brandPress {
+  color: var(--cp-accent-text);
+}
+
+/* With a recording open it's the way home: hovered, "ClipPress" rolls away and "← Home" rolls in, in the same place
+   (both in one grid cell, as wide as the wider word, so nothing in the bar moves). */
+.brandButton {
+  all: unset;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  background: linear-gradient(180deg, #4ccad4, #2b8e97);
-  color: #0b1417;
-  font-size: 1.4rem;
-  flex-shrink: 0;
+  padding: .36rem .66rem;
+  border-radius: .7rem;
+  font-family: var(--cp-font-display);
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--cp-text);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background-color .14s ease;
 }
 
+.brandButton:hover,
+.brandButton:focus-visible {
+  background: color-mix(in srgb, var(--gray-4) 55%, transparent);
+}
+
+.brandButton:focus-visible {
+  outline: 2px solid var(--cp-accent);
+  outline-offset: 1px;
+}
+
+/* The clip that hides the word rolling out reaches a little below the line (padding taken back by the margin), so the
+   tail of the p in "Clip" isn't cut and nothing moves. */
 .brandText {
-  font-family: var(--cp-font-display);
-  font-size: .9rem;
-  font-weight: 750;
-  letter-spacing: -.02em;
-  color: var(--cp-text);
+  display: inline-grid;
+  overflow: hidden;
+  padding-bottom: .25em;
+  margin-bottom: -.25em;
+}
+
+.brandName,
+.brandHome {
+  grid-area: 1 / 1;
+  transition: opacity .18s ease, transform .22s cubic-bezier(.2, 0, 0, 1);
+}
+
+.brandHome {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  opacity: 0;
+  transform: translateY(70%);
+}
+
+.brandHome svg {
+  font-size: .95em;
+}
+
+.brandButton:hover .brandName,
+.brandButton:focus-visible .brandName {
+  opacity: 0;
+  transform: translateY(-70%);
+}
+
+.brandButton:hover .brandHome,
+.brandButton:focus-visible .brandHome {
+  opacity: 1;
+  transform: none;
+}
+
+:global(html.reduce-motion) .brandName,
+:global(html.reduce-motion) .brandHome {
+  transition: opacity .12s ease;
+  transform: none !important;
 }
 
 .menuBar {

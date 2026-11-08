@@ -16,11 +16,13 @@
 
 .AlertDialogContent {
 	/* Centred by its margins, not a transform: a transformed dialog shifts every dropdown list opened inside it
-	   (they're placed against the window). The animations below scale it only while it opens or closes. */
+	   (they're placed against the window). The animations below move it only while it opens or closes. */
 	position: fixed;
 	inset: 0;
 	margin: auto;
-	width: fit-content;
+	/* A dialog sets its own width through this variable: a class of its own would weigh the same as this rule, and the
+	   bundle's CSS order would decide (sharedComponentOverrides.test.ts). An inline style works too. */
+	width: var(--dialog-width, fit-content);
 	height: fit-content;
 	box-sizing: border-box;
 
@@ -43,6 +45,9 @@
 
 	&[data-state="closed"] {
 		animation: contentHide 120ms cubic-bezier(0.16, 1, 0.3, 1);
+		/* Fading out: its buttons can't be clicked a second time. Important, as Radix sets pointer-events: auto inline on a
+		   modal dialog's content. */
+		pointer-events: none !important;
 	}
 }
 
@@ -111,10 +116,12 @@
 	}
 }
 
+/* A fade and a small slide, without scaling: a scaled dialog drew its text blurred while it grew, then sharp with a
+   visible jump as it settled. */
 @keyframes contentShow {
 	from {
 		opacity: 0;
-		transform: translateY(.75rem) scale(0.97);
+		transform: translateY(.5rem);
 	}
 	to {
 		opacity: 1;
@@ -129,13 +136,11 @@
 	}
 	to {
 		opacity: 0;
-		transform: translateY(.5rem) scale(0.98);
+		transform: translateY(.35rem);
 	}
 }
 
-@media (prefers-reduced-motion: reduce) {
-	.AlertDialogContent,
-	.AlertDialogOverlay {
-		animation-duration: 1ms !important;
-	}
+:global(html.reduce-motion) .AlertDialogContent,
+:global(html.reduce-motion) .AlertDialogOverlay {
+	animation-duration: 1ms !important;
 }

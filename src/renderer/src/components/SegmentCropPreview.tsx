@@ -4,12 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { FiZoomIn, FiZoomOut } from 'react-icons/fi';
 
 import type { CropCorner, SegmentCrop } from '../segmentCrop';
-import { fullFrameCrop, getSegmentCropPixels, isSameSegmentCrop, minCropSize, moveSegmentCrop, resizeSegmentCrop, zoomSegmentCrop } from '../segmentCrop';
+import { cropZoomSliderSteps, cropZoomToSlider, fullFrameCrop, getSegmentCropPixels, isSameSegmentCrop, minCropSize, moveSegmentCrop, resizeSegmentCrop, sliderToCropZoom, stepCropZoom, zoomSegmentCrop } from '../segmentCrop';
 import { getRotatedVideoDimensions } from '../textOverlays';
 import styles from './SegmentCrop.module.css';
 
 const maxZoom = 1 / minCropSize;
-const zoomButtonStep = 0.25;
 /** Wheel zooming commits once the wheel goes quiet, so a scroll is one undo step. */
 const wheelCommitDelayMs = 350;
 
@@ -23,7 +22,7 @@ const corners: CropCorner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-r
  * around it. So the texts (drawn on the exported picture) never move while cropping, and the picture keeps its size
  * when editing starts.
  */
-export default function SegmentCropPreview({ children, frameContent, videoWidth, videoHeight, rotation, crop, editing, clipLabel, onChange, onDone, doneKeys, finishRef }: {
+export default function SegmentCropPreview({ children, frameContent, videoWidth, videoHeight, rotation, crop, editing, clipLabel, onChange, onDone, doneKeys, finishRef, keysBlocked = false }: {
   children: ReactNode,
   /** Drawn in the crop frame while editing, under its handles (the texts, which the export puts on the cropped picture). */
   frameContent?: ReactNode,
@@ -40,9 +39,15 @@ export default function SegmentCropPreview({ children, frameContent, videoWidth,
   doneKeys?: string | undefined,
   /** Set while editing: finishes like Done (a zoom still settling is kept), for the shortcut that closes it. */
   finishRef?: MutableRefObject<(() => void) | undefined> | undefined,
+  /** A dialog or sheet is open over it: its Escape and Enter are that dialog's. */
+  keysBlocked?: boolean,
 }) {
   const { t } = useTranslation();
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const keysBlockedRef = useRef(keysBlocked);
+  useEffect(() => {
+    keysBlockedRef.current = keysBlocked;
+  }, [keysBlocked]);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [draft, setDraft] = useState<SegmentCrop>();
@@ -138,6 +143,11 @@ export default function SegmentCropPreview({ children, frameContent, videoWidth,
       setDragging(false);
     };
     const keyDown = (event: KeyboardEvent) => {
+      if (keysBlockedRef.current || (event.key !== 'Escape' && event.key !== 'Enter')) return;
+      // A focused field, or a menu or dialog open over it, keeps its own Enter and Escape.
+      const { target } = event;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable)) return;
+      if (target instanceof Element && target.closest('[role="dialog"], [role="menu"], [role="listbox"]') != null) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
@@ -292,24 +302,24 @@ export default function SegmentCropPreview({ children, frameContent, videoWidth,
 
         {editing && (
           <div className={styles['toolbar']} role="group" aria-label={t('Zoom and crop controls')} data-dragging={dragging}>
-            <button type="button" className={styles['iconButton']} onClick={() => setZoom((current) => current - zoomButtonStep, true)} disabled={zoom <= 1.001} title={t('Zoom out')} aria-label={t('Zoom out')}><FiZoomOut aria-hidden /></button>
+            <button type="button" className={styles['iconButton']} onClick={() => setZoom((current) => stepCropZoom(current, -1), true)} disabled={zoom <= 1.001} title={t('Zoom out')} aria-label={t('Zoom out')}><FiZoomOut aria-hidden /></button>
             <input
               className={styles['slider']}
               type="range"
-              min={100}
-              max={maxZoom * 100}
+              min={0}
+              max={cropZoomSliderSteps}
               step={1}
-              value={Math.round(zoom * 100)}
+              value={cropZoomToSlider(zoom)}
               aria-label={t('Zoom')}
               aria-valuetext={`${Math.round(zoom * 100)}%`}
               onPointerDown={settleZoom}
-              onChange={(event) => { const value = Number(event.target.value) / 100; setZoom(() => value, false); }}
+              onChange={(event) => { const value = sliderToCropZoom(Number(event.target.value)); setZoom(() => value, false); }}
               onPointerUp={settleZoom}
               onKeyUp={settleZoom}
               onBlur={settleZoom}
               onKeyDown={(event) => event.stopPropagation()}
             />
-            <button type="button" className={styles['iconButton']} onClick={() => setZoom((current) => current + zoomButtonStep, true)} disabled={zoom >= maxZoom - 0.001} title={t('Zoom in')} aria-label={t('Zoom in')}><FiZoomIn aria-hidden /></button>
+            <button type="button" className={styles['iconButton']} onClick={() => setZoom((current) => stepCropZoom(current, 1), true)} disabled={zoom >= maxZoom - 0.001} title={t('Zoom in')} aria-label={t('Zoom in')}><FiZoomIn aria-hidden /></button>
             <output className={styles['zoomValue']}>{Math.round(zoom * 100)}%</output>
             <span className={styles['divider']} />
             <button type="button" className={styles['textButton']} onClick={() => { cancelGesture(); onChange(fullFrameCrop); }} disabled={zoom <= 1.001}>{t('Reset')}</button>

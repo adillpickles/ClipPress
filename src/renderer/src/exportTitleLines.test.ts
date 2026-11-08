@@ -4,13 +4,18 @@ import { getExportTitleLines, pickExportTitleLine } from './exportTitleLines';
 import type { ExportPhase } from './exportTitleLines';
 
 const t = (key: string) => key;
-const phases: ExportPhase[] = ['starting', 'cutting', 'encoding', 'sharper', 'smaller', 'finishing'];
+const phases: ExportPhase[] = ['starting', 'cutting', 'encoding', 'finishing'];
 
 describe('getExportTitleLines', () => {
-  test('a dozen different lines for every phase (half as many for each kind of second encode), none shared', () => {
+  test('a dozen different lines for every phase, none shared', () => {
     const all = phases.flatMap((phase) => getExportTitleLines(phase, t));
-    for (const phase of phases) expect(new Set(getExportTitleLines(phase, t)).size).toBeGreaterThanOrEqual(phase === 'sharper' || phase === 'smaller' ? 6 : 12);
+    for (const phase of phases) expect(new Set(getExportTitleLines(phase, t)).size).toBeGreaterThanOrEqual(12);
     expect(new Set(all).size).toBe(all.length);
+  });
+
+  test('no line that gives a second encode away', () => {
+    const all = phases.flatMap((phase) => getExportTitleLines(phase, t)).join(' | ').toLowerCase();
+    for (const word of ['again', 'another', 'second', 'one more', 'retry', 'running it back']) expect(all).not.toContain(word);
   });
 });
 

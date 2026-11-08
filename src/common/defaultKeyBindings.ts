@@ -28,6 +28,8 @@ const defaultKeyBindings: KeyBinding[] = [
   { keys: 'KeyR', action: 'editCurrentSegmentCrop' },
   { keys: 'ControlLeft+KeyR', action: 'toggleSegmentSpeedControls' },
   { keys: 'MetaLeft+KeyR', action: 'toggleSegmentSpeedControls' },
+  { keys: 'ControlLeft+ShiftLeft+KeyR', action: 'changeCurrentSegmentSpeed' },
+  { keys: 'MetaLeft+ShiftLeft+KeyR', action: 'changeCurrentSegmentSpeed' },
   { keys: 'KeyG', action: 'goToTimecode' },
   { keys: 'KeyT', action: 'addTextOverlay' },
   { keys: 'ShiftLeft+KeyT', action: 'toggleStripCurrentFilter' },

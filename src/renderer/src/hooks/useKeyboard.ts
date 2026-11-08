@@ -74,6 +74,16 @@ export default ({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfi
       }
     }
 
+    // The shortcuts list holds focus while it's open; its own shortcut closes it, as it opened it (not while typing
+    // in its search box).
+    if (action === 'toggleKeyboardShortcuts' && !e.defaultPrevented && e.target instanceof Element
+      && e.target.closest('[data-shortcuts-dialog]') != null && e.target.closest('input, textarea, select, [contenteditable="true"]') == null) {
+      getKeyboardAction(action)();
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
     // From now on, only handle key events when focus is on document body
     // because we don't allow focus to anything else
     // except for inputs, buttons, dialogs etc, which we want allowed to handle keys normally.
@@ -206,7 +216,10 @@ export default ({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfi
   }, []);
 
   const updateKeyboardLayout = useCallback(async () => {
-    setKeyboardLayoutMap(await navigator.keyboard.getLayoutMap());
+    const next = await navigator.keyboard.getLayoutMap();
+    // Asked again at every focus (the layout may have changed meanwhile): a new map each time, kept only when it
+    // differs, or every Alt+Tab back re-rendered the app and every key cap.
+    setKeyboardLayoutMap((previous) => (previous != null && previous.size === next.size && [...next].every(([code, key]) => previous.get(code) === key) ? previous : next));
   }, [setKeyboardLayoutMap]);
 
   useEffect(() => {

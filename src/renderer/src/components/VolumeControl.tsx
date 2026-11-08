@@ -113,7 +113,7 @@ function VolumeControl({
               />
               <div className={styles['value']}>{Math.round(playbackVolume * 100)}%</div>
             </div>
-            <Button onClick={onToggleMutedClick} className={styles['miniButton']}>
+            <Button onClick={onToggleMutedClick}>
               {playbackVolume === 0 ? t('Unmute preview') : t('Mute preview')}
             </Button>
           </div>

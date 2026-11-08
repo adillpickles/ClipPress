@@ -9,6 +9,7 @@ import type {
   SizeLimitPreset,
   SizeLimitSimpleFps,
   SizeLimitSimpleResolution,
+  SizeLimitVideoFormat,
 } from '../../common/types.js';
 
 /**
@@ -27,6 +28,7 @@ export interface SizeLimitedExportOptions {
   targetSizeMb: number,
   controlMode: SizeLimitControlMode,
   preset: SizeLimitPreset,
+  videoFormat: SizeLimitVideoFormat,
   resolution: SizeLimitSimpleResolution,
   fps: SizeLimitSimpleFps,
   advancedEncoder: SizeLimitAdvancedEncoder,
@@ -35,25 +37,51 @@ export interface SizeLimitedExportOptions {
   advancedAv1NvencPreset: SizeLimitAdvancedNvencPreset,
   advancedH264CpuPreset: SizeLimitAdvancedH264CpuPreset,
   advancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
+  advancedHevcCpuPreset: SizeLimitAdvancedH264CpuPreset,
+  advancedHevcNvencPreset: SizeLimitAdvancedNvencPreset,
 }
+
+export type SizeLimitedGpuCapability = 'h264Nvenc' | 'av1Nvenc' | 'hevcNvenc' | 'h264Amf' | 'av1Amf' | 'hevcAmf' | 'h264Qsv' | 'av1Qsv' | 'hevcQsv';
+
+/** What a size-limited export makes. */
+export type SizeLimitedCodec = SizeLimitCodec | 'hevc';
 
 export interface SizeLimitedEncoderCapabilities {
   h264Nvenc: boolean,
   av1Nvenc: boolean,
   libx264: boolean,
   libsvtav1: boolean,
+  /** CPU HEVC (x265): in the bundled FFmpeg; missing counts as unavailable. */
+  libx265?: boolean | undefined,
   // AMD and Intel encoders, and the CPU size, are optional so callers that only know about
   // NVENC (such as the benchmark) keep working; missing means unavailable or unknown.
   h264Amf?: boolean | undefined,
   av1Amf?: boolean | undefined,
   h264Qsv?: boolean | undefined,
   av1Qsv?: boolean | undefined,
-  /** Logical CPU threads, used to decide whether CPU AV1 is quick enough to prefer. */
+  hevcNvenc?: boolean | undefined,
+  hevcAmf?: boolean | undefined,
+  hevcQsv?: boolean | undefined,
+  /** Whether SVT-AV1's two-pass is real in this FFmpeg (8.1 and newer); missing means yes, as with the bundled one. */
+  svtTwoPass?: boolean | undefined,
+  /** Whether this FFmpeg runs x265's two-pass (`-x265-stats`); missing means yes, as with the bundled one. */
+  x265TwoPass?: boolean | undefined,
+  /** Logical CPU threads, used to decide whether a CPU encode is quick enough to prefer. */
   cpuThreads?: number | undefined,
+  /** GPU encoders that open with their basic settings but not the tuned ones (an older card or driver). */
+  basicSettingsOnly?: readonly SizeLimitedGpuCapability[] | undefined,
+  /**
+   * Whether NVIDIA's HEVC opens with its "ultra high quality" tuning (RTX 40 and 50 do; NVIDIA doesn't say which older
+   * cards do, so the encoder check asks the card). Missing means no.
+   */
+  hevcNvencUhq?: boolean | undefined,
 }
 
 export type SizeLimitedStrategyId =
-  | 'max_quality_av1_cpu_two_pass'
+  | 'max_quality_hevc_cpu'
+  | 'quality_hevc_cpu'
+  | 'fast_hevc_cpu'
+  | 'max_quality_av1_cpu'
   | 'max_quality_av1_nvenc_two_pass'
   | 'max_quality_h264_cpu_two_pass'
   | 'max_quality_h264_nvenc_two_pass'
@@ -65,14 +93,22 @@ export type SizeLimitedStrategyId =
   // fallbacks for Fast. They borrow the planner budgets of the closest calibrated profile.
   | 'max_quality_av1_gpu'
   | 'max_quality_h264_gpu'
+  | 'max_quality_hevc_gpu'
   | 'quality_av1_gpu'
   | 'quality_h264_gpu'
+  | 'quality_hevc_gpu'
   | 'fast_av1_gpu'
+  | 'fast_hevc_gpu'
   | 'fast_h264_gpu'
   | 'fast_av1_cpu'
   | 'fast_h264_cpu'
   | 'advanced_av1_gpu'
   | 'advanced_h264_gpu'
+  | 'advanced_hevc_gpu'
+  | 'advanced_hevc_cpu_single_pass'
+  | 'advanced_hevc_cpu_two_pass'
+  | 'advanced_hevc_nvenc_single_pass'
+  | 'advanced_hevc_nvenc_two_pass'
   | 'advanced_av1_cpu_single_pass'
   | 'advanced_av1_cpu_two_pass'
   | 'advanced_av1_nvenc_single_pass'
@@ -82,7 +118,7 @@ export type SizeLimitedStrategyId =
   | 'advanced_h264_nvenc_single_pass'
   | 'advanced_h264_nvenc_two_pass';
 
-export type SizeLimitedEncoderName = 'h264_nvenc' | 'av1_nvenc' | 'h264_amf' | 'av1_amf' | 'h264_qsv' | 'av1_qsv' | 'libx264' | 'libsvtav1';
+export type SizeLimitedEncoderName = 'h264_nvenc' | 'av1_nvenc' | 'hevc_nvenc' | 'h264_amf' | 'av1_amf' | 'hevc_amf' | 'h264_qsv' | 'av1_qsv' | 'hevc_qsv' | 'libx264' | 'libx265' | 'libsvtav1';
 
 export type SizeLimitedHardwareTarget = 'nvidia' | 'amd' | 'intel' | 'cpu';
 
@@ -99,7 +135,7 @@ export interface SizeLimitedResolvedStrategy {
   preset?: SizeLimitPreset | undefined,
   requestedAdvancedEncoder?: SizeLimitAdvancedEncoder | undefined,
   requestedAdvancedTwoPass?: boolean | undefined,
-  effectiveCodec: SizeLimitCodec,
+  effectiveCodec: SizeLimitedCodec,
   id: SizeLimitedStrategyId,
   plannerProfileId: SizeLimitedPlannerProfileId,
   encoder: SizeLimitedEncoderName,
@@ -108,12 +144,16 @@ export interface SizeLimitedResolvedStrategy {
   usesGpu: boolean,
   executionMode: SizeLimitedExecutionMode,
   tuningProfile: SizeLimitedTuningProfile,
-  fallbackReason?: 'av1_unavailable' | 'av1_nvenc_unavailable' | 'h264_nvenc_unavailable' | 'svt_av1_unavailable' | 'gpu_av1_unavailable' | 'gpu_unavailable' | 'nvidia_unavailable' | undefined,
+  fallbackReason?: 'av1_unavailable' | 'av1_nvenc_unavailable' | 'h264_nvenc_unavailable' | 'svt_av1_unavailable' | 'gpu_av1_unavailable' | 'gpu_hevc_unavailable' | 'hevc_unavailable' | 'x265_unavailable' | 'gpu_unavailable' | 'nvidia_unavailable' | undefined,
   /**
    * Hardware encoders ignore FFmpeg's 2-pass logs, so running one twice only repeats the same
    * encode. A 2-pass GPU strategy instead runs once with the encoder's own full multipass.
    */
   encoderMultipass?: boolean | undefined,
+  /** A GPU encoder run with only its basic settings, because this card or driver turned the tuned ones down. */
+  basicEncoderSettings?: boolean | undefined,
+  /** NVIDIA HEVC with its "ultra high quality" tuning, on a card that takes it (hevcNvencUhq). */
+  nvencUhq?: boolean | undefined,
 }
 
 export interface SizeLimitedRetryStep {
@@ -179,6 +219,8 @@ export interface SizeLimitedExecutionResult {
   metTarget: boolean,
   created: boolean,
   strategy: SizeLimitedResolvedStrategy,
+  /** A copy of the recording's own bytes, as they already fit (lossless when it fits), not an encode. */
+  copied?: boolean | undefined,
   /**
    * Set when the encode succeeded but a step after it (renaming the file into place)
    * did not. The file at `path` is complete and usable; only its name or location is

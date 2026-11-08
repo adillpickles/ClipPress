@@ -2,7 +2,6 @@ import { z } from 'zod';
 import type { MenuEntry } from './components/Menu';
 import type { FFprobeChapter, FFprobeFormat, FFprobeStream } from '../../common/ffprobe';
 import type { FileStream } from './ffmpeg';
-import { minSegmentSpeed, maxSegmentSpeed } from './segmentSpeed';
 import { minCropSize } from './segmentCrop';
 import type { SegmentCrop } from './segmentCrop';
 import type { UndoableSetOptions } from './undoableHistory';
@@ -43,7 +42,9 @@ export const llcProjectSaveableSegmentSchema = z.object({
   name: z.string(),
   tags: segmentTagsSchema.optional(),
   selected: z.boolean().optional(),
-  speed: z.number().min(minSegmentSpeed).max(maxSegmentSpeed).optional(),
+  // Any positive speed: one outside this version's range plays at 100% (getSegmentSpeed), rather than a project saved
+  // by a newer version failing to open at all.
+  speed: z.number().positive().optional(),
   crop: segmentCropSchema.optional(),
   /** The clip's own volume in dB, added to each track's. No limits here: one odd value must not reject the whole project. */
   audioGainDb: z.number().optional(),
@@ -247,7 +248,7 @@ export type CopyfileStreams = {
 
 export interface Chapter { start: number, end: number, name?: string | undefined }
 
-export type LiteFFprobeStream = Pick<FFprobeStream, 'index' | 'codec_type' | 'codec_tag' | 'codec_name' | 'disposition' | 'tags' | 'sample_rate' | 'time_base'>;
+export type LiteFFprobeStream = Pick<FFprobeStream, 'index' | 'codec_type' | 'codec_tag' | 'codec_name' | 'disposition' | 'tags' | 'sample_rate' | 'time_base' | 'has_b_frames'>;
 
 export interface FileStats {
   size: number | bigint,

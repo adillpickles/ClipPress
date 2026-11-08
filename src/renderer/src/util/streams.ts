@@ -1,5 +1,6 @@
 import invariant from 'tiny-invariant';
 import type { FFprobeStream, FFprobeStreamDisposition } from '../../../common/ffprobe';
+import type { AvoidNegativeTs } from '../../../common/types';
 import type { AllFilesMeta, ChromiumHTMLAudioElement, ChromiumHTMLVideoElement, CopyfileStreams, LiteFFprobeStream } from '../types';
 import type { FileStream } from '../ffmpeg';
 
@@ -193,6 +194,9 @@ function getPerStreamFlags({ path, stream, outputIndex, outFormat, manuallyCopyD
       args = [...videoArgs];
     } else {
       addCodecArgs('copy');
+      // Apple's players and Photos want HEVC in MP4 and MOV tagged `hvc1`; FFmpeg's default there is `hev1` (an OBS MKV
+      // recording cut to MP4 then couldn't be saved on an iPhone).
+      if (isMov(outFormat) && stream.codec_name === 'hevc') addArgs(`-tag:${outputIndex}`, 'hvc1');
     }
   } else { // other stream types
     addCodecArgs('copy');
@@ -211,10 +215,18 @@ function getPerStreamFlags({ path, stream, outputIndex, outFormat, manuallyCopyD
   return args;
 }
 
+export type AllFilesStreamMeta = Record<string, Pick<AllFilesMeta[string], 'streams'>>;
+
+export const getStreamById = ({ allFilesMeta, streamId, path }: {
+  allFilesMeta: AllFilesStreamMeta,
+  streamId: number,
+  path: string,
+}) => allFilesMeta[path]?.streams.find((s) => s.index === streamId);
+
 export function getMapStreamsArgs({ startIndex = 0, outFormat, allFilesMeta, copyFileStreams, manuallyCopyDisposition, getVideoArgs, getAudioArgs, needFlac }: {
   startIndex?: number,
   outFormat: string | undefined,
-  allFilesMeta: Record<string, Pick<AllFilesMeta[string], 'streams'>>,
+  allFilesMeta: AllFilesStreamMeta,
   copyFileStreams: CopyfileStreams,
   manuallyCopyDisposition?: boolean,
   getVideoArgs?: GetVideoArgsFn,
@@ -226,8 +238,7 @@ export function getMapStreamsArgs({ startIndex = 0, outFormat, allFilesMeta, cop
 
   copyFileStreams.forEach(({ streamIds, path }, fileIndex) => {
     streamIds.forEach((streamId) => {
-      const { streams } = allFilesMeta[path]!;
-      const stream = streams.find((s) => s.index === streamId);
+      const stream = getStreamById({ allFilesMeta, streamId, path });
       invariant(stream != null);
       args = [
         ...args,
@@ -267,6 +278,54 @@ export const attachedPicDisposition = 'attached_pic';
 
 export function isStreamThumbnail(stream: Pick<FFprobeStream, 'codec_type' | 'disposition'>) {
   return stream && stream.codec_type === 'video' && stream.disposition?.[attachedPicDisposition] === 1;
+}
+
+function isCopyingThumbnailStream({ allFilesMeta, copyFileStreams }: {
+  allFilesMeta: AllFilesStreamMeta,
+  copyFileStreams: CopyfileStreams,
+}) {
+  return copyFileStreams.some(({ path, streamIds }) => streamIds.some((streamId) => {
+    const stream = getStreamById({ allFilesMeta, streamId, path });
+    return stream != null && isStreamThumbnail(stream);
+  }));
+}
+
+/**
+ * An attached_pic (cover art) packet has no position on the timeline - the demuxer emits it at
+ * pts 0. When seeking before the input (`-ss` before `-i`), ffmpeg applies the seek offset to it
+ * anyway, dragging it to -(cut from), and it reaches the muxer first. `make_zero` and
+ * `make_non_negative` then derive their file-wide correction from that packet and shift every
+ * other stream back by +(cut from), undoing the rebase to zero that the audio/video already got.
+ * The mov muxer records that as an empty edit, so the muxed duration ends up being the segment's
+ * end time in the source instead of its length (ffprobe hides this, but e.g. VLC reports it).
+ * `auto` doesn't use the attached pic as its reference, so it cuts correctly and keeps the cover art.
+ * See https://github.com/mifi/lossless-cut/issues/3009
+ */
+export function getEffectiveAvoidNegativeTs({ avoidNegativeTs, allFilesMeta, copyFileStreams }: {
+  avoidNegativeTs: AvoidNegativeTs | undefined,
+  allFilesMeta: AllFilesStreamMeta,
+  copyFileStreams: CopyfileStreams,
+}) {
+  if (avoidNegativeTs !== 'make_zero' && avoidNegativeTs !== 'make_non_negative') return avoidNegativeTs;
+  if (!isCopyingThumbnailStream({ allFilesMeta, copyFileStreams })) return avoidNegativeTs;
+  return 'auto';
+}
+
+/**
+ * For input formats without AVFMT_SEEK_TO_PTS (e.g. Matroska/WebM), when any stream has B-frames, ffmpeg seeks
+ * 3/23s earlier than the input `-ss` (`dts_heuristic` in fftools/ffmpeg_demux.c). With `-ss` before `-i`, a keyframe cut
+ * starting on (or up to ~0.13s after) a keyframe then starts from the *previous* keyframe. Returns how much to add to the
+ * input `-ss` (and pass as `-itsoffset`) to undo that. See https://github.com/mifi/lossless-cut/issues/1216
+ * Matroska only: MPEG-TS seeks differently, and there the compensation would start the cut one keyframe late.
+ */
+export function getKeyframeCutSeekCompensation({ formatName, streams, cutFrom }: {
+  formatName: string | undefined,
+  streams: Pick<FFprobeStream, 'has_b_frames'>[],
+  cutFrom: number,
+}) {
+  if (cutFrom <= 0 || !(formatName ?? '').split(',').some((f) => isMatroska(f))) return 0;
+  if (!streams.some((stream) => (stream.has_b_frames ?? 0) > 0)) return 0;
+  return 3 / 23 + 0.001;
 }
 
 export const getAudioStreams = <T extends Pick<FFprobeStream, 'codec_type'>>(streams: T[]) => streams.filter((stream) => stream.codec_type === 'audio');

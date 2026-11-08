@@ -12,7 +12,7 @@ import { detectSceneChanges as ffmpegDetectSceneChanges, readFrames, mapTimesToS
 import { getFileSize, shuffleArray } from '../util';
 import { errorToast } from '../swal';
 import { createNumSegments as createNumSegmentsDialog, createFixedByteSixedSegments as createFixedByteSixedSegmentsDialog, createRandomSegments as createRandomSegmentsDialog, labelSegmentDialog, askForShiftSegments, askForAlignSegments, selectSegmentsByLabelDialog, askForSegmentDuration, toastError } from '../dialogs';
-import { createSegment, sortSegments, invertSegments, combineOverlappingSegments as combineOverlappingSegments2, combineSelectedSegments as combineSelectedSegments2, isDurationValid, addSegmentColorIndex, filterNonMarkers, makeDurationSegments, isInitialSegment } from '../segments';
+import { createSegment, sortSegments, invertSegments, combineOverlappingSegments as combineOverlappingSegments2, combineSelectedSegments as combineSelectedSegments2, isDurationValid, addSegmentColorIndex, filterNonMarkers, makeDurationSegments, isInitialSegment, clampSegments } from '../segments';
 import type { FfmpegDialog } from '../ffmpegParameters';
 import { parameters as allFfmpegParameters, getHint, getLabel } from '../ffmpegParameters';
 import { maxSegmentsAllowed } from '../util/constants';
@@ -120,33 +120,7 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
   }, [setSegColorCounter]);
 
   const safeSetCutSegments = useCallback((newSegmentsOrFn: StateSegment[] | ((a: StateSegment[]) => StateSegment[]), clampDuration?: number, options?: UndoableSetOptions) => {
-    function clampValue(val: number | undefined) {
-      if (val == null || Number.isNaN(val)) return undefined;
-      const clamped = Math.max(val, 0);
-      if (clampDuration == null) return clamped;
-      return Math.min(clamped, clampDuration);
-    }
-
-    // delete "initial" after modifying segments
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const map = (newSegments: StateSegment[]) => newSegments.flatMap(({ start, end, initial: _ignored, ...rest }) => {
-      const startClamped = clampValue(start) ?? 0;
-      const endClamped = clampValue(end);
-
-      // convert 0 length segments into a markers
-      if (endClamped == null || endClamped <= startClamped) {
-        return [{
-          ...rest,
-          start: startClamped,
-        }];
-      }
-
-      return [{
-        ...rest,
-        start: startClamped,
-        end: endClamped,
-      }];
-    });
+    const map = (newSegments: StateSegment[]) => clampSegments(newSegments, clampDuration);
 
     if (typeof newSegmentsOrFn === 'function') {
       setCutSegments((existing) => map(newSegmentsOrFn(existing)), options);
@@ -377,11 +351,12 @@ function useSegments({ filePath, workingRef, setWorking, setProgress, videoStrea
 
   const createSegmentsFromKeyframes = useCallback(async () => {
     const { start, end } = currentCutSegOrWholeTimeline;
-    deleteCurrentCutSeg();
     if (!videoStream) return;
     invariant(filePath != null);
     const keyframes = (await readFrames({ filePath, from: start, to: end, streamIndex: videoStream.index })).filter((frame) => frame.keyframe);
     const newSegments = mapTimesToSegments(keyframes.map((keyframe) => keyframe.time), true);
+    // Only once the new segments are in hand: no video, or a failed read, leaves the segment where it was.
+    deleteCurrentCutSeg();
     loadCutSegments({ segments: newSegments, append: true, getNextCurrentSegIndex: (edl) => edl.length - 1, clampDuration: fileDuration });
   }, [currentCutSegOrWholeTimeline, deleteCurrentCutSeg, fileDuration, filePath, loadCutSegments, videoStream]);
 

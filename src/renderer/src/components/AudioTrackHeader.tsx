@@ -99,6 +99,8 @@ function AudioTrackHeader({ previewVolume, onPreviewVolumeChange, onTogglePrevie
         onClick={(e) => setAnchor(anchor != null ? null : e.currentTarget)}
         title={speakerTitle}
         aria-label={t('Volume')}
+        // Where focus goes when a clip volume popover's badge is gone (App).
+        data-track-volume
         aria-haspopup="dialog"
         aria-expanded={anchor != null}
       >

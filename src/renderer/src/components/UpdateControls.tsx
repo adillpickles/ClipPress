@@ -25,15 +25,18 @@ export function UpdateActions({ status, showCheckButton = true, align = 'start' 
     // Not an installer to run by hand either, while it would delete settings.
     : status.reason !== 'settings-in-installation-folder' && <Button onClick={() => { if (status.version != null) invoke(() => shell.openExternal(getReleaseUrl(status.version!))); }}>{t('Open release download')}</Button>);
   const approve = status.phase === 'ready' && !status.installOnQuit && <Button variant="primary" onClick={() => invoke(() => mainApi.approveUpdateInstall())}>{t('Install when I close ClipPress')}</Button>;
+  // Or now: ClipPress closes, installs the update and opens the new version.
+  const restart = status.phase === 'ready' && status.supported && <Button onClick={() => invoke(() => mainApi.restartToUpdate())}>{t('Restart now')}</Button>;
   const check = !['checking', 'downloading', 'ready', 'available'].includes(status.phase) && !['offline', 'development', 'multiple-instances'].includes(status.reason ?? '') && (showCheckButton || status.phase === 'error') && (
     <Button onClick={() => invoke(() => (status.supported && status.phase === 'error' && status.version != null ? mainApi.downloadUpdate() : mainApi.checkForUpdates()))}>{status.phase === 'error' ? t('Try again') : t('Check for updates')}</Button>
   );
-  if (!download && !approve && !check) return null;
+  if (!download && !approve && !restart && !check) return null;
 
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.5rem', justifyContent: align === 'end' ? 'flex-end' : 'flex-start' }}>
       {download}
       {approve}
+      {restart}
       {check}
     </div>
   );

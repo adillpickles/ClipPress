@@ -9,9 +9,12 @@
 }
 
 .content {
-  /* Centred while it fits; scrolls from the top when it doesn't. */
+  /* Centred while it fits; scrolls from the top when it doesn't. A normal window keeps the 40rem column; a big one
+     (from 1600 px) widens it with the window, to 60rem on a 2560 screen, so it doesn't sit in a narrow strip. The row
+     pictures grow along (Shelf.module.css .thumb). */
   margin: auto;
-  width: min(100%, 40rem);
+  width: min(100%, clamp(40rem, 40vw, 60rem));
+  --shelf-thumb-width: clamp(64px, 3.125vw, 80px);
   padding: 2rem 1rem 2.5rem;
   display: flex;
   flex-direction: column;
@@ -23,7 +26,8 @@
 .dropCard {
   width: 100%;
   box-sizing: border-box;
-  padding: 2.25rem 2rem 2rem;
+  /* A little taller on a big screen, with the wider column. */
+  padding: clamp(2.25rem, 1.72vw, 2.75rem) 2rem clamp(2rem, 1.56vw, 2.5rem);
   display: flex;
   flex-direction: column;
   align-items: center;

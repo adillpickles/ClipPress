@@ -49,9 +49,12 @@ export interface OpenMenuOptions {
   onNavigate?: ((direction: -1 | 1) => void) | undefined,
   /**
    * The pointer outside the menu (where clicks only close it, as with a system menu): the title bar opens the menu of
-   * a button it's over. True if it was handled (a press then doesn't close the menu).
+   * a button it's over. True if it was handled (a press then doesn't close the menu); for a move, true while the
+   * pointer is somewhere that belongs to the menu (its menu bar).
    */
   onOutsidePointer?: ((event: { x: number, y: number, type: 'move' | 'down' }) => boolean) | undefined,
+  /** Closes once the pointer has left the menu (and whatever onOutsidePointer counts as its own) for a moment. */
+  closeOnLeave?: boolean | undefined,
 }
 
 let host: ((options: OpenMenuOptions | undefined) => void) | undefined;
@@ -67,6 +70,8 @@ export function closeMenu() {
 const isMac = process.platform === 'darwin';
 const margin = 6;
 const submenuDelayMs = 140;
+// closeOnLeave: long enough for a diagonal move from the button into a long menu, or across the gap to a submenu.
+const leaveGraceMs = 300;
 const editRoles = ['undo', 'redo', 'cut', 'copy', 'paste', 'delete', 'selectAll'] as const;
 type EditRole = typeof editRoles[number];
 const isEditRole = (role: string | undefined): role is EditRole => editRoles.includes(role as EditRole);
@@ -291,6 +296,14 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
   const confirmingRef = useRef(confirming);
   const panelEls = useRef<(HTMLDivElement | null)[]>([]);
   const submenuTimer = useRef<ReturnType<typeof setTimeout>>();
+  // closeOnLeave: the pending close, and whether the pointer has been on the menu yet (one opened from the keyboard
+  // waits for it, so a mouse resting elsewhere doesn't close it).
+  const leaveTimer = useRef<ReturnType<typeof setTimeout>>();
+  const leaveArmed = useRef(false);
+  // Where the pointer was last seen: away from the menu and its bar, or not; and where it was (none once it left the
+  // window).
+  const pointerWasAway = useRef(false);
+  const lastPointer = useRef<{ x: number, y: number }>();
   // What had focus before the menu opened: it gets it back (a text field, for its edit actions).
   const returnFocus = useRef<HTMLElement | null>(null);
   const optionsRef = useRef<OpenMenuOptions>();
@@ -312,6 +325,8 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
   const close = useCallback((restoreFocus = true) => {
     clearTimeout(submenuTimer.current);
     clearTimeout(confirmTimer.current);
+    clearTimeout(leaveTimer.current);
+    leaveTimer.current = undefined;
     setConfirming(undefined);
     const { current } = optionsRef;
     if (current == null) return;
@@ -327,6 +342,19 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
     current.onClose?.();
   }, []);
 
+  // closeOnLeave's timer: closes unless the pointer is on a menu or its bar after all (a menu that has just opened
+  // under a pointer that hasn't moved since).
+  const closeIfAway = useCallback(() => {
+    leaveTimer.current = undefined;
+    const at = lastPointer.current;
+    if (at != null && (document.elementFromPoint(at.x, at.y)?.closest('[data-app-menu] [role=menu]') != null
+      || optionsRef.current?.onOutsidePointer?.({ ...at, type: 'move' }))) {
+      pointerWasAway.current = false;
+      return;
+    }
+    close(false);
+  }, [close]);
+
   useEffect(() => {
     host = (next) => {
       if (next == null) {
@@ -335,10 +363,18 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
       }
       // One menu at a time: another one opening replaces it (its owner hears that it closed).
       const previous = optionsRef.current;
+      // A menu opened afresh is under the pointer (or opened from the keyboard); one replacing another keeps what's
+      // known of where the pointer is.
+      if (previous == null) pointerWasAway.current = false;
       if (previous != null) previous.onClose?.();
       else returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       clearTimeout(submenuTimer.current);
       clearTimeout(confirmTimer.current);
+      clearTimeout(leaveTimer.current);
+      leaveTimer.current = undefined;
+      leaveArmed.current = next.keyboard !== true;
+      // The pointer already left while this one was on its way (a quick flick across the bar and off it): it goes too.
+      if (next.closeOnLeave && leaveArmed.current && pointerWasAway.current) leaveTimer.current = setTimeout(closeIfAway, leaveGraceMs);
       setConfirming(undefined);
       const items = visibleItems(next.items);
       const anchor = next.at instanceof HTMLElement ? next.at.getBoundingClientRect() : next.at;
@@ -352,7 +388,7 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
     return () => {
       host = undefined;
     };
-  }, [close]);
+  }, [close, closeIfAway]);
 
   const openSubmenu = useCallback((level: number, index: number, highlightFirst: boolean) => {
     setPanels((current) => {
@@ -552,6 +588,20 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
     };
   }, [activate, close, leaveConfirm, openSubmenu, options]);
 
+  // closeOnLeave: the pointer on the menu (or its bar) keeps it; away from both for leaveGraceMs, it closes.
+  const pointerHome = useCallback(() => {
+    pointerWasAway.current = false;
+    leaveArmed.current = true;
+    clearTimeout(leaveTimer.current);
+    leaveTimer.current = undefined;
+  }, []);
+  const pointerAway = useCallback(() => {
+    pointerWasAway.current = true;
+    if (!optionsRef.current?.closeOnLeave || !leaveArmed.current || leaveTimer.current != null) return;
+    leaveTimer.current = setTimeout(closeIfAway, leaveGraceMs);
+  }, [closeIfAway]);
+  useEffect(() => () => clearTimeout(leaveTimer.current), []);
+
   return (
     <>
       {children}
@@ -567,7 +617,15 @@ export default function MenuHost({ children }: { children?: ReactNode }) {
             if (!optionsRef.current?.onOutsidePointer?.({ x: e.clientX, y: e.clientY, type: 'down' })) close(false);
           }}
           onPointerMove={(e) => {
-            if (e.target === e.currentTarget) optionsRef.current?.onOutsidePointer?.({ x: e.clientX, y: e.clientY, type: 'move' });
+            lastPointer.current = { x: e.clientX, y: e.clientY };
+            if (e.target !== e.currentTarget) pointerHome();
+            else if (optionsRef.current?.onOutsidePointer?.({ x: e.clientX, y: e.clientY, type: 'move' })) pointerHome();
+            else pointerAway();
+          }}
+          // Off the window altogether (past the top of a maximised one, say).
+          onPointerLeave={() => {
+            lastPointer.current = undefined;
+            pointerAway();
           }}
           onContextMenu={(e) => {
             e.preventDefault();

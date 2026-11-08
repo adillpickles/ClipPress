@@ -2,6 +2,7 @@
 // loads this module in plain Node, which (unlike Vite) will not guess it. Type-only
 // imports are erased before Node sees them, so they follow the usual house style.
 import { getResolvedVideoArgs, toKbitrateArg } from './sizeLimitedEncoderArgs.ts';
+import type { SizeLimitedEncodedFrame } from './sizeLimitedEncoderArgs.ts';
 import { buildSizeLimitedVideoFilter, sizeLimitedSwsFlags } from './sizeLimitedResolution.ts';
 import { isMutedAudioGain } from './util/audioGain.ts';
 import { getAudioTempoFilter } from './segmentSpeed.ts';
@@ -61,6 +62,7 @@ export function getSizeLimitedCommonEncodeArgs({
   audioGainDb,
   audioPlaybackRate,
   qualityCapOffset,
+  frame,
 }: {
   strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
@@ -75,6 +77,7 @@ export function getSizeLimitedCommonEncodeArgs({
   audioGainDb?: number | undefined,
   audioPlaybackRate?: number | undefined,
   qualityCapOffset?: number | undefined,
+  frame?: SizeLimitedEncodedFrame | undefined,
 }) {
   const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
   return [
@@ -84,7 +87,7 @@ export function getSizeLimitedCommonEncodeArgs({
     '-dn',
     '-ignore_unknown',
     '-map', videoInputLabel,
-    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: false, videoProfile, sourceFps, outputPlaybackRate, qualityCapOffset }),
+    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: false, videoProfile, sourceFps, outputPlaybackRate, qualityCapOffset, frame }),
     ...(videoFilter != null ? ['-vf', videoFilter] : []),
     ...getSizeLimitedAudioArgs({ audioInputLabel, audioBitrate, audioGainDb, audioPlaybackRate }),
     '-movflags', '+faststart',
@@ -110,6 +113,7 @@ export function getSizeLimitedTwoPassEncodeArgs({
   audioGainDb,
   audioPlaybackRate,
   qualityCapOffset,
+  frame,
 }: {
   strategy: SizeLimitedResolvedStrategy,
   videoBitrate: number,
@@ -126,6 +130,7 @@ export function getSizeLimitedTwoPassEncodeArgs({
   audioGainDb?: number | undefined,
   audioPlaybackRate?: number | undefined,
   qualityCapOffset?: number | undefined,
+  frame?: SizeLimitedEncodedFrame | undefined,
 }) {
   const videoFilter = buildSizeLimitedVideoFilter({ videoProfile });
   return [
@@ -135,14 +140,32 @@ export function getSizeLimitedTwoPassEncodeArgs({
     '-dn',
     '-ignore_unknown',
     '-map', videoInputLabel,
-    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: true, videoProfile, sourceFps, outputPlaybackRate, qualityCapOffset }),
+    ...getResolvedVideoArgs({ strategy, videoBitrate, twoPass: true, passNumber, videoProfile, sourceFps, outputPlaybackRate, qualityCapOffset, frame }),
     ...(videoFilter != null ? ['-vf', videoFilter] : []),
     '-pass', String(passNumber),
-    '-passlogfile', passlogFile,
+    // x265 keeps its own stats file (and `.cutree` beside it); passed as an option, never in -x265-params, where a
+    // Windows path's colon would split the list.
+    ...(strategy.encoder === 'libx265' ? ['-x265-stats', passlogFile] : ['-passlogfile', passlogFile]),
     ...(passNumber === 1 ? ['-an'] : getSizeLimitedAudioArgs({ audioInputLabel, audioBitrate, audioGainDb, audioPlaybackRate })),
     ...(passNumber === 2 ? ['-movflags', '+faststart'] : []),
     ...experimentalArgs,
     '-f', 'mp4',
     '-y', outPath,
   ];
+}
+
+/**
+ * What a two-pass encode leaves beside its pass log: FFmpeg's names for x264 and SVT-AV1 (`-passlogfile`), x265's
+ * (`-x265-stats`: the file itself and its `.cutree`), and the `.temp` copies x264 and x265 write until the encoder
+ * closes, which a Cancel leaves behind.
+ */
+export function getPassArtifactPaths(basePath: string) {
+  return [
+    basePath,
+    `${basePath}-0.log`,
+    `${basePath}-0.log.mbtree`,
+    `${basePath}.log`,
+    `${basePath}.log.mbtree`,
+    `${basePath}.cutree`,
+  ].flatMap((path) => [path, `${path}.temp`]);
 }

@@ -12,7 +12,7 @@ import { getModifier } from '../hooks/useTimelineScroll';
 import type { KeyBinding, KeyboardAction, ModifierKey } from '../../../common/types';
 import type { StateSegment } from '../types';
 import { splitKeyboardKeys } from '../util';
-import { fixKeys } from '../shortcutKeys';
+import { fixKeys, getShownBindings, normalizeBindingKeys } from '../shortcutKeys';
 import * as Dialog from './Dialog';
 import Warning from './Warning';
 import Button, { DialogButton } from './Button';
@@ -108,14 +108,15 @@ const CreateBinding = memo(({
           </AnimatePresence>
 
           <div style={{ marginBottom: '1em', display: 'flex', gap: '.5em', flexWrap: 'wrap' }}>
-            {!keysDown.includes('esc') && <Button style={{ padding: '.2em .4em' }} onClick={() => addKeyDown('esc')}>ESC</Button>}
+            {/* The browser calls the key Escape, which is what a shortcut has to match. */}
+            {!keysDown.includes('Escape') && <Button style={{ padding: '.2em .4em' }} onClick={() => addKeyDown('Escape')}>ESC</Button>}
             {keysDown.length > 0 && (
               <Button onClick={() => setKeysDown([])}><FaUndo style={{ fontSize: '.8em', verticalAlign: 'middle', marginRight: '.3em' }} />{t('Start over')}</Button>
             )}
           </div>
 
           <Dialog.ButtonRow>
-            <DialogButton disabled={fixedKeys.length === 0 || isComboInvalid} onClick={() => action != null && onNewKeyBindingConfirmed(action, keysDown)} primary>
+            <DialogButton disabled={fixedKeys.length === 0 || isComboInvalid} onClick={() => action != null && onNewKeyBindingConfirmed(action, fixedKeys)} primary>
               <FaSave style={{ marginRight: '.3em', verticalAlign: 'middle' }} />{t('Save')}
             </DialogButton>
           </Dialog.ButtonRow>
@@ -394,6 +395,10 @@ const KeyboardShortcuts = memo(({
       },
       toggleSegmentSpeedControls: {
         name: t('Toggle segment speed controls'),
+        category: segmentsAndCutpointsCategory,
+      },
+      changeCurrentSegmentSpeed: {
+        name: t('Change the clip\'s speed'),
         category: segmentsAndCutpointsCategory,
       },
       addTextOverlay: {
@@ -757,7 +762,7 @@ const KeyboardShortcuts = memo(({
         category: otherCategory,
       },
       toggleFullscreenVideo: {
-        name: 'Toggle full screen video',
+        name: t('Toggle full screen video'),
         category: otherCategory,
       },
       toggleSettings: {
@@ -879,7 +884,8 @@ const KeyboardShortcuts = memo(({
     const keysStr = stringifyKeys(keys);
     console.log('New key binding', action, keysStr);
 
-    const duplicate = keyBindings.find((existingBinding) => existingBinding.keys === keysStr);
+    // The same keys pressed in another order, or with the right-hand Ctrl, are the same shortcut.
+    const duplicate = keyBindings.find((existingBinding) => normalizeBindingKeys(existingBinding.keys) === normalizeBindingKeys(keysStr));
     let shouldReplaceDuplicate: KeyBinding | undefined;
     if (duplicate) {
       const isConfirmed = await confirmDialog({ confirmButtonText: t('Replace'), description: t('These keys already run "{{alreadyBoundKey}}". Use them for this instead?', { alreadyBoundKey: actionsMap[duplicate.action]?.name }) });
@@ -915,7 +921,8 @@ const KeyboardShortcuts = memo(({
               const actionName = (actionObj && actionObj.name) || action;
               const beforeContent = actionObj && actionObj.before;
 
-              const bindingsForThisAction = keyBindings.filter((keyBinding) => keyBinding.action === action);
+              // Without the Win-key twins Windows takes for itself (as Settings shows them).
+              const bindingsForThisAction = getShownBindings(keyBindings).filter((keyBinding) => keyBinding.action === action);
 
               return (
                 <div key={action} className={styles['row']}>
@@ -997,6 +1004,7 @@ function Essentials({ keyBindings }: { keyBindings: KeyBinding[] }) {
       title: t('Editing'),
       items: [
         { label: t('Add text'), actions: ['addTextOverlay'] },
+        { label: t('Change the clip\'s speed'), actions: ['changeCurrentSegmentSpeed'] },
         { label: t('Speed controls'), actions: ['toggleSegmentSpeedControls'] },
         { label: t('Undo / redo'), actions: ['undo', 'redo'] },
         { label: t('Zoom the timeline in / out'), actions: ['timelineZoomIn', 'timelineZoomOut'] },
@@ -1096,7 +1104,14 @@ function KeyboardShortcutsDialog({
   const { t } = useTranslation();
   const { simpleMode } = useUserSettings();
   const [view, setView] = useState<'essentials' | 'all' | undefined>(initialView);
-  const effectiveView = view ?? (simpleMode ? 'essentials' : 'all');
+  // It stays mounted once opened (so it can fade out): each opening starts from the view it's opened with.
+  const [wasShown, setWasShown] = useState(isShown);
+  if (isShown !== wasShown) {
+    setWasShown(isShown);
+    if (isShown) setView(initialView);
+  }
+  // The simple editor shows only its own shortcuts: the full list is LosslessCut's every action, advanced mode's.
+  const effectiveView = simpleMode ? 'essentials' : (view ?? 'all');
 
   const handleTriggerActionClick = useCallback((action: KeyboardAction) => {
     onHide();
@@ -1111,6 +1126,8 @@ function KeyboardShortcutsDialog({
           // Only the list scrolls: the title, the close button and the view switch stay put.
           style={{ width: '44rem', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
           aria-describedby={undefined}
+          // Its own shortcut closes it again (useKeyboard).
+          data-shortcuts-dialog
           // Focus the dialog itself, so it opens without a focus ring on "Essentials". The "All shortcuts" view
           // has already focused its search box as it mounted: leave that.
           onOpenAutoFocus={(e) => {
@@ -1122,16 +1139,18 @@ function KeyboardShortcutsDialog({
           <Dialog.Title>{t('Keyboard shortcuts')}</Dialog.Title>
 
           <div className={styles['viewSwitch']}>
-            <SegmentedControl<'essentials' | 'all'>
-              ariaLabel={t('Shortcuts to show')}
-              fullWidth={false}
-              value={effectiveView}
-              onChange={setView}
-              options={[
-                { value: 'essentials', label: t('Essentials') },
-                { value: 'all', label: t('All shortcuts') },
-              ]}
-            />
+            {!simpleMode && (
+              <SegmentedControl<'essentials' | 'all'>
+                ariaLabel={t('Shortcuts to show')}
+                fullWidth={false}
+                value={effectiveView}
+                onChange={setView}
+                options={[
+                  { value: 'essentials', label: t('Essentials') },
+                  { value: 'all', label: t('All shortcuts') },
+                ]}
+              />
+            )}
             <Button variant="ghost" size="sm" onClick={onChangeShortcutsRequested}>{t('Change shortcuts…')}</Button>
           </div>
 

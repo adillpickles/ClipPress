@@ -61,6 +61,44 @@ export function snapCutEnd({ time, clips, currentIndex, distance }: { time: numb
   return nearest(time, clips.flatMap((clip, index) => (index !== currentIndex && clip.start > current.start ? [clip.start] : [])), distance);
 }
 
+/** How close on screen a dragged clip edge must come to another clip's edge to lock onto it (keep dragging to go past). */
+export const dragSnapPx = 8;
+
+/**
+ * While a clip's start or end is dragged: the edge of another clip it would sit back to back with (a start locks onto
+ * an end, an end onto a start) when the pointer is within `distancePx` of it on screen, else undefined. Never one that
+ * would leave the dragged clip empty. The pointer and the edges are measured in one layout, the one the drag turns the
+ * pointer into a time with.
+ */
+export function snapDraggedEdge({ pointerPx, edge, clips, currentIndex, toPx, distancePx = dragSnapPx }: {
+  /** The pointer's place along the timeline, in px from its start. */
+  pointerPx: number,
+  edge: 'start' | 'end',
+  clips: readonly SnapClip[],
+  currentIndex: number,
+  /** Where a time is, in px from the timeline's start (zoom and clip speeds included), in that layout. */
+  toPx: (at: number) => number,
+  distancePx?: number,
+}) {
+  const current = clips[currentIndex];
+  if (current == null) return undefined;
+  const targets = clips.flatMap((clip, index) => {
+    if (index === currentIndex) return [];
+    if (edge === 'start') return clip.end != null && (current.end == null || clip.end < current.end) ? [clip.end] : [];
+    return clip.start > current.start ? [clip.start] : [];
+  });
+  let best: number | undefined;
+  let bestPx = Infinity;
+  targets.forEach((target) => {
+    const px = Math.abs(toPx(target) - pointerPx);
+    if (px <= distancePx && px < bestPx) {
+      best = target;
+      bestPx = px;
+    }
+  });
+  return best;
+}
+
 /**
  * The clip edge (a start or an end) before or after `time`, for Alt+← / →; the recording's start and end count too.
  * Edges within half a frame of `time` are where the playhead already is, so they're passed by.

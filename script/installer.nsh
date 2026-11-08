@@ -2,11 +2,189 @@
 !include FileFunc.nsh
 !include TextFunc.nsh
 
-; Present only after an NSIS install, never in a portable or win-unpacked build.
+; ClipPress is offered in Explorer's "Open with" for the video and sound files it's for, under file classes of its own,
+; and never takes a file type's default app. (Before Beta 6.1 the installer made it the default app for 80 types under
+; the shared class names "Video" and "Audio", and uninstalling left those types pointing at nothing.)
+!macro clippressRegisterClass CLASS NAME
+  WriteRegStr SHELL_CONTEXT "Software\Classes\${CLASS}" "" "${NAME}"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\${CLASS}\DefaultIcon" "" "$INSTDIR\${APP_EXECUTABLE_FILENAME},0"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\${CLASS}\shell\open\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "%1"'
+!macroend
+
+!macro clippressOfferFileTypes
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.mp4\OpenWithProgids" "ClipPress.Video"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.m4v\OpenWithProgids" "ClipPress.Video"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.mov\OpenWithProgids" "ClipPress.Video"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.mkv\OpenWithProgids" "ClipPress.Video"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.webm\OpenWithProgids" "ClipPress.Video"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.avi\OpenWithProgids" "ClipPress.Video"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.wmv\OpenWithProgids" "ClipPress.Video"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.flv\OpenWithProgids" "ClipPress.Video"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.ts\OpenWithProgids" "ClipPress.Video"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.m2ts\OpenWithProgids" "ClipPress.Video"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.mts\OpenWithProgids" "ClipPress.Video"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.mpg\OpenWithProgids" "ClipPress.Video"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.mpeg\OpenWithProgids" "ClipPress.Video"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.3gp\OpenWithProgids" "ClipPress.Video"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.mp3\OpenWithProgids" "ClipPress.Audio"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.m4a\OpenWithProgids" "ClipPress.Audio"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.wav\OpenWithProgids" "ClipPress.Audio"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.flac\OpenWithProgids" "ClipPress.Audio"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.ogg\OpenWithProgids" "ClipPress.Audio"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.opus\OpenWithProgids" "ClipPress.Audio"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.aac\OpenWithProgids" "ClipPress.Audio"
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.wma\OpenWithProgids" "ClipPress.Audio"
+!macroend
+
+!macro clippressWithdrawFileTypes
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.mp4\OpenWithProgids" "ClipPress.Video"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.m4v\OpenWithProgids" "ClipPress.Video"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.mov\OpenWithProgids" "ClipPress.Video"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.mkv\OpenWithProgids" "ClipPress.Video"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.webm\OpenWithProgids" "ClipPress.Video"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.avi\OpenWithProgids" "ClipPress.Video"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.wmv\OpenWithProgids" "ClipPress.Video"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.flv\OpenWithProgids" "ClipPress.Video"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.ts\OpenWithProgids" "ClipPress.Video"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.m2ts\OpenWithProgids" "ClipPress.Video"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.mts\OpenWithProgids" "ClipPress.Video"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.mpg\OpenWithProgids" "ClipPress.Video"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.mpeg\OpenWithProgids" "ClipPress.Video"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.3gp\OpenWithProgids" "ClipPress.Video"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.mp3\OpenWithProgids" "ClipPress.Audio"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.m4a\OpenWithProgids" "ClipPress.Audio"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.wav\OpenWithProgids" "ClipPress.Audio"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.flac\OpenWithProgids" "ClipPress.Audio"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.ogg\OpenWithProgids" "ClipPress.Audio"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.opus\OpenWithProgids" "ClipPress.Audio"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.aac\OpenWithProgids" "ClipPress.Audio"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.wma\OpenWithProgids" "ClipPress.Audio"
+  DeleteRegKey SHELL_CONTEXT "Software\Classes\ClipPress.Video"
+  DeleteRegKey SHELL_CONTEXT "Software\Classes\ClipPress.Audio"
+!macroend
+
+; A type an older ClipPress made its default, whose class its uninstaller has since removed (an update runs it first):
+; the dangling default goes too, so the type opens with what Windows had before. Kept if the class is still in use.
+!macro clippressForgetOldDefault EXT
+  ReadRegStr $R1 SHELL_CONTEXT "Software\Classes\.${EXT}" ""
+  ${If} $R1 == "Video"
+  ${OrIf} $R1 == "Audio"
+    ClearErrors
+    ; Through the merged view Windows itself resolves (a per-machine app may own the class).
+    ReadRegStr $R2 HKCR "$R1\shell\open\command" ""
+    ${If} ${Errors}
+      DeleteRegValue SHELL_CONTEXT "Software\Classes\.${EXT}" ""
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+!macro clippressForgetOldDefaults
+  Push $R1
+  Push $R2
+  !insertmacro clippressForgetOldDefault "webm"
+  !insertmacro clippressForgetOldDefault "mkv"
+  !insertmacro clippressForgetOldDefault "flv"
+  !insertmacro clippressForgetOldDefault "vob"
+  !insertmacro clippressForgetOldDefault "ogv"
+  !insertmacro clippressForgetOldDefault "drc"
+  !insertmacro clippressForgetOldDefault "gif"
+  !insertmacro clippressForgetOldDefault "gifv"
+  !insertmacro clippressForgetOldDefault "mng"
+  !insertmacro clippressForgetOldDefault "avi"
+  !insertmacro clippressForgetOldDefault "mts"
+  !insertmacro clippressForgetOldDefault "m2ts"
+  !insertmacro clippressForgetOldDefault "ts"
+  !insertmacro clippressForgetOldDefault "mov"
+  !insertmacro clippressForgetOldDefault "qt"
+  !insertmacro clippressForgetOldDefault "wmv"
+  !insertmacro clippressForgetOldDefault "yuv"
+  !insertmacro clippressForgetOldDefault "rm"
+  !insertmacro clippressForgetOldDefault "rmvb"
+  !insertmacro clippressForgetOldDefault "asf"
+  !insertmacro clippressForgetOldDefault "amv"
+  !insertmacro clippressForgetOldDefault "mp4"
+  !insertmacro clippressForgetOldDefault "m4v"
+  !insertmacro clippressForgetOldDefault "mpg"
+  !insertmacro clippressForgetOldDefault "mp2"
+  !insertmacro clippressForgetOldDefault "mpeg"
+  !insertmacro clippressForgetOldDefault "mpe"
+  !insertmacro clippressForgetOldDefault "mpv"
+  !insertmacro clippressForgetOldDefault "m2v"
+  !insertmacro clippressForgetOldDefault "svi"
+  !insertmacro clippressForgetOldDefault "3gp"
+  !insertmacro clippressForgetOldDefault "3g2"
+  !insertmacro clippressForgetOldDefault "mxf"
+  !insertmacro clippressForgetOldDefault "roq"
+  !insertmacro clippressForgetOldDefault "nsv"
+  !insertmacro clippressForgetOldDefault "f4v"
+  !insertmacro clippressForgetOldDefault "f4p"
+  !insertmacro clippressForgetOldDefault "f4a"
+  !insertmacro clippressForgetOldDefault "f4b"
+  !insertmacro clippressForgetOldDefault "aa"
+  !insertmacro clippressForgetOldDefault "aac"
+  !insertmacro clippressForgetOldDefault "aax"
+  !insertmacro clippressForgetOldDefault "act"
+  !insertmacro clippressForgetOldDefault "aiff"
+  !insertmacro clippressForgetOldDefault "alac"
+  !insertmacro clippressForgetOldDefault "amr"
+  !insertmacro clippressForgetOldDefault "ape"
+  !insertmacro clippressForgetOldDefault "au"
+  !insertmacro clippressForgetOldDefault "awb"
+  !insertmacro clippressForgetOldDefault "dct"
+  !insertmacro clippressForgetOldDefault "dss"
+  !insertmacro clippressForgetOldDefault "dvf"
+  !insertmacro clippressForgetOldDefault "flac"
+  !insertmacro clippressForgetOldDefault "gsm"
+  !insertmacro clippressForgetOldDefault "iklax"
+  !insertmacro clippressForgetOldDefault "ivs"
+  !insertmacro clippressForgetOldDefault "m4a"
+  !insertmacro clippressForgetOldDefault "m4b"
+  !insertmacro clippressForgetOldDefault "m4p"
+  !insertmacro clippressForgetOldDefault "mmf"
+  !insertmacro clippressForgetOldDefault "mp3"
+  !insertmacro clippressForgetOldDefault "mpc"
+  !insertmacro clippressForgetOldDefault "msv"
+  !insertmacro clippressForgetOldDefault "nmf"
+  !insertmacro clippressForgetOldDefault "nsf"
+  !insertmacro clippressForgetOldDefault "ogg"
+  !insertmacro clippressForgetOldDefault "oga"
+  !insertmacro clippressForgetOldDefault "mogg"
+  !insertmacro clippressForgetOldDefault "opus"
+  !insertmacro clippressForgetOldDefault "ra"
+  !insertmacro clippressForgetOldDefault "rf64"
+  !insertmacro clippressForgetOldDefault "sln"
+  !insertmacro clippressForgetOldDefault "tta"
+  !insertmacro clippressForgetOldDefault "voc"
+  !insertmacro clippressForgetOldDefault "vox"
+  !insertmacro clippressForgetOldDefault "wav"
+  !insertmacro clippressForgetOldDefault "wma"
+  !insertmacro clippressForgetOldDefault "wv"
+  !insertmacro clippressForgetOldDefault "8svx"
+  !insertmacro clippressForgetOldDefault "cda"
+  Pop $R2
+  Pop $R1
+!macroend
+
 !macro customInstall
+  ; Present only after an NSIS install, never in a portable or win-unpacked build.
   FileOpen $R0 "$INSTDIR\resources\clippress-installed" w
   FileWrite $R0 "nsis"
   FileClose $R0
+
+  !insertmacro clippressForgetOldDefaults
+  !insertmacro clippressRegisterClass "ClipPress.Video" "Video"
+  !insertmacro clippressRegisterClass "ClipPress.Audio" "Audio"
+  !insertmacro clippressOfferFileTypes
+  ; Explorer reads the file types again.
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+!macroend
+
+!macro customUnInstall
+  ; Not for an update: if it fails, the installation it leaves must still open files; one that works registers them again.
+  ${ifNot} ${isUpdated}
+    !insertmacro clippressWithdrawFileTypes
+    System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+  ${endIf}
 !macroend
 
 !macro clippressTwoDigits VAR

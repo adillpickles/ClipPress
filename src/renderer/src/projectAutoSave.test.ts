@@ -133,7 +133,7 @@ describe('ProjectAutoSave', () => {
     expect(t.writes).toEqual([]);
   });
 
-  // Re-audit finding 2: no save had finished in this open, but the project file exists.
+  // No save had finished in this open, but the project file exists.
   it('saves a loaded project cleared before its first save', async () => {
     const t = setup();
     t.show({ id: 1, loadedProjectPath: path }, withText);
@@ -199,7 +199,6 @@ describe('ProjectAutoSave', () => {
     expect(t.writes).toHaveLength(1);
   });
 
-  // Re-audit finding 1.
   describe('when the file is reopened while a save of the previous open is still writing', () => {
     function editThenReopen() {
       const t = setup({ latencyMs: 1200 });
@@ -319,7 +318,7 @@ describe('ProjectAutoSave before the app closes', () => {
     return flushing;
   }
 
-  // Audit finding 1: an edit made right before closing used to wait for the delay and be lost.
+  // An edit made right before closing used to wait for the delay and be lost.
   it('saves an edit still waiting for the delay, and keeps the file open', async () => {
     const t = setup();
     t.show({ id: 1 }, untouched);
@@ -391,7 +390,7 @@ describe('ProjectAutoSave before the app closes', () => {
     expect(t.disk.get(path)).toEqual(withTrim);
   });
 
-  // PR #56 re-audit finding 1: three rounds used to be the limit, with the last change left unsaved.
+  // Three rounds used to be the limit, with the last change left unsaved.
   it('saves the changes made while it saves, however many, before resolving', async () => {
     const t = setup({ latencyMs: 100 });
     t.show({ id: 1 }, untouched);
@@ -434,7 +433,7 @@ describe('ProjectAutoSave before the app closes', () => {
     expect(t.disk.get(path)?.overlayClips).toEqual([textClip]);
   });
 
-  // PR #56 re-audit finding 4: a failure reported by onError before closing used to be forgotten.
+  // A failure reported by onError before closing used to be forgotten.
   describe('a final save that failed before the app closes', () => {
     function closedWithFailedSave() {
       const t = setup();
@@ -474,7 +473,7 @@ describe('ProjectAutoSave before the app closes', () => {
     });
   });
 
-  // PR #56 re-audit finding 3: a later flush used to write the earlier open's state over the
+  // A later flush used to write the earlier open's state over the
   // reopened file, while the reopened session still believed the file held what it had loaded.
   describe('when a file whose save failed is opened again', () => {
     async function failedThenReopened({ diskWorksBeforeReopen }: { diskWorksBeforeReopen: boolean }) {
@@ -536,7 +535,7 @@ describe('ProjectAutoSave before the app closes', () => {
       expect(t.disk.has(path)).toBe(false);
     });
 
-    // PR #56 re-audit 3: what the ordering of opens guarantees (whenSaved before reading) is also
+    // What the ordering of opens guarantees (whenSaved before reading) is also
     // enforced when a save runs, so a save of an older open never lands on a file a newer one read.
     it('does not write a save of the earlier open that had not started when the file was reopened', async () => {
       const t = setup({ latencyMs: 300 });
@@ -552,7 +551,7 @@ describe('ProjectAutoSave before the app closes', () => {
     });
   });
 
-  // PR #56 re-audit 2 finding 2: ownership went by how a path was written, so opening the same
+  // Ownership went by how a path was written, so opening the same
   // file through a path written differently (another case, on Windows) did not supersede an
   // earlier open's failed save, which closing the app then wrote over the newer project.
   describe('when the same project file is reached through a path written differently', () => {
@@ -661,9 +660,9 @@ describe('ProjectAutoSave before the app closes', () => {
     });
   });
 
-  // PR #56 re-audit 2 finding 3: the clean-up after an export forgot a failed save before it
+  // The clean-up after an export forgot a failed save before it
   // deleted the project file, so a deletion that failed or was cancelled lost the failed changes.
-  // Re-audit 3 finding 4: a try queued by closing the app while the clean-up deleted the file, or
+  // A try queued by closing the app while the clean-up deleted the file, or
   // checked that it was gone, wrote it again afterwards. Deleting now runs between saves.
   describe('a project file that the clean-up after an export deletes', () => {
     async function closedWithFailedSave(t: ReturnType<typeof setup>) {
@@ -837,7 +836,7 @@ describe('ProjectAutoSave before the app closes', () => {
     });
   });
 
-  // PR #56 re-audit 3 finding 2: a path whose folder could not be resolved kept the key it got as
+  // A path whose folder could not be resolved kept the key it got as
   // written, so a failed save made while a network drive was reconnecting never met a newer open
   // of the same file through another of its paths, and closing the app wrote it over that open.
   describe('when a path to the project file could not be resolved for a while', () => {
@@ -1010,7 +1009,7 @@ describe('ProjectAutoSave before the app closes', () => {
     expect(t.errors).toHaveLength(1);
   });
 
-  // What keeps the window from closing on a change accepted after `flush` resolved (re-audit finding 1).
+  // What keeps the window from closing on a change accepted after `flush` resolved.
   describe('hasUnsavedChanges', () => {
     it('is true while a change waits, while it is written, and after a failed save', async () => {
       const t = setup({ latencyMs: 200 });
@@ -1156,7 +1155,7 @@ describe('ProjectAutoSave before the app closes', () => {
       expect(t.disk.get(beside)).toEqual(withTrim);
     });
 
-    // Review finding R2-3: the copy next to the recording failing read as the edits not being saved.
+    // The copy next to the recording failing used to read as the edits not being saved.
     describe('when only the copy cannot be written', () => {
       it('warns about the copy once, not as a failed save, while it keeps failing', async () => {
         const t = setup();

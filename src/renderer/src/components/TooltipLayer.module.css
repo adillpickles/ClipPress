@@ -41,8 +41,6 @@
   to { opacity: 1; transform: none; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .bubble {
-    animation: none;
-  }
+:global(html.reduce-motion) .bubble {
+  animation: none;
 }

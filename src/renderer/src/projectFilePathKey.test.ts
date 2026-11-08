@@ -48,7 +48,7 @@ describe('createProjectFilePathKey on Windows', () => {
     expect(keyOf(String.raw`D:\Videos\clip-proj.llc`).resolved).toBe(true);
   });
 
-  // PR #56 re-audit 3 finding 2: a key made while the folder could not be resolved was kept for good.
+  // A key made while the folder could not be resolved was kept for good.
   it('resolves a path again once its folder can be resolved, rather than keep the key as written', () => {
     const resolvable = { value: false };
     const keyOfLink = createProjectFilePathKey({ path: win32, caseInsensitive: true, realpath: () => (resolvable.value ? String.raw`D:\Real` : missing()) });

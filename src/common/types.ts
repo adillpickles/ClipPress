@@ -1,6 +1,6 @@
 import type { SupportedLanguage } from './i18n.ts';
 
-export type KeyboardAction = 'addSegment' | 'togglePlayResetSpeed' | 'togglePlayNoResetSpeed' | 'reducePlaybackRate' | 'reducePlaybackRateMore' | 'increasePlaybackRate' | 'increasePlaybackRateMore' | 'timelineToggleComfortZoom' | 'seekPreviousFrame' | 'seekNextFrame' | 'captureSnapshot' | 'captureSnapshotToClipboard' | 'setCutStart' | 'setCutEnd' | 'removeCurrentSegment' | 'removeCurrentCutpoint' | 'cleanupFilesDialog' | 'splitCurrentSegment' | 'focusSegmentAtCursor' | 'selectSegmentsAtCursor' | 'increaseRotation' | 'goToTimecode' | 'seekBackwards' | 'seekBackwards2' | 'seekBackwards3' | 'seekBackwardsPercent' | 'seekBackwardsPercent' | 'seekBackwardsKeyframe' | 'jumpCutStart' | 'seekForwards' | 'seekForwards2' | 'seekForwards3' | 'seekForwardsPercent' | 'seekForwardsPercent' | 'seekForwardsKeyframe' | 'jumpCutEnd' | 'jumpTimelineStart' | 'jumpTimelineEnd' | 'jumpFirstSegment' | 'jumpPrevSegment' | 'jumpSeekFirstSegment' | 'jumpSeekPrevSegment' | 'timelineZoomIn' | 'timelineZoomIn' | 'batchPreviousFile' | 'jumpLastSegment' | 'jumpNextSegment' | 'jumpSeekLastSegment' | 'jumpSeekNextSegment' | 'timelineZoomOut' | 'timelineZoomOut' | 'batchNextFile' | 'batchOpenSelectedFile' | 'batchOpenPreviousFile' | 'batchOpenNextFile' | 'undo' | 'undo' | 'redo' | 'redo' | 'copySegmentsToClipboard' | 'copySegmentsToClipboard' | 'toggleFullscreenVideo' | 'labelCurrentSegment' | 'export' | 'toggleKeyboardShortcuts' | 'increaseVolume' | 'decreaseVolume' | 'toggleMuted' | 'detectBlackScenes' | 'detectSilentScenes' | 'detectSceneChanges' | 'toggleLastCommands' | 'play' | 'pause' | 'reloadFile' | 'html5ify' | 'makeCursorTimeZero' | 'togglePlayOnlyCurrentSegment' | 'toggleLoopOnlyCurrentSegment' | 'toggleLoopStartEndOnlyCurrentSegment' | 'togglePlaySelectedSegments' | 'toggleLoopSelectedSegments' | 'editCurrentSegmentTags' | 'duplicateCurrentSegment' | 'reorderSegsByStartTime' | 'invertAllSegments' | 'fillSegmentsGaps' | 'shiftAllSegmentTimes' | 'alignSegmentTimesToKeyframes' | 'readAllKeyframes' | 'createSegmentsFromKeyframes' | 'createFixedDurationSegments' | 'createNumSegments' | 'createFixedByteSizedSegments' | 'createRandomSegments' | 'shuffleSegments' | 'combineOverlappingSegments' | 'combineSelectedSegments' | 'clearSegments' | 'toggleSegmentsList' | 'selectOnlyCurrentSegment' | 'deselectAllSegments' | 'selectAllSegments' | 'toggleCurrentSegmentSelected' | 'invertSelectedSegments' | 'removeSelectedSegments' | 'toggleStreamsSelector' | 'extractAllStreams' | 'showStreamsSelector' | 'showIncludeExternalStreamsDialog' | 'captureSnapshotAsCoverArt' | 'extractCurrentSegmentFramesAsImages' | 'extractSelectedSegmentsFramesAsImages' | 'convertFormatBatch' | 'convertFormatCurrentFile' | 'fixInvalidDuration' | 'closeBatch' | 'concatBatch' | 'toggleKeyframeCutMode' | 'toggleCaptureFormat' | 'toggleStripAudio' | 'toggleStripVideo' | 'toggleStripSubtitle' | 'toggleStripThumbnail' | 'toggleStripCurrentFilter' | 'toggleStripAll' | 'toggleDarkMode' | 'setStartTimeOffset' | 'toggleWaveformMode' | 'toggleShowThumbnails' | 'toggleShowKeyframes' | 'toggleSettings' | 'openSendReportDialog' | 'openFilesDialog' | 'openDirDialog' | 'exportYouTube' | 'closeCurrentFile' | 'quit' | 'selectAllMarkers' | 'generateOverviewWaveform' | 'selectSegmentsByLabel' | 'selectSegmentsByExpr' | 'labelSelectedSegments' | 'mutateSegmentsByExpr' | 'toggleSegmentSpeedControls' | 'addTextOverlay' | 'editCurrentSegmentCrop' | 'quickExport' | 'quickExportPreset1' | 'quickExportPreset2' | 'quickExportPreset3' | 'quickExportPreset4' | 'quickExportPreset5' | 'quickExportPreset6' | 'quickExportPreset7' | 'quickExportPreset8' | 'quickExportPreset9' | 'removeSelectedClips' | 'startOver';
+export type KeyboardAction = 'addSegment' | 'togglePlayResetSpeed' | 'togglePlayNoResetSpeed' | 'reducePlaybackRate' | 'reducePlaybackRateMore' | 'increasePlaybackRate' | 'increasePlaybackRateMore' | 'timelineToggleComfortZoom' | 'seekPreviousFrame' | 'seekNextFrame' | 'captureSnapshot' | 'captureSnapshotToClipboard' | 'setCutStart' | 'setCutEnd' | 'removeCurrentSegment' | 'removeCurrentCutpoint' | 'cleanupFilesDialog' | 'splitCurrentSegment' | 'focusSegmentAtCursor' | 'selectSegmentsAtCursor' | 'increaseRotation' | 'goToTimecode' | 'seekBackwards' | 'seekBackwards2' | 'seekBackwards3' | 'seekBackwardsPercent' | 'seekBackwardsPercent' | 'seekBackwardsKeyframe' | 'jumpCutStart' | 'seekForwards' | 'seekForwards2' | 'seekForwards3' | 'seekForwardsPercent' | 'seekForwardsPercent' | 'seekForwardsKeyframe' | 'jumpCutEnd' | 'jumpTimelineStart' | 'jumpTimelineEnd' | 'jumpFirstSegment' | 'jumpPrevSegment' | 'jumpSeekFirstSegment' | 'jumpSeekPrevSegment' | 'timelineZoomIn' | 'timelineZoomIn' | 'batchPreviousFile' | 'jumpLastSegment' | 'jumpNextSegment' | 'jumpSeekLastSegment' | 'jumpSeekNextSegment' | 'timelineZoomOut' | 'timelineZoomOut' | 'batchNextFile' | 'batchOpenSelectedFile' | 'batchOpenPreviousFile' | 'batchOpenNextFile' | 'undo' | 'undo' | 'redo' | 'redo' | 'copySegmentsToClipboard' | 'copySegmentsToClipboard' | 'toggleFullscreenVideo' | 'labelCurrentSegment' | 'export' | 'toggleKeyboardShortcuts' | 'increaseVolume' | 'decreaseVolume' | 'toggleMuted' | 'detectBlackScenes' | 'detectSilentScenes' | 'detectSceneChanges' | 'toggleLastCommands' | 'play' | 'pause' | 'reloadFile' | 'html5ify' | 'makeCursorTimeZero' | 'togglePlayOnlyCurrentSegment' | 'toggleLoopOnlyCurrentSegment' | 'toggleLoopStartEndOnlyCurrentSegment' | 'togglePlaySelectedSegments' | 'toggleLoopSelectedSegments' | 'editCurrentSegmentTags' | 'duplicateCurrentSegment' | 'reorderSegsByStartTime' | 'invertAllSegments' | 'fillSegmentsGaps' | 'shiftAllSegmentTimes' | 'alignSegmentTimesToKeyframes' | 'readAllKeyframes' | 'createSegmentsFromKeyframes' | 'createFixedDurationSegments' | 'createNumSegments' | 'createFixedByteSizedSegments' | 'createRandomSegments' | 'shuffleSegments' | 'combineOverlappingSegments' | 'combineSelectedSegments' | 'clearSegments' | 'toggleSegmentsList' | 'selectOnlyCurrentSegment' | 'deselectAllSegments' | 'selectAllSegments' | 'toggleCurrentSegmentSelected' | 'invertSelectedSegments' | 'removeSelectedSegments' | 'toggleStreamsSelector' | 'extractAllStreams' | 'showStreamsSelector' | 'showIncludeExternalStreamsDialog' | 'captureSnapshotAsCoverArt' | 'extractCurrentSegmentFramesAsImages' | 'extractSelectedSegmentsFramesAsImages' | 'convertFormatBatch' | 'convertFormatCurrentFile' | 'fixInvalidDuration' | 'closeBatch' | 'concatBatch' | 'toggleKeyframeCutMode' | 'toggleCaptureFormat' | 'toggleStripAudio' | 'toggleStripVideo' | 'toggleStripSubtitle' | 'toggleStripThumbnail' | 'toggleStripCurrentFilter' | 'toggleStripAll' | 'toggleDarkMode' | 'setStartTimeOffset' | 'toggleWaveformMode' | 'toggleShowThumbnails' | 'toggleShowKeyframes' | 'toggleSettings' | 'openSendReportDialog' | 'openFilesDialog' | 'openDirDialog' | 'exportYouTube' | 'closeCurrentFile' | 'quit' | 'selectAllMarkers' | 'generateOverviewWaveform' | 'selectSegmentsByLabel' | 'selectSegmentsByExpr' | 'labelSelectedSegments' | 'mutateSegmentsByExpr' | 'toggleSegmentSpeedControls' | 'changeCurrentSegmentSpeed' | 'addTextOverlay' | 'editCurrentSegmentCrop' | 'quickExport' | 'quickExportPreset1' | 'quickExportPreset2' | 'quickExportPreset3' | 'quickExportPreset4' | 'quickExportPreset5' | 'quickExportPreset6' | 'quickExportPreset7' | 'quickExportPreset8' | 'quickExportPreset9' | 'removeSelectedClips' | 'startOver';
 
 export interface KeyBinding {
   keys: string,
@@ -36,11 +36,17 @@ export type SizeLimitControlMode = 'simple' | 'advanced';
 
 export type SizeLimitPreset = 'max_quality' | 'quality' | 'fast';
 
+/**
+ * The codec the size presets make. HEVC plays and saves on every phone; H.264 plays on anything, old PCs included;
+ * AV1 can be a little sharper, but iPhones won't save it to Photos and those before the 15 Pro can't play it.
+ */
+export type SizeLimitVideoFormat = 'hevc' | 'h264' | 'av1';
+
 export type SizeLimitSimpleResolution = 'auto' | 'source' | '720p' | '1080p' | '1440p';
 
 export type SizeLimitSimpleFps = 'auto' | 'source' | '30fps';
 
-export type SizeLimitAdvancedEncoder = 'av1_cpu' | 'av1_nvenc' | 'h264_cpu' | 'h264_nvenc';
+export type SizeLimitAdvancedEncoder = 'av1_cpu' | 'av1_nvenc' | 'hevc_cpu' | 'hevc_nvenc' | 'h264_cpu' | 'h264_nvenc';
 
 export type SizeLimitAdvancedAv1CpuPreset = number;
 
@@ -155,6 +161,10 @@ export interface Config {
   enableAutoHtml5ify: boolean,
   keyBindings: KeyBinding[],
   customFfPath: string | undefined,
+  /** The folder a recorder saves to, whose newest clips the start screen shows (Beta 6.1). */
+  clipsFolder: string | undefined,
+  /** "Not now" on the start screen's offer to show a recorder's folder found on this PC. */
+  clipsFolderOfferDismissed: boolean,
   projectFileLocation: ProjectFileLocation,
   enableOverwriteOutput: boolean,
   mouseWheelZoomModifierKey: ModifierKey,
@@ -175,6 +185,8 @@ export interface Config {
   allowMultipleInstances: boolean,
   darkMode: boolean,
   preferStrongColors: boolean,
+  /** The export card: the clip's pictures (or waveform) as the progress, with sparks or without, or the plain bar. */
+  exportProgressStyle: 'pictures-sparks' | 'pictures' | 'bar',
   outputFileNameMinZeroPadding: number,
   cutFromAdjustmentFrames: number,
   cutToAdjustmentFrames: number,
@@ -192,6 +204,8 @@ export interface Config {
   sizeLimitQuality: SizeLimitQuality,
   sizeLimitControlMode: SizeLimitControlMode,
   sizeLimitPreset: SizeLimitPreset,
+  /** Settings > Export > Video format: what the size presets make. Custom settings choose their own encoder. */
+  sizeLimitVideoFormat: SizeLimitVideoFormat,
   sizeLimitSimpleResolution: SizeLimitSimpleResolution,
   sizeLimitSimpleResolutionTouched: boolean,
   sizeLimitSimpleFps: SizeLimitSimpleFps,
@@ -204,6 +218,9 @@ export interface Config {
   sizeLimitAdvancedAv1NvencPreset: SizeLimitAdvancedNvencPreset,
   sizeLimitAdvancedH264CpuPreset: SizeLimitAdvancedH264CpuPreset,
   sizeLimitAdvancedH264NvencPreset: SizeLimitAdvancedNvencPreset,
+  /** x265 takes x264's preset names. */
+  sizeLimitAdvancedHevcCpuPreset: SizeLimitAdvancedH264CpuPreset,
+  sizeLimitAdvancedHevcNvencPreset: SizeLimitAdvancedNvencPreset,
   sizeLimitSeparateNamingMode: SizeLimitNamingMode,
   sizeLimitMergedNamingMode: SizeLimitNamingMode,
   /**

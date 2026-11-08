@@ -31,6 +31,110 @@
   font-size: 1rem;
 }
 
+/* An update on its way: the one thing to do next, as a plain icon button where the tick is (download, then
+   restart); a soft tint on hover, and while it downloads a ring fills round it. */
+.action {
+  all: unset;
+  position: relative;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--cp-accent-text);
+  font-size: 1.05rem;
+  transition: background-color .15s ease, transform .15s ease;
+}
+
+button.action {
+  cursor: pointer;
+}
+
+button.action:hover {
+  background: var(--cp-accent-soft);
+}
+
+button.action:active {
+  transform: scale(.94);
+}
+
+button.action:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
+.ring {
+  position: absolute;
+  inset: -3px;
+  width: calc(100% + 6px);
+  height: calc(100% + 6px);
+  transform: rotate(-90deg);
+}
+
+.ringTrack,
+.ringFill {
+  fill: none;
+  stroke-width: 2.5;
+}
+
+.ringTrack {
+  stroke: var(--cp-line);
+}
+
+.ringFill {
+  stroke: var(--cp-accent);
+  stroke-linecap: round;
+  transition: stroke-dashoffset .3s ease-out;
+}
+
+.message {
+  min-width: 0;
+}
+
+/* "What's new": a quiet link to the release, after the sentence. */
+.whatsNew {
+  all: unset;
+  display: block;
+  margin-top: .15rem;
+  color: var(--cp-accent-text);
+  font-size: .8125rem;
+  cursor: pointer;
+}
+
+.whatsNew:hover {
+  text-decoration: underline;
+}
+
+.whatsNew:focus-visible {
+  border-radius: 4px;
+  box-shadow: var(--cp-focus-ring);
+}
+
+.toastDismiss {
+  all: unset;
+  flex-shrink: 0;
+  align-self: flex-start;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin: -.2rem -.35rem 0 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--cp-radius-sm);
+  color: var(--cp-text-subtle);
+  cursor: pointer;
+}
+
+.toastDismiss:hover {
+  background: var(--cp-hover);
+  color: var(--cp-text);
+}
+
+.toastDismiss:focus-visible {
+  box-shadow: var(--cp-focus-ring);
+}
+
 .card {
   width: 15rem;
   padding: .8rem .9rem .85rem;

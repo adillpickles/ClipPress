@@ -3,16 +3,18 @@ process.traceProcessWarnings = true;
 
 /* eslint-disable import/first */
 // eslint-disable-next-line import/no-extraneous-dependencies
-import electron, { BrowserWindow, type BrowserWindowConstructorOptions, nativeTheme, shell, app, ipcMain, Notification, type NotificationConstructorOptions } from 'electron';
+import electron, { BrowserWindow, type BrowserWindowConstructorOptions, nativeTheme, shell, app, ipcMain, Notification, type NotificationConstructorOptions, clipboard } from 'electron';
 import i18n from 'i18next';
 import debounce from 'lodash.debounce/index.js';
 import yargsParser from 'yargs-parser';
 import JSON5 from 'json5';
 import remote from '@electron/remote/main/index.js';
 import { stat } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import assert from 'node:assert';
 import timers from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { resolve as resolvePath } from 'node:path';
 import electronUnhandled from 'electron-unhandled';
 import type { Asyncify } from 'type-fest';
 import mitt from 'mitt';
@@ -30,10 +32,11 @@ import './i18n.js';
 import type { ApiActionRequest, Config } from '../common/types.js';
 import { isSafeKey } from './objectKeys.js';
 import { isAllowedAppNavigation, isExternallyOpenableUrl } from './navigation.js';
+import { getInstallationDir } from './installation.js';
 import * as ffmpeg from './ffmpeg.js';
 import * as compatPlayer from './compatPlayer.js';
 import { canCopyFiles, copyFilesToClipboard, startFileDrag, warmCopyHelper } from './fileClipboard.js';
-import { forgetEncoderCheck, getGpuVendors, readSavedEncoderCheck, saveEncoderCheck } from './encoderCheck.js';
+import { forgetEncoderCheck, getGpuAdapterVendors, readSavedEncoderCheck, saveEncoderCheck } from './encoderCheck.js';
 import { downloadMediaUrl } from './ffmpeg.js';
 import type UpdateController from './updateController.js';
 import type { UpdateStatus } from '../common/updates.js';
@@ -48,9 +51,14 @@ electronUnhandled({ showDialog: true, logger: (err) => logger.error('electron-un
 // https://peter.sh/experiments/chromium-command-line-switches/
 // https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/platform/runtime_enabled_features.json5
 app.commandLine.appendSwitch('enable-blink-features', 'AudioVideoTracks');
+// OS media keys and the media session don't work with our player (they play a single frame), and would show an empty
+// entry in the OS media controls, so turn them off (LosslessCut #3028).
+// appendSwitch replaces any value already given, e.g. on the command line, so keep it
+app.commandLine.appendSwitch('disable-features', [app.commandLine.getSwitchValue('disable-features'), 'HardwareMediaKeyHandling', 'MediaSessionService'].filter(Boolean).join(','));
 // Windows 11's thin scroll bars, shown while scrolling and without arrows, wherever the app doesn't draw its own (the
-// open list of a dropdown, which can't be styled).
-if (isWindows) app.commandLine.appendSwitch('enable-features', 'FluentOverlayScrollbar');
+// open list of a dropdown, which can't be styled). Chromium 146 folded FluentOverlayScrollbar into OverlayScrollbar,
+// which also follows Windows' "Always show scrollbars". Merged with what's there, as appendSwitch replaces it.
+if (isWindows) app.commandLine.appendSwitch('enable-features', [app.commandLine.getSwitchValue('enable-features'), 'OverlayScrollbar'].filter(Boolean).join(','));
 
 remote.initialize();
 
@@ -58,10 +66,10 @@ remote.initialize();
 app.name = appName;
 
 if (isWindows) {
-  // in order to set the title on OS notifications on Windows, this needs to be set to app.name
-  // https://github.com/mifi/lossless-cut/pull/2139
+  // An installed copy takes the id its Start menu and desktop shortcuts carry (the appId), so a pinned ClipPress is
+  // the button that lights up and notifications show its icon. A portable copy has no shortcut: its name titles them.
   // https://stackoverflow.com/a/65863174/6519037
-  app.setAppUserModelId(app.name);
+  app.setAppUserModelId(getInstallationDir() != null ? 'com.clippress.app' : app.name);
 }
 
 let filesToOpen: string[] = [];
@@ -185,7 +193,8 @@ async function onAwaitAppEvent(awaitEventName: string, signal: AbortSignal) {
 
 // https://github.com/electron/electron/issues/526#issuecomment-563010533
 function getSavedBounds() {
-  const bounds = configStore.get('windowBounds');
+  // With "Remember window size and position" off, the last saved place isn't used either.
+  const bounds = configStore.get('storeWindowBounds') ? configStore.get('windowBounds') : undefined;
   const options: BrowserWindowConstructorOptions = {};
   const primaryWorkArea = electron.screen.getPrimaryDisplay().workArea;
   if (bounds) {
@@ -213,6 +222,21 @@ function getSavedBounds() {
     options,
     isMaximized: bounds != null ? bounds.isMaximized : false,
   };
+}
+
+let preloaded = false;
+/**
+ * What the first FFmpeg run, the file log and the first MP4 open need, but not the window: loaded once the page has
+ * loaded, so it doesn't hold up the page's own start (which waits on this process for its synchronous calls). Every
+ * FFmpeg run awaits execa anyway, and log messages are kept until the file log loads.
+ */
+function preloadAfterFirstPage() {
+  if (preloaded) return;
+  preloaded = true;
+  ffmpeg.loadExeca().catch((err: unknown) => logger.error('Failed to load execa', err));
+  loadFileLogger().catch((err: unknown) => logger.error('Failed to load the file log', err));
+  // Every MP4 open asks it before its first picture: loaded now, not on the first open.
+  import('file-type/node').catch((err: unknown) => logger.warn('Failed to load file-type', err));
 }
 
 function createWindow() {
@@ -274,9 +298,11 @@ function createWindow() {
     event.preventDefault();
   });
 
-  if (isDev) mainWindow.loadURL('http://localhost:3001');
+  // A load cut short (a quick close) is only logged, not shown as an error dialog.
+  const logLoadError = (err: unknown) => logger.warn('The page did not finish loading', err);
+  if (isDev) mainWindow.loadURL('http://localhost:3001').catch(logLoadError);
   // Need to useloadFile for special characters https://github.com/mifi/lossless-cut/issues/40
-  else mainWindow.loadFile('out/renderer/index.html');
+  else mainWindow.loadFile('out/renderer/index.html').catch(logLoadError);
 
   // Open the DevTools.
   // mainWindow.webContents.openDevTools()
@@ -305,7 +331,7 @@ function createWindow() {
     confirm: async () => {
       const { response } = await electron.dialog.showMessageBox(window, {
         type: 'question',
-        buttons: ['Yes', 'No'],
+        buttons: [i18n.t('Quit'), i18n.t('Cancel')],
         defaultId: 0,
         cancelId: 1,
         title: i18n.t('Confirm quit'),
@@ -315,6 +341,8 @@ function createWindow() {
     },
     canAskRenderer: () => rendererReady && !window.webContents.isDestroyed() && !window.webContents.isCrashed(),
     askRenderer: (id) => window.webContents.send('close-requested', id),
+    // A Restart whose close was called off doesn't restart at a later quit.
+    onCancelled: () => { getAutoUpdates().then((updates) => updates.cancelRestart()).catch(() => undefined); },
     showNotResponding: async (signal, reason) => {
       logger.warn('Offering to quit without saving', { reason });
       const { response } = await electron.dialog.showMessageBox(window, {
@@ -393,9 +421,17 @@ function createWindow() {
 // The renderer reports the interface mode (setSimpleMode); until then, the one the saved settings give.
 let menuSimpleMode: boolean | undefined;
 
+// What the menu was last built from: the page re-sends the language and mode it started with, which needn't build it
+// (and have the title bar read it) again.
+let builtMenuKey: string | undefined;
+
 function updateMenu() {
   assert(mainWindow);
-  menu({ app, mainWindow, newVersion, isStoreBuild, simpleMode: menuSimpleMode ?? getEffectiveSimpleMode({ enableAdvancedMode: configStore.get('enableAdvancedMode'), simpleMode: configStore.get('simpleMode') }), onCheckForUpdates: () => { checkForUpdates().catch((error: unknown) => logger.warn('Update check failed', error)); } });
+  const simpleMode = menuSimpleMode ?? getEffectiveSimpleMode({ enableAdvancedMode: configStore.get('enableAdvancedMode'), simpleMode: configStore.get('simpleMode') });
+  const key = JSON.stringify([mainWindow.id, i18n.language, simpleMode, newVersion ?? null]);
+  if (key === builtMenuKey) return;
+  builtMenuKey = key;
+  menu({ app, mainWindow, newVersion, isStoreBuild, simpleMode, onCheckForUpdates: () => { checkForUpdates().catch((error: unknown) => logger.warn('Update check failed', error)); } });
 }
 
 async function changeLanguage(language: string | null) {
@@ -411,7 +447,8 @@ async function changeLanguage(language: string | null) {
 
 function openFilesEventually(paths: string[]) {
   if (rendererReady) openFiles(paths);
-  else filesToOpen = paths;
+  // Several files opened from Explorer arrive one launch each: keep them all.
+  else filesToOpen = [...new Set([...filesToOpen, ...paths])];
 }
 
 // https://github.com/electron/electron/issues/3657
@@ -507,7 +544,7 @@ async function init() {
     // However when users start your app in command line, the system's single instance mechanism will be bypassed, and you have to use this method to ensure single instance.
     // This can be tested with one terminal: npx electron .
     // and another terminal: npx electron . path/to/file.mp4
-    app.on('second-instance', (_event, _commandLine, _workingDirectory, additionalData) => {
+    app.on('second-instance', (_event, _commandLine, workingDirectory, additionalData) => {
       // Someone tried to run a second instance, we should focus our window.
       if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore();
@@ -520,8 +557,16 @@ async function init() {
 
       logger.info('second-instance', argv2);
 
-      if (argv2['keyboardAction']) sendApiAction(argv2['keyboardAction'], argv2._.map((arg) => JSON.parse(String(arg))));
-      else if (argv2._ && argv2._.length > 0) openFilesEventually(argv2._.map(String));
+      if (argv2['keyboardAction']) {
+        try {
+          sendApiAction(argv2['keyboardAction'], argv2._.map((arg) => JSON.parse(String(arg))));
+        } catch (err) {
+          logger.warn('Ignored a keyboard action with arguments that are not JSON', err);
+        }
+      } else if (argv2._ && argv2._.length > 0) {
+        // A relative path is relative to where that launch started, not to this one.
+        openFilesEventually(argv2._.map((arg) => resolvePath(workingDirectory, String(arg))));
+      }
     });
 
     // Quit when all windows are closed.
@@ -539,7 +584,20 @@ async function init() {
 
     ipcMain.on('renderer-ready', () => {
       rendererReady = true;
+      preloadAfterFirstPage();
       if (filesToOpen.length > 0) openFiles(filesToOpen);
+      // An installed copy cleans up after its last update (updaterCache.ts) a moment after the start, whether or not
+      // it checks for updates.
+      // Only an installed copy: a portable one shares the folder and mustn't delete the installed copy's update.
+      if (app.isPackaged && isWindows && !isStoreBuild && getInstallationDir() != null) {
+        setTimeout(() => {
+          // Loaded only now: with semver it took ~11 ms of the start, before the window.
+          import('./updaterCache.js')
+            .then(({ cleanUpdaterCacheOnce }) => cleanUpdaterCacheOnce({ resourcesPath: process.resourcesPath, appName: app.getName(), runningVersion: app.getVersion() }))
+            .then((cleaned) => { if (cleaned.length > 0) logger.info('Removed what the last update left behind', cleaned); })
+            .catch(() => undefined);
+        }, 5000).unref();
+      }
       if (!updateCheckScheduled && !disableNetworking && !isStoreBuild && !isDev && configStore.get('enableUpdateCheck')) {
         updateCheckScheduled = true;
         setTimeout(() => {
@@ -594,8 +652,8 @@ async function init() {
     await readyPromise;
 
     logger.info('CLI arguments', argv);
-    // Only if no files to open already (open-file might have already added some files)
-    if (filesToOpen.length === 0) filesToOpen = argv._.map(String);
+    // This launch's own files first, then any that other launches (or open-file) passed on meanwhile.
+    filesToOpen = [...new Set([...argv._.map(String), ...filesToOpen])];
     const { settingsJson } = argv;
 
     ({ disableNetworking } = argv);
@@ -631,9 +689,8 @@ async function init() {
     }
 
     createWindow();
-    // Needed for the first FFmpeg run, but not to show the window.
-    ffmpeg.loadExeca().catch((err: unknown) => logger.error('Failed to load execa', err));
-    loadFileLogger().catch((err: unknown) => logger.error('Failed to load the file log', err));
+    // If the page never says it's ready (it crashed or hung), these still load, so its errors reach the file log.
+    setTimeout(preloadAfterFirstPage, 5000).unref();
     // will also updateMenu and set about panel options
     await changeLanguage(language);
 
@@ -661,7 +718,6 @@ function quitApp() {
   timers.setTimeout(1000).then(() => electron.app.quit());
 }
 
-const hasDisabledNetworking = () => !!disableNetworking;
 
 const setProgressBar = (v: number) => mainWindow?.setProgressBar(v);
 
@@ -739,8 +795,20 @@ function clickMenuItem(path: number[]) {
   item.click(undefined, mainWindow ?? undefined, mainWindow?.webContents);
 }
 
+/** NVIDIA's capture settings (ShadowPlay), to find where it saves clips: `reg query` output, or '' when there are none. */
+const queryNvidiaCaptureSettings = () => new Promise<string>((resolve) => {
+  if (!isWindows) {
+    resolve('');
+    return;
+  }
+  // Windows' own reg.exe by its full path: by name, a reg.exe in the current folder could run instead.
+  const regExe = String.raw`${process.env['SystemRoot'] ?? String.raw`C:\Windows`}\System32\reg.exe`;
+  execFile(regExe, ['query', String.raw`HKCU\Software\NVIDIA Corporation\Global\ShadowPlay\NVSPCAPS`, '/v', 'DefaultPathW'], { windowsHide: true, timeout: 5000 }, (error, stdout) => resolve(error != null ? '' : stdout));
+});
+
 const remoteApi = {
   pathExists,
+  queryNvidiaCaptureSettings,
   getMenuBarItems,
   getMenuBarMenu,
   clickMenuItem,
@@ -753,11 +821,14 @@ const remoteApi = {
   sendOsNotification,
   canCopyFiles: () => canCopyFiles,
   copyFilesToClipboard,
+  // Text on the clipboard: the page can't reach it itself since Electron 44.
+  writeClipboardText: (text: string) => clipboard.writeText(text),
+  readClipboardText: () => clipboard.readText(),
   // The page's settings writes: asynchronous, so writing the whole settings file never holds up the page (it did on
   // every open, for the recent files). Ordered with the page's other calls, so a later read sees it.
   setConfig: <T extends keyof Config>(key: T, value: Config[T]) => configStore.set(key, value),
   warmCopyHelper,
-  getGpuVendors,
+  getGpuAdapterVendors,
   readSavedEncoderCheck,
   saveEncoderCheck,
   forgetEncoderCheck,
@@ -768,6 +839,12 @@ const remoteApi = {
   checkForUpdates,
   downloadUpdate,
   approveUpdateInstall,
+  // Closed the usual way (saving edits, asking first if set to), and the update installs once it has.
+  restartToUpdate: async () => {
+    if (!(await getAutoUpdates()).restartToInstall()) return false;
+    mainWindow?.close();
+    return true;
+  },
   acknowledgeAppVersion,
   /** For what the window does in the background and should be in the file log (its own console isn't kept). */
   log: (level: 'info' | 'warn', message: string) => (level === 'warn' ? logger.warn(message) : logger.info(message)),
@@ -793,7 +870,6 @@ const remoteApiLegacy = {
   isDev,
   lossyMode,
   pathToFileURL,
-  hasDisabledNetworking,
 };
 
 export type RemoteApiLegacy = typeof remoteApiLegacy;

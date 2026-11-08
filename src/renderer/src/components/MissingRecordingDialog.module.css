@@ -1,5 +1,5 @@
 .content {
-  width: min(30rem, 92vw);
+  --dialog-width: min(30rem, 92vw);
 }
 
 /* The recording that was looked for: its name, and where it was. */

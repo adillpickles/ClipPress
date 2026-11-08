@@ -98,10 +98,8 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .select::picker(select) {
-      transition: none;
-    }
+  :global(html.reduce-motion) .select::picker(select) {
+    transition: none;
   }
 
   .select option {

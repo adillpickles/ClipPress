@@ -10,6 +10,10 @@ const defaultStrategyArgs = {
   advancedAv1NvencPreset: 'p6',
   advancedH264CpuPreset: 'slow',
   advancedH264NvencPreset: 'p4',
+  advancedHevcCpuPreset: 'fast',
+  advancedHevcNvencPreset: 'p6',
+  // These cases check the AV1 order, as it was before HEVC became the default (that has its own tests).
+  videoFormat: 'av1',
 } as const;
 
 describe('parseFfmpegEncoderNames', () => {
@@ -39,9 +43,10 @@ describe('resolveSizeLimitedStrategy', () => {
       capabilities: fullCapabilities,
     });
 
-    expect(strategy.id).toBe('max_quality_av1_cpu_two_pass');
+    expect(strategy.id).toBe('max_quality_av1_cpu');
     expect(strategy.effectiveCodec).toBe('av1');
     expect(strategy.encoderPreset).toBe(5);
+    // A real two-pass since FFmpeg 8.1.
     expect(strategy.executionMode).toBe('ffmpeg_two_pass');
   });
 
@@ -106,7 +111,7 @@ describe('resolveSizeLimitedStrategy', () => {
     const av1 = resolveFast({ ...noGpu, libx264: true, libsvtav1: true });
     expect(av1.id).toBe('fast_av1_cpu');
     expect(av1.encoder).toBe('libsvtav1');
-    expect(av1.encoderPreset).toBe(10);
+    expect(av1.encoderPreset).toBe(9);
 
     const h264 = resolveFast({ ...noGpu, libx264: true, libsvtav1: false });
     expect(h264.id).toBe('fast_h264_cpu');
@@ -133,6 +138,51 @@ describe('resolveSizeLimitedStrategy', () => {
       expect(strategy.usesGpu).toBe(true);
       expect(strategy.plannerProfileId).toBe(preset === 'fast' ? 'fast_av1_nvenc' : 'quality_av1_nvenc');
     }
+  });
+
+  it('runs SVT-AV1 once where the FFmpeg can’t do its real two-pass (before 8.1)', () => {
+    const resolve = (controlMode: 'simple' | 'advanced', svtTwoPass: boolean | undefined) => resolveSizeLimitedStrategy({
+      controlMode,
+      preset: 'max_quality',
+      advancedEncoder: 'av1_cpu',
+      advancedTwoPass: true,
+      ...defaultStrategyArgs,
+      capabilities: { ...fullCapabilities, svtTwoPass },
+    });
+    expect(resolve('simple', undefined).executionMode).toBe('ffmpeg_two_pass');
+    expect(resolve('simple', true).executionMode).toBe('ffmpeg_two_pass');
+    expect(resolve('simple', false).executionMode).toBe('single_pass');
+    expect(resolve('advanced', true).executionMode).toBe('ffmpeg_two_pass');
+    expect(resolve('advanced', false).executionMode).toBe('single_pass');
+  });
+
+  it('goes GPU AV1, then GPU HEVC, then CPU AV1 on a strong CPU, then GPU H.264', () => {
+    const resolve = (preset: 'quality' | 'fast', capabilities: SizeLimitedEncoderCapabilities) => resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset,
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities,
+    });
+    // An RTX 30-series card: HEVC and H.264, no AV1.
+    const rtx30 = { ...noGpu, h264Nvenc: true, hevcNvenc: true, libx264: true, libsvtav1: true, cpuThreads: 16 };
+
+    expect(resolve('quality', { ...rtx30, av1Nvenc: true }).encoder).toBe('av1_nvenc');
+    expect(resolve('quality', rtx30)).toMatchObject({ id: 'quality_hevc_gpu', encoder: 'hevc_nvenc', effectiveCodec: 'hevc', usesGpu: true });
+    expect(resolve('quality', { ...rtx30, hevcNvenc: false }).id).toBe('quality_av1_cpu');
+    // CPU AV1 before the card's H.264 from 4 threads; below that, the card's H.264.
+    expect(resolve('quality', { ...rtx30, hevcNvenc: false, cpuThreads: 4 }).id).toBe('quality_av1_cpu');
+    expect(resolve('quality', { ...rtx30, hevcNvenc: false, cpuThreads: 3 }).id).toBe('quality_h264_gpu');
+    expect(resolve('quality', { ...rtx30, hevcNvenc: false, cpuThreads: 2 }).id).toBe('quality_h264_gpu');
+    expect(resolve('fast', rtx30)).toMatchObject({ id: 'fast_hevc_gpu', encoder: 'hevc_nvenc', encoderPreset: 'p4' });
+    expect(resolve('fast', { ...rtx30, hevcNvenc: false }).id).toBe('fast_h264_gpu');
+    // An RX 6000 card, and an older Intel chip.
+    expect(resolve('quality', { ...noGpu, h264Amf: true, hevcAmf: true, libx264: true, libsvtav1: true }).encoder).toBe('hevc_amf');
+    expect(resolve('fast', { ...noGpu, h264Qsv: true, hevcQsv: true, libx264: true, libsvtav1: true }).encoder).toBe('hevc_qsv');
+    // Max quality stays on the CPU's SVT-AV1.
+    expect(resolve('quality', rtx30).hardware).toBe('nvidia');
+    expect(resolveSizeLimitedStrategy({ controlMode: 'simple', preset: 'max_quality', advancedEncoder: 'h264_nvenc', advancedTwoPass: false, ...defaultStrategyArgs, capabilities: rtx30 }).encoder).toBe('libsvtav1');
   });
 
   it('prefers a discrete NVIDIA GPU over an Intel iGPU', () => {
@@ -162,14 +212,14 @@ describe('resolveSizeLimitedStrategy', () => {
     expect(strategy.fallbackReason).toBe('gpu_av1_unavailable');
   });
 
-  it('moves quality to GPU H.264 on a small CPU without GPU AV1', () => {
+  it('moves quality to GPU H.264 on a small CPU (under 4 threads) without GPU AV1', () => {
     const strategy = resolveSizeLimitedStrategy({
       controlMode: 'simple',
       preset: 'quality',
       advancedEncoder: 'h264_nvenc',
       advancedTwoPass: false,
       ...defaultStrategyArgs,
-      capabilities: { ...noGpu, h264Amf: true, libx264: true, libsvtav1: true, cpuThreads: 4 },
+      capabilities: { ...noGpu, h264Amf: true, libx264: true, libsvtav1: true, cpuThreads: 2 },
     });
 
     expect(strategy.id).toBe('quality_h264_gpu');
@@ -264,6 +314,9 @@ describe('resolveSizeLimitedStrategy', () => {
       advancedAv1NvencPreset: 'p5',
       advancedH264CpuPreset: 'slow',
       advancedH264NvencPreset: 'p4',
+      advancedHevcCpuPreset: 'fast',
+      advancedHevcNvencPreset: 'p6',
+      videoFormat: 'av1',
       capabilities: fullCapabilities,
     });
 
@@ -284,6 +337,9 @@ describe('resolveSizeLimitedStrategy', () => {
       advancedAv1NvencPreset: 'p6',
       advancedH264CpuPreset: 'slow',
       advancedH264NvencPreset: 'p4',
+      advancedHevcCpuPreset: 'fast',
+      advancedHevcNvencPreset: 'p6',
+      videoFormat: 'av1',
       capabilities: fullCapabilities,
     });
 
@@ -303,6 +359,9 @@ describe('resolveSizeLimitedStrategy', () => {
       advancedAv1NvencPreset: 'p6',
       advancedH264CpuPreset: 'slow',
       advancedH264NvencPreset: 'p7',
+      advancedHevcCpuPreset: 'fast',
+      advancedHevcNvencPreset: 'p6',
+      videoFormat: 'av1',
       capabilities: fullCapabilities,
     });
 

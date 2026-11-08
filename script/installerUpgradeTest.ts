@@ -115,6 +115,13 @@ async function registryVersion() {
   }
 }
 
+/** A registry value under HKCU\Software\Classes, or undefined when it (or its key) isn't there. */
+async function classesValue(key: string, valueName = '') {
+  // Through .NET: `reg query /ve` prints "(value not set)" for a key without a default, which reads as a value.
+  const output = await powershell(`$k = Get-Item -LiteralPath 'HKCU:\\Software\\Classes\\${key}' -ErrorAction SilentlyContinue; if ($k -and ($k.GetValueNames() -contains '${valueName}')) { 'VALUE:' + [string]$k.GetValue('${valueName}') }`);
+  return output.startsWith('VALUE:') ? output.slice('VALUE:'.length) : undefined;
+}
+
 /** Installer and uninstaller processes, including the copies NSIS runs from temporary folders. */
 async function installerProcesses() {
   const out = await powershell(String.raw`Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(ClipPress-Setup|old-uninstaller|Au_|Un_)' -or $_.Name -eq 'Uninstall ClipPress.exe' } | ForEach-Object { "$($_.ProcessId) $($_.Name)" }`);
@@ -429,6 +436,9 @@ async function main() {
       assert.equal(await registryVersion(), undefined, 'ClipPress is already installed: not a fresh VM');
       assert.equal(existsSync(installDir), false);
       assert.equal(existsSync(settingsDir), false);
+      // What a ClipPress before Beta 6.1 left behind once its uninstaller had run: .mkv pointing at a "Video" class
+      // that's gone.
+      await execFileAsync('reg', ['add', String.raw`HKCU\Software\Classes\.mkv`, '/ve', '/d', 'Video', '/f'], { windowsHide: true });
     });
 
     feed = await startFeed();
@@ -438,6 +448,15 @@ async function main() {
       const installed = await waitForInstalled(a);
       assert.ok(installed.appAsarMatches, 'Installed files are not the built ones');
       assert.ok(existsSync(join(installDir, 'resources', 'clippress-installed')), 'Installer marker missing');
+      // Offered in "Open with", under its own class, without taking any type's default app; the old dangling default
+      // is gone.
+      assert.equal(await classesValue(String.raw`.mp4\OpenWithProgids`, 'ClipPress.Video'), '');
+      assert.equal(await classesValue(String.raw`.mp3\OpenWithProgids`, 'ClipPress.Audio'), '');
+      assert.match(await classesValue(String.raw`ClipPress.Video\shell\open\command`) ?? '', /ClipPress\.exe" "%1"$/);
+      assert.equal(await classesValue('.mp4'), undefined, 'The installer set a default app for .mp4');
+      assert.equal(await classesValue('.mkv'), undefined, 'The old dangling .mkv default is still there');
+      assert.equal(await classesValue(String.raw`.ts\OpenWithProgids`, 'Video'), undefined);
+      assert.equal(await classesValue('Video'), undefined);
       await assertNotRunning();
       return installed;
     });
@@ -809,6 +828,8 @@ async function main() {
       assert.equal(code, 0);
       await waitFor('the uninstaller to finish', async () => (await registryVersion()) == null && (await installerProcesses()).length === 0, 120_000, 2000);
       assert.equal(existsSync(exePath), false);
+      assert.equal(await classesValue('ClipPress.Video'), undefined, 'The file class outlived the uninstall');
+      assert.equal(await classesValue(String.raw`.mp4\OpenWithProgids`, 'ClipPress.Video'), undefined);
       assert.equal((await readSettings())['sizeLimitMb'], reinstallMarker);
       assert.equal(await projectSegments(), segmentsBefore.savedSegments + 3);
     });

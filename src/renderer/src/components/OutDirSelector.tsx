@@ -54,12 +54,11 @@ export default function OutDirSelector({ children }: { children: React.ReactNode
             ))}
           </Select>
 
-          <Dialog.ButtonRow>
-            {history.length > 0 && <DialogButton onClick={() => setRecentCustomOutDirs([])}>{t('Clear list')}</DialogButton>}
-            <Dialog.Close asChild>
-              <DialogButton primary>{t('Done')}</DialogButton>
-            </Dialog.Close>
-          </Dialog.ButtonRow>
+          {history.length > 0 && (
+            <Dialog.ButtonRow>
+              <DialogButton onClick={() => setRecentCustomOutDirs([])}>{t('Clear list')}</DialogButton>
+            </Dialog.ButtonRow>
+          )}
 
           <Dialog.CloseButton />
         </Dialog.Content>

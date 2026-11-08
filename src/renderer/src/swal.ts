@@ -8,6 +8,9 @@ import { emitter as animationsEmitter } from './animations';
 
 export const swalContainerWrapperId = 'swal2-container-wrapper';
 
+// react-icons' FiX, as markup: SweetAlert takes the close button's content as HTML.
+const closeIconSvg = '<svg stroke="currentColor" fill="none" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+
 let Swal: SweetAlert2;
 let toast: SweetAlert2;
 let ReactSwal: SweetAlert2 & ReactSweetAlert;
@@ -29,6 +32,9 @@ function initSwal(reducedMotion = false) {
     }),
     // The main button rightmost, as in the app's own dialogs (Dialog.ButtonRow).
     reverseButtons: true,
+    // The app's own X (CloseButton.tsx), not a text "×" (sized in swal2.scss).
+    closeButtonHtml: closeIconSvg,
+    closeButtonAriaLabel: i18n.t('Close'),
   };
 
   Swal = SwalRaw.mixin({

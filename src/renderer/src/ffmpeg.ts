@@ -21,10 +21,24 @@ import { UnsupportedFileError, UserFacingError } from '../errors';
 import mainApi from './mainApi';
 import { firstShelfThumbnail } from './shelfThumbnails';
 import runCancellable from './util/ffmpegCancel';
+import { loadProbeFromDisk, saveProbe } from './timelineCacheIo';
 
 const { ffmpeg } = window.require('@electron/remote').require('./index.js');
+const { stat } = window.require('fs/promises');
 
-const { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, getFfmpegPath, setCustomFfPath } = ffmpeg;
+const { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, getFfmpegPath, checkFfExists } = ffmpeg;
+
+// ffprobe's path changes only with Settings' FFmpeg folder (setCustomFfPath): asked of main once, not on every open
+// (a blocking call, which waits for main, and main is busiest just as a recording opens).
+let ffprobePath: string | undefined;
+function getFfprobePath(): string {
+  ffprobePath ??= ffmpeg.getFfprobePath();
+  return ffprobePath;
+}
+function setCustomFfPath(path: string | undefined) {
+  ffprobePath = undefined;
+  ffmpeg.setCustomFfPath(path);
+}
 
 type Runners = typeof ffmpeg.runWithCallbacks;
 type RunnerName = Parameters<Runners>[0];
@@ -72,14 +86,20 @@ export function safeCreateBlob(array: Uint8Array, options?: BlobPropertyBag) {
   return new Blob([cloned], options);
 }
 
+/**
+ * Text from FFmpeg's output. It arrives through @electron/remote on a resizable buffer, which TextDecoder refuses
+ * since Chromium 150 (Electron 43): decode a copy.
+ */
+export const decodeText = (array: Uint8Array) => new TextDecoder().decode(new Uint8Array(array));
+
 export function logStdoutStderr({ stdout, stderr }: { stdout: Uint8Array, stderr: Uint8Array }) {
   if (stdout.length > 0) {
     console.log('%cSTDOUT:', 'color: green; font-weight: bold');
-    console.log(new TextDecoder().decode(stdout));
+    console.log(decodeText(stdout));
   }
   if (stderr.length > 0) {
     console.log('%cSTDERR:', 'color: blue; font-weight: bold');
-    console.log(new TextDecoder().decode(stderr));
+    console.log(decodeText(stderr));
   }
 }
 
@@ -114,7 +134,7 @@ export async function readFrames({ filePath, from, to, streamIndex }: {
   const intervalsArgs = from != null && to != null ? ['-read_intervals', `${from}%${to}`] : [];
   const { stdout } = await runFfprobe(['-v', 'error', ...intervalsArgs, '-show_packets', '-select_streams', String(streamIndex), '-show_entries', 'packet=pts_time,flags', '-of', 'json', filePath], { logCli: false });
   const createdAt = new Date();
-  const packetsFiltered: Frame[] = (JSON.parse(new TextDecoder().decode(stdout)).packets as { flags: string, pts_time: string }[])
+  const packetsFiltered: Frame[] = (JSON.parse(decodeText(stdout)).packets as { flags: string, pts_time: string }[])
     .map((p) => ({
       keyframe: p.flags[0] === 'K',
       time: parseFloat(p.pts_time),
@@ -123,6 +143,22 @@ export async function readFrames({ filePath, from, to, streamIndex }: {
     .filter((p) => !Number.isNaN(p.time));
 
   return sortBy(packetsFiltered, 'time');
+}
+
+export interface Packet {
+  streamIndex: number,
+  time: number,
+  size: number,
+  keyframe: boolean,
+}
+
+/** Every stream's packets between two times (from the keyframe before `from`): their time, size and keyframe flag, without decoding. */
+export async function readPackets({ filePath, from, to }: { filePath: string, from: number, to: number }) {
+  const { stdout } = await runFfprobe(['-v', 'error', '-read_intervals', `${from}%${to}`, '-show_entries', 'packet=stream_index,pts_time,size,flags', '-of', 'json', filePath], { logCli: false });
+  const packets = (JSON.parse(decodeText(stdout)).packets ?? []) as { stream_index: number, pts_time?: string, size?: string, flags?: string }[];
+  return packets
+    .map((p): Packet => ({ streamIndex: p.stream_index, time: parseFloat(p.pts_time ?? ''), size: Number(p.size ?? 0), keyframe: p.flags?.[0] === 'K' }))
+    .filter((p) => Number.isFinite(p.time) && Number.isFinite(p.size));
 }
 
 export async function readFramesAroundTime({ filePath, streamIndex, aroundTime, window }: { filePath: string, streamIndex: number, aroundTime: number, window: number }) {
@@ -224,13 +260,13 @@ export function getSafeCutTime(frames: Frame[], cutTime: number, nextMode: boole
   return frames[index - 1]!.time;
 }
 
-export function findNearestKeyFrameTime({ frames, time, direction, fps }: { frames: Frame[], time: number, direction: number, fps: number | undefined }) {
-  const sigma = fps ? (1 / fps) : 0.1;
+// A keyframe exactly at `time` counts as the nearest one, so a clip starting on a keyframe finds that keyframe.
+export function findNearestKeyFrameTime({ frames, time, direction }: { frames: Frame[], time: number, direction: number }) {
   // One pass, no copies or sorting: this runs for every clip, over thousands of frames.
   let nearest: number | undefined;
   let nearestDistance = Infinity;
   for (const f of frames) {
-    if (f.keyframe && (direction > 0 ? f.time > time + sigma : f.time < time - sigma)) {
+    if (f.keyframe && (direction > 0 ? f.time >= time : f.time <= time)) {
       const distance = direction > 0 ? f.time - time : time - f.time;
       if (distance < nearestDistance) {
         nearestDistance = distance;
@@ -424,7 +460,7 @@ export async function readFileFfprobeMeta(filePath: string) {
     let decoded: string | undefined;
     try {
       // https://github.com/mifi/lossless-cut/issues/1342
-      decoded = new TextDecoder().decode(stdout);
+      decoded = decodeText(stdout);
       parsedJson = JSON.parse(decoded);
     } catch {
       console.log('ffprobe stdout:', decoded ?? stdout);
@@ -454,16 +490,47 @@ export type FileFfprobeMeta = Awaited<ReturnType<typeof readFileFfprobeMeta>>;
 // background preparation already probed, or a reopen) skips ffprobe, most of the wait before its first frame.
 const probedRecordings = new Map<string, Promise<FileFfprobeMeta>>();
 const maxProbedRecordings = 8;
+/** Changed whenever what `readFileFfprobeMeta` returns changes, so older saved probes aren't used. */
+const savedProbeVersion = 1;
+
+function isSavedProbe(value: unknown): value is FileFfprobeMeta {
+  if (value == null || typeof value !== 'object') return false;
+  const { format, streams, chapters } = value as Record<string, unknown>;
+  return format != null && typeof format === 'object' && Array.isArray(streams) && Array.isArray(chapters);
+}
+
+/** The probe saved with the timeline cache by an earlier run (same recording, FFmpeg and format), else ffprobe's. */
+// The ffprobe that answers, by path, size and modified time: a replaced one (a new FFmpeg, in place or chosen in
+// Settings) doesn't get an older one's answers.
+const ffprobeIdentities = new Map<string, Promise<string>>();
+function getFfprobeIdentity() {
+  const path = getFfprobePath();
+  let identity = ffprobeIdentities.get(path);
+  if (identity == null) {
+    identity = stat(path).then(({ size, mtimeMs }: { size: number, mtimeMs: number }) => `${path}|${size}|${Math.round(mtimeMs)}`, () => path);
+    ffprobeIdentities.set(path, identity);
+  }
+  return identity;
+}
+
+async function readFileFfprobeMetaSaved(filePath: string, key: string) {
+  const savedKey = `probe-v${savedProbeVersion}|${key}`;
+  const saved = await loadProbeFromDisk(savedKey).catch(() => undefined);
+  if (isSavedProbe(saved)) return saved;
+  const probe = await readFileFfprobeMeta(filePath);
+  saveProbe(savedKey, probe).catch((err: unknown) => console.warn('Could not save the probe', err));
+  return probe;
+}
 
 /** readFileFfprobeMeta, kept for a recording that hasn't changed since (`stats` from a stat of it just now). */
 export async function readFileFfprobeMetaCached(filePath: string, stats: { size: number, mtimeMs: number }) {
-  const key = `${filePath}|${stats.size}|${Math.round(stats.mtimeMs)}`;
+  const key = `${await getFfprobeIdentity()}|${filePath}|${stats.size}|${Math.round(stats.mtimeMs)}`;
   let probing = probedRecordings.get(key);
   if (probing != null) {
     // The most recently used last, so the oldest goes first.
     probedRecordings.delete(key);
   } else {
-    probing = readFileFfprobeMeta(filePath);
+    probing = readFileFfprobeMetaSaved(filePath, key);
     // Only a probe that worked is kept.
     probing.catch(() => { if (probedRecordings.get(key) === probing) probedRecordings.delete(key); });
   }
@@ -517,8 +584,14 @@ export async function renderShelfThumbnail(filePath: string, signal: AbortSignal
     return stdout.length > 0 ? URL.createObjectURL(safeCreateBlob(stdout, { type: 'image/jpeg' })) : undefined;
   };
   // With no keyframe after 1 s (a clip shorter than its keyframe interval, or one keyframe at the start), FFmpeg
-  // fails having found nothing to encode: then the first frame.
-  return firstShelfThumbnail([attempt(['-skip_frame', 'nokey', '-ss', '1']), attempt([])], signal);
+  // fails having found nothing to encode: then the first frame. A recording damaged at the start fails both: then a
+  // frame 80% of the way in (an instant replay's action is near its end anyway).
+  // Its length is read only then.
+  const lateTry = async () => {
+    const duration: number | undefined = await getDuration(filePath);
+    return duration != null && duration > 2 ? attempt(['-ss', (duration * 0.8).toFixed(3)])() : undefined;
+  };
+  return firstShelfThumbnail([attempt(['-skip_frame', 'nokey', '-ss', '1']), attempt([]), lateTry], signal);
 }
 
 export async function extractSubtitleTrack(filePath: string, streamId: number) {
@@ -531,7 +604,7 @@ export async function extractSubtitleTrack(filePath: string, streamId: number) {
   ];
 
   const { stdout } = await runFfmpeg(args);
-  return new TextDecoder().decode(stdout);
+  return decodeText(stdout);
 }
 
 export async function extractSubtitleTrackToSegments(filePath: string, streamId: number) {
@@ -728,12 +801,36 @@ const ffprobeVersionSchema = z.object({
   }),
 });
 
+/** FFmpeg or FFprobe isn't where ClipPress looks for it (e.g. a custom FFmpeg folder without one of them). */
+export class FfExecutableNotFoundError extends Error {
+  readonly path: string;
+
+  constructor(path: string) {
+    super(`Not found: ${path}`);
+    this.name = 'FfExecutableNotFoundError';
+    this.path = path;
+  }
+}
+
+async function assertFfExists(cmd: 'ffmpeg' | 'ffprobe') {
+  try {
+    await checkFfExists(cmd);
+  } catch (err) {
+    // Named after the one that's missing, not always ffmpeg.exe.
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') throw new FfExecutableNotFoundError(cmd === 'ffmpeg' ? getFfmpegPath() : getFfprobePath());
+    throw err;
+  }
+}
+
 export async function runFfmpegStartupCheck() {
+  await assertFfExists('ffmpeg');
+  await assertFfExists('ffprobe');
+
   // will throw if exit code != 0
   const { stderr: ffmpegStderr } = await runFfmpeg(['-f', 'lavfi', '-i', 'nullsrc=s=256x256:d=1', '-f', 'null', '-']);
-  console.log('FFmpeg startup check output:', new TextDecoder().decode(ffmpegStderr));
+  console.log('FFmpeg startup check output:', decodeText(ffmpegStderr));
   const { stdout: ffprobeStout } = await runFfprobe(['-v', '0', '-of', 'json', '-show_program_version']);
-  return ffprobeVersionSchema.parse(JSON.parse(new TextDecoder().decode(ffprobeStout)));
+  return ffprobeVersionSchema.parse(JSON.parse(decodeText(ffprobeStout)));
 }
 
 // https://superuser.com/questions/543589/information-about-ffmpeg-command-line-options

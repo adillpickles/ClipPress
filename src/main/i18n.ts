@@ -1,22 +1,20 @@
 import i18n from 'i18next';
-import Backend from 'i18next-fs-backend';
+import { readFile } from 'node:fs/promises';
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { app } from 'electron';
 
-import { commonI18nOptions, loadPath, addPath } from './i18nCommon.js';
+import { commonI18nOptions, loadPath } from './i18nCommon.js';
+import { getLanguageFromSystem } from '../common/i18n.js';
+import createJsonFileBackend from '../common/i18nJsonBackend.js';
 
 // See also renderer
 
 // https://github.com/i18next/i18next/issues/869
 export default await i18n
-  .use(Backend)
-  .use({ type: 'languageDetector', async: false, detect: () => app.getLocale() })
+  .use(createJsonFileBackend({ loadPath: (lng, ns) => loadPath(lng as Parameters<typeof loadPath>[0], ns), readText: async (path) => readFile(path, 'utf8') }))
+  // Not app.getLocale(): it needs Chromium's language files, and only the English one ships.
+  .use({ type: 'languageDetector', async: false, detect: () => getLanguageFromSystem(app.getPreferredSystemLanguages()) })
   // See also i18next.config.base.ts
   .init({
     ...commonI18nOptions,
-
-    backend: {
-      loadPath,
-      addPath,
-    },
   });

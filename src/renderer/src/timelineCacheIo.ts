@@ -32,7 +32,7 @@ export const getTimelineCacheDir = () => {
 const getCacheDir = getTimelineCacheDir;
 
 /** An entry's file: named by a hash of its key (the key itself, in the file, is checked when it's read). */
-export const getTimelineCacheFileName = (key: string, kind: 'strip' | 'peaks') => `${createHash('sha1').update(key).digest('hex')}.${kind}`;
+export const getTimelineCacheFileName = (key: string, kind: 'strip' | 'peaks' | 'probe') => `${createHash('sha1').update(key).digest('hex')}.${kind}`;
 const getFileName = getTimelineCacheFileName;
 
 /** Deletes what's beyond the cache's limits on disk, and files left half written. */
@@ -155,4 +155,23 @@ export async function loadPeaksFromDisk(key: string): Promise<AudioPeaks | undef
 export async function savePeaks(key: string, peaks: AudioPeaks) {
   peaksMemory.put(key, peaks);
   await writeEntry(getFileName(key, 'peaks'), encodePeaks(key, peaks));
+}
+
+/**
+ * A recording's ffprobe answer (format, streams, chapters), kept so opening it after a restart doesn't wait for ffprobe
+ * again before its first picture. JSON with its key, which must match on reading.
+ */
+export async function loadProbeFromDisk(key: string): Promise<unknown> {
+  const bytes = await readEntry(getFileName(key, 'probe'));
+  if (bytes == null) return undefined;
+  try {
+    const saved = JSON.parse(new TextDecoder().decode(bytes)) as { key?: unknown, probe?: unknown };
+    return saved.key === key ? saved.probe : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function saveProbe(key: string, probe: unknown) {
+  await writeEntry(getFileName(key, 'probe'), new TextEncoder().encode(JSON.stringify({ key, probe })));
 }

@@ -29,6 +29,9 @@
 }
 
 .card {
+  /* Progress comes a few times a second (App.tsx, progressStepMs): the strip and the bar glide from one to the next
+     over the same time, so they move steadily. */
+  --progress-glide: .25s;
   width: min(26rem, calc(100vw - 2rem));
   box-sizing: border-box;
   border-radius: var(--cp-radius-xl);
@@ -43,23 +46,260 @@
   box-shadow: var(--cp-shadow-dialog);
 }
 
+/* Exactly one line high, whatever the line: the lines rolling in and out (the one leaving is lifted out of the flow,
+   so it's positioned against this box) are clipped here and never reach the strip. */
 .title {
+  position: relative;
+  flex: none;
   display: flex;
   align-items: center;
-  min-height: 1.3em;
+  height: 1.3em;
   overflow: hidden;
   color: var(--cp-text);
-  font-size: 1rem;
+  font-size: 1.1875rem;
   font-weight: 700;
   line-height: 1.3;
 }
 
+/* One line, even for a moment while one line rolls into the next (a long translation ends in "…"). */
+.title > span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* What it's doing, under the playful line: clearly the smaller of the two. */
 .detail {
-  color: var(--cp-text-muted);
-  font-size: .8125rem;
+  margin-top: -.3rem;
+  color: var(--cp-text-subtle);
+  font-size: .75rem;
   line-height: 1.45;
   max-width: 100%;
   word-break: break-word;
+}
+
+/* The clip being made (ExportStripView): its pictures dim, lit from the left as the export goes. */
+.frames {
+  position: relative;
+  height: 2.75rem;
+  margin-top: .3rem;
+  border-radius: var(--cp-radius-sm);
+  overflow: hidden;
+  background: var(--cp-hover);
+  --spark-core: color-mix(in srgb, var(--cp-accent) 30%, white);
+  --spark-glow: color-mix(in srgb, var(--cp-accent) 85%, transparent);
+}
+
+.frameRow {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  gap: 2px;
+}
+
+.frameRow img {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  user-select: none;
+}
+
+.framesDim img {
+  filter: grayscale(1) brightness(.42);
+}
+
+/* A sound-only file: its waveform as bars, dim, then in the accent colour where the export has got to. */
+.waveRow {
+  position: absolute;
+  inset: 0 .3rem;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.waveBar {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 2px;
+  background: var(--cp-accent);
+}
+
+.framesDim .waveBar {
+  background: color-mix(in srgb, var(--cp-text-subtle) 40%, transparent);
+}
+
+/* The lit part: a window over the strip sliding open while what's in it slides back the other way, so the pictures
+   stay put. Both are transforms, so the graphics card moves them between progress updates and nothing is redrawn
+   (it was a clip-path, redrawn every frame of its glide). */
+.litWindow,
+.litContent {
+  position: absolute;
+  inset: 0;
+  transition: transform var(--progress-glide) linear;
+}
+
+.litWindow {
+  overflow: hidden;
+}
+
+/* Surges: bands of light running along the lit part into the edge, as the Simple bar's shimmer runs along its fill.
+   One layer, drawn once and only moved. */
+.surges {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -11rem;
+  right: 0;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 7.6rem, rgb(255 255 255 / 34%) 10.3rem, transparent 11rem),
+    repeating-linear-gradient(90deg, transparent 0 6.5rem, color-mix(in srgb, var(--cp-accent) 40%, transparent) 10.2rem, transparent 11rem);
+  animation: surge .8s linear infinite;
+}
+
+@keyframes surge {
+  to { transform: translateX(11rem); }
+}
+
+/* Joined clips: each one's stretch in its timeline colour, faintly. */
+.tint {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  opacity: .2;
+  pointer-events: none;
+}
+
+/* Where the export has got to: the track is the strip's width, moved along by the progress (a transform), with the
+   glowing line at its left end, a trail of light behind it, and sparks flying back off it. */
+.edgeTrack {
+  position: absolute;
+  inset: 0;
+  transition: transform var(--progress-glide) linear;
+}
+
+.trail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 100%;
+  width: 7rem;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--cp-accent) 55%, transparent));
+}
+
+.edgeLine {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: -1.5px;
+  width: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--cp-accent) 55%, white);
+  box-shadow: 0 0 10px 3px color-mix(in srgb, var(--cp-accent) 80%, transparent), 0 0 22px 6px color-mix(in srgb, var(--cp-accent) 30%, transparent);
+  animation: edge-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes edge-pulse {
+  50% { opacity: .75; }
+}
+
+/* Sparks, many and fast. Each .sparks is one moving layer carrying three: itself and two copies drawn as its
+   box-shadows, so twenty-four cost what eight would. */
+.sparks {
+  position: absolute;
+  left: -1.5px;
+  top: var(--y);
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--spark-core);
+  box-shadow:
+    0 0 6px 2px var(--spark-glow),
+    var(--x2) var(--y2) 0 -.5px var(--spark-core), var(--x2) var(--y2) 5px 1px var(--spark-glow),
+    var(--x3) var(--y3) 0 0 var(--spark-core), var(--x3) var(--y3) 6px 2px var(--spark-glow);
+  opacity: 0;
+  animation: spark-fly var(--d) cubic-bezier(.15, .6, .35, 1) var(--delay) infinite;
+}
+
+.sparks:nth-child(1 of .sparks) { --y: 10%; --x2: -6px; --y2: 7px; --x3: -13px; --y3: 2px; --dx: -4.6rem; --dy: -9px; --d: .5s; --delay: 0s; }
+.sparks:nth-child(2 of .sparks) { --y: 62%; --x2: -9px; --y2: -6px; --x3: -4px; --y3: 9px; --dx: -5.4rem; --dy: 7px; --d: .58s; --delay: .07s; }
+.sparks:nth-child(3 of .sparks) { --y: 34%; --x2: -5px; --y2: -8px; --x3: -12px; --y3: 5px; --dx: -3.8rem; --dy: -4px; --d: .44s; --delay: .15s; }
+.sparks:nth-child(4 of .sparks) { --y: 84%; --x2: -7px; --y2: -10px; --x3: -15px; --y3: -3px; --dx: -5rem; --dy: 9px; --d: .62s; --delay: .22s; }
+.sparks:nth-child(5 of .sparks) { --y: 46%; --x2: -11px; --y2: 6px; --x3: -5px; --y3: -7px; --dx: -6rem; --dy: -6px; --d: .54s; --delay: .3s; }
+.sparks:nth-child(6 of .sparks) { --y: 22%; --x2: -4px; --y2: 9px; --x3: -10px; --y3: -5px; --dx: -4.2rem; --dy: 5px; --d: .47s; --delay: .37s; }
+.sparks:nth-child(7 of .sparks) { --y: 74%; --x2: -8px; --y2: 5px; --x3: -14px; --y3: -8px; --dx: -5.6rem; --dy: -8px; --d: .6s; --delay: .45s; }
+.sparks:nth-child(8 of .sparks) { --y: 54%; --x2: -6px; --y2: -9px; --x3: -12px; --y3: 4px; --dx: -4.8rem; --dy: 10px; --d: .5s; --delay: .52s; }
+
+@keyframes spark-fly {
+  0% { opacity: 0; transform: translate(0, 0) scale(1); }
+  10% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.35); }
+}
+
+/* Streaks: thin bolts of light thrown back faster and further than the sparks. */
+.streak {
+  position: absolute;
+  left: -14px;
+  top: var(--y);
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, transparent, var(--spark-core));
+  box-shadow: 0 0 5px 1px var(--spark-glow);
+  transform-origin: 100% 50%;
+  opacity: 0;
+  animation: streak-fly var(--d) cubic-bezier(.2, .7, .3, 1) var(--delay) infinite;
+}
+
+.streak:nth-child(1 of .streak) { --y: 30%; --dx: -7.5rem; --dy: -6px; --r: 4deg; --d: .42s; --delay: .05s; }
+.streak:nth-child(2 of .streak) { --y: 68%; --dx: -8.5rem; --dy: 7px; --r: -5deg; --d: .48s; --delay: .26s; }
+.streak:nth-child(3 of .streak) { --y: 48%; --dx: -7rem; --dy: 2px; --r: -1deg; --d: .4s; --delay: .44s; }
+
+@keyframes streak-fly {
+  0% { opacity: 0; transform: translate(0, 0) rotate(var(--r)) scaleX(.4); }
+  12% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--r)) scaleX(1.6); }
+}
+
+/* Before the first progress: a soft light runs across the dim pictures. */
+.framesSweep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 35%;
+  background: linear-gradient(90deg, transparent 0, rgb(255 255 255 / 16%) 50%, transparent 100%);
+  animation: frames-sweep 1.8s ease-in-out infinite;
+}
+
+@keyframes frames-sweep {
+  from { transform: translateX(-111%); }
+  to { transform: translateX(297%); }
+}
+
+.frames.still .litWindow,
+.frames.still .litContent,
+.frames.still .edgeTrack {
+  transition: none;
+}
+
+.frames.still .edgeLine {
+  animation: none;
+}
+
+.frames.still .framesSweep {
+  animation: none;
+  background: none;
+}
+
+/* The window is minimised or hidden: nothing moves until it's back. */
+.paused,
+.paused *,
+.paused *::after {
+  animation-play-state: paused !important;
 }
 
 .metaRow {
@@ -93,21 +333,32 @@
   background: var(--cp-hover);
 }
 
-/* Bright bands running along the filled part at a steady pace, however full it is: plainly still working. */
+/* The filled part: as wide as the track, slid in from the left (a transform, which the graphics card moves without
+   redrawing). Bright bands run along it at a steady pace, however full it is: plainly still working. */
 .progressFill {
+  position: relative;
   height: 100%;
   border-radius: inherit;
+  overflow: hidden;
   background-color: var(--cp-accent);
+  transition: transform var(--progress-glide) linear;
+}
+
+.progressFill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -260px;
+  right: 0;
   background-image: linear-gradient(90deg, transparent 0, rgb(255 255 255 / 58%) 50px, transparent 100px);
   background-size: 260px 100%;
   background-repeat: repeat-x;
   animation: working-shimmer 1.5s linear infinite;
-  transition: width .18s ease-out;
 }
 
 @keyframes working-shimmer {
-  from { background-position: -260px 0; }
-  to { background-position: 0 0; }
+  to { transform: translateX(260px); }
 }
 
 .actions {
@@ -213,8 +464,11 @@
 }
 
 .progressFill.still {
-  background-image: none;
-  animation: none;
+  transition: none;
+}
+
+.progressFill.still::after {
+  display: none;
 }
 
 .indeterminate.still::after {
@@ -223,15 +477,12 @@
   animation: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .progressFill {
-    background-image: none;
-    animation: none;
-  }
+:global(html.reduce-motion) .progressFill::after {
+  display: none;
+}
 
-  .indeterminate::after {
-    width: 100%;
-    opacity: .55;
-    animation: none;
-  }
+:global(html.reduce-motion) .indeterminate::after {
+  width: 100%;
+  opacity: .55;
+  animation: none;
 }

@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-  schedule:
-    - cron: '0 10 * * *'
   workflow_dispatch:
     inputs:
       tmate_enabled:
@@ -70,6 +68,7 @@ jobs:
             dist/latest.yml
             dist/*.blockmap
           if-no-files-found: error
+          retention-days: 14
 
       # Also after a failed smoke test, to show what the app displayed.
       - name: Upload Windows screenshot artifact
@@ -79,6 +78,7 @@ jobs:
           name: screenshot-windows
           path: screenshot.jpeg
           if-no-files-found: warn
+          retention-days: 14
 
       - name: Publish tagged GitHub release and update feed
         if: env.is_tag == 'true'

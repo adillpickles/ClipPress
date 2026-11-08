@@ -99,12 +99,14 @@
 }
 
 /* A shortcut's key caps sit in the first column; its "Already used by…" question takes a row of its own, so the
-   columns keep their widths. */
-.shortcut {
+   columns keep their widths. Scoped to the list, so it outweighs ShortcutField's own display whatever the CSS order
+   (sharedComponentOverrides.test.ts). */
+.list .shortcut {
   display: contents;
 }
 
-.shortcut [role="alert"] {
+.shortcut [role="alert"],
+.shortcut [role="status"] {
   grid-column: 1 / -1;
   justify-self: end;
 }

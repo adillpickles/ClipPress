@@ -88,6 +88,9 @@
   opacity: 0;
   transform: scale(.9);
   transition: opacity .15s ease, transform .15s ease;
+  /* On its own layer the whole time: the layer is drawn at a rounded position, and leaving it as the grow ended (at
+     `transform: none`) drew the icon a pixel away from where it grew (measured at 100% and 125% scaling). */
+  will-change: transform, opacity;
   pointer-events: none;
 }
 
@@ -95,7 +98,7 @@
 .thumb:focus-visible .copyBadge,
 .thumbCopied .copyBadge {
   opacity: 1;
-  transform: none;
+  transform: scale(1);
 }
 
 /* The copy icon turns into the check: one shrinks and turns away as the other grows in, in one cell. */
@@ -347,7 +350,11 @@
   color: var(--cp-text-muted);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .thumbCopied { animation: none; }
-  .copyIcon, .checkIcon { transition: none; }
+:global(html.reduce-motion) .thumbCopied {
+  animation: none;
+}
+
+:global(html.reduce-motion) .copyIcon,
+:global(html.reduce-motion) .checkIcon {
+  transition: none;
 }

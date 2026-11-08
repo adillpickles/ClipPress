@@ -40,9 +40,10 @@ const defaultMaxEntries = 200;
 const maxPrefetch = 60;
 
 /**
- * The thumbnails for the shelf's folder, kept in memory (blob URLs) and never on disk; the owner disposes of
- * them when the folder changes. Rows that show come first, several at a time. The rest of the folder is made
- * in the background, one at a time and only while nothing is waiting, so it never holds up a row that shows.
+ * Clip thumbnails, kept in memory (blob URLs) and never on disk, the least recently used dropped beyond
+ * `maxEntries` (one store is shared by the clips panel and the start screen's lists: useThumbnailStore). Rows that
+ * show come first, several at a time. The rest of the shelf's folder is made in the background, one at a time and
+ * only while nothing is waiting, so it never holds up a row that shows.
  */
 export default class ShelfThumbnails {
   // Least recently used first.
@@ -148,18 +149,23 @@ export default class ShelfThumbnails {
         if (earlier != null && earlier !== url) this.options.revoke(earlier);
         this.cache.delete(key);
         this.cache.set(key, url ?? null);
-        this.evict();
-        if (this.waitingFor.delete(key)) this.options.onChange();
+        // One dropped to make room may be showing in a list: shown again without it, the row asks for it anew.
+        const evicted = this.evict();
+        if (this.waitingFor.delete(key) || evicted) this.options.onChange();
         this.pump();
       });
   }
 
+  /** True if any were dropped. */
   private evict() {
     const { maxEntries = defaultMaxEntries } = this.options;
+    let evicted = false;
     for (const [key, thumbnail] of this.cache) {
-      if (this.cache.size <= maxEntries) return;
+      if (this.cache.size <= maxEntries) break;
       this.cache.delete(key);
       if (thumbnail != null) this.options.revoke(thumbnail);
+      evicted = true;
     }
+    return evicted;
   }
 }

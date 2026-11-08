@@ -32,6 +32,7 @@ const getContext = () => {
 
 // An element can only ever be wired into one Web Audio graph, so remember it per element.
 const graphs = new WeakMap<HTMLMediaElement, { source: MediaElementAudioSourceNode, gain: GainNode }>();
+let graphCount = 0;
 
 /** Lets a removed <video> (and its source node) be freed. */
 function releaseGraph(video: HTMLMediaElement) {
@@ -40,6 +41,10 @@ function releaseGraph(video: HTMLMediaElement) {
   graph.source.disconnect();
   graph.gain.disconnect();
   graphs.delete(video);
+  graphCount -= 1;
+  // With nothing playing through it, the context's audio thread would keep waking ~100 times a second for the rest of
+  // the session: it rests until a graph needs it again (which resumes it).
+  if (graphCount === 0 && sharedContext?.state === 'running') sharedContext.suspend().catch(() => undefined);
 }
 
 /**
@@ -69,6 +74,7 @@ export default function usePreviewAudioGain(videoRef: RefObject<HTMLVideoElement
       source.connect(gain).connect(context.destination);
       graph = { source, gain };
       graphs.set(video, graph);
+      graphCount += 1;
     }
 
     const { gain } = graph;

@@ -92,11 +92,14 @@ export default function SegmentRetimeBar({ left, width, speed, committedSpeed, o
         <button type="button" className={styles['retimeSpeed']} onClick={(event) => { event.stopPropagation(); openSpeedMenu(event.currentTarget); }} title={overlay ? t('Change speed') : t('Change segment speed')}>
           {Math.round(speed * 100)}%<FaCaretDown size={9} />
         </button>
-        <span className={styles['retimeDuration']}>{overlay ? formatClipLength(outputDuration) : formatTimecode({ seconds: outputDuration, shorten: true })}</span>
+        <span className={styles['retimeDurationSlot']}>
+          <span className={styles['retimeDuration']}>{overlay ? formatClipLength(outputDuration) : formatTimecode({ seconds: outputDuration, shorten: true })}</span>
+        </span>
       </div>
 
-      {isActive && !dragging && !overlay && (
-        <LaneDeleteButton title={t('Remove speed change (back to 100%)')} onDelete={onRemove} style={{ right: 12 }} />
+      {/* The selected clip's band, like a selected text: its X puts the clip back to 100% (Ctrl+Z brings it back). */}
+      {isActive && !dragging && (
+        <LaneDeleteButton title={t('Remove speed change (back to 100%)')} onDelete={onRemove} style={{ right: 12 }} className={overlay ? styles['overlayDelete'] : undefined} />
       )}
 
       <button

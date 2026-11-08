@@ -266,3 +266,23 @@ export function mapLang(lng: ElectronLanguageKey) {
 
   return map[lng] ?? lng;
 }
+
+/**
+ * The user's display language in the form `app.getLocale()` gave and the locales folders are named after, from the
+ * first of `app.getPreferredSystemLanguages()` (BCP 47, e.g. "es-MX", "zh-Hans-CN", "sr-Latn-RS"). getLocale needs
+ * Chromium's own language files, and ClipPress ships only the English one. Chinese keeps its script as a region
+ * (Simplified "zh-CN", Traditional "zh-TW"); another script is dropped, as Chromium does.
+ */
+export function getLanguageFromSystem(preferred: readonly string[]): string {
+  const [first] = preferred;
+  if (first == null || first.trim() === '') return 'en';
+  const [language = 'en', ...rest] = first.split(/[-_]/u);
+  const script = rest.find((part) => part.length === 4);
+  const region = rest.find((part) => part.length === 2 || /^\d{3}$/u.test(part));
+  if (language.toLowerCase() === 'zh') {
+    if (script != null) return script.toLowerCase() === 'hant' ? 'zh-TW' : 'zh-CN';
+    if (region != null && ['TW', 'HK', 'MO'].includes(region.toUpperCase())) return region.toUpperCase() === 'MO' ? 'zh-HK' : `zh-${region.toUpperCase()}`;
+    return 'zh-CN';
+  }
+  return region != null ? `${language.toLowerCase()}-${region.toUpperCase()}` : language.toLowerCase();
+}

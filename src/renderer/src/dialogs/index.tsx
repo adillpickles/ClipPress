@@ -6,6 +6,7 @@ import { FaArrowRight, FaExclamationTriangle, FaInfoCircle, FaQuestionCircle } f
 import pMap from 'p-map';
 
 import { formatDuration } from '../util/duration';
+import { parseRatio } from '../../../common/util';
 import { parseYouTube } from '../edlFormats';
 import { isMasBuild, isWindows, trashFile, unlinkWithRetry } from '../util';
 import type { ParseTimecode } from '../types';
@@ -19,21 +20,45 @@ import type { ProjectSaveFailure } from '../projectAutoSave';
 import type { UserCloseChoice } from '../saveBeforeClose';
 
 const { lstat } = window.require('fs/promises');
-const { basename } = window.require('path');
+const { basename, dirname } = window.require('path');
+const { existsSync } = window.require('fs');
 const remote = window.require('@electron/remote');
-const electron = window.require('electron');
-const { clipboard } = electron;
 const { dialog } = remote;
 
+
+// Since Electron 43 an Open dialog given no folder starts in Downloads, and Windows no longer remembers the last one:
+// remember it here (this window's storage), and the very first time start in Videos, where recorders save.
+const lastDialogDirKey = 'lastDialogDir';
+function getDialogStartDir(): string | undefined {
+  try {
+    const remembered = localStorage.getItem(lastDialogDirKey);
+    if (remembered != null && existsSync(remembered)) return remembered;
+    return remote.app.getPath('videos');
+  } catch {
+    return undefined;
+  }
+}
 
 // https://github.com/mifi/lossless-cut/issues/1495
 export const showOpenDialog = async ({
   filters = isWindows ? [{ name: i18n.t('All Files'), extensions: ['*'] }] : undefined,
   title,
+  defaultPath,
   ...props
-}: Omit<Parameters<typeof dialog.showOpenDialog>[0], 'title'> & { title: string }) => (
-  dialog.showOpenDialog({ ...props, title, ...(filters != null ? { filters } : {}) })
-);
+}: Omit<Parameters<typeof dialog.showOpenDialog>[0], 'title'> & { title: string }) => {
+  const startDir = defaultPath ?? getDialogStartDir();
+  // Owned by the app's window, so it opens over ClipPress (on its monitor), not where Windows last put a picker.
+  const result = await dialog.showOpenDialog(remote.getCurrentWindow(), { ...props, title, ...(startDir != null ? { defaultPath: startDir } : {}), ...(filters != null ? { filters } : {}) });
+  const [picked] = result.filePaths;
+  if (!result.canceled && picked != null) {
+    try {
+      localStorage.setItem(lastDialogDirKey, props.properties?.includes('openDirectory') ? picked : dirname(picked));
+    } catch (err) {
+      console.warn('Could not remember the folder', err);
+    }
+  }
+  return result;
+};
 
 export async function askForYouTubeInput({ fileDuration }: { fileDuration?: number | undefined }) {
   const example = i18n.t('YouTube video description\n00:00 Intro\n00:01 Chapter 2\n00:00:02.123 Chapter 3');
@@ -158,14 +183,21 @@ export async function askForFileOpenAction(inputOptions: Record<string, string>)
   return value;
 }
 
-/** The simple editor's version: open the dropped file or cancel, with the rest under "More options". */
-export async function askForFileOpenChoice({ fileName, extras }: { fileName: string, extras: FileOpenExtra[] }) {
+/**
+ * The simple editor's version: open the dropped file, add it to this recording, or cancel. A small question: its
+ * title is the file's name, it has a quiet Cancel and no close button; Escape and a click outside close it too.
+ */
+export async function askForFileOpenChoice({ fileName, openLabel, extras }: {
+  fileName: string,
+  openLabel?: string,
+  extras: FileOpenExtra[],
+}) {
   let value: string | undefined;
   const swal = getSwal().ReactSwal.fire({
-    title: i18n.t('Open new file'),
     html: (
       <FileOpenChoice
         fileName={fileName}
+        openLabel={openLabel}
         extras={extras}
         onChoose={(key) => {
           value = key;
@@ -175,11 +207,12 @@ export async function askForFileOpenChoice({ fileName, extras }: { fileName: str
     ),
     showCancelButton: false,
     showConfirmButton: false,
-    showCloseButton: true,
+    showCloseButton: false,
     customClass: {
       popup: 'clippress-choice-popup clippress-open-choice',
-      closeButton: 'clippress-choice-close',
     },
+    // Its title is inside the content.
+    didOpen: (popup) => popup.setAttribute('aria-labelledby', 'clippress-open-choice-title'),
   });
   await swal;
   return value;
@@ -213,13 +246,13 @@ export async function showRefuseToOverwrite() {
   });
 }
 
-export async function askForImportChapters() {
+export async function askForImportChapters({ simpleMode = false }: { simpleMode?: boolean } = {}) {
   const { isConfirmed } = await getSwal().Swal.fire({
     icon: 'question',
-    text: i18n.t('This file has embedded chapters. Do you want to import the chapters as cut-segments?'),
+    text: simpleMode ? i18n.t('This recording has chapter marks. Make a clip for each?') : i18n.t('This file has embedded chapters. Do you want to import the chapters as cut-segments?'),
     showCancelButton: true,
-    cancelButtonText: i18n.t('Ignore chapters'),
-    confirmButtonText: i18n.t('Import chapters'),
+    cancelButtonText: simpleMode ? i18n.t('No thanks') : i18n.t('Ignore chapters'),
+    confirmButtonText: simpleMode ? i18n.t('Make clips') : i18n.t('Import chapters'),
   });
 
   return isConfirmed;
@@ -479,8 +512,15 @@ const DifferentFileSuggestion = () => <li><Trans>Try with a <b>Different file</b
 const HelpSuggestion = () => <li><Trans>See <b>Help</b></Trans> menu</li>;
 const ErrorReportSuggestion = () => <li><Trans>If nothing helps, you can send an <b>Error report</b></Trans></li>;
 
+/** The simple editor's: one plain line (the checklist names controls it doesn't have). */
+async function showSimpleExportFailedDialog({ title }: { title: string }) {
+  const { value } = await getSwal().ReactSwal.fire({ title, html: <div>{i18n.t('Something went wrong while exporting. Try again, or send a report so it can be fixed.')}</div>, showConfirmButton: true, showCancelButton: true, cancelButtonText: i18n.t('OK'), confirmButtonText: i18n.t('Report'), reverseButtons: true, focusCancel: true });
+  return value;
+}
+
 // todo Dialog component
-export async function showExportFailedDialog({ fileFormat, safeOutputFileName }: { fileFormat: string | undefined, safeOutputFileName: boolean }) {
+export async function showExportFailedDialog({ fileFormat, safeOutputFileName, simpleMode = false }: { fileFormat: string | undefined, safeOutputFileName: boolean, simpleMode?: boolean }) {
+  if (simpleMode) return showSimpleExportFailedDialog({ title: i18n.t('Could not export this clip') });
   const html = (
     <div style={{ textAlign: 'left' }}>
       <Trans>Try one of the following before exporting again:</Trans>
@@ -503,7 +543,8 @@ export async function showExportFailedDialog({ fileFormat, safeOutputFileName }:
 }
 
 // todo Dialog component
-export async function showConcatFailedDialog({ fileFormat }: { fileFormat: string | undefined }) {
+export async function showConcatFailedDialog({ fileFormat, simpleMode = false }: { fileFormat: string | undefined, simpleMode?: boolean }) {
+  if (simpleMode) return showSimpleExportFailedDialog({ title: i18n.t('Could not join these clips') });
   const html = (
     <div style={{ textAlign: 'left' }}>
       <Trans>Try each of the following before merging again:</Trans>
@@ -543,7 +584,7 @@ export async function openYouTubeChaptersDialog(text: string) {
   });
 
   if (isConfirmed) {
-    clipboard.writeText(text);
+    await mainApi.writeClipboardText(text);
   }
 }
 
@@ -597,8 +638,9 @@ export async function askForPlaybackRate({ detectedFps, outputPlaybackRate }: { 
   function parseValue(v: string) {
     if (v.trim() === '') return 1; // default to 1 if empty
 
-    const newFps = parseFloat(v);
-    if (!Number.isNaN(newFps)) {
+    // allow e.g. 30000/1001, which parseFloat read as 30000 (a 1000 times faster export)
+    const newFps = v.includes('/') ? parseRatio(v) : parseFloat(v);
+    if (newFps != null && !Number.isNaN(newFps) && newFps > 0) {
       return newFps / fps;
     }
     return undefined;

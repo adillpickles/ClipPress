@@ -76,6 +76,8 @@ const defaults: Config = {
   enableAutoHtml5ify: true,
   keyBindings: defaultKeyBindings,
   customFfPath: undefined,
+  clipsFolder: undefined,
+  clipsFolderOfferDismissed: false,
   projectFileLocation: 'app',
   enableOverwriteOutput: true,
   mouseWheelZoomModifierKey: defaultMouseModifierKeys.zoom,
@@ -95,6 +97,7 @@ const defaults: Config = {
   allowMultipleInstances: false,
   darkMode: true,
   preferStrongColors: false,
+  exportProgressStyle: 'pictures-sparks',
   outputFileNameMinZeroPadding: 1,
   cutFromAdjustmentFrames: 0,
   cutToAdjustmentFrames: 0,
@@ -103,7 +106,8 @@ const defaults: Config = {
   waveformMode: undefined,
   thumbnailsEnabled: false,
   keyframesEnabled: true,
-  reducedMotion: 'user',
+  // Off unless turned on in Settings (Windows' own setting isn't followed).
+  reducedMotion: 'never',
   ffmpegHwaccel: 'none',
   exportGpuAcceleration: true,
   exportEncodeMode: 'lossless',
@@ -112,18 +116,21 @@ const defaults: Config = {
   sizeLimitQuality: 'fast',
   sizeLimitControlMode: 'simple',
   sizeLimitPreset: 'quality',
+  sizeLimitVideoFormat: 'hevc',
   sizeLimitSimpleResolution: 'auto',
   sizeLimitSimpleResolutionTouched: false,
   sizeLimitSimpleFps: 'auto',
   sizeLimitSimpleFpsTouched: false,
   sizeLimitAdvancedResolution: 'source',
   sizeLimitAdvancedFps: 'source',
-  sizeLimitAdvancedEncoder: 'av1_nvenc',
+  sizeLimitAdvancedEncoder: 'hevc_nvenc',
   sizeLimitAdvancedTwoPass: false,
   sizeLimitAdvancedAv1CpuPreset: 6,
   sizeLimitAdvancedAv1NvencPreset: 'p6',
   sizeLimitAdvancedH264CpuPreset: 'slow',
   sizeLimitAdvancedH264NvencPreset: 'p4',
+  sizeLimitAdvancedHevcCpuPreset: 'fast',
+  sizeLimitAdvancedHevcNvencPreset: 'p6',
   sizeLimitSeparateNamingMode: 'auto',
   sizeLimitMergedNamingMode: 'auto',
   sizeLimitCutFileTemplate: undefined,
@@ -188,7 +195,9 @@ async function tryCreateStore({ customStoragePath }: { customStoragePath: string
   for (let i = 0; i < 5; i += 1) {
     try {
       store = new Store({
-        defaults,
+        // Without the unset ones: a file can't hold `undefined`, so electron-store would find the file missing them
+        // and write it again at every start.
+        defaults: Object.fromEntries(Object.entries(defaults).filter(([, value]) => value !== undefined)),
         clearInvalidConfig: false,
         ...(customStoragePath != null ? { cwd: customStoragePath } : {}),
       });
@@ -441,6 +450,8 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
   if (!store.has('sizeLimitAdvancedAv1NvencPreset')) set('sizeLimitAdvancedAv1NvencPreset', defaults.sizeLimitAdvancedAv1NvencPreset);
   if (!store.has('sizeLimitAdvancedH264CpuPreset')) set('sizeLimitAdvancedH264CpuPreset', defaults.sizeLimitAdvancedH264CpuPreset);
   if (!store.has('sizeLimitAdvancedH264NvencPreset')) set('sizeLimitAdvancedH264NvencPreset', defaults.sizeLimitAdvancedH264NvencPreset);
+  if (!store.has('sizeLimitAdvancedHevcCpuPreset')) set('sizeLimitAdvancedHevcCpuPreset', defaults.sizeLimitAdvancedHevcCpuPreset);
+  if (!store.has('sizeLimitAdvancedHevcNvencPreset')) set('sizeLimitAdvancedHevcNvencPreset', defaults.sizeLimitAdvancedHevcNvencPreset);
 
   const hasSizeLimitSeparateNamingMode = storedKeys.has('sizeLimitSeparateNamingMode');
   const hasSizeLimitMergedNamingMode = storedKeys.has('sizeLimitMergedNamingMode');
@@ -474,6 +485,17 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
   }
 
   // const configVersion: number = store.get('version');
+
+  // A hand-edited settings file (Help > Configuration file) mustn't stop ClipPress from starting: only well-formed
+  // shortcuts are kept, and the default ones if the list itself is broken.
+  const storedBindings: unknown = store.get('keyBindings');
+  const validBindings = Array.isArray(storedBindings)
+    ? storedBindings.filter((binding: unknown): binding is KeyBinding => binding != null && typeof binding === 'object' && typeof (binding as KeyBinding).keys === 'string' && (binding as KeyBinding).keys.length > 0 && typeof (binding as KeyBinding).action === 'string')
+    : defaultKeyBindings;
+  if (!Array.isArray(storedBindings) || validBindings.length !== storedBindings.length) {
+    logger.warn('Dropped malformed keyboard shortcuts from the settings file');
+    set('keyBindings', validBindings);
+  }
 
   const keyBindings = (store.get('keyBindings') as KeyBinding[]).map(({ keys, action }) => ({ keysStr: keys, keys: keys.split('+'), action }));
 
@@ -691,5 +713,16 @@ export async function init({ customConfigDir }: { customConfigDir: string | unde
       && !existingBindings.some((existing) => normalize(existing.keys) === normalize(binding.keys) || existing.action === binding.action));
     if (added.length > 0) set('keyBindings', [...existingBindings, ...added]);
     setStored('panelDuplicateShortcutsMigrated', true);
+  }
+
+  // Ctrl+Shift+R opens the clip's speed window, for existing settings too, where the key is still free and the action
+  // has none.
+  if (store.get('changeSpeedShortcutMigrated') !== true) {
+    const existingBindings = store.get('keyBindings') as KeyBinding[];
+    const normalize = (keys: string) => keys.split('+').map((key) => key.replace(/^(Control|Shift|Alt|Meta)Right$/, '$1Left')).sort().join('+');
+    const added = defaultKeyBindings.filter((binding) => binding.action === 'changeCurrentSegmentSpeed'
+      && !existingBindings.some((existing) => normalize(existing.keys) === normalize(binding.keys) || existing.action === binding.action));
+    if (added.length > 0) set('keyBindings', [...existingBindings, ...added]);
+    setStored('changeSpeedShortcutMigrated', true);
   }
 }

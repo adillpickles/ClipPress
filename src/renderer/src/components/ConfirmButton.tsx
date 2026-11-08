@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useReducedMotionConfig } from 'motion/react';
 
 import Button from './Button';
 import type { ButtonSize } from './Button';
@@ -15,7 +16,7 @@ export const confirmIdleMs = 5000;
  * the pointer, and a click turns the button itself into the question, locked for a second while a soft red fills it;
  * once full, a second click does it. Escape, a click elsewhere or leaving it alone puts the button back.
  */
-export default function ConfirmButton({ children, question, confirmLabel, onConfirm, size, className, grow = false }: {
+export default function ConfirmButton({ children, question, confirmLabel, onConfirm, size, className, grow = false, variant = 'ghost' }: {
   children: ReactNode,
   /** Short, a few words: "Reset every shortcut?" (else the confirm label, as a question). */
   question?: string | undefined,
@@ -25,6 +26,8 @@ export default function ConfirmButton({ children, question, confirmLabel, onConf
   className?: string | undefined,
   /** An icon button: it grows into the question (animated) rather than always keeping room for it. */
   grow?: boolean | undefined,
+  /** Quiet by default (a link-like button); `default` gives it a border, beside other bordered buttons. */
+  variant?: 'ghost' | 'default' | undefined,
 }) {
   const [state, setState] = useState<'idle' | 'locked' | 'armed'>('idle');
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -36,6 +39,8 @@ export default function ConfirmButton({ children, question, confirmLabel, onConf
   }, [state]);
 
   const asking = state !== 'idle';
+  // Settings > Reduce motion (not Windows' setting).
+  const reduceMotion = useReducedMotionConfig() === true;
   const widthRef = useRef<number>();
   useLayoutEffect(() => {
     const button = buttonRef.current;
@@ -43,10 +48,10 @@ export default function ConfirmButton({ children, question, confirmLabel, onConf
     const from = widthRef.current;
     const to = button.offsetWidth;
     widthRef.current = to;
-    if (from != null && from !== to && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (from != null && from !== to && !reduceMotion) {
       button.animate([{ width: `${from}px` }, { width: `${to}px` }], { duration: 160, easing: 'cubic-bezier(.2, .8, .2, 1)' });
     }
-  }, [asking, grow]);
+  }, [asking, grow, reduceMotion]);
 
   useEffect(() => {
     if (!asking) return undefined;
@@ -71,7 +76,7 @@ export default function ConfirmButton({ children, question, confirmLabel, onConf
   return (
     <Button
       ref={buttonRef}
-      variant="ghost"
+      variant={variant}
       size={size}
       className={[styles['button'], ...(className != null ? [className] : [])].join(' ')}
       data-state={state}

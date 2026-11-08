@@ -9,6 +9,10 @@ const defaultStrategyArgs = {
   advancedAv1NvencPreset: 'p6',
   advancedH264CpuPreset: 'slow',
   advancedH264NvencPreset: 'p4',
+  advancedHevcCpuPreset: 'fast',
+  advancedHevcNvencPreset: 'p6',
+  // These cases check the AV1 order, as it was before HEVC became the default (that has its own tests).
+  videoFormat: 'av1',
 } as const;
 
 describe('targetSizeMbToBytes', () => {
@@ -42,7 +46,7 @@ describe('planSizeLimitedEncode', () => {
     });
 
     expect(plan.initialAttempt.attemptNumber).toBe(1);
-    expect(plan.maxAttempts).toBe(2);
+    expect(plan.maxAttempts).toBe(3);
     expect(plan.initialAttempt.videoBitrate).toBeGreaterThan(0);
   });
 
@@ -64,7 +68,7 @@ describe('planSizeLimitedEncode', () => {
 
     expect(plan.initialAttempt.audioBitrate).toBeLessThan(plan.initialAttempt.videoBitrate);
     expect(plan.initialAttempt.audioBitrate).toBeLessThanOrEqual(64_000);
-    expect(strategy.id).toBe('max_quality_av1_cpu_two_pass');
+    expect(strategy.id).toBe('max_quality_av1_cpu');
     expect(plan.firstAttemptTargetBytes).toBeLessThan(plan.hardTargetBytes);
   });
 
@@ -127,7 +131,7 @@ describe('planSizeLimitedEncode', () => {
     expect(strategy.id).toBe('fast_av1_nvenc');
     expect(plan.firstAttemptTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.9));
     expect(plan.retryTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.87));
-    expect(plan.maxAttempts).toBe(2);
+    expect(plan.maxAttempts).toBe(3);
   });
 
   it('gives H.264 two-pass strategies extra bounded retries', () => {
@@ -214,7 +218,7 @@ describe('getNextSizeLimitedRetryStep', () => {
     expect(nextAttempt).toBeUndefined();
   });
 
-  it('plans max quality at the locked 95% first-attempt target', () => {
+  it('plans max quality on SVT-AV1’s two-pass at 97% of the size, which it lands within ~1% of', () => {
     const maxQualityStrategy = resolveSizeLimitedStrategy({
       controlMode: 'simple',
       preset: 'max_quality',
@@ -230,11 +234,32 @@ describe('getNextSizeLimitedRetryStep', () => {
       strategy: maxQualityStrategy,
     });
 
-    expect(maxQualityPlan.maxAttempts).toBe(2);
-    expect(maxQualityPlan.firstAttemptTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.95));
+    expect(maxQualityPlan.maxAttempts).toBe(3);
+    expect(maxQualityStrategy.executionMode).toBe('ffmpeg_two_pass');
+    expect(maxQualityPlan.firstAttemptTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.97));
     expect(maxQualityPlan.retryTargetBytes).toBe(Math.floor(10 * bytesPerMb * 0.92));
-    expect(maxQualityPlan.targetZoneMinBytes).toBe(Math.floor(maxQualityPlan.hardTargetBytes * 0.95));
+    expect(maxQualityPlan.targetZoneMinBytes).toBe(Math.floor(maxQualityPlan.hardTargetBytes * 0.97));
     expect(maxQualityPlan.targetZoneMaxBytes).toBe(Math.floor(maxQualityPlan.hardTargetBytes * 0.98));
+  });
+
+  it('follows a short clip’s big overshoot on the retry instead of trimming only 10%', () => {
+    const strategy = resolveSizeLimitedStrategy({
+      controlMode: 'simple',
+      preset: 'max_quality',
+      advancedEncoder: 'h264_nvenc',
+      advancedTwoPass: false,
+      ...defaultStrategyArgs,
+      capabilities: allCapabilities,
+    });
+    const plan = planSizeLimitedEncode({ targetSizeMb: 3, duration: 5, hasAudio: true, strategy });
+    // SVT-AV1 overshoots a 5 s clip by about a quarter (measured), so the first try lands well over the cap.
+    const previousOutputSize = Math.floor(plan.firstAttemptTargetBytes * 1.25);
+    const retry = getNextSizeLimitedRetryStep({ plan, previousAttempt: plan.initialAttempt, previousOutputSize });
+
+    expect(retry?.attemptNumber).toBe(2);
+    const expectedSize = previousOutputSize * (retry!.totalBitrate / plan.initialAttempt.totalBitrate);
+    expect(expectedSize).toBeLessThanOrEqual(plan.hardTargetBytes * 0.93);
+    expect(expectedSize).toBeGreaterThan(plan.hardTargetBytes * 0.85);
   });
 
   it('plans quality mode at the locked 93% first-attempt target', () => {
@@ -612,7 +637,7 @@ describe('relaxQualityCapForGenerousBudget', () => {
 
   it('starts a short clip with a generous size relaxed, so it lands in one encode', () => {
     // The reported case: 1 s at 20 MB was encoded twice.
-    const relaxed = relaxQualityCapForGenerousBudget(plan(20, 1), pixels1080p60);
+    const relaxed = relaxQualityCapForGenerousBudget(plan(20, 1), pixels1080p60, 'av1_nvenc');
     expect(relaxed.initialAttempt.qualityCapOffset).toBe(14);
     expect(relaxed.initialAttempt.videoBitrate).toBe(plan(20, 1).initialAttempt.videoBitrate);
     // Still under: no top-up after an attempt that was already relaxed.
@@ -622,16 +647,39 @@ describe('relaxQualityCapForGenerousBudget', () => {
   it('leaves ordinary budgets as they were', () => {
     // 10 MB for 30 s, 20 MB for 10 s, and 20 MB for 3 s (where a relaxed first attempt overshot): a top-up stays
     // possible when the result comes in far under.
-    expect(relaxQualityCapForGenerousBudget(plan(10, 30), pixels1080p60).initialAttempt.qualityCapOffset).toBeUndefined();
-    expect(relaxQualityCapForGenerousBudget(plan(20, 10), pixels1080p60).initialAttempt.qualityCapOffset).toBeUndefined();
-    expect(relaxQualityCapForGenerousBudget(plan(20, 3), pixels1080p60).initialAttempt.qualityCapOffset).toBeUndefined();
+    expect(relaxQualityCapForGenerousBudget(plan(10, 30), pixels1080p60, 'av1_nvenc').initialAttempt.qualityCapOffset).toBeUndefined();
+    expect(relaxQualityCapForGenerousBudget(plan(20, 10), pixels1080p60, 'av1_nvenc').initialAttempt.qualityCapOffset).toBeUndefined();
+    expect(relaxQualityCapForGenerousBudget(plan(20, 3), pixels1080p60, 'av1_nvenc').initialAttempt.qualityCapOffset).toBeUndefined();
   });
 
   it('judges by the pixels made, and does nothing when they are unknown', () => {
     // 20 MB for 4 s is generous at 720p30, not at 1440p60; 1 s isn't at 1440p60 either.
-    expect(relaxQualityCapForGenerousBudget(plan(20, 4), 1280 * 720 * 30).initialAttempt.qualityCapOffset).toBe(14);
-    expect(relaxQualityCapForGenerousBudget(plan(20, 4), 2560 * 1440 * 60).initialAttempt.qualityCapOffset).toBeUndefined();
-    expect(relaxQualityCapForGenerousBudget(plan(20, 1), 2560 * 1440 * 60).initialAttempt.qualityCapOffset).toBeUndefined();
-    expect(relaxQualityCapForGenerousBudget(plan(20, 1), undefined)).toEqual(plan(20, 1));
+    expect(relaxQualityCapForGenerousBudget(plan(20, 4), 1280 * 720 * 30, 'av1_nvenc').initialAttempt.qualityCapOffset).toBe(14);
+    expect(relaxQualityCapForGenerousBudget(plan(20, 4), 2560 * 1440 * 60, 'av1_nvenc').initialAttempt.qualityCapOffset).toBeUndefined();
+    expect(relaxQualityCapForGenerousBudget(plan(20, 1), 2560 * 1440 * 60, 'av1_nvenc').initialAttempt.qualityCapOffset).toBeUndefined();
+    expect(relaxQualityCapForGenerousBudget(plan(20, 1), undefined, 'av1_nvenc')).toEqual(plan(20, 1));
+  });
+});
+
+describe("NVIDIA's HEVC: a quality target instead of a second encode", () => {
+  const strategy = resolveSizeLimitedStrategy({ controlMode: 'simple', preset: 'quality', advancedEncoder: 'av1_nvenc', advancedTwoPass: false, ...defaultStrategyArgs, videoFormat: 'hevc', capabilities: { ...allCapabilities, hevcNvenc: true, libx265: true } });
+  const plan = (targetSizeMb: number, duration: number) => planSizeLimitedEncode({ targetSizeMb, duration, hasAudio: true, strategy });
+  const pixels1440p30 = 1440 * 1080 * 30;
+  const pixels1080p60 = 1920 * 1080 * 60;
+
+  it('relaxes it from 0.03 bits per pixel: 12 s at 20 MB of 1440p30, not 15 s at 5 MB of 1080p60', () => {
+    expect(strategy.encoder).toBe('hevc_nvenc');
+    expect(relaxQualityCapForGenerousBudget(plan(20, 12), pixels1440p30, strategy.encoder).initialAttempt.qualityCapOffset).toBe(14);
+    expect(relaxQualityCapForGenerousBudget(plan(10, 15), pixels1080p60, strategy.encoder).initialAttempt.qualityCapOffset).toBe(14);
+    expect(relaxQualityCapForGenerousBudget(plan(5, 15), pixels1080p60, strategy.encoder).initialAttempt.qualityCapOffset).toBeUndefined();
+  });
+
+  it('never encodes again "sharper", relaxed or not', () => {
+    const tight = plan(5, 15);
+    expect(getNextSizeLimitedUndershootStep({ plan: tight, previousAttempt: tight.initialAttempt, previousOutputSize: 1 * bytesPerMb })).toBeUndefined();
+    const relaxed = relaxQualityCapForGenerousBudget(plan(20, 12), pixels1440p30, strategy.encoder);
+    expect(getNextSizeLimitedUndershootStep({ plan: relaxed, previousAttempt: relaxed.initialAttempt, previousOutputSize: 6 * bytesPerMb })).toBeUndefined();
+    // Over the limit, it still tries smaller.
+    expect(getNextSizeLimitedAttempt({ plan: relaxed, previousAttempt: relaxed.initialAttempt, previousOutputSize: 21 * bytesPerMb, hasUnderCapResult: false })?.totalBitrate).toBeLessThan(relaxed.initialAttempt.totalBitrate);
   });
 });

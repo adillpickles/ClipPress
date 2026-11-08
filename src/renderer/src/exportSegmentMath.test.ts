@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow } from './exportSegmentMath';
+import { buildAddedAudioInputArgs, buildAudioMixFilter, buildConcatSegmentInputArgs, buildMergedOverlayFilters, buildOverlayImageInputArgs, buildSegmentConcatFilters, getRelativeSegmentOverlapWindow, getSizeLimitedMp3Settings, getSoundOnlyCopyFormat, isAudioMix, streamReachesTime } from './exportSegmentMath';
 
 describe('buildConcatSegmentInputArgs', () => {
   it('applies rotation before each input so the filter graph crops the displayed frame', () => {
@@ -79,6 +79,23 @@ describe('buildMergedOverlayFilters', () => {
 });
 
 describe('buildSegmentConcatFilters', () => {
+  it('drops sped-up frames on the GPU, then copies them off before the crop', () => {
+    const { graph } = buildSegmentConcatFilters({
+      segments: [
+        { start: 0, end: 2, speed: 4, crop: { x: 0, y: 0, width: 0.5, height: 0.5 } },
+        { start: 2, end: 4 },
+      ],
+      videoStreamIndex: 0,
+      audioStreamIndex: undefined,
+      outputPlaybackRate: 1,
+      videoWidth: 320,
+      videoHeight: 180,
+      gpuFrames: { downloadFormat: 'nv12', outputFps: undefined },
+    });
+    expect(graph[0]).toBe('[0:0]setpts=(PTS-STARTPTS)/4,fps=source_fps,hwdownload,format=nv12,crop=160:90:0:0,scale=320:180,setsar=1[segmentv0]');
+    expect(graph[1]).toBe('[1:0]setpts=(PTS-STARTPTS)/1,hwdownload,format=nv12[segmentv1]');
+  });
+
   it('crops each segment into a consistent frame before merging and keeps its speed', () => {
     const { graph } = buildSegmentConcatFilters({
       segments: [
@@ -182,5 +199,114 @@ describe('getRelativeSegmentOverlapWindow', () => {
 describe('buildOverlayImageInputArgs', () => {
   it('reads each text image once instead of looping it for every frame', () => {
     expect(buildOverlayImageInputArgs(['a.png', 'b.png'])).toEqual(['-i', 'a.png', '-i', 'b.png']);
+  });
+});
+
+describe('mixing audio tracks', () => {
+  it('adds the tracks together at their own volumes, then runs what comes after', () => {
+    expect(buildAudioMixFilter({ inputIndex: 0, tracks: [{ index: 1, gainDb: -6 }, { index: 2, gainDb: undefined }], after: ['atempo=2'], outputLabel: '[a]' })).toEqual([
+      '[0:1]aresample=async=1:first_pts=0,volume=-6.00dB[mix0t0]',
+      '[0:2]aresample=async=1:first_pts=0[mix0t1]',
+      '[mix0t0][mix0t1]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=1:level=0:latency=1,atempo=2[a]',
+    ]);
+  });
+
+  it('mixes each joined clip at its track volumes, with its own volume in them, then its speed', () => {
+    const { graph } = buildSegmentConcatFilters({
+      segments: [{ start: 0, end: 2, speed: 2, audioGainDb: -6 }],
+      videoStreamIndex: 0,
+      audioStreamIndex: 1,
+      outputPlaybackRate: 1,
+      mixedAudioTracks: [{ index: 1, gainDb: undefined }, { index: 2, gainDb: 3 }],
+    });
+    expect(graph.slice(1)).toEqual([
+      '[0:1]aresample=async=1:first_pts=0,volume=-6.00dB[mix0t0]',
+      '[0:2]aresample=async=1:first_pts=0,volume=-3.00dB[mix0t1]',
+      '[mix0t0][mix0t1]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=1:level=0:latency=1,asetpts=PTS-STARTPTS,atempo=2[segmenta0]',
+    ]);
+  });
+});
+
+describe("an added file's sound in the mix", () => {
+  it("mixes any added track, and two or more of the recording's", () => {
+    expect(isAudioMix(undefined)).toBe(false);
+    expect(isAudioMix([{ index: 1, gainDb: undefined }])).toBe(false);
+    expect(isAudioMix([{ index: 1, gainDb: undefined }, { index: 2, gainDb: undefined }])).toBe(true);
+    // An added sound alone (the recording's left out) still comes from its own input.
+    expect(isAudioMix([{ index: 1, gainDb: undefined, added: 0 }])).toBe(true);
+  });
+
+  it("cuts each added file at each clip's times, clip by clip", () => {
+    expect(buildAddedAudioInputArgs({ files: ['a.mp3', 'b.mkv'], segments: [{ start: 1, end: 3 }, { start: 10, end: 11.5 }] })).toEqual([
+      '-ss', '1.00000', '-t', '2.00000', '-i', 'a.mp3',
+      '-ss', '1.00000', '-t', '2.00000', '-i', 'b.mkv',
+      '-ss', '10.00000', '-t', '1.50000', '-i', 'a.mp3',
+      '-ss', '10.00000', '-t', '1.50000', '-i', 'b.mkv',
+    ]);
+    expect(buildAddedAudioInputArgs({ files: [], segments: [{ start: 1, end: 3 }] })).toEqual([]);
+  });
+
+  it("takes an added track from its file's input", () => {
+    const graph = buildAudioMixFilter({ inputIndex: 0, tracks: [{ index: 1, gainDb: undefined }, { index: 0, gainDb: -6, added: 1 }], outputLabel: '[amixed]', getAddedInputIndex: (added) => 1 + added });
+    expect(graph[0]).toMatch(/^\[0:1\]aresample/);
+    expect(graph[1]).toMatch(/^\[2:0\]aresample=async=1:first_pts=0,volume=-6\.00dB/);
+    expect(graph[2]).toMatch(/^\[mix0t0\]\[mix0t1\]amix=inputs=2/);
+  });
+
+  it('gives each joined clip its own added inputs, after all the clips', () => {
+    const { graph } = buildSegmentConcatFilters({
+      segments: [{ start: 0, end: 2 }, { start: 5, end: 7 }],
+      videoStreamIndex: 0,
+      audioStreamIndex: 1,
+      outputPlaybackRate: 1,
+      mixedAudioTracks: [{ index: 1, gainDb: undefined }, { index: 0, gainDb: undefined, added: 0 }, { index: 0, gainDb: undefined, added: 1 }],
+      addedInputs: { first: 2, files: 2 },
+    });
+    // Clip 0: added files at inputs 2 and 3; clip 1: at 4 and 5.
+    expect(graph.some((part) => part.startsWith('[2:0]'))).toBe(true);
+    expect(graph.some((part) => part.startsWith('[3:0]'))).toBe(true);
+    expect(graph.some((part) => part.startsWith('[4:0]'))).toBe(true);
+    expect(graph.some((part) => part.startsWith('[5:0]'))).toBe(true);
+    expect(graph.some((part) => part.startsWith('[1:1]aresample'))).toBe(true);
+  });
+});
+
+describe('streamReachesTime (a sound shorter than the clip is padded)', () => {
+  const format = { start_time: '0.000000', duration: '30.000000' };
+  it('uses the stream\'s own length', () => {
+    expect(streamReachesTime({ stream: { start_time: '0.000000', duration: '10.000000' }, format, end: 25 })).toBe(false);
+    expect(streamReachesTime({ stream: { start_time: '0.000000', duration: '29.980000' }, format, end: 30 })).toBe(true);
+  });
+  it('counts from the file\'s start, as the clip\'s times do', () => {
+    expect(streamReachesTime({ stream: { start_time: '1.500000', duration: '10.000000' }, format: { start_time: '1.500000' }, end: 10 })).toBe(true);
+    expect(streamReachesTime({ stream: { start_time: '1.500000', duration: '10.000000' }, format: { start_time: '1.500000' }, end: 11 })).toBe(false);
+  });
+  it('reads Matroska\'s DURATION tag when the stream has no length', () => {
+    expect(streamReachesTime({ stream: { start_time: '0.000000', tags: { DURATION: '00:00:10.023000000' } }, format, end: 25 })).toBe(false);
+    expect(streamReachesTime({ stream: { start_time: '0.000000', tags: { DURATION: '00:01:30.016000000' } }, format: { duration: '90.02' }, end: 90 })).toBe(true);
+  });
+  it('falls back to the file\'s length, and pads when nothing is known', () => {
+    expect(streamReachesTime({ stream: { duration: 'N/A' }, format, end: 30 })).toBe(true);
+    expect(streamReachesTime({ stream: {}, format: undefined, end: 5 })).toBe(false);
+  });
+});
+
+describe('sound-only files', () => {
+  it('keep a copied sound in its own kind of file', () => {
+    expect(getSoundOnlyCopyFormat('aac')).toEqual({ format: 'ipod', ext: 'm4a' });
+    expect(getSoundOnlyCopyFormat('opus')).toEqual({ format: 'ogg', ext: 'ogg' });
+    expect(getSoundOnlyCopyFormat('pcm_s16le')).toEqual({ format: 'wav', ext: 'wav' });
+    expect(getSoundOnlyCopyFormat('eac3')).toEqual({ format: 'matroska', ext: 'mka' });
+  });
+  it('fit a file size as an MP3 at the best bitrate that fits', () => {
+    expect(getSizeLimitedMp3Settings({ sizeMb: 20, durationSeconds: 30 })?.kbps).toBe(320);
+    // 10 MB over 10 minutes: about 128 kbit/s.
+    expect(getSizeLimitedMp3Settings({ sizeMb: 10, durationSeconds: 600 })?.kbps).toBe(128);
+    // 1 MB over 10 minutes: 8 kbit/s, mono at 8 kHz; it fits.
+    expect(getSizeLimitedMp3Settings({ sizeMb: 1, durationSeconds: 600 })).toEqual({ kbps: 8, args: ['-ar', '8000', '-ac', '1'] });
+    expect((8 * 600) / 8 / 1000).toBeLessThan(1);
+  });
+  it('says when nothing fits', () => {
+    expect(getSizeLimitedMp3Settings({ sizeMb: 1, durationSeconds: 3600 })).toBeUndefined();
   });
 });

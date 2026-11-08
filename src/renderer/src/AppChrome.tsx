@@ -1,8 +1,8 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FiCopy, FiMinus, FiSquare, FiX } from 'react-icons/fi';
+import i18n from 'i18next';
+import { FiArrowLeft, FiCopy, FiMinus, FiSquare, FiX } from 'react-icons/fi';
 
-import ClipPressMark from './components/ClipPressMark';
 import { openMenu } from './components/Menu';
 import type { MenuEntry } from './components/Menu';
 import mainApi from './mainApi';
@@ -14,9 +14,17 @@ const remote = window.require('@electron/remote');
 
 const shouldUseCustomChrome = process.platform !== 'darwin';
 
+const brandName = <>Clip<span className={styles['brandPress']}>Press</span></>;
+
+/** Items that throw edits away ask first, in place, like the Clips panel's Start over. */
+const confirmById: Record<string, () => string> = {
+  clearSegments: () => i18n.t('Really clear all clips?'),
+};
+
 /** The menu bar's items as the app's menu shows them: an item running an app action shows that action's real keys. */
 const toMenuEntries = (items: AppMenuItem[], keyBindingByAction: Record<string, KeyBinding>): MenuEntry[] => items.map((item) => ({
   label: item.label,
+  ...(item.id != null && confirmById[item.id] != null ? { confirm: confirmById[item.id]!(), danger: true } : {}),
   type: item.type as MenuEntry['type'],
   checked: item.checked,
   enabled: item.enabled,
@@ -59,18 +67,27 @@ async function showBarMenu(context: BarMenuContext, index: number, keyboard: boo
       const next = indexes[(indexes.indexOf(index) + direction + indexes.length) % indexes.length];
       if (next != null) showBarMenu(context, next, true);
     },
-    // While one is open, pointing at another button opens that one; pressing this one closes it.
-    onOutsidePointer: ({ x, y }) => {
+    // While one is open, pointing at another button opens that one; pressing this one closes it. Off the bar's buttons
+    // and the menu, it closes (moving on past Help, it goes away).
+    onOutsidePointer: ({ x, y, type }) => {
       const over = buttonAt(x, y);
-      if (over == null || over === index) return false;
+      if (over == null) return false;
+      if (over === index) return type === 'move';
       showBarMenu(context, over, false);
       return true;
     },
+    closeOnLeave: true,
   });
 }
 
-function AppChrome({ keyBindingByAction }: { keyBindingByAction: Record<string, KeyBinding> }) {
+function AppChrome({ keyBindingByAction, onGoHome }: {
+  keyBindingByAction: Record<string, KeyBinding>,
+  /** A recording is open in the simple editor: the logo closes it. */
+  onGoHome?: (() => void) | undefined,
+}) {
   const { t } = useTranslation();
+  // File > Close's keys: a key binding when there is one, else the menu's own Ctrl+W.
+  const homeKeys = keyBindingByAction['closeCurrentFile']?.keys ?? 'ControlLeft+KeyW';
   const [isMaximized, setIsMaximized] = useState(false);
   const [isFocused, setIsFocused] = useState(() => document.hasFocus());
   // The menu buttons, fetched in one call now and whenever the main process rebuilds the menu (language or
@@ -149,12 +166,24 @@ function AppChrome({ keyBindingByAction }: { keyBindingByAction: Record<string, 
   return (
     <div className={[styles['wrapper'], ...(!isFocused ? [styles['wrapperInactive']] : []), ...(isMaximized ? [styles['wrapperMaximized']] : [])].join(' ')}>
       <div className={styles['left']}>
-        <div className={styles['brand']}>
-          <div className={styles['brandMark']}>
-            <ClipPressMark />
-          </div>
-          <span className={styles['brandText']}>ClipPress</span>
-        </div>
+        {onGoHome != null ? (
+          // With a recording open, the name goes back to the start screen (as File > Close does); hovered, it turns
+          // into where it goes.
+          <button
+            type="button"
+            className={styles['brandButton']}
+            onClick={onGoHome}
+            title={t('Close this clip')}
+            data-tip-keys={homeKeys}
+          >
+            <span className={styles['brandText']}>
+              <span className={styles['brandName']}>{brandName}</span>
+              <span className={styles['brandHome']} aria-hidden><FiArrowLeft />{t('Home')}</span>
+            </span>
+          </button>
+        ) : (
+          <div className={styles['brand']}>{brandName}</div>
+        )}
 
         <div className={styles['menuBar']}>
           {menuItems.map((item) => (

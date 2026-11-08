@@ -1,5 +1,6 @@
-import type { SizeLimitAdvancedNvencPreset, SizeLimitCodec } from '../../common/types.js';
-import type { SizeLimitedEncoderCapabilities, SizeLimitedEncoderName, SizeLimitedHardwareTarget } from './sizeLimitedTypes';
+import type { SizeLimitAdvancedNvencPreset } from '../../common/types.js';
+import type { EncoderSizeRules } from './sizeLimitedResolution';
+import type { SizeLimitedCodec, SizeLimitedEncoderCapabilities, SizeLimitedEncoderName, SizeLimitedGpuCapability, SizeLimitedHardwareTarget } from './sizeLimitedTypes';
 
 /**
  * Hardware encoders across GPU vendors.
@@ -12,13 +13,13 @@ import type { SizeLimitedEncoderCapabilities, SizeLimitedEncoderName, SizeLimite
  * Kept free of `window` and the ffmpeg runner so the benchmark can load it in plain Node.
  */
 
-export type GpuEncoderName = Exclude<SizeLimitedEncoderName, 'libx264' | 'libsvtav1'>;
+export type GpuEncoderName = Exclude<SizeLimitedEncoderName, 'libx264' | 'libx265' | 'libsvtav1'>;
 export type GpuVendor = Exclude<SizeLimitedHardwareTarget, 'cpu'>;
-type GpuCapabilityKey = 'h264Nvenc' | 'av1Nvenc' | 'h264Amf' | 'av1Amf' | 'h264Qsv' | 'av1Qsv';
+type GpuCapabilityKey = SizeLimitedGpuCapability;
 
 interface GpuEncoderInfo {
   encoder: GpuEncoderName,
-  codec: SizeLimitCodec,
+  codec: SizeLimitedCodec,
   vendor: GpuVendor,
   capability: GpuCapabilityKey,
 }
@@ -32,6 +33,11 @@ export const gpuEncoders: readonly GpuEncoderInfo[] = [
   { encoder: 'h264_nvenc', codec: 'h264', vendor: 'nvidia', capability: 'h264Nvenc' },
   { encoder: 'h264_amf', codec: 'h264', vendor: 'amd', capability: 'h264Amf' },
   { encoder: 'h264_qsv', codec: 'h264', vendor: 'intel', capability: 'h264Qsv' },
+  // For cards that can't encode AV1 (RTX 20/30, RX 5000/6000, older Intel): about as quick as H.264 and much sharper
+  // at the same size. Discord plays HEVC on desktop and the web since 2024.
+  { encoder: 'hevc_nvenc', codec: 'hevc', vendor: 'nvidia', capability: 'hevcNvenc' },
+  { encoder: 'hevc_amf', codec: 'hevc', vendor: 'amd', capability: 'hevcAmf' },
+  { encoder: 'hevc_qsv', codec: 'hevc', vendor: 'intel', capability: 'hevcQsv' },
 ];
 
 export function getGpuEncoderInfo(encoder: SizeLimitedEncoderName) {
@@ -44,22 +50,37 @@ export function isGpuEncoderAvailable(capabilities: SizeLimitedEncoderCapabiliti
 }
 
 /** The preferred working GPU encoder for a codec, if any. */
-export function pickGpuEncoder(capabilities: SizeLimitedEncoderCapabilities, codec: SizeLimitCodec) {
+export function pickGpuEncoder(capabilities: SizeLimitedEncoderCapabilities, codec: SizeLimitedCodec) {
   return gpuEncoders.find((info) => info.codec === codec && capabilities[info.capability] === true);
 }
 
+/** "Use the GPU" switched off: the encoders found, minus every one on the graphics card. */
+export function withoutGpuEncoders(capabilities: SizeLimitedEncoderCapabilities): SizeLimitedEncoderCapabilities {
+  const cpuOnly = { ...capabilities };
+  for (const { capability } of gpuEncoders) cpuOnly[capability] = false;
+  return cpuOnly;
+}
+
 /**
- * A size-limited export on a CPU with few threads is better served by a GPU H.264 encode than a
- * slow CPU AV1 one. With this many threads SVT-AV1 keeps up well enough to be worth its quality.
+ * Quality on a graphics card without the codec's own encoder: from this many CPU threads the CPU's sharper encode is
+ * worth its time, below it the card's H.264 is far quicker. SVT-AV1 at preset 7 takes 2-2.75× a 1080p60 clip's length on
+ * 4 threads of a recent CPU (measured: 40-55 s for 20 s; a 2015-era one, the kind beside a card without the codec, is
+ * slower): kept from 4 threads.
  */
-export const minCpuThreadsForCpuAv1 = 8;
+export const minCpuThreadsForCpuAv1 = 4;
+
+/**
+ * The same for CPU HEVC (x265 Quality): 61 s for 20 s of 1080p60 on 4 threads and 112 s on 2 (measured), 1.1-1.5×
+ * SVT-AV1's time, so it needs 5-6 threads to match AV1's time on 4: kept from 6, as older CPUs are slower per thread.
+ */
+export const minCpuThreadsForCpuHevc = 6;
 
 /** NVENC preset names are the shared vocabulary; AMD and Intel map them to their own scales. */
-export function getAmfQualityPreset(encoder: 'av1_amf' | 'h264_amf', preset: SizeLimitAdvancedNvencPreset) {
+export function getAmfQualityPreset(encoder: 'av1_amf' | 'h264_amf' | 'hevc_amf', preset: SizeLimitAdvancedNvencPreset) {
   const level = Number(preset.slice(1));
   if (level <= 2) return 'speed';
   if (level <= 5) return 'balanced';
-  // Only the AV1 encoder has a mode above "quality".
+  // AV1's mode above "quality" at p7. FFmpeg 9.0's HEVC and H.264 encoders have one too, not yet measured on an AMD card.
   return encoder === 'av1_amf' && level === 7 ? 'high_quality' : 'quality';
 }
 
@@ -67,6 +88,22 @@ const qsvPresets = ['veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'v
 
 export function getQsvPreset(preset: SizeLimitAdvancedNvencPreset) {
   return qsvPresets[Math.min(qsvPresets.length, Math.max(1, Number(preset.slice(1)))) - 1]!;
+}
+
+/** The longest side every GPU's H.264 encoder takes. */
+export const maxGpuH264Side = 4096;
+
+/**
+ * The picture sizes an encoder takes as they are. AMD's AV1 encoder needs 64×16 blocks on RX 7000 cards and current
+ * Ryzen chips (8×2 on RX 9000; 64×16 suits both), or it pads the picture and players show black bars; every GPU's
+ * H.264 encoder stops at 4096 on a side, and so does HEVC on the oldest cards that have it (GTX 900, RX 400, 6th-gen
+ * Intel).
+ */
+export function getEncoderSizeRules(encoder: SizeLimitedEncoderName): EncoderSizeRules | undefined {
+  if (encoder === 'av1_amf') return { alignWidth: 64, alignHeight: 16 };
+  if (encoder === 'h264_nvenc' || encoder === 'h264_amf' || encoder === 'h264_qsv') return { alignWidth: 2, alignHeight: 2, maxSide: maxGpuH264Side };
+  if (encoder === 'hevc_nvenc' || encoder === 'hevc_amf' || encoder === 'hevc_qsv') return { alignWidth: 2, alignHeight: 2, maxSide: maxGpuH264Side };
+  return undefined;
 }
 
 export const gpuVendorLabels: Record<GpuVendor, string> = {
@@ -78,12 +115,16 @@ export const gpuVendorLabels: Record<GpuVendor, string> = {
 export const gpuEncoderLabels: Record<SizeLimitedEncoderName, string> = {
   libsvtav1: 'CPU AV1 (SVT-AV1)',
   libx264: 'CPU H.264',
+  libx265: 'CPU HEVC (x265)',
   av1_nvenc: 'NVIDIA AV1',
   h264_nvenc: 'NVIDIA H.264',
   av1_amf: 'AMD AV1',
   h264_amf: 'AMD H.264',
   av1_qsv: 'Intel AV1',
   h264_qsv: 'Intel H.264',
+  hevc_nvenc: 'NVIDIA HEVC',
+  hevc_amf: 'AMD HEVC',
+  hevc_qsv: 'Intel HEVC',
 };
 
 /**
@@ -94,9 +135,13 @@ export const gpuEncoderLabels: Record<SizeLimitedEncoderName, string> = {
  * GPU cannot decode fall back to software inside FFmpeg.
  *
  * Measured with 1440p60 HEVC and NVENC: a single-input export went from 12.4 s to 7.2 s on 4 CPU
- * threads and 6.8 s to 6.0 s on 8, and was unchanged on 16. A 3-input merge went from 7.8 s to
- * 5.0 s on 4 threads but was 8-25% slower on 8 or more, where several GPU decoders copying frames
- * back costs more than the CPU saves. So merges only decode on the GPU on smaller CPUs.
+ * threads and 6.8 s to 6.0 s on 8, and was unchanged on 16.
+ *
+ * Merges decode on the GPU too, whatever the CPU (measured in Beta 6.1 on AV1 NVENC recordings, a 16-thread Ryzen
+ * and an RTX 5060 Ti). Two 1440p30 AV1 clips at 400% took 8.6 s instead of 21 s, the same pair at 100% 2.9 s instead
+ * of 5.2 s, two 1080p60 HEVC clips 14 s instead of 36-44 s at 400% and 6.0 s instead of 12.2 s at 100%, and three of
+ * them 6.5 s instead of 11.4 s, every output byte-for-byte the same size. (Beta 6 kept merges on the CPU above 8
+ * threads, from an older 1440p60 HEVC measurement.)
  *
  * Every input of a merged export gets its own decoder, all open at once, and each holds a pool
  * of GPU frames (about 250 MB for 1440p). Above this many source pixels across inputs we decode
@@ -104,24 +149,109 @@ export const gpuEncoderLabels: Record<SizeLimitedEncoderName, string> = {
  */
 export const maxHardwareDecodePixels = 17_000_000;
 
-export function shouldUseHardwareDecode({ platform, enabled, inputCount, width, height, cpuThreads }: {
+export function shouldUseHardwareDecode({ platform, enabled, inputCount, width, height }: {
   platform: string,
   enabled: boolean,
   inputCount: number,
   width: number | undefined,
   height: number | undefined,
-  cpuThreads: number | undefined,
 }) {
   if (!enabled || platform !== 'win32' || inputCount < 1) return false;
-  if (inputCount > 1 && cpuThreads != null && cpuThreads >= minCpuThreadsForCpuAv1) return false;
   const pixels = (width ?? 0) * (height ?? 0);
   if (!(pixels > 0)) return false;
   return pixels * inputCount <= maxHardwareDecodePixels;
 }
 
 /** Input options; place before each video `-i`. */
-export function getHardwareDecodeArgs(useHardwareDecode: boolean) {
-  return useHardwareDecode ? ['-hwaccel', 'd3d11va'] : [];
+export function getHardwareDecodeArgs(useHardwareDecode: boolean, keepFramesOnGpu = false) {
+  if (!useHardwareDecode) return [];
+  return keepFramesOnGpu ? ['-hwaccel', 'd3d11va', '-hwaccel_output_format', 'd3d11'] : ['-hwaccel', 'd3d11va'];
+}
+
+/**
+ * A sped-up clip decoded on the GPU can keep its frames there until `fps` has dropped the ones the export doesn't
+ * keep (at 400%, three in four): `setpts` and `fps` only read timestamps, so only the kept frames are copied to the
+ * CPU for the rest of the filters. That copy was most of a sped-up export's time (measured):
+ * two 1440p30 AV1 clips at 400% with a text, exported with AV1 NVENC, took 3.9 s instead of 6.6 s, two
+ * 1080p60 HEVC clips 5.4 s instead of 9.4 s, 10-bit HEVC 2.7 s instead of 6.5 s, with as many frames and a size
+ * within 1%. It also drops them evenly from the first frame (the encoder's own dropping kept the first three).
+ *
+ * The format to copy the frames into, or undefined for a source D3D11 doesn't decode to one of these.
+ */
+export function getGpuFramesDownloadFormat(pixFmt: string | undefined) {
+  if (pixFmt === 'yuv420p' || pixFmt === 'yuvj420p') return 'nv12';
+  if (pixFmt === 'yuv420p10le') return 'p010';
+  return undefined;
+}
+
+/**
+ * Joined clips can drop their frames on the GPU only up to this many. Each clip's frames then sit on the export's own
+ * frame grid, and concat takes each clip's length from them, so every join can land up to half a frame from where
+ * it's planned (measured: +12.5 ms per join at 30 fps). With up to two joins that stays within one frame; longer
+ * merges take the old path, whose joins are exact.
+ */
+export const maxGpuFramesClips = 3;
+
+/**
+ * Whether a clip is long enough in the export for `fps` to drop its unkept frames early: `fps` rounds a clip shorter
+ * than half a frame to no frame at all, where the encoder's constant frame rate keeps one. So it needs two frames at the
+ * rate it keeps; otherwise (or with that rate unknown) every frame goes on to the encoder, as before.
+ */
+export const canDropFramesEarly = ({ duration, fps }: { duration: number, fps: number | undefined }) => fps != null && fps > 0 && duration * fps >= 2;
+
+/**
+ * Whether an export's frames can stay on the GPU until `fps` has dropped the ones it doesn't keep (given a source
+ * format it can copy off): sped-up clips, and a single clip whose export may lower its frame rate (60 → 30 drops half:
+ * 2-min 1080p60 to 720p30 measured 15.1 → 10.0 s in Quality, 14.5 → 9.0 s in Fast, the same frames). Kept there with
+ * nothing to drop, a clip exports about as fast as with its frames copied as they're decoded (measured).
+ */
+export function shouldKeepFramesOnGpu({ clips, rotation, lowestFps, mayLowerFps = false }: {
+  /** Each clip's playback rate and length in the export, in the order they're joined. */
+  clips: { rate: number, duration: number }[],
+  rotation: number | undefined,
+  /** The lowest frame rate the export may have. */
+  lowestFps: number | undefined,
+  /** A single clip's export may lower the frame rate (a source above the lowered rate). Joins keep their exact path. */
+  mayLowerFps?: boolean | undefined,
+}) {
+  const spedUp = clips.some(({ rate }) => rate > 1);
+  // A turned video isn't kept there: FFmpeg turns it with a CPU filter before ours.
+  if (clips.length > maxGpuFramesClips || ((rotation ?? 0) % 360) !== 0) return false;
+  if (clips.length === 1) return (spedUp || mayLowerFps) && canDropFramesEarly({ duration: clips[0]!.duration, fps: lowestFps });
+  if (!spedUp) return false;
+  // concat needs two frames to know a clip's length (one counts as no time), so a sped-up clip shorter than that
+  // would move the next join by more.
+  return lowestFps != null && lowestFps > 0 && clips.every(({ rate, duration }) => rate <= 1 || duration * lowestFps >= 2);
+}
+
+/** Placed right after a clip's `setpts`: the frames to keep at the export's frame rate, copied off the GPU. */
+export function getGpuFramesFilter({ rate, downloadFormat, outputFps, dropToLoweredFps = false }: {
+  rate: number,
+  downloadFormat: string,
+  /** The export's frame rate when it's lowered; otherwise the source's, as FFmpeg sees it. */
+  outputFps: number | undefined,
+  /** A single clip at its own speed drops to a lowered frame rate here too (the export's own `fps` then keeps them all). */
+  dropToLoweredFps?: boolean | undefined,
+}) {
+  const drop = rate > 1 || (dropToLoweredFps && outputFps != null);
+  return [...(drop ? [`fps=${outputFps ?? 'source_fps'}`] : []), 'hwdownload', `format=${downloadFormat}`].join(',');
+}
+
+/**
+ * For frames copied off the GPU as they're decoded (no `getGpuFramesFilter`): right after a sped-up clip's `setpts`,
+ * the frames to keep at the export's frame rate, so the crop, text and scale after it don't work on the ones the MP4's
+ * constant frame rate drops anyway.
+ */
+export function getFrameDropFilter({ rate, outputFps, duration, keptFps }: {
+  rate: number,
+  /** The export's frame rate when it's lowered; otherwise `fps` keeps the source's. */
+  outputFps: number | undefined,
+  /** The clip's length in the export. */
+  duration: number,
+  /** The frame rate the export keeps (the lowered one, else the source's), if known. */
+  keptFps: number | undefined,
+}) {
+  return rate > 1 && canDropFramesEarly({ duration, fps: keptFps }) ? `fps=${outputFps ?? 'source_fps'}` : undefined;
 }
 
 /**
@@ -129,19 +259,22 @@ export function getHardwareDecodeArgs(useHardwareDecode: boolean) {
  * for visually lossless quality rather than a size, so each encoder uses its quality mode.
  * Measured on a 30 s 1080p60 clip: NVENC took 5.4 s against 20.1 s for x264 at a similar size.
  */
-export function getRegularExportVideoArgs(encoder: GpuEncoderName | undefined) {
+export function getRegularExportVideoArgs(encoder: GpuEncoderName | undefined, { basic = false }: { basic?: boolean | undefined } = {}) {
   switch (encoder) {
     case 'h264_nvenc': {
-      return ['-c:v', 'h264_nvenc', '-preset', 'p5', '-tune', 'hq', '-profile:v', 'high', '-rc', 'vbr', '-cq', '19', '-b:v', '0', '-rc-lookahead', '20', '-spatial-aq', '1', '-temporal-aq', '1', '-pix_fmt', 'yuv420p'];
+      // The basic settings leave out the look-ahead and temporal AQ a Maxwell card lacks.
+      return ['-c:v', 'h264_nvenc', '-preset', 'p5', '-tune', 'hq', '-profile:v', 'high', '-rc', 'vbr', '-cq', '19', '-b:v', '0', ...(basic ? [] : ['-rc-lookahead', '20']), '-spatial-aq', '1', ...(basic ? [] : ['-temporal-aq', '1']), '-pix_fmt', 'yuv420p'];
     }
     case 'h264_amf': {
-      return ['-c:v', 'h264_amf', '-usage', 'transcoding', '-quality', 'quality', '-rc', 'cqp', '-qp_i', '18', '-qp_p', '20', '-qp_b', '22', '-pix_fmt', 'nv12'];
+      // High profile: AMD's own default is Main.
+      return ['-c:v', 'h264_amf', '-usage', 'transcoding', '-quality', 'quality', ...(basic ? [] : ['-profile:v', 'high']), '-rc', 'cqp', '-qp_i', '18', '-qp_p', '20', '-qp_b', '22', '-pix_fmt', 'nv12'];
     }
     case 'h264_qsv': {
-      return ['-c:v', 'h264_qsv', '-preset', 'slow', '-global_quality', '20', '-pix_fmt', 'nv12'];
+      return ['-c:v', 'h264_qsv', '-preset', 'slow', ...(basic ? [] : ['-profile:v', 'high']), '-global_quality', '20', '-pix_fmt', 'nv12'];
     }
     default: {
-      return ['-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p'];
+      // `faster` measured as visually lossless as `medium` at CRF 18, about 40% quicker, files up to ~4% bigger.
+      return ['-c:v', 'libx264', '-preset', 'faster', '-crf', '18', '-pix_fmt', 'yuv420p'];
     }
   }
 }

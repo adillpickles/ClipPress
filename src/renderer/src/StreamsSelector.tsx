@@ -3,6 +3,7 @@ import { lazy, Suspense, memo, useState, useMemo, useCallback } from 'react';
 
 import { FaImage, FaPaperclip, FaVideo, FaVideoSlash, FaFileImport, FaVolumeUp, FaVolumeMute, FaBan, FaFileExport, FaBook, FaInfoCircle, FaFilter, FaEye, FaEdit, FaTrash, FaSortNumericDown, FaSortNumericUp, FaHamburger, FaMap, FaLanguage } from 'react-icons/fa';
 import { GoFileBinary } from 'react-icons/go';
+import { FiFilm, FiVolume2 } from 'react-icons/fi';
 import { MdSubtitles } from 'react-icons/md';
 import { useTranslation, Trans } from 'react-i18next';
 import prettyBytes from 'pretty-bytes';
@@ -30,6 +31,8 @@ import styles from './StreamsSelector.module.css';
 import Json5Dialog from './components/Json5Dialog';
 import TextInput from './components/TextInput';
 import Switch from './components/Switch';
+
+const { basename } = window.require('path');
 
 const GpsMap = lazy(() => import('./components/GpsMap'));
 
@@ -125,7 +128,7 @@ function StreamParametersEditor({ stream, streamParams, updateStreamParams }: {
         key="bsfHevcMp4toannexb"
         name={t('Enable "{{filterName}}" bitstream filter.', { filterName: 'hevc_mp4toannexb' })}
         // eslint-disable-next-line no-param-reassign
-        value={<Switch checked={!!streamParams.bsfH264Mp4toannexb} onCheckedChange={(checked) => updateStreamParams((params) => { params.bsfHevcMp4toannexb = checked === true; })} />}
+        value={<Switch checked={!!streamParams.bsfHevcMp4toannexb} onCheckedChange={(checked) => updateStreamParams((params) => { params.bsfHevcMp4toannexb = checked === true; })} />}
       />,
 
       <KeyValue
@@ -504,7 +507,7 @@ const fileStyle: CSSProperties = { marginBottom: '2em', padding: '.5em 0', overf
 
 function StreamsSelector({
   mainFilePath, mainFileFormat, mainFileStreams, mainFileChapters, isCopyingStreamId, toggleCopyStreamId, setCopyStreamIdsForPath, onExtractStreamPress, onExtractAllStreamsPress, allFilesMeta, externalFilesMeta, setExternalFilesMeta, showAddStreamSourceDialog, shortestFlag, setShortestFlag, nonCopiedExtraStreams, customTagsByFile, setCustomTagsByFile, paramsByStreamId, updateStreamParams, formatTimecode, loadSubtitleTrackToSegments, toggleCopyStreamIds, changeEnabledStreamsFilter, toggleCopyAllStreamsForPath, onStreamSourceFileDrop,
-  simpleMode,
+  simpleMode, lockedPicture,
 }: {
   mainFilePath: string,
   mainFileFormat: FFprobeFormat | undefined,
@@ -533,6 +536,8 @@ function StreamsSelector({
   toggleCopyAllStreamsForPath: (path: string) => void,
   onStreamSourceFileDrop: DragEventHandler<HTMLDivElement>,
   simpleMode: boolean,
+  /** The recording's picture the export can't leave out, and why: its row stays on, as its chip in the export options. */
+  lockedPicture?: { index: number, hint: string } | undefined,
 }) {
   const [editingFile, setEditingFile] = useState<string>();
   const [editingStream, setEditingStream] = useState<EditingStream>();
@@ -560,51 +565,58 @@ function StreamsSelector({
     () => mainFileStreams.filter((stream) => stream.codec_type === 'video' || stream.codec_type === 'audio'),
     [mainFileStreams],
   );
-  const simpleModeAudioStreams = useMemo(
-    () => simpleModeStreams.filter((stream) => stream.codec_type === 'audio'),
-    [simpleModeStreams],
-  );
 
   if (simpleMode) {
-    return (
-      <div className={styles['simpleList']}>
-        {simpleModeStreams.map((stream, index) => {
-          const copyStream = isCopyingStreamId(mainFilePath, stream.index);
-          const isVideoStream = stream.codec_type === 'video';
-          const Icon = isVideoStream ? FaVideo : FaVolumeUp;
-          const label = stream.codec_type === 'video'
-            ? (index === 0 ? t('Video') : t('Video {{index}}', { index: index + 1 }))
-            : (simpleModeAudioStreams.length === 1
-              ? t('Audio')
-              : t('Audio {{index}}', { index: simpleModeAudioStreams.findIndex((item) => item.index === stream.index) + 1 }));
+    // The recording's own tracks, then each added file's (from the open-file question's Add buttons), each a switch.
+    const groups = [
+      { path: mainFilePath, name: undefined, streams: simpleModeStreams },
+      ...externalFilesEntries.map(([path, { streams }]) => ({
+        path,
+        name: basename(path),
+        streams: streams.filter((stream) => stream.codec_type === 'video' || stream.codec_type === 'audio'),
+      })),
+    ];
+    const getLabel = (streams: FFprobeStream[], stream: FFprobeStream) => {
+      const sameKind = streams.filter((other) => other.codec_type === stream.codec_type);
+      const number = sameKind.length > 1 ? sameKind.indexOf(stream) + 1 : undefined;
+      if (stream.codec_type === 'video') return number != null ? t('Picture {{number}}', { number }) : t('Picture');
+      return number != null ? t('Sound {{number}}', { number }) : t('Sound');
+    };
 
-          return (
-            <button
-              key={stream.index}
-              type="button"
-              onClick={() => toggleCopyStreamId(mainFilePath, stream.index)}
-              className={[
-                styles['simpleStreamButton'],
-                ...(copyStream ? [styles['simpleStreamButtonActive']] : [styles['simpleStreamButtonInactive']]),
-              ].join(' ')}
-            >
-              <span className={styles['simpleStreamMain']}>
-                <span className={styles['simpleStreamIcon']}>
-                  <Icon size={15} />
-                </span>
-                <span className={styles['simpleStreamLabel']}>{label}</span>
-              </span>
-              <span
-                className={[
-                  styles['simpleStreamState'],
-                  ...(copyStream ? [styles['simpleStreamStateActive']] : [styles['simpleStreamStateInactive']]),
-                ].join(' ')}
-              >
-                {copyStream ? t('Keep') : t('Skip')}
-              </span>
-            </button>
-          );
-        })}
+    return (
+      <div className={styles['simpleGroups']}>
+        {groups.map(({ path, name, streams }) => (
+          <section key={path} className={styles['simpleGroup']}>
+            {groups.length > 1 && (
+              <div className={styles['simpleGroupHeader']}>
+                <span className={styles['simpleGroupName']} title={name}>{name != null ? t('Added from {{name}}', { name }) : t('This recording')}</span>
+                {name != null && <button type="button" className={styles['simpleRemove']} onClick={() => removeFile(path)}>{t('Remove')}</button>}
+              </div>
+            )}
+            {streams.map((stream) => {
+              const label = getLabel(streams, stream);
+              const Icon = stream.codec_type === 'video' ? FiFilm : FiVolume2;
+              // As in the export options: blue is in the export, grey is left out; the recording's picture locked on when
+              // the export needs it, saying why.
+              const locked = lockedPicture != null && path === mainFilePath && stream.index === lockedPicture.index;
+              const kept = locked || isCopyingStreamId(path, stream.index);
+              return (
+                <button
+                  key={stream.index}
+                  type="button"
+                  aria-pressed={kept}
+                  aria-disabled={locked}
+                  title={locked ? lockedPicture.hint : undefined}
+                  className={[styles['simpleRow'], ...(kept ? [styles['simpleRowOn']] : []), ...(locked ? [styles['simpleRowLocked']] : [])].join(' ')}
+                  onClick={locked ? undefined : () => toggleCopyStreamId(path, stream.index)}
+                >
+                  <Icon aria-hidden className={styles['simpleRowIcon']} />
+                  <span className={styles['simpleRowLabel']}>{label}</span>
+                </button>
+              );
+            })}
+          </section>
+        ))}
       </div>
     );
   }

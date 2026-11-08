@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -10,12 +10,9 @@
       content="ClipPress is a simple clip editor for Windows. Trim the part you want and export it under the file size you need. No upload required."
     />
 
-    <!--
-      TODO: no production domain has been chosen yet, so this page ships without
-      <link rel="canonical"> and <meta property="og:url">. Once the production
-      domain exists, set SITE.siteUrl in src/site.config.ts and add both tags
-      here. Do not invent a domain.
-    -->
+    <!-- Link previews (Discord, X) need absolute URLs and a PNG: they show no SVG. -->
+    <link rel="canonical" href="https://www.clippress.app/" />
+    <meta property="og:url" content="https://www.clippress.app/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="ClipPress" />
     <meta property="og:title" content="ClipPress: trim the clip, set the file size" />
@@ -23,14 +20,16 @@
       property="og:description"
       content="A simple clip editor for Windows. Trim the part you want and export it under the file size you need. No upload required."
     />
-    <meta property="og:image" content="./og-image.svg" />
+    <meta property="og:image" content="https://www.clippress.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="ClipPress: trim the clip, set the file size" />
     <meta
       name="twitter:description"
       content="A simple clip editor for Windows. Trim the part you want and export it under the file size you need. No upload required."
     />
-    <meta name="twitter:image" content="./og-image.svg" />
+    <meta name="twitter:image" content="https://www.clippress.app/og-image.png" />
 
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./src/styles.css" />
@@ -65,10 +64,10 @@
 
         <!--
           Floating objects: decorative only. MP4, MKV, MOV and WebM are
-          container extensions ClipPress registers as file associations in
-          the root package.json build config. AV1 and H.264 name the codec
-          capabilities behind the size-limited export path (CPU AV1 via
-          SVT-AV1, CPU H.264 via x264, plus NVIDIA AV1/H.264 where present).
+          containers ClipPress offers to open from Windows' "Open with" menu
+          (script/installer.nsh). HEVC and H.264 name codecs the
+          size-limited exports make (x265 and x264 on the CPU, plus NVIDIA,
+          AMD and Intel HEVC and H.264 on the graphics card; AV1 when chosen).
         -->
         <div class="floats" aria-hidden="true">
           <span class="float float--a" data-depth="14"
@@ -92,7 +91,7 @@
               ><svg class="float__glyph" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <rect x="2" y="4" width="20" height="16" rx="3" />
                 <path d="M7 4v16M17 4v16M2 9h5M2 15h5M17 9h5M17 15h5" />
-              </svg><span class="float__label">AV1</span></span
+              </svg><span class="float__label">HEVC</span></span
             ></span
           >
           <span class="float float--c" data-depth="20"

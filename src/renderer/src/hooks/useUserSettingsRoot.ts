@@ -11,9 +11,6 @@ import mainApi from '../mainApi';
 import { mySpring, emitter as animationsEmitter } from '../animations';
 
 const { configStore } = window.require('@electron/remote').require('./index.js');
-const { systemPreferences } = window.require('@electron/remote');
-
-const animationSettings = systemPreferences.getAnimationSettings();
 
 export default function useUserSettingsRoot() {
   const firstUpdateRef = useRef(true);
@@ -170,6 +167,10 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ enableSmartCut }), [enableSmartCut]);
   const [customFfPath, setCustomFfPath] = useState(safeGetConfigInitial('customFfPath'));
   useEffect(() => safeSetConfig({ customFfPath }), [customFfPath]);
+  const [clipsFolder, setClipsFolder] = useState(safeGetConfigInitial('clipsFolder'));
+  useEffect(() => safeSetConfig({ clipsFolder }), [clipsFolder]);
+  const [clipsFolderOfferDismissed, setClipsFolderOfferDismissed] = useState(safeGetConfigInitial('clipsFolderOfferDismissed'));
+  useEffect(() => safeSetConfig({ clipsFolderOfferDismissed }), [clipsFolderOfferDismissed]);
   const [projectFileLocation, setProjectFileLocation] = useState(safeGetConfigInitial('projectFileLocation'));
   useEffect(() => safeSetConfig({ projectFileLocation }), [projectFileLocation]);
   const [enableOverwriteOutput, setEnableOverwriteOutput] = useState(safeGetConfigInitial('enableOverwriteOutput'));
@@ -204,6 +205,8 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ darkMode }), [darkMode]);
   const [preferStrongColors, setPreferStrongColors] = useState(safeGetConfigInitial('preferStrongColors'));
   useEffect(() => safeSetConfig({ preferStrongColors }), [preferStrongColors]);
+  const [exportProgressStyle, setExportProgressStyle] = useState(safeGetConfigInitial('exportProgressStyle'));
+  useEffect(() => safeSetConfig({ exportProgressStyle }), [exportProgressStyle]);
   const [outputFileNameMinZeroPadding, setOutputFileNameMinZeroPadding] = useState(safeGetConfigInitial('outputFileNameMinZeroPadding'));
   useEffect(() => safeSetConfig({ outputFileNameMinZeroPadding }), [outputFileNameMinZeroPadding]);
   const [cutFromAdjustmentFrames, setCutFromAdjustmentFrames] = useState(safeGetConfigInitial('cutFromAdjustmentFrames'));
@@ -232,6 +235,8 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ sizeLimitControlMode }), [sizeLimitControlMode]);
   const [sizeLimitPreset, setSizeLimitPreset] = useState(safeGetConfigInitial('sizeLimitPreset'));
   useEffect(() => safeSetConfig({ sizeLimitPreset }), [sizeLimitPreset]);
+  const [sizeLimitVideoFormat, setSizeLimitVideoFormat] = useState(safeGetConfigInitial('sizeLimitVideoFormat'));
+  useEffect(() => safeSetConfig({ sizeLimitVideoFormat }), [sizeLimitVideoFormat]);
   const [sizeLimitSimpleResolution, setSizeLimitSimpleResolution] = useState(safeGetConfigInitial('sizeLimitSimpleResolution'));
   useEffect(() => safeSetConfig({ sizeLimitSimpleResolution }), [sizeLimitSimpleResolution]);
   const [sizeLimitSimpleResolutionTouched, setSizeLimitSimpleResolutionTouched] = useState(safeGetConfigInitial('sizeLimitSimpleResolutionTouched'));
@@ -256,6 +261,10 @@ export default function useUserSettingsRoot() {
   useEffect(() => safeSetConfig({ sizeLimitAdvancedH264CpuPreset }), [sizeLimitAdvancedH264CpuPreset]);
   const [sizeLimitAdvancedH264NvencPreset, setSizeLimitAdvancedH264NvencPreset] = useState(safeGetConfigInitial('sizeLimitAdvancedH264NvencPreset'));
   useEffect(() => safeSetConfig({ sizeLimitAdvancedH264NvencPreset }), [sizeLimitAdvancedH264NvencPreset]);
+  const [sizeLimitAdvancedHevcCpuPreset, setSizeLimitAdvancedHevcCpuPreset] = useState(safeGetConfigInitial('sizeLimitAdvancedHevcCpuPreset'));
+  useEffect(() => safeSetConfig({ sizeLimitAdvancedHevcCpuPreset }), [sizeLimitAdvancedHevcCpuPreset]);
+  const [sizeLimitAdvancedHevcNvencPreset, setSizeLimitAdvancedHevcNvencPreset] = useState(safeGetConfigInitial('sizeLimitAdvancedHevcNvencPreset'));
+  useEffect(() => safeSetConfig({ sizeLimitAdvancedHevcNvencPreset }), [sizeLimitAdvancedHevcNvencPreset]);
   const [sizeLimitSeparateNamingMode, setSizeLimitSeparateNamingMode] = useState(safeGetConfigInitial('sizeLimitSeparateNamingMode'));
   useEffect(() => safeSetConfig({ sizeLimitSeparateNamingMode }), [sizeLimitSeparateNamingMode]);
   const [sizeLimitMergedNamingMode, setSizeLimitMergedNamingMode] = useState(safeGetConfigInitial('sizeLimitMergedNamingMode'));
@@ -273,6 +282,63 @@ export default function useUserSettingsRoot() {
     setKeyBindings((JSON.parse(configStore.getSnapshotJson()) as Config).keyBindings);
   }, []);
 
+  /**
+   * Settings' "Reset all settings": everything the Settings screen sets, back to its default (configStore's), shortcuts
+   * included. Not what isn't set there: recent files, the clips list's order, the window, the theme. Where projects are
+   * kept is changed by Settings itself, which moves them.
+   */
+  const resetAllSettings = useCallback(() => {
+    const setters: { [K in keyof Config]?: (value: Config[K]) => void } = {
+      language: setLanguage,
+      clipsFolder: setClipsFolder,
+      exportConfirmEnabled: setExportConfirmEnabled,
+      hideOsNotifications: setHideOsNotifications,
+      hideNotifications: setHideNotifications,
+      askBeforeClose: setAskBeforeClose,
+      enableAdvancedMode: setEnableAdvancedMode,
+      enableAskForFileOpenAction: setEnableAskForFileOpenAction,
+      storeWindowBounds: setStoreWindowBounds,
+      preferStrongColors: setPreferStrongColors,
+      reducedMotion: setReducedMotion,
+      exportProgressStyle: setExportProgressStyle,
+      timecodeFormat: setTimecodeFormat,
+      waveformHeight: setWaveformHeight,
+      playOnOpen: setPlayOnOpen,
+      invertCutSegments: setInvertCutSegments,
+      enableAutoHtml5ify: setEnableAutoHtml5ify,
+      autoLoadTimecode: setAutoLoadTimecode,
+      enableImportChapters: setEnableImportChapters,
+      keyframeCut: setKeyframeCut,
+      sizeLimitVideoFormat: setSizeLimitVideoFormat,
+      exportGpuAcceleration: setExportGpuAcceleration,
+      enableCustomOutDir: setEnableCustomOutDir,
+      cleanupChoices: setCleanupChoices,
+      copyAfterExport: setCopyAfterExport,
+      trashSourceAfterExport: setTrashSourceAfterExport,
+      quickExportPresets: setQuickExportPresets,
+      autoExportExtraStreams: setAutoExportExtraStreams,
+      treatInputFileModifiedTimeAsStart: setTreatInputFileModifiedTimeAsStart,
+      treatOutputFileModifiedTimeAsStart: setTreatOutputFileModifiedTimeAsStart,
+      captureFormat: setCaptureFormat,
+      captureFrameMethod: setCaptureFrameMethod,
+      captureFrameQuality: setCaptureFrameQuality,
+      captureFrameFileNameFormat: setCaptureFrameFileNameFormat,
+      keyBindings: setKeyBindings,
+      autoSaveProjectFile: setAutoSaveProjectFile,
+      trashProjectWithSource: setTrashProjectWithSource,
+      enableUpdateCheck: setEnableUpdateCheck,
+      updateMode: setUpdateMode,
+      customFfPath: setCustomFfPath,
+      enableNativeHevc: setEnableNativeHevc,
+      ffmpegHwaccel: setFfmpegHwaccel,
+      allowMultipleInstances: setAllowMultipleInstances,
+    };
+    const keys = Object.keys(setters) as (keyof Config)[];
+    keys.forEach((key) => configStore.reset(key));
+    const fresh = JSON.parse(configStore.getSnapshotJson()) as Config;
+    keys.forEach((key) => (setters[key] as (value: unknown) => void)(fresh[key]));
+  }, []);
+
   // NOTE! This useEffect must be placed after all usages of firstUpdateRef.current (safeSetConfig)
   useEffect(() => {
     firstUpdateRef.current = false;
@@ -283,15 +349,14 @@ export default function useUserSettingsRoot() {
 
   const toggleDarkMode = useCallback(() => setDarkMode((v) => !v), []);
 
-  const prefersReducedMotion = useMemo(() => {
-    if (reducedMotion !== 'user') return reducedMotion === 'always';
-    // fallback to electron detected system setting
-    // note: user has to restart app for changes here to be detected
-    return animationSettings.prefersReducedMotion;
-  }, [reducedMotion]);
+  // Settings > Appearance > Reduce motion, off unless turned on: Windows' own setting isn't followed, so nobody sees a
+  // stiller ClipPress without having asked for it (owner, 2026-11-07). An older "System default" counts as off.
+  const prefersReducedMotion = reducedMotion === 'always';
 
   useEffect(() => {
     animationsEmitter.emit('reducedMotion', prefersReducedMotion);
+    // The stylesheets' reduced-motion rules hang off this class, not the system's media query.
+    document.documentElement.classList.toggle('reduce-motion', prefersReducedMotion);
   }, [prefersReducedMotion]);
 
   const springAnimation = useMemo<Transition>(() => (prefersReducedMotion ? { duration: 0 } : mySpring), [prefersReducedMotion]);
@@ -331,7 +396,6 @@ export default function useUserSettingsRoot() {
     askBeforeClose,
     enableImportChapters,
     enableAskForFileOpenAction,
-    playbackVolume,
     autoSaveProjectFile,
     wheelSensitivity,
     waveformHeight,
@@ -366,6 +430,7 @@ export default function useUserSettingsRoot() {
     keyBindings,
     enableSmartCut,
     customFfPath,
+    clipsFolderOfferDismissed,
     projectFileLocation,
     enableOverwriteOutput,
     mouseWheelZoomModifierKey,
@@ -383,6 +448,7 @@ export default function useUserSettingsRoot() {
     allowMultipleInstances,
     darkMode,
     preferStrongColors,
+    exportProgressStyle,
     outputFileNameMinZeroPadding,
     cutFromAdjustmentFrames,
     cutToAdjustmentFrames,
@@ -397,6 +463,7 @@ export default function useUserSettingsRoot() {
     sizeLimitMb,
     sizeLimitControlMode,
     sizeLimitPreset,
+    sizeLimitVideoFormat,
     sizeLimitSimpleResolution,
     sizeLimitSimpleResolutionTouched,
     sizeLimitSimpleFps,
@@ -409,6 +476,8 @@ export default function useUserSettingsRoot() {
     sizeLimitAdvancedAv1NvencPreset,
     sizeLimitAdvancedH264CpuPreset,
     sizeLimitAdvancedH264NvencPreset,
+    sizeLimitAdvancedHevcCpuPreset,
+    sizeLimitAdvancedHevcNvencPreset,
     sizeLimitSeparateNamingMode,
     sizeLimitMergedNamingMode,
     sizeLimitCutFileTemplate,
@@ -433,7 +502,6 @@ export default function useUserSettingsRoot() {
     askBeforeClose,
     enableImportChapters,
     enableAskForFileOpenAction,
-    playbackVolume,
     autoSaveProjectFile,
     wheelSensitivity,
     waveformHeight,
@@ -468,6 +536,7 @@ export default function useUserSettingsRoot() {
     keyBindings,
     enableSmartCut,
     customFfPath,
+    clipsFolderOfferDismissed,
     projectFileLocation,
     enableOverwriteOutput,
     mouseWheelZoomModifierKey,
@@ -485,6 +554,7 @@ export default function useUserSettingsRoot() {
     allowMultipleInstances,
     darkMode,
     preferStrongColors,
+    exportProgressStyle,
     outputFileNameMinZeroPadding,
     cutFromAdjustmentFrames,
     cutToAdjustmentFrames,
@@ -499,6 +569,7 @@ export default function useUserSettingsRoot() {
     sizeLimitMb,
     sizeLimitControlMode,
     sizeLimitPreset,
+    sizeLimitVideoFormat,
     sizeLimitSimpleResolution,
     sizeLimitSimpleResolutionTouched,
     sizeLimitSimpleFps,
@@ -511,6 +582,8 @@ export default function useUserSettingsRoot() {
     sizeLimitAdvancedAv1NvencPreset,
     sizeLimitAdvancedH264CpuPreset,
     sizeLimitAdvancedH264NvencPreset,
+    sizeLimitAdvancedHevcCpuPreset,
+    sizeLimitAdvancedHevcNvencPreset,
     sizeLimitSeparateNamingMode,
     sizeLimitMergedNamingMode,
     sizeLimitCutFileTemplate,
@@ -518,7 +591,7 @@ export default function useUserSettingsRoot() {
     quickExportPresets,
   ]);
 
-  return useMemo(() => ({
+  const root = useMemo(() => ({
     settings,
 
     springAnimation,
@@ -531,6 +604,7 @@ export default function useUserSettingsRoot() {
     setShelfExports,
     shelfOrder,
     setShelfOrder,
+    clipsFolder,
 
     // setters
     setLastAppVersion,
@@ -585,8 +659,11 @@ export default function useUserSettingsRoot() {
     setSegmentsToChaptersOnly,
     setKeyBindings,
     resetKeyBindings,
+    resetAllSettings,
     setEnableSmartCut,
     setCustomFfPath,
+    setClipsFolder,
+    setClipsFolderOfferDismissed,
     setProjectFileLocation,
     setEnableOverwriteOutput,
     setMouseWheelZoomModifierKey,
@@ -604,6 +681,7 @@ export default function useUserSettingsRoot() {
     setAllowMultipleInstances,
     toggleDarkMode,
     setPreferStrongColors,
+    setExportProgressStyle,
     setOutputFileNameMinZeroPadding,
     setCutFromAdjustmentFrames,
     setCutToAdjustmentFrames,
@@ -619,6 +697,7 @@ export default function useUserSettingsRoot() {
     setSizeLimitMb,
     setSizeLimitControlMode,
     setSizeLimitPreset,
+    setSizeLimitVideoFormat,
     setSizeLimitSimpleResolution,
     setSizeLimitSimpleResolutionTouched,
     setSizeLimitSimpleFps,
@@ -631,12 +710,18 @@ export default function useUserSettingsRoot() {
     setSizeLimitAdvancedAv1NvencPreset,
     setSizeLimitAdvancedH264CpuPreset,
     setSizeLimitAdvancedH264NvencPreset,
+    setSizeLimitAdvancedHevcCpuPreset,
+    setSizeLimitAdvancedHevcNvencPreset,
     setSizeLimitSeparateNamingMode,
     setSizeLimitMergedNamingMode,
     setSizeLimitCutFileTemplate,
     setSizeLimitCutMergedFileTemplate,
     setQuickExportPresets,
-  }), [settings, springAnimation, customOutDir, setCustomOutDir, resetKeyBindings, toggleDarkMode, prefersReducedMotion, recentFiles, shelfExports, shelfOrder]);
+  }), [settings, springAnimation, customOutDir, setCustomOutDir, resetKeyBindings, resetAllSettings, toggleDarkMode, prefersReducedMotion, recentFiles, shelfExports, shelfOrder, clipsFolder]);
+
+  // The preview volume beside the rest, not in `settings`: dragging its slider changes it at every step, and every
+  // component that reads the settings would draw again with it. Only the player and the volume control need it.
+  return { root, playbackVolume };
 }
 
-export type UserSettingsRoot = ReturnType<typeof useUserSettingsRoot>;
+export type UserSettingsRoot = ReturnType<typeof useUserSettingsRoot>['root'];

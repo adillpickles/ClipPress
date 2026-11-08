@@ -32,6 +32,8 @@ export interface CloseGuardOptions {
   showNotResponding: (signal: AbortSignal, reason: StalledReason) => Promise<'close' | 'wait'>,
   /** Closes the window for real; `handleClose` lets that close through. */
   close: () => void,
+  /** A close was called off: the user said No, or the renderer cancelled it. */
+  onCancelled?: (() => void) | undefined,
   /**
    * How long the renderer has to acknowledge a request, and to answer once the user closed again,
    * before the user is offered to stop waiting.
@@ -183,7 +185,10 @@ export default class CloseGuard {
       return 'discard';
     }).then((decision) => {
       this.running = false;
-      if (decision === 'cancel') return;
+      if (decision === 'cancel') {
+        this.options.onCancelled?.();
+        return;
+      }
       this.closing = decision === 'close' ? 'saved' : 'forced';
       this.options.close();
     }).catch((err: unknown) => {

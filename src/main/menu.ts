@@ -3,9 +3,12 @@ import type { BrowserWindow, MenuItem, MenuItemConstructorOptions } from 'electr
 import electron from 'electron';
 import { t } from 'i18next';
 
-import { homepageUrl, licensesUrl, thanksUrl, usageUrl, faqUrl, troubleshootingUrl, featureRequestUrl } from '../common/constants.js';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { licensesUrl, thanksUrl, usageUrl, troubleshootingUrl, featureRequestUrl, websiteUrl } from '../common/constants.js';
 import formatVersion from '../common/formatVersion.js';
-import { logFilePath } from './logger.js';
+import logger, { logFilePath } from './logger.js';
 import { getConfigPath } from './configStore.js';
 
 
@@ -14,6 +17,19 @@ import { getConfigPath } from './configStore.js';
 const esc = (val: string) => val.replaceAll('&', '&&');
 
 const { Menu } = electron;
+
+// A link that can't open (no default browser) is only logged, not shown as an error dialog.
+const openLink = (url: string) => electron.shell.openExternal(url).catch((err: unknown) => logger.warn('Could not open', url, err));
+
+/** The licences of everything ClipPress ships (packaged next to it), else ClipPress's own licence online. */
+function openLicenses() {
+  const bundled = join(process.resourcesPath, 'licenses.txt');
+  if (electron.app.isPackaged && existsSync(bundled)) {
+    electron.shell.openPath(bundled).then((error) => { if (error) logger.warn('Could not open the licences', error); }).catch(() => undefined);
+    return;
+  }
+  openLink(licensesUrl);
+}
 
 export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, simpleMode }: {
   app: Electron.App, mainWindow: BrowserWindow, newVersion?: string | undefined, isStoreBuild: boolean,
@@ -38,6 +54,7 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
       { type: 'separator' },
       action(t('Add text'), 'addTextOverlay'),
       action(t('Zoom / crop clip…'), 'editCurrentSegmentCrop'),
+      action(t('Change speed…'), 'changeCurrentSegmentSpeed'),
       action(t('Speed controls'), 'toggleSegmentSpeedControls'),
       { type: 'separator' },
       action(t('Clear all clips'), 'clearSegments'),
@@ -65,12 +82,13 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
             mainWindow.webContents.send('openDirDialog');
           },
         },
-        {
+        // A LosslessCut tool for stream URLs, which needs an export folder chosen first: advanced mode only.
+        ...(simpleMode ? [] : [{
           label: esc(t('Open URL')),
           async click() {
             mainWindow.webContents.send('promptDownloadMediaUrl');
           },
-        },
+        }]),
         { type: 'separator' },
         {
           id: 'closeCurrentFile',
@@ -239,8 +257,6 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
           },
         }] satisfies MenuItemConstructorOptions[]),
         { type: 'separator' },
-
-        { type: 'separator' },
         {
           label: esc(t('Settings')),
           accelerator: 'CmdOrCtrl+,',
@@ -274,8 +290,9 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
           { role: 'undo' as const, label: esc(t('Undo')) },
           { role: 'redo' as const, label: esc(t('Redo')) },
         ] : [
-          { label: esc(t('Undo')), accelerator: 'Ctrl+Z', registerAccelerator: false, click: () => mainWindow.webContents.send('editMenuUndoRedo', 'undo') },
-          { label: esc(t('Redo')), accelerator: 'Ctrl+Y', registerAccelerator: false, click: () => mainWindow.webContents.send('editMenuUndoRedo', 'redo') },
+          // The ids let the title bar's menu show the user's own keys for these.
+          { id: 'undo', label: esc(t('Undo')), accelerator: 'Ctrl+Z', registerAccelerator: false, click: () => mainWindow.webContents.send('editMenuUndoRedo', 'undo') },
+          { id: 'redo', label: esc(t('Redo')), accelerator: 'Ctrl+Y', registerAccelerator: false, click: () => mainWindow.webContents.send('editMenuUndoRedo', 'redo') },
         ]),
         { type: 'separator' },
         { role: 'cut', label: esc(t('Cut')) },
@@ -413,7 +430,8 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
         // The title bar has its own buttons for these.
         ...(process.platform === 'win32' && !simpleMode ? [
           { role: 'minimize' as const, label: esc(t('Minimize')) },
-          { role: 'zoom' as const, label: esc(t('Maximize')) },
+          // Electron's 'zoom' role only works on macOS.
+          { label: esc(t('Maximize')), click: () => (mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()) },
         ] : []),
         { role: 'togglefullscreen', label: esc(t('Toggle Full Screen')) },
         { role: 'resetZoom', label: esc(t('Reset font size')) },
@@ -489,16 +507,12 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
       submenu: [
         {
           label: esc(t('How to use')),
-          click() { electron.shell.openExternal(usageUrl); },
+          click() { openLink(usageUrl); },
         },
         ...(!isStoreBuild ? [{ label: esc(t('Check for updates')), click: onCheckForUpdates }] : []),
         {
-          label: esc(t('FAQ')),
-          click() { electron.shell.openExternal(faqUrl); },
-        },
-        {
           label: esc(t('Troubleshooting')),
-          click() { electron.shell.openExternal(troubleshootingUrl); },
+          click() { openLink(troubleshootingUrl); },
         },
         {
           id: 'toggleKeyboardShortcuts',
@@ -508,8 +522,8 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
           },
         },
         {
-          label: esc(t('Learn More')),
-          click() { electron.shell.openExternal(homepageUrl); },
+          label: esc(t('ClipPress website')),
+          click() { openLink(websiteUrl); },
         },
         { type: 'separator' },
         {
@@ -518,11 +532,11 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
         },
         {
           label: esc(t('Feature request')),
-          click() { electron.shell.openExternal(featureRequestUrl); },
+          click() { openLink(featureRequestUrl); },
         },
         ...(!isStoreBuild ? [{
           label: esc(`${t('Donate')} ❤️`),
-          click() { electron.shell.openExternal(thanksUrl); },
+          click() { openLink(thanksUrl); },
         }] : []),
         { type: 'separator' },
         {
@@ -536,7 +550,7 @@ export default ({ app, mainWindow, newVersion, isStoreBuild, onCheckForUpdates, 
         { type: 'separator' },
         {
           label: esc(t('Licenses')),
-          click() { electron.shell.openExternal(licensesUrl); },
+          click() { openLicenses(); },
         },
         ...(process.platform !== 'darwin' ? [{ role: 'about' as const, label: esc(t('About ClipPress')) }] : []),
       ],

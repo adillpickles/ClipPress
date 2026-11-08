@@ -18,10 +18,12 @@ import prettyBytes from 'pretty-bytes';
 
 import useContextMenu from './hooks/useContextMenu';
 import useUserSettings from './hooks/useUserSettings';
+import useStableHandlers from './hooks/useStableHandlers';
 import { saveColor, primaryTextColor, darkModeTransition, getSegBadgeStyle, getSegColorVars } from './colors';
 import { useSegColors } from './contexts';
 import { getSegmentsTotalDuration, getSegmentTags } from './segments';
 import formatClockTime, { formatClipLength } from './util/clockTime';
+import { getClipVolumeMenuLabel } from './util/audioGain';
 import TagEditor from './components/TagEditor';
 import type { ContextMenuTemplate, DefiniteSegmentBase, FormatTimecode, GetFrameCount, InverseCutSegment, SegmentBase, SegmentColorIndex, SegmentTags, StateSegment } from './types';
 import type { UseSegments } from './hooks/useSegments';
@@ -141,7 +143,7 @@ const Segment = memo(({
   onInvertSelectedSegments,
   onDuplicateSegmentClick,
   getSegEstimatedSize,
-  onEditSpeed, onEditCrop, noneTicked = false, renaming = false, onStartRename, onFinishRename, maxLabelLength,
+  onEditSpeed, onEditCrop, onEditVolume, noneTicked = false, renaming = false, onStartRename, onFinishRename, maxLabelLength,
   inPickedGroup = false, onRemovePicked, menuKeys,
 }: {
   seg: StateSegment | InverseCutSegment,
@@ -184,6 +186,8 @@ const Segment = memo(({
   getSegEstimatedSize: UseSegments['getSegEstimatedSize'],
   onEditSpeed: (segmentIndex: number) => void,
   onEditCrop: (segmentIndex: number) => void,
+  /** Opens the clip's volume popover at its card (simple mode). */
+  onEditVolume?: ((segmentIndex: number, anchor: HTMLElement) => void) | undefined,
   /** No clip is ticked, so the export takes all of them. */
   noneTicked?: boolean,
   /** The list keeps track of which clip is being renamed, so its row stays mounted while scrolled out of view. */
@@ -215,6 +219,8 @@ const Segment = memo(({
       return [
         { label: t('Rename clip'), keys: inPickedGroup ? undefined : menuKeys?.rename, click: startRenaming },
         { label: t('Duplicate clip'), keys: inPickedGroup ? undefined : menuKeys?.duplicate, click: () => onDuplicateSegmentClick(seg) },
+        // Also from the keyboard (the menu key on the card): the timeline's clip blocks can't take focus.
+        ...(onEditVolume != null && seg.end != null ? [{ label: getClipVolumeMenuLabel(seg, t), click: () => { if (ref.current != null) onEditVolume(index, ref.current); } }] : []),
 
         { type: 'separator' },
 
@@ -271,7 +277,7 @@ const Segment = memo(({
       { label: t('Segment tags'), click: () => onEditSegmentTags(index) },
       { label: t('Extract frames as image files'), click: () => onExtractSegmentsFramesAsImages([seg]) },
     ];
-  }, [invertCutSegments, simpleMode, startRenaming, inPickedGroup, menuKeys, onRemovePicked, selected, onToggleSegmentSelected, t, addSegment, onLabelSelectedSegments, onRemoveSelected, onExtractSelectedSegmentsFramesAsImages, updateSegOrder, index, jumpSegStart, jumpSegEnd, onLabelPress, onRemovePress, onDuplicateSegmentClick, seg, onSelectSingleSegment, onSelectAllSegments, onDeselectAllSegments, onSelectAllMarkers, onSelectSegmentsByLabel, onSelectSegmentsByExpr, onInvertSelectedSegments, onMutateSegmentsByExpr, onReorderPress, onEditSegmentTags, onExtractSegmentsFramesAsImages, onEditSpeed, onEditCrop]);
+  }, [invertCutSegments, simpleMode, startRenaming, inPickedGroup, menuKeys, onRemovePicked, selected, onToggleSegmentSelected, t, addSegment, onLabelSelectedSegments, onRemoveSelected, onExtractSelectedSegmentsFramesAsImages, updateSegOrder, index, jumpSegStart, jumpSegEnd, onLabelPress, onRemovePress, onDuplicateSegmentClick, seg, onSelectSingleSegment, onSelectAllSegments, onDeselectAllSegments, onSelectAllMarkers, onSelectSegmentsByLabel, onSelectSegmentsByExpr, onInvertSelectedSegments, onMutateSegmentsByExpr, onReorderPress, onEditSegmentTags, onExtractSegmentsFramesAsImages, onEditSpeed, onEditCrop, onEditVolume]);
 
   useContextMenu(ref, contextMenuTemplate);
 
@@ -419,6 +425,8 @@ const Segment = memo(({
       <div
         ref={setRef}
         role="button"
+        // Found by the clip volume popover, to give focus back to this card (App).
+        data-clip-card={seg.segId}
         onClick={handleSegmentClick}
         onDoubleClick={onDoubleClick}
         // As in Explorer: the clip right-clicked is the one selected (picked along with others, they all stay).
@@ -592,7 +600,7 @@ function SegmentList({
   setEditingSegmentTagsSegmentIndex,
   onEditSegmentTags,
   getSegEstimatedSize,
-  onEditSpeed, onEditCrop, maxLabelLength,
+  onEditSpeed, onEditCrop, onEditVolume, maxLabelLength,
   renamingSegId, setRenamingSegId,
   pickedClipIds, onPickClipsInBox, onStartOver, animated, onRemovePicked, menuKeys, togglePanelKeys,
 }: {
@@ -646,6 +654,8 @@ function SegmentList({
   getSegEstimatedSize: UseSegments['getSegEstimatedSize'],
   onEditSpeed: (segmentIndex: number) => void,
   onEditCrop: (segmentIndex: number) => void,
+  /** Opens the clip's volume popover at its card (simple mode). */
+  onEditVolume?: ((segmentIndex: number, anchor: HTMLElement) => void) | undefined,
   maxLabelLength: number,
   /** The clip whose name is being edited in place. Held by the app, so "Rename clip…" in the menu can start it too. */
   renamingSegId: string | undefined,
@@ -693,6 +703,10 @@ function SegmentList({
   }, [cutSegments]);
 
   const sortableList = useMemo(() => segmentsOrInverse.map((seg) => ({ id: seg.segId, seg })), [segmentsOrInverse]);
+  // The list's sort context takes a new value with every new array, and every card with it: only when the ids change.
+  const sortableIdsKey = sortableList.map((item) => item.id).join(' ');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const sortableIds = useMemo(() => sortableList.map((item) => item.id), [sortableIdsKey]);
 
   const renamingIndex = renamingSegId != null ? sortableList.findIndex((item) => item.id === renamingSegId) : -1;
 
@@ -945,6 +959,11 @@ function SegmentList({
 
   const draggingSeg = useMemo(() => sortableList.find((s) => s.id === draggingId), [sortableList, draggingId]);
 
+  // The cards' handlers stay the same between edits (most change with the clips), so an edit re-draws only its card.
+  const cardHandlers = useStableHandlers({
+    onRemovePicked, onSegClick, addSegment, onRemoveSelected, removeSegment, onReorderSegs, onLabelSegment, jumpSegStart, jumpSegEnd, updateSegOrder, onSelectSingleSegment, onToggleSegmentSelected, onDeselectAllSegments, onSelectAllSegments, onEditSegmentTags, onSelectSegmentsByLabel, onSelectSegmentsByExpr, onMutateSegmentsByExpr, onExtractSegmentsFramesAsImages, onExtractSelectedSegmentsFramesAsImages, onLabelSelectedSegments, onSelectAllMarkers, onInvertSelectedSegments, onDuplicateSegmentClick, onEditSpeed, onEditCrop, onEditVolume, onFinishRename,
+  });
+
   function renderSegment({ seg, index, selected, isActive, dragging }: {
     seg: StateSegment | InverseCutSegment,
     index: number,
@@ -959,42 +978,43 @@ function SegmentList({
         isActive={isActive}
         picked={pickedClipIds.includes(seg.segId)}
         inPickedGroup={pickedClipIds.length > 1 && pickedClipIds.includes(seg.segId)}
-        onRemovePicked={onRemovePicked}
+        onRemovePicked={cardHandlers.onRemovePicked}
         menuKeys={menuKeys}
         dragging={dragging}
         selected={selected}
-        onClick={onSegClick}
-        addSegment={addSegment}
-        onRemoveSelected={onRemoveSelected}
-        onRemovePress={removeSegment}
-        onReorderPress={onReorderSegs}
-        onLabelPress={onLabelSegment}
-        jumpSegStart={jumpSegStart}
-        jumpSegEnd={jumpSegEnd}
-        updateSegOrder={updateSegOrder}
+        onClick={cardHandlers.onSegClick}
+        addSegment={cardHandlers.addSegment}
+        onRemoveSelected={cardHandlers.onRemoveSelected}
+        onRemovePress={cardHandlers.removeSegment}
+        onReorderPress={cardHandlers.onReorderSegs}
+        onLabelPress={cardHandlers.onLabelSegment}
+        jumpSegStart={cardHandlers.jumpSegStart}
+        jumpSegEnd={cardHandlers.jumpSegEnd}
+        updateSegOrder={cardHandlers.updateSegOrder}
         getFrameCount={getFrameCount}
         formatTimecode={formatTimecode}
-        onSelectSingleSegment={onSelectSingleSegment}
-        onToggleSegmentSelected={onToggleSegmentSelected}
-        onDeselectAllSegments={onDeselectAllSegments}
-        onSelectAllSegments={onSelectAllSegments}
-        onEditSegmentTags={onEditSegmentTags}
-        onSelectSegmentsByLabel={onSelectSegmentsByLabel}
-        onSelectSegmentsByExpr={onSelectSegmentsByExpr}
-        onMutateSegmentsByExpr={onMutateSegmentsByExpr}
-        onExtractSegmentsFramesAsImages={onExtractSegmentsFramesAsImages}
-        onExtractSelectedSegmentsFramesAsImages={onExtractSelectedSegmentsFramesAsImages}
-        onLabelSelectedSegments={onLabelSelectedSegments}
-        onSelectAllMarkers={onSelectAllMarkers}
-        onInvertSelectedSegments={onInvertSelectedSegments}
-        onDuplicateSegmentClick={onDuplicateSegmentClick}
+        onSelectSingleSegment={cardHandlers.onSelectSingleSegment}
+        onToggleSegmentSelected={cardHandlers.onToggleSegmentSelected}
+        onDeselectAllSegments={cardHandlers.onDeselectAllSegments}
+        onSelectAllSegments={cardHandlers.onSelectAllSegments}
+        onEditSegmentTags={cardHandlers.onEditSegmentTags}
+        onSelectSegmentsByLabel={cardHandlers.onSelectSegmentsByLabel}
+        onSelectSegmentsByExpr={cardHandlers.onSelectSegmentsByExpr}
+        onMutateSegmentsByExpr={cardHandlers.onMutateSegmentsByExpr}
+        onExtractSegmentsFramesAsImages={cardHandlers.onExtractSegmentsFramesAsImages}
+        onExtractSelectedSegmentsFramesAsImages={cardHandlers.onExtractSelectedSegmentsFramesAsImages}
+        onLabelSelectedSegments={cardHandlers.onLabelSelectedSegments}
+        onSelectAllMarkers={cardHandlers.onSelectAllMarkers}
+        onInvertSelectedSegments={cardHandlers.onInvertSelectedSegments}
+        onDuplicateSegmentClick={cardHandlers.onDuplicateSegmentClick}
         getSegEstimatedSize={getSegEstimatedSize}
-        onEditSpeed={onEditSpeed}
-        onEditCrop={onEditCrop}
+        onEditSpeed={cardHandlers.onEditSpeed}
+        onEditCrop={cardHandlers.onEditCrop}
+        onEditVolume={cardHandlers.onEditVolume}
         noneTicked={noneTicked}
         renaming={!dragging && seg.segId === renamingSegId}
         onStartRename={setRenamingSegId}
-        onFinishRename={onFinishRename}
+        onFinishRename={cardHandlers.onFinishRename}
         maxLabelLength={maxLabelLength}
       />
     );
@@ -1068,7 +1088,7 @@ function SegmentList({
           </div>
 
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} onDragStart={handleDragStart} modifiers={[restrictToVerticalAxis]}>
-            <SortableContext items={sortableList} strategy={verticalListSortingStrategy}>
+            <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
               {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
               <div
                 ref={scrollerRef}

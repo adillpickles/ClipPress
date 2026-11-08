@@ -1,12 +1,12 @@
 import { join } from 'node:path';
-import { stat } from 'node:fs/promises';
+import { access, stat } from 'node:fs/promises';
 import readline from 'node:readline';
 import { constants as osConstants, setPriority } from 'node:os';
 import type { Options as ExecaOptions, ResultPromise } from 'execa';
 import assert from 'node:assert';
 import type { Readable } from 'node:stream';
 // eslint-disable-next-line import/no-extraneous-dependencies
-import { app, clipboard, nativeImage } from 'electron';
+import { app, clipboard, ClipboardItem, nativeImage } from 'electron';
 
 import { platform, arch, isWindows, isLinux } from './util.js';
 import type { CaptureFormat, FfmpegHwAccel, Waveform } from '../common/types.js';
@@ -14,7 +14,7 @@ import type { FFprobeFormat } from '../common/ffprobe.js';
 import isDev from './isDev.js';
 import logger from './logger.js';
 import { parseFfmpegProgressLine } from './progress.js';
-import { getHwaccelArgs, parseFfprobeDuration } from '../common/util.js';
+import { formatFfmpegNumber, getHwaccelArgs, parseFfprobeDuration } from '../common/util.js';
 import { getFfmpegJpegQuality } from './ffmpegUtil.js';
 import { withCancelId } from './ffmpegCancel.js';
 import findSourceFileCollision from '../common/sourceFileIdentity.js';
@@ -65,7 +65,14 @@ function getFfPath(cmd: string) {
   return join(...components);
 }
 
-const getFfprobePath = () => getFfPath('ffprobe');
+// Used by the startup check to fail fast with a proper ENOENT if the executable doesn't exist.
+// On Windows, cross-spawn (used by execa) otherwise runs the command through cmd.exe when it can't find the executable
+// (e.g. a custom FFmpeg folder without ffmpeg.exe), which fails with a confusing exit code 1 instead
+export async function checkFfExists(cmd: 'ffmpeg' | 'ffprobe') {
+  await access(getFfPath(cmd)); // throws with code ENOENT if it doesn't exist
+}
+
+export const getFfprobePath = () => getFfPath('ffprobe');
 /**
  * Do not use directly when running ffmpeg, because we need to add certain options before running, like `LD_LIBRARY_PATH` on linux.
  */
@@ -197,7 +204,9 @@ export async function runFfmpegWithProgress({ ffmpegArgs, duration, onProgress }
   onProgress: (a: number) => void,
 }) {
   await loadExeca();
-  const process = runFfmpegProcess(ffmpegArgs);
+  // FFmpeg reports how far it is every 0.5 s by default, so a bar sat at 0% for most of a second at the start of every
+  // export; every 0.1 s, the first report comes ~0.3 s sooner and the bar fills smoothly (no slower to run).
+  const process = runFfmpegProcess(['-stats_period', '0.1', ...ffmpegArgs]);
   assert(process.stderr != null);
   handleProgress(process, duration, onProgress);
   return process;
@@ -291,8 +300,8 @@ async function renderWaveformPngProcesses({ filePath, start, duration, resample,
     '-i', filePath,
     '-vn',
     '-map', `0:${streamIndex}`,
-    ...(start != null ? ['-ss', String(start)] : []),
-    ...(duration != null ? ['-t', String(duration)] : []),
+    ...(start != null ? ['-ss', formatFfmpegNumber(start)] : []),
+    ...(duration != null ? ['-t', formatFfmpegNumber(duration)] : []),
     ...(resample != null ? [
       // the operation is faster if we resample
       // the higher the resample rate, the faster the resample
@@ -347,9 +356,9 @@ export const renderWaveformPng = ({ cancelId, ...rest }: Omit<Parameters<typeof 
 );
 
 const getInputSeekArgs = ({ filePath, from, to }: { filePath: string, from?: number | undefined, to?: number | undefined }) => [
-  ...(from != null ? ['-ss', from.toFixed(5)] : []),
+  ...(from != null ? ['-ss', formatFfmpegNumber(from)] : []),
   '-i', filePath,
-  ...(from != null && to != null ? ['-t', (to - from).toFixed(5)] : []),
+  ...(from != null && to != null ? ['-t', formatFfmpegNumber(to - from)] : []),
 ];
 
 export function mapTimesToSegments(times: number[], includeLast: boolean) {
@@ -570,9 +579,9 @@ export async function captureFrames({ from, to, videoPath, outPathTemplate, qual
 }) {
   await loadExeca();
   const args = [
-    '-ss', String(from),
+    '-ss', formatFfmpegNumber(from),
     '-i', videoPath,
-    ...(to != null ? ['-t', String(Math.max(0, to - from))] : []),
+    ...(to != null ? ['-t', formatFfmpegNumber(Math.max(0, to - from))] : []),
     ...getQualityOpts({ captureFormat, quality }),
     // only apply filter for non-markers
     ...(to == null
@@ -584,7 +593,7 @@ export async function captureFrames({ from, to, videoPath, outPathTemplate, qual
           '-vf', filter,
           // https://superuser.com/questions/1336285/use-ffmpeg-for-thumbnail-selections
           ...(framePts ? ['-frame_pts', '1'] : []),
-          '-vsync', '0', // else we get a ton of duplicates (thumbnail filter)
+          '-fps_mode', 'passthrough', // else we get a ton of duplicates (thumbnail filter). `-vsync` is removed in FFmpeg 9
         ] : [])
     ),
     ...getCodecOpts(captureFormat),
@@ -605,17 +614,18 @@ export async function captureFrames({ from, to, videoPath, outPathTemplate, qual
   return args;
 }
 
-function getCaptureFrameArgs({ timestamp, videoPath, quality }: {
+function getCaptureFrameArgs({ timestamp, videoPath, quality, captureFormat }: {
   timestamp: number,
   videoPath: string,
   quality: number,
+  captureFormat: CaptureFormat,
 }) {
-  const ffmpegQuality = getFfmpegJpegQuality(quality);
   return [
-    '-ss', String(timestamp),
+    '-ss', formatFfmpegNumber(timestamp),
     '-i', videoPath,
     '-frames:v', '1',
-    '-q:v', String(ffmpegQuality),
+    // each format has its own quality scale (JPEG's 2-31 made a WebP capture very low quality)
+    ...getQualityOpts({ captureFormat, quality }),
   ];
 }
 
@@ -626,27 +636,30 @@ export async function captureFrameToClipboard({ timestamp, videoPath, quality }:
 }) {
   await loadExeca();
   const args = [
-    ...getCaptureFrameArgs({ timestamp, videoPath, quality }),
+    ...getCaptureFrameArgs({ timestamp, videoPath, quality, captureFormat: 'jpeg' }),
     '-c:v', 'mjpeg',
     '-f', 'image2',
     '-',
   ];
   const { stdout } = await runFfmpegProcess(args);
 
-  clipboard.writeImage(nativeImage.createFromBuffer(Buffer.from(stdout)));
+  // As PNG: since Electron 44 the clipboard takes web-style items, and an image item has to be PNG.
+  const png = nativeImage.createFromBuffer(Buffer.from(stdout)).toPNG();
+  await clipboard.write([new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }) })]);
 }
 
-export async function captureFrameToFile({ timestamp, videoPath, outPath, quality }: {
+export async function captureFrameToFile({ timestamp, videoPath, outPath, quality, captureFormat }: {
   timestamp: number,
   videoPath: string,
   outPath: string,
   quality: number,
+  captureFormat: CaptureFormat,
 }) {
   await loadExeca();
   const collision = await findSourceFileCollision({ outPaths: [outPath], protectedPaths: [videoPath], stat: (path) => stat(path, { bigint: true }) });
   if (collision != null) throw new Error('ClipPress will not save a frame onto its source file.');
   const args = [
-    ...getCaptureFrameArgs({ timestamp, videoPath, quality }),
+    ...getCaptureFrameArgs({ timestamp, videoPath, quality, captureFormat }),
     '-y', outPath,
   ];
   await runFfmpegProcess(args);
@@ -794,7 +807,7 @@ export function createMediaSourceProcess({ path, videoStreamIndex, audioStreamIn
     // '-flags', 'low_delay', // this seems to ironically give a *higher* delay
     '-flush_packets', '1',
 
-    '-ss', String(seekTo),
+    '-ss', formatFfmpegNumber(seekTo),
 
     ...(rotate != null ? [
       '-display_rotation', '0',

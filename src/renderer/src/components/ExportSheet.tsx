@@ -1,11 +1,9 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useTranslation } from 'react-i18next';
 
 import styles from './ExportSheet.module.css';
 import CloseButton from './CloseButton';
-import Button from './Button';
 
 const focusableSelector = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]';
 
@@ -37,7 +35,6 @@ function ExportSheet({
   subtitle?: ReactNode,
   width: CSSProperties['width'],
 }) {
-  const { t } = useTranslation();
   const boxRef = useRef<HTMLDivElement>(null);
 
   // Keyboard focus moves into the sheet when it opens and goes back when it closes. Only a control the keyboard
@@ -141,8 +138,8 @@ function ExportSheet({
 
             <div className={styles['footer']}>
               <div className={styles['footerMeta']}>{renderBottom?.()}</div>
+              {/* A panel: its X closes it, so the bottom has only what it does. */}
               <div className={styles['footerActions']}>
-                <Button size="lg" onClick={onClosePress}>{t('Cancel')}</Button>
                 {renderButton()}
               </div>
             </div>

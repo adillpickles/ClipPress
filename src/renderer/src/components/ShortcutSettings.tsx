@@ -98,6 +98,7 @@ export function useShortcutGroups() {
         { action: 'undo', label: t('Undo') },
         { action: 'redo', label: t('Redo') },
         { action: 'addTextOverlay', label: t('Add text') },
+        { action: 'changeCurrentSegmentSpeed', label: t('Change the clip\'s speed') },
         { action: 'toggleSegmentSpeedControls', label: t('Speed controls') },
         { action: 'editCurrentSegmentCrop', label: t('Zoom / crop the clip') },
         { action: 'captureSnapshot', label: t('Save a still frame') },
@@ -163,7 +164,7 @@ export default function ShortcutSettings({ onAllShortcutsRequested, showAdvanced
     segmentMouseModifierKey, setSegmentMouseModifierKey, invertTimelineScroll, setInvertTimelineScroll, wheelSensitivity, setWheelSensitivity,
     keyboardNormalSeekSpeed, setKeyboardNormalSeekSpeed, setKeyboardSeekSpeed2, setKeyboardSeekSpeed3, setKeyboardSeekAccFactor,
     mouseWheelKeyframeSeekModifierKey, setMouseWheelKeyframeSeekModifierKey, keyboardSeekSpeed2, keyboardSeekSpeed3, keyboardSeekAccFactor,
-    extraMouseModifierKeys, setExtraMouseModifierKeys,
+    extraMouseModifierKeys, setExtraMouseModifierKeys, simpleMode,
   } = useUserSettings();
 
   // Shortcut changes made here can be undone and redone, with the keys Undo and Redo are set to.
@@ -269,10 +270,10 @@ export default function ShortcutSettings({ onAllShortcutsRequested, showAdvanced
         <div className={styles['rowText']}>
           <div className={styles['rowLabel']}>
             <SearchHighlight text={label} />
-            {changed && <RevertButton title={t('Back to {{value}}', { value: `${names[defaultMouseModifierKeys[gesture]]} + ${input}` })} onClick={() => restoreGesture(gesture)} />}
           </div>
         </div>
         <div className={[styles['rowControl'], styles['rowControlWide']].join(' ')}>
+          {changed && <RevertButton title={t('Back to {{value}}', { value: `${names[defaultMouseModifierKeys[gesture]]} + ${input}` })} onClick={() => restoreGesture(gesture)} />}
           <GestureField label={label} gesture={input} modifiers={modifiers} onChange={(next) => setGestureModifiers(gesture, next)} taken={taken} />
         </div>
       </div>
@@ -294,12 +295,12 @@ export default function ShortcutSettings({ onAllShortcutsRequested, showAdvanced
               <div className={styles['rowText']}>
                 <div className={styles['rowLabel']}>
                   <SearchHighlight text={label} />
-                  {!sameKeys(keyBindings.filter((binding) => binding.action === action), defaultKeyBindings.filter((binding) => binding.action === action)) && (
-                    <RevertButton title={t('Back to {{value}}', { value: keysInWords(getShownBindings(defaultKeyBindings.filter((binding) => binding.action === action))[0]?.keys) })} onClick={() => revertAction(action)} />
-                  )}
                 </div>
               </div>
               <div className={styles['rowControl']}>
+                {!sameKeys(keyBindings.filter((binding) => binding.action === action), defaultKeyBindings.filter((binding) => binding.action === action)) && (
+                  <RevertButton title={t('Back to {{value}}', { value: keysInWords(getShownBindings(defaultKeyBindings.filter((binding) => binding.action === action))[0]?.keys) })} onClick={() => revertAction(action)} />
+                )}
                 <ShortcutField
                   action={action}
                   label={label}
@@ -349,7 +350,8 @@ export default function ShortcutSettings({ onAllShortcutsRequested, showAdvanced
       ))}
 
       <div className={styles['shortcutActions']}>
-        <Button onClick={onAllShortcutsRequested}>{t('Every action…')}</Button>
+        {/* LosslessCut's every action is advanced mode's: the simple editor's own are all above. */}
+        {!simpleMode && <Button onClick={onAllShortcutsRequested}>{t('Every action…')}</Button>}
         <ConfirmButton question={t('Reset every shortcut?')} confirmLabel={t('Reset')} onConfirm={resetAll}>{t('Reset all shortcuts')}</ConfirmButton>
       </div>
     </SettingsSearchContext.Provider>

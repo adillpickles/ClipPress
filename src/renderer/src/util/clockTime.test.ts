@@ -27,6 +27,10 @@ describe('formatClockTime', () => {
   test('lengths read in seconds under a minute, then m:ss.s', () => {
     expect(formatClipLength(12.65)).toBe('12.6 s');
     expect(formatClipLength(25)).toBe('25.0 s');
+    // A 1 s clip at 1600%.
+    expect(formatClipLength(0.0625)).toBe('0.06 s');
+    expect(formatClipLength(0.004)).toBe('0.01 s');
+    expect(formatClipLength(0)).toBe('0.0 s');
     expect(formatClipLength(1.2)).toBe('1.2 s');
     expect(formatClipLength(59.99)).toBe('59.9 s');
     expect(formatClipLength(89.6)).toBe('1:29.6');

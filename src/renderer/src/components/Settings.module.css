@@ -134,6 +134,8 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  /* A ↺ back to the default sits just before the control (as .controlGroup's). */
+  gap: .35rem;
   max-width: 50%;
 }
 

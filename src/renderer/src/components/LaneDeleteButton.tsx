@@ -7,15 +7,16 @@ import styles from './LaneDeleteButton.module.css';
  * The one delete control for timeline lane items (text clips, speed bars): a small round button
  * on the item's right edge that turns red on hover, so every lane deletes the same way.
  */
-export default function LaneDeleteButton({ title, onDelete, style }: {
+export default function LaneDeleteButton({ title, onDelete, style, className }: {
   title: string,
   onDelete: () => void,
   style?: CSSProperties | undefined,
+  className?: string | undefined,
 }) {
   return (
     <button
       type="button"
-      className={styles['deleteButton']}
+      className={[styles['deleteButton'], ...(className != null ? [className] : [])].join(' ')}
       title={title}
       aria-label={title}
       style={style}

@@ -17,6 +17,40 @@ function setup(preferences?: UpdatePreferences, supported = true) {
 }
 
 describe('update policy', () => {
+  it('restarts into a downloaded update only, and not while installation is held', async () => {
+    const { controller } = setup({ enabled: true, mode: 'ask' });
+    expect(controller.restartToInstall()).toBe(false);
+    await controller.check();
+    // Found, not downloaded yet.
+    expect(controller.restartToInstall()).toBe(false);
+    await controller.download();
+    expect(controller.getStatus().phase).toBe('ready');
+    controller.holdInstallation();
+    expect(controller.restartToInstall()).toBe(false);
+    expect(controller.takeRestart()).toBe(false);
+  });
+
+  it('restarts into the downloaded update when the app quits after Restart', async () => {
+    const { controller } = setup();
+    await controller.check();
+    expect(controller.takeRestart()).toBe(false);
+    expect(controller.restartToInstall()).toBe(true);
+    expect(controller.takeRestart()).toBe(true);
+    // Once.
+    expect(controller.takeRestart()).toBe(false);
+  });
+
+  it('forgets a Restart whose close was cancelled, or held since (Windows ending the session)', async () => {
+    const { controller } = setup();
+    await controller.check();
+    controller.restartToInstall();
+    controller.cancelRestart();
+    expect(controller.takeRestart()).toBe(false);
+    controller.restartToInstall();
+    controller.holdInstallation();
+    expect(controller.takeRestart()).toBe(false);
+  });
+
   it('downloads in the background and arms normal-quit installation only for a verified result', async () => {
     const { controller, backend } = setup();
     await controller.check();
@@ -158,7 +192,7 @@ describe('update policy', () => {
   });
 });
 
-// PR #56 re-audit: Windows ending the session does not stop a close already in progress from
+// Windows ending the session does not stop a close already in progress from
 // quitting normally, which would start the installer during the shutdown.
 describe('holding installation for the rest of a run', () => {
   it('disarms a ready update, and no later arming re-arms it', async () => {

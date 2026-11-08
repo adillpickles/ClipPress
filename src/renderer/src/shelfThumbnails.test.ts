@@ -113,6 +113,19 @@ describe('shelf thumbnails', () => {
     expect([...store.snapshot().keys()]).toEqual([job('a').key, job('c').key]);
   });
 
+  it('shows the lists again when one made in the background drops one they show', async () => {
+    const { store, finish, revoked, changes } = setup({ maxEntries: 1 });
+    store.request(job('a'));
+    await finish('a');
+    const before = changes();
+    store.prefetch([job('b')]);
+    await finish('b');
+    expect(revoked).toEqual(['blob:a']);
+    // Not asked for, but 'a' went: the lists get a snapshot without it, and a row showing it asks again.
+    expect(changes()).toBe(before + 1);
+    expect([...store.snapshot().keys()]).toEqual([job('b').key]);
+  });
+
   it('cancels and frees everything when disposed (the folder changed)', async () => {
     const { store, started, finish, revoked } = setup();
     store.request(job('a'));

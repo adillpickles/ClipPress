@@ -14,7 +14,7 @@ const { basename, extname } = window.require('path');
 const dateFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 /** The thumbnail's box is always the same size, so nothing moves when it arrives; a soft shimmer until then. */
-function ShelfThumb({ thumbnail }: { thumbnail: ShelfThumbnail | undefined }) {
+export function ShelfThumb({ thumbnail }: { thumbnail: ShelfThumbnail | undefined }) {
   return (
     <span className={[styles['thumb'], ...(thumbnail === undefined ? [styles['thumbLoading']] : [])].join(' ')}>
       {thumbnail != null && <img src={thumbnail} alt="" draggable={false} />}
@@ -57,10 +57,11 @@ function ShelfRowInner({ item, state, thumbnail, requestThumbnail, onOpen }: {
       disabled={state === 'open'}
       aria-current={state === 'open' ? 'true' : undefined}
       title={file.name}
+      data-tip-if-cut=""
     >
       <ShelfThumb thumbnail={thumbnail} />
       <span className={styles['text']}>
-        <span className={styles['name']}>{basename(file.name, extname(file.name))}</span>
+        <span className={styles['name']} data-cuttable="">{basename(file.name, extname(file.name))}</span>
         <span className={styles['meta']}>
           {dateFormat.format(file.modifiedAt)} · {prettyBytes(file.size, { maximumFractionDigits: 0 })}
           {file.edited && !exported && <span className={styles['edited']}> · {t('Edited')}</span>}
@@ -205,11 +206,11 @@ function ShelfUpNextInner({ file, thumbnail, requestThumbnail, onOpen }: {
     if (thumbnail === undefined) requestThumbnail(file);
   }, [file, requestThumbnail, thumbnail]);
   return (
-    <button type="button" className={styles['upNext']} onClick={() => onOpen(file.path)} title={file.name}>
+    <button type="button" className={styles['upNext']} onClick={() => onOpen(file.path)} title={file.name} data-tip-if-cut="">
       <ShelfThumb thumbnail={thumbnail} />
       <span className={styles['text']}>
         <span className={styles['upNextLabel']}>{t('Up next')}</span>
-        <span className={styles['name']}>{basename(file.name, extname(file.name))}</span>
+        <span className={styles['name']} data-cuttable="">{basename(file.name, extname(file.name))}</span>
       </span>
       <span className={styles['upNextOpen']}>{t('Open')}</span>
     </button>

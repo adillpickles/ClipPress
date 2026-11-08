@@ -4,13 +4,15 @@ import { useTranslation } from 'react-i18next';
 import * as Dialog from './Dialog';
 import Button, { DialogButton } from './Button';
 import ScrubNumberInput from './ScrubNumberInput';
-import { getSegmentOutputDuration, getSegmentSpeed, isSegmentSpeedValid } from '../segmentSpeed';
+import { formatSpeedPercent, getSegmentOutputDuration, getSegmentSpeed, isSegmentSpeedValid, maxSegmentSpeed, minSegmentSpeed, readSpeedPercent } from '../segmentSpeed';
 import type { FormatTimecode, StateSegment } from '../types';
 import useUserSettings from '../hooks/useUserSettings';
 import { formatClipLength } from '../util/clockTime';
 import styles from './SegmentSpeed.module.css';
 
-export default function SegmentSpeedDialog({ segment, fileDuration, formatTimecode, onApply, onClose }: {
+export default function SegmentSpeedDialog({ open, segment, fileDuration, formatTimecode, onApply, onClose }: {
+  /** Kept mounted while it fades out after closing. */
+  open: boolean,
   segment: StateSegment,
   fileDuration: number | undefined,
   formatTimecode: FormatTimecode,
@@ -21,18 +23,24 @@ export default function SegmentSpeedDialog({ segment, fileDuration, formatTimeco
   const { simpleMode } = useUserSettings();
   // Simple mode says "clip" and writes every length as a clock time, like the speed band and the Clips panel.
   const formatDuration = (seconds: number) => (simpleMode ? formatClipLength(seconds) : formatTimecode({ seconds }));
-  const [percent, setPercent] = useState(String(getSegmentSpeed(segment) * 100));
-  const speed = Number(percent) / 100;
+  const [percent, setPercent] = useState(formatSpeedPercent(getSegmentSpeed(segment)));
+  // Opened again for the same clip: its current speed, not what was typed last time.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setPercent(formatSpeedPercent(getSegmentSpeed(segment)));
+  }
+  const speed = readSpeedPercent(percent, getSegmentSpeed(segment));
   const valid = isSegmentSpeedValid(speed);
   const originalDuration = getSegmentOutputDuration({ ...segment, speed: 1 }, 1, fileDuration);
 
   return (
-    <Dialog.Root open onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog.Root open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
       <Dialog.Portal>
         <Dialog.Overlay />
-        <Dialog.Content style={{ width: 380, maxWidth: 'calc(100vw - 48px)' }}>
+        <Dialog.Content style={{ width: 420, maxWidth: 'calc(100vw - 48px)' }}>
           <Dialog.Title>{simpleMode ? t('Change clip speed') : t('Change segment speed')}</Dialog.Title>
-          <Dialog.Description>{simpleMode ? t('Adjust this clip from 25% to 400%. Audio keeps its pitch.') : t('Adjust this segment from 25% to 400%. Audio keeps its pitch.')}</Dialog.Description>
+          <Dialog.Description>{simpleMode ? t('Adjust this clip from 10% to 1600%. Audio keeps its pitch.') : t('Adjust this segment from 10% to 1600%. Audio keeps its pitch.')}</Dialog.Description>
           <form onSubmit={(event) => {
             event.preventDefault();
             if (valid) onApply(speed);
@@ -45,8 +53,8 @@ export default function SegmentSpeedDialog({ segment, fileDuration, formatTimeco
                 id="segment-speed-percent"
                 value={percent}
                 onChange={setPercent}
-                min={25}
-                max={400}
+                min={Math.round(minSegmentSpeed * 100)}
+                max={Math.round(maxSegmentSpeed * 100)}
                 step={5}
                 unit="%"
                 label={t('Speed')}
@@ -55,7 +63,8 @@ export default function SegmentSpeedDialog({ segment, fileDuration, formatTimeco
               />
             </div>
             <div className={styles['presets']}>
-              {[25, 50, 100, 150, 200, 400].map((value) => (
+              {/* Four slower, four faster, in two even rows. */}
+              {[10, 25, 50, 100, 200, 400, 800, 1600].map((value) => (
                 <Button key={value} aria-pressed={Number(percent) === value} onClick={() => setPercent(String(value))}>{value}%</Button>
               ))}
             </div>
@@ -63,10 +72,10 @@ export default function SegmentSpeedDialog({ segment, fileDuration, formatTimeco
               <span>{t('Original duration')}</span><span>{formatDuration(originalDuration)}</span>
               <strong>{t('New duration')}</strong><strong>{valid ? formatDuration(originalDuration / speed) : '—'}</strong>
             </div>
-            {!valid && <div role="alert" className={styles['error']}>{t('Enter a speed between 25% and 400%.')}</div>}
+            {!valid && <div role="alert" className={styles['error']}>{t('Enter a speed between 10% and 1600%.')}</div>}
             <Dialog.ButtonRow>
+              {/* Its X closes it without a change. */}
               <DialogButton onClick={() => setPercent('100')}>{t('Reset')}</DialogButton>
-              <DialogButton onClick={onClose}>{t('Cancel')}</DialogButton>
               <DialogButton primary type="submit" disabled={!valid}>{t('Apply')}</DialogButton>
             </Dialog.ButtonRow>
           </form>

@@ -11,13 +11,10 @@
 // Set `status` back to "coming-soon" only when there is no live asset. In that
 // mode every download link points at the Releases page instead of a file, so
 // visitors can never hit a 404.
-//
-// NOTE: SITE.siteUrl stays empty until the production domain is chosen. Do not
-// invent one — index.html deliberately ships without canonical/og:url until
-// then (see the TODO in <head>).
 
+// index.html's canonical, og:url and share-image URLs repeat siteUrl; scripts/lint.mjs keeps them in sync.
 export const SITE = {
-  siteUrl: '',
+  siteUrl: 'https://www.clippress.app',
   productName: 'ClipPress',
   githubOwner: 'adillpickles',
   githubRepo: 'adillpickles/ClipPress',

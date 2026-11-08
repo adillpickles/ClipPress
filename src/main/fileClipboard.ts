@@ -10,6 +10,8 @@ const execFileAsync = promisify(execFile);
 
 export const canCopyFiles = isWindows;
 
+// Windows PowerShell by its full path: by name, a powershell.exe in the current folder (often the clip's) could run.
+const powerShellExe = String.raw`${process.env['SystemRoot'] ?? String.raw`C:\Windows`}\System32\WindowsPowerShell\v1.0\powershell.exe`;
 const powerShellArgs = ['-NoProfile', '-NonInteractive', '-Sta', '-ExecutionPolicy', 'Bypass'];
 const copyTimeoutMs = 15_000;
 /** The helper goes a minute after it was last used or asked for (it holds ~70 MB while it runs). */
@@ -26,7 +28,7 @@ const helperScript = '$in = [Console]::In; while (($line = $in.ReadLine()) -ne $
  * runs.
  */
 async function copyOnce(paths: string[]) {
-  await execFileAsync('powershell.exe', [
+  await execFileAsync(powerShellExe, [
     ...powerShellArgs,
     '-Command', 'Set-Clipboard -LiteralPath ($env:CLIPPRESS_CLIPBOARD_FILES -split [char]10)',
   ], {
@@ -55,7 +57,7 @@ function stopHelper(stopping: Helper) {
 }
 
 function startHelper() {
-  const child = spawn('powershell.exe', [...powerShellArgs, '-Command', helperScript], {
+  const child = spawn(powerShellExe, [...powerShellArgs, '-Command', helperScript], {
     windowsHide: true,
     env: { ...process.env, CLIPPRESS_CLIPBOARD_HELPER: '1' },
   });

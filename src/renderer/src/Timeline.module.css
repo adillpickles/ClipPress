@@ -272,8 +272,6 @@
   100% { opacity: 0; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .edgeSnapCue {
-    animation: none;
-  }
+:global(html.reduce-motion) .edgeSnapCue {
+  animation: none;
 }

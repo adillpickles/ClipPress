@@ -73,10 +73,8 @@
   transition: transform .24s cubic-bezier(.3, .7, .2, 1), width .24s cubic-bezier(.3, .7, .2, 1);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .orderThumbAnimate {
-    transition: none;
-  }
+:global(html.reduce-motion) .orderThumbAnimate {
+  transition: none;
 }
 
 .orderOption {
@@ -131,8 +129,10 @@
   gap: 2px;
   max-height: min(26rem, 62vh);
   overflow-y: auto;
-  /* Room for the focus ring of the first and last rows, which the scrolling would otherwise cut off. */
-  margin: -4px -.35rem;
+  /* Room for the focus ring of the first and last rows, which the scrolling would otherwise cut off. The sides reach a
+     row's padding further out too, so the rows' pictures line up with the folder icon and their highlight reaches out
+     past it, as the folder button's does. */
+  margin: -4px -.75rem;
   padding: 4px .35rem;
 }
 
@@ -166,10 +166,11 @@
   opacity: .55;
 }
 
+/* 64×36, or wider where the start screen's column has grown (--shelf-thumb-width). */
 .thumb {
   flex-shrink: 0;
-  width: 64px;
-  height: 36px;
+  width: var(--shelf-thumb-width, 64px);
+  height: calc(var(--shelf-thumb-width, 64px) * 9 / 16);
   border-radius: 6px;
   overflow: hidden;
   display: grid;
@@ -210,13 +211,11 @@
   to { background-position: 0 0, 0 0; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .thumb img,
-  .thumbLoading,
-  .orderArrow {
-    animation: none;
-    transition: none;
-  }
+:global(html.reduce-motion) .thumb img,
+:global(html.reduce-motion) .thumbLoading,
+:global(html.reduce-motion) .orderArrow {
+  animation: none;
+  transition: none;
 }
 
 .text {
@@ -284,10 +283,10 @@
   font-size: .8125rem;
 }
 
-/* The popover around the shelf: a little roomier than the default. */
+/* The popover around the shelf: as wide as the list, a little roomier than the default (AnchoredPopover's variables). */
 .popover {
-  max-width: none;
-  padding: .75rem .85rem .6rem;
+  --popover-max-width: none;
+  --popover-padding: .75rem .85rem .6rem;
 }
 
 /* Welcome screen: the next clip from the shelf. */

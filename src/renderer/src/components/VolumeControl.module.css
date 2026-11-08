@@ -104,10 +104,6 @@
   accent-color: var(--accent-9);
 }
 
-.miniButton {
-  justify-content: center;
-}
-
 .resetButton {
   all: unset;
   display: inline-flex;
