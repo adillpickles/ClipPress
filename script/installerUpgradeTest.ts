@@ -596,24 +596,22 @@ async function main() {
       return { dialog: text };
     });
 
-    // A close that completes after Windows started ending the session quits normally (exit code 0),
-    // which is when the updater installs. An installer started during a shutdown can be cut off
-    // after removing the installed app, so nothing is installed then.
-    await step('Ask: once Windows starts ending the session, closing saves the edits and installs nothing', async () => {
+    // When Windows ends the session the app ends with it (Electron exits on WM_ENDSESSION), which is when the updater
+    // would install. An installer started during a shutdown can be cut off after removing the installed app, so nothing
+    // is installed then, and the edit waiting to be saved is.
+    await step('Ask: when Windows ends the session, the edits are saved and nothing installs', async () => {
       assert(app);
       await execFileAsync('attrib', ['-R', projectPath]);
       assert.equal((await app.updateStatus()).installOnQuit, true);
-      await app.endSession();
-      await waitFor('installing to be held', async () => (await app!.updateStatus()).installOnQuit === false, 10_000);
       await app.action('addSegment');
-      await app.closeWindow();
+      await app.endSession();
       const exit = await app.waitExit(60_000);
-      assert.ok(exit != null, 'The app did not close');
-      assert.equal(exit.code, 0);
+      assert.ok(exit != null, 'The app did not end with the session');
       await timers.setTimeout(15_000);
       assert.deepEqual(await installerProcesses(), [], 'An installer started during the session end');
       assert.equal(await registryVersion(), b.version, 'An update was installed during the session end');
       assert.equal(await projectSegments(), segmentsBefore.savedSegments + 3, 'The edits were not saved');
+      return { exitCode: exit.code };
     });
 
     await step(`Ask: the next run installs ${c.version} on closing, once approved again`, async () => {
