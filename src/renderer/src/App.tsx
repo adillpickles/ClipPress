@@ -8091,6 +8091,7 @@ function App() {
 
                         <Timeline
                           edgeSnapCue={edgeSnapCue}
+                          onEdgeSnap={onEdgeSnap}
                           shouldShowKeyframes={shouldShowKeyframes}
                           waveforms={waveforms}
                           overviewWaveform={overviewWaveform}

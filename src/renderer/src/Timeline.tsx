@@ -22,6 +22,7 @@ import type { UseSegments } from './hooks/useSegments';
 import { isGestureModifierHeld } from './hooks/useTimelineScroll';
 import useGlidingSegments from './hooks/useGlidingSegments';
 import useStableHandlers from './hooks/useStableHandlers';
+import { snapDraggedEdge } from './clipEdgeSnap';
 import { getTextLaneRows, minTextOverlayDuration } from './textOverlays';
 import type { TextLaneRow } from './textOverlays';
 import SegmentRetimeBar from './components/SegmentRetimeBar';
@@ -214,6 +215,7 @@ function Timeline({
   showThumbnails,
   playing,
   edgeSnapCue,
+  onEdgeSnap,
   isFileOpened,
   onWheel,
   commandedTimeRef,
@@ -282,6 +284,8 @@ function Timeline({
   playing: boolean,
   /** I or O just locked onto a clip edge here: a short line shows where. */
   edgeSnapCue?: { time: number, id: number } | undefined,
+  /** A dragged clip edge locked onto another clip's edge here (shows the same line). */
+  onEdgeSnap?: ((time: number) => void) | undefined,
   isFileOpened: boolean,
   onWheel: WheelEventHandler,
   commandedTimeRef: MutableRefObject<number>,
@@ -376,6 +380,11 @@ function Timeline({
   }, [timelineMap]);
 
   const toLanePercent = useCallback((time: number) => (timelineMap.toDisplay(time) / laneDuration) * 100, [laneDuration, timelineMap]);
+  // Read by the trim drag's snapping as the pointer moves: the clips as they are now.
+  const cutSegmentsRef = useRef(cutSegments);
+  useLayoutEffect(() => {
+    cutSegmentsRef.current = cutSegments;
+  }, [cutSegments]);
 
   // The clip blocks' handlers stay the same between edits (App's change with the clips), so a trim re-draws only its clip.
   const clipHandlers = useStableHandlers({
@@ -637,13 +646,31 @@ function Timeline({
     let scrubbing = false;
     // The whole drag is one undo step, not one per mouse move.
     const undo = { coalesceKey: `trim:${edge}:${Date.now()}`, wholeGesture: true };
+    // Near another clip's edge the dragged edge locks onto it, so the two sit back to back (no overlap, no sliver).
+    let snappedTo: number | undefined;
+    const snap = (e2: MouseEvent, time: number) => {
+      const lane = timelineWrapperRef.current;
+      const clips = cutSegmentsRef.current;
+      const snapped = lane == null ? undefined : snapDraggedEdge({
+        pointerPx: e2.pageX - (lane.getBoundingClientRect().left + document.body.scrollLeft),
+        edge,
+        clips,
+        currentIndex: clips.findIndex((clip) => clip.segId === currentCutSeg.segId),
+        // The layout the drag turns the pointer into a time with (getMouseTimelinePos, from the same render): a
+        // speed-changed clip being trimmed rescales the lanes as it goes, and pointer and edges must be measured alike.
+        toPx: (at) => (toLanePercent(at) / 100) * lane.offsetWidth,
+      });
+      if (snapped != null && snapped !== snappedTo) onEdgeSnap?.(snapped);
+      snappedTo = snapped;
+      return snapped ?? time;
+    };
 
     function onMouseMove(e2: MouseEvent) {
       if (!scrubbing) {
         scrubbing = true;
         onScrubbingChange(true);
       }
-      const time = getMouseTimelinePos(e2);
+      const time = snap(e2, getMouseTimelinePos(e2));
       seekAbs(time);
       try {
         setCutTime(edge, time, undo);
@@ -667,7 +694,7 @@ function Timeline({
     // The window losing focus mid-drag (Alt+Tab) may never see the mouse let go: the drag ends there.
     window.addEventListener('blur', onMouseUp, { once: true });
     window.addEventListener('mousemove', onMouseMove);
-  }, [getMouseTimelinePos, onScrubbingChange, seekAbs, setCutTime]);
+  }, [getMouseTimelinePos, onEdgeSnap, onScrubbingChange, seekAbs, setCutTime, toLanePercent]);
 
   const onOverlayMouseDown = useCallback((overlayClip: OverlayClip, mode: 'start' | 'end' | 'move') => (e: ReactMouseEvent<HTMLElement>) => {
     if (e.nativeEvent.buttons !== 1) return;

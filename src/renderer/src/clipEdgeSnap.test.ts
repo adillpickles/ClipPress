@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { findClipEdge, getEdgeSnapDistance, getNewClipEnd, snapCutEnd, snapCutStart } from './clipEdgeSnap';
+import { findClipEdge, getEdgeSnapDistance, getNewClipEnd, snapCutEnd, snapCutStart, snapDraggedEdge } from './clipEdgeSnap';
 
 describe('getEdgeSnapDistance', () => {
   it('is about 3 px of the timeline with the whole recording in view: at least 3 frames, at most 0.3 s', () => {
@@ -86,5 +86,47 @@ describe('getNewClipEnd', () => {
   it('is the usual length otherwise, within the recording', () => {
     expect(getNewClipEnd({ start: 8, length: 10, duration: 90, clips: [{ start: 4, end: 8 }] })).toBe(18);
     expect(getNewClipEnd({ start: 85, length: 10, duration: 90, clips: [] })).toBe(90);
+  });
+});
+
+describe('snapDraggedEdge', () => {
+  // 10 px a second on screen.
+  const toPx = (at: number) => at * 10;
+  const px = toPx;
+  const clips = [{ start: 0, end: 10 }, { start: 12, end: 20 }, { start: 25, end: 30 }];
+
+  it("locks clip 2's start onto clip 1's end within 8 px, from either side", () => {
+    expect(snapDraggedEdge({ pointerPx: px(10.5), edge: 'start', clips, currentIndex: 1, toPx })).toBe(10);
+    expect(snapDraggedEdge({ pointerPx: px(9.3), edge: 'start', clips, currentIndex: 1, toPx })).toBe(10);
+    expect(snapDraggedEdge({ pointerPx: px(11), edge: 'start', clips, currentIndex: 1, toPx })).toBeUndefined();
+    // Dragged further, it goes past.
+    expect(snapDraggedEdge({ pointerPx: px(8), edge: 'start', clips, currentIndex: 1, toPx })).toBeUndefined();
+  });
+
+  it("locks clip 2's end onto clip 3's start", () => {
+    expect(snapDraggedEdge({ pointerPx: px(24.4), edge: 'end', clips, currentIndex: 1, toPx })).toBe(25);
+    expect(snapDraggedEdge({ pointerPx: px(22), edge: 'end', clips, currentIndex: 1, toPx })).toBeUndefined();
+  });
+
+  it('never locks a start onto a start or an end onto an end, nor onto its own edges, nor so the clip is empty', () => {
+    expect(snapDraggedEdge({ pointerPx: px(12.2), edge: 'start', clips, currentIndex: 1, toPx })).toBeUndefined();
+    expect(snapDraggedEdge({ pointerPx: px(30.3), edge: 'end', clips, currentIndex: 1, toPx })).toBeUndefined();
+    // Clip 3's start dragged right up to... nothing ends after its own end: no lock.
+    expect(snapDraggedEdge({ pointerPx: px(29.9), edge: 'start', clips, currentIndex: 2, toPx })).toBeUndefined();
+    // Clip 1's end dragged back near 0: no later start there.
+    expect(snapDraggedEdge({ pointerPx: px(0.2), edge: 'end', clips, currentIndex: 0, toPx })).toBeUndefined();
+  });
+
+  it('measures on screen, so zoomed in it needs the pointer closer in time', () => {
+    const zoomed = (at: number) => at * 100;
+    expect(snapDraggedEdge({ pointerPx: zoomed(10.5), edge: 'start', clips, currentIndex: 1, toPx: zoomed })).toBeUndefined();
+    expect(snapDraggedEdge({ pointerPx: zoomed(10.05), edge: 'start', clips, currentIndex: 1, toPx: zoomed })).toBe(10);
+  });
+
+  it('compares the pointer with the edges in the layout it is given', () => {
+    // A layout where clip 3's start is at 135 px: a pointer at 160 px is 25 px away.
+    const rescaled = (at: number) => (at === 25 ? 135 : at * 10);
+    expect(snapDraggedEdge({ pointerPx: 160, edge: 'end', clips, currentIndex: 1, toPx: rescaled })).toBeUndefined();
+    expect(snapDraggedEdge({ pointerPx: 137, edge: 'end', clips, currentIndex: 1, toPx: rescaled })).toBe(25);
   });
 });
