@@ -1511,6 +1511,8 @@ function ExportConfirm({
     }
     const totalDuration = segmentsToExport.reduce((sum, segment) => sum + getSegmentOutputDuration(segment, outputPlaybackRate), 0);
     if (totalDuration > 0) parts.push(formatClockTime(totalDuration, { decimals: 1 }));
+    // With the picture left out, said here (Format is behind More options), not in the options it fades.
+    if (soundOnlyFileType != null) parts.push(t('{{type}}, sound only', { type: soundOnlyFileType }));
     if (isSizeLimited) {
       parts.push(willMerge || segmentsToExport.length <= 1
         ? t('under {{size}} MB', { size: sizeLimitMb })
@@ -1519,7 +1521,7 @@ function ExportConfirm({
       parts.push(t('original quality'));
     }
     return parts.join(' · ');
-  }, [areWeCutting, isSizeLimited, outputPlaybackRate, segmentsOrInverse.all.length, segmentsOrInverse.selected.length, segmentsToExport, sizeLimitMb, t, willMerge]);
+  }, [areWeCutting, isSizeLimited, outputPlaybackRate, segmentsOrInverse.all.length, segmentsOrInverse.selected.length, segmentsToExport, sizeLimitMb, soundOnlyFileType, t, willMerge]);
 
   // The Tracks row shows the recording's own tracks (up to three) and counts the rest, so it never outgrows its column.
   const ownTracks = tracks.filter(({ added }) => !added);
@@ -1814,8 +1816,8 @@ function ExportConfirm({
                           </div>
                         </div>
 
-                        {soundOnlyFileType != null && <div className={styles['fieldHint']}>{t('A sound file: only the size applies.')}</div>}
-                        {/* The picture's own settings: with the picture left out they change nothing, so they fade and can't be used. */}
+                        {/* The picture's own settings: with the picture left out they change nothing, so they fade and can't be used
+                            (the summary under the title says it's a sound file). */}
                         <div className={styles['pictureOnly']} data-off={soundOnlyFileType != null} ref={pictureOnlyRef}>
                           <div className={styles['presetCards']} role="radiogroup" aria-label={t('Preset')} onKeyDown={onRadioGroupKeyDown}>
                             {([
