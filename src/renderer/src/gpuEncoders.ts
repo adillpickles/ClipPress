@@ -192,30 +192,66 @@ export function getGpuFramesDownloadFormat(pixFmt: string | undefined) {
  */
 export const maxGpuFramesClips = 3;
 
-/** Whether an export's sped-up clips can keep their frames on the GPU (given a source format it can copy off). */
-export function shouldKeepFramesOnGpu({ clips, rotation, lowestFps }: {
+/**
+ * Whether a clip is long enough in the export for `fps` to drop its unkept frames early: `fps` rounds a clip shorter
+ * than half a frame to no frame at all, where the encoder's constant frame rate keeps one. So it needs two frames at the
+ * rate it keeps; otherwise (or with that rate unknown) every frame goes on to the encoder, as before.
+ */
+export const canDropFramesEarly = ({ duration, fps }: { duration: number, fps: number | undefined }) => fps != null && fps > 0 && duration * fps >= 2;
+
+/**
+ * Whether an export's frames can stay on the GPU until `fps` has dropped the ones it doesn't keep (given a source
+ * format it can copy off): sped-up clips, and a single clip whose export may lower its frame rate (60 → 30 drops half:
+ * 2-min 1080p60 to 720p30 measured 15.1 → 10.0 s in Quality, 14.5 → 9.0 s in Fast, the same frames). Kept there with
+ * nothing to drop, a clip exports about as fast as with its frames copied as they're decoded (measured).
+ */
+export function shouldKeepFramesOnGpu({ clips, rotation, lowestFps, mayLowerFps = false }: {
   /** Each clip's playback rate and length in the export, in the order they're joined. */
   clips: { rate: number, duration: number }[],
   rotation: number | undefined,
   /** The lowest frame rate the export may have. */
   lowestFps: number | undefined,
+  /** A single clip's export may lower the frame rate (a source above the lowered rate). Joins keep their exact path. */
+  mayLowerFps?: boolean | undefined,
 }) {
+  const spedUp = clips.some(({ rate }) => rate > 1);
   // A turned video isn't kept there: FFmpeg turns it with a CPU filter before ours.
-  if (!clips.some(({ rate }) => rate > 1) || clips.length > maxGpuFramesClips || ((rotation ?? 0) % 360) !== 0) return false;
-  if (clips.length === 1) return true;
+  if (clips.length > maxGpuFramesClips || ((rotation ?? 0) % 360) !== 0) return false;
+  if (clips.length === 1) return (spedUp || mayLowerFps) && canDropFramesEarly({ duration: clips[0]!.duration, fps: lowestFps });
+  if (!spedUp) return false;
   // concat needs two frames to know a clip's length (one counts as no time), so a sped-up clip shorter than that
   // would move the next join by more.
   return lowestFps != null && lowestFps > 0 && clips.every(({ rate, duration }) => rate <= 1 || duration * lowestFps >= 2);
 }
 
 /** Placed right after a clip's `setpts`: the frames to keep at the export's frame rate, copied off the GPU. */
-export function getGpuFramesFilter({ rate, downloadFormat, outputFps }: {
+export function getGpuFramesFilter({ rate, downloadFormat, outputFps, dropToLoweredFps = false }: {
   rate: number,
   downloadFormat: string,
   /** The export's frame rate when it's lowered; otherwise the source's, as FFmpeg sees it. */
   outputFps: number | undefined,
+  /** A single clip at its own speed drops to a lowered frame rate here too (the export's own `fps` then keeps them all). */
+  dropToLoweredFps?: boolean | undefined,
 }) {
-  return [...(rate > 1 ? [`fps=${outputFps ?? 'source_fps'}`] : []), 'hwdownload', `format=${downloadFormat}`].join(',');
+  const drop = rate > 1 || (dropToLoweredFps && outputFps != null);
+  return [...(drop ? [`fps=${outputFps ?? 'source_fps'}`] : []), 'hwdownload', `format=${downloadFormat}`].join(',');
+}
+
+/**
+ * For frames copied off the GPU as they're decoded (no `getGpuFramesFilter`): right after a sped-up clip's `setpts`,
+ * the frames to keep at the export's frame rate, so the crop, text and scale after it don't work on the ones the MP4's
+ * constant frame rate drops anyway.
+ */
+export function getFrameDropFilter({ rate, outputFps, duration, keptFps }: {
+  rate: number,
+  /** The export's frame rate when it's lowered; otherwise `fps` keeps the source's. */
+  outputFps: number | undefined,
+  /** The clip's length in the export. */
+  duration: number,
+  /** The frame rate the export keeps (the lowered one, else the source's), if known. */
+  keptFps: number | undefined,
+}) {
+  return rate > 1 && canDropFramesEarly({ duration, fps: keptFps }) ? `fps=${outputFps ?? 'source_fps'}` : undefined;
 }
 
 /**

@@ -17,8 +17,8 @@ import { getGuaranteedSegments, isDurationValid } from '../segments';
 import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } from '../textOverlays';
 import { buildAddedAudioInputArgs, buildAudioMixFilter, buildOverlayImageInputArgs, getRelativeSegmentOverlapWindow, streamReachesTime } from '../exportSegmentMath';
 import type { MixedAudioTrack } from '../exportSegmentMath';
-import { getHardwareDecodeArgs, getRegularExportVideoArgs, maxGpuH264Side, pickGpuEncoder } from '../gpuEncoders';
-import { canUseHardwareDecode, getSizeLimitedEncoderCapabilities, markGpuEncoderBasicOnly, markGpuEncoderFailed, runWithGpuFallbacks } from '../sizeLimitedExport';
+import { getFrameDropFilter, getGpuFramesFilter, getHardwareDecodeArgs, getRegularExportVideoArgs, maxGpuH264Side, pickGpuEncoder } from '../gpuEncoders';
+import { canUseHardwareDecode, getKeptGpuFramesFormat, getSizeLimitedEncoderCapabilities, markGpuEncoderBasicOnly, markGpuEncoderFailed, runKeepingFramesOnGpu, runWithGpuFallbacks } from '../sizeLimitedExport';
 import { getSegmentCropFilter } from '../segmentCrop';
 import { getSizeLimitedRotationArgs } from '../sizeLimitedFfmpegArgs';
 import { getAudioTempoFilter, getSegmentOutputDuration, getSegmentPlaybackRate, getVideoTimingFilter } from '../segmentSpeed';
@@ -188,6 +188,7 @@ function buildTextOverlayFilterGraph({
   segmentEnd,
   outputPlaybackRate,
   cropFilter,
+  framesFilter,
 }: {
   videoInputLabel: string,
   imageInputStartIndex: number,
@@ -196,9 +197,11 @@ function buildTextOverlayFilterGraph({
   segmentEnd: number,
   outputPlaybackRate: number,
   cropFilter: string | undefined,
+  /** Right after `setpts`: the frames kept (`getGpuFramesFilter` or `getFrameDropFilter`). */
+  framesFilter: string | undefined,
 }) {
   const graph: string[] = [];
-  const baseFilters = [getVideoTimingFilter(outputPlaybackRate), cropFilter].filter(Boolean);
+  const baseFilters = [getVideoTimingFilter(outputPlaybackRate), framesFilter, cropFilter].filter(Boolean);
   let currentLabel = '[video0]';
   graph.push(`${videoInputLabel}${baseFilters.length > 0 ? baseFilters.join(',') : 'null'}${currentLabel}`);
 
@@ -656,6 +659,8 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     chapters,
     overlayClips,
     videoStreamIndex,
+    videoFormat,
+    sourceFps,
     videoWidth,
     videoHeight,
     encodeAllAudio,
@@ -681,6 +686,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
     chapters: Chapter[] | undefined,
     overlayClips: OverlayClip[],
     videoStreamIndex: number,
+    /** The picture's codec and pixel format: whether its frames can stay on the GPU. */
+    videoFormat: Pick<FFprobeStream, 'codec_name' | 'pix_fmt'>,
+    /** The picture's frame rate, if known: the export keeps it (MP4/MOV), so a clip's unkept frames can go early. */
+    sourceFps: number | undefined,
     videoWidth: number,
     videoHeight: number,
     /** For merges: encode every clip's sound, so the pieces match and none brings cut-off sound along (#53). */
@@ -785,6 +794,10 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
         };
         let gpuH264 = exportGpuAcceleration && fitsGpuH264 ? await pickGpuH264() : undefined;
         const hardwareDecode = canUseHardwareDecode({ enabled: exportGpuAcceleration, inputCount: 1, width: videoWidth, height: videoHeight });
+        // MP4 and MOV play at a constant frame rate, so a sped-up clip keeps only one frame in `rate`: those are picked
+        // right after its speed (on the GPU when they can stay there, as Fit a file size does), and the crop, text and
+        // the copy off the GPU skip the rest. Matroska keeps every frame (a variable frame rate), so it's left as it is.
+        const constantFrameRate = outFormat === 'mp4' || outFormat === 'mov';
 
         return await pMap(segments, async (segment, index) => {
           signal?.throwIfAborted();
@@ -801,26 +814,33 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
           const partialPath = getPartialPath(finalOutPath);
 
           const segmentDuration = getSegmentOutputDuration(segment, outputPlaybackRate);
-          const getMediaInputArgs = (useHardwareDecode: boolean) => flatMap(copyFileStreamsFiltered, ({ path }) => [
-            ...getHardwareDecodeArgs(useHardwareDecode && path === filePath),
+          const getMediaInputArgs = (useHardwareDecode: boolean, keepFramesOnGpu: boolean) => flatMap(copyFileStreamsFiltered, ({ path }) => [
+            ...getHardwareDecodeArgs(useHardwareDecode && path === filePath, keepFramesOnGpu && path === filePath),
             '-ss', start.toFixed(5), '-t', (end - start).toFixed(5), ...getSizeLimitedRotationArgs(rotation), '-i', path,
           ]);
 
           const segmentOverlayAssets = preparedOverlayAssets.filter((overlayAsset) => overlayAsset.start < end && overlayAsset.end > start);
           const overlayInputArgs = buildOverlayImageInputArgs(segmentOverlayAssets.map(({ imagePath }) => imagePath));
           const chaptersInputIndex = copyFileStreamsFiltered.length + segmentOverlayAssets.length;
-          const { filterGraph, videoOutputLabel } = buildTextOverlayFilterGraph({
+          const cropFilter = (() => {
+            const dimensions = getRotatedVideoDimensions({ width: videoWidth, height: videoHeight, rotation });
+            return getSegmentCropFilter(segment, dimensions.width, dimensions.height);
+          })();
+          const getFilterGraph = (gpuFramesFormat: string | undefined) => buildTextOverlayFilterGraph({
             videoInputLabel: `[${mainInputFileIndex}:${videoStreamIndex}]`,
             imageInputStartIndex: copyFileStreamsFiltered.length,
             overlayAssets: segmentOverlayAssets,
             segmentStart: start,
             segmentEnd: end,
             outputPlaybackRate: segmentRate,
-            cropFilter: (() => {
-              const dimensions = getRotatedVideoDimensions({ width: videoWidth, height: videoHeight, rotation });
-              return getSegmentCropFilter(segment, dimensions.width, dimensions.height);
-            })(),
+            cropFilter,
+            framesFilter: gpuFramesFormat != null
+              ? getGpuFramesFilter({ rate: segmentRate, downloadFormat: gpuFramesFormat, outputFps: undefined })
+              : (constantFrameRate ? getFrameDropFilter({ rate: segmentRate, outputFps: undefined, duration: segmentDuration, keptFps: sourceFps }) : undefined),
           });
+          const getGpuFramesFormat = (useHardwareDecode: boolean) => (useHardwareDecode && constantFrameRate
+            ? getKeptGpuFramesFormat({ videoStream: videoFormat, clips: [{ rate: segmentRate, duration: segmentDuration }], rotation, lowestFps: sourceFps })
+            : undefined);
 
           const mapStreamsArgs = getMapStreamsArgs({
             startIndex: 1,
@@ -846,43 +866,50 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
             },
           });
 
-          const getFfmpegArgs = (useHardwareDecode: boolean) => [
-            '-hide_banner',
-            ...getMediaInputArgs(useHardwareDecode),
-            ...overlayInputArgs,
-            ...(chaptersPath != null ? getChaptersInputArgs(chaptersPath) : []),
-            '-filter_complex', filterGraph,
-            '-map', videoOutputLabel,
-            ...getRegularExportVideoArgs(gpuH264?.encoder, { basic: gpuH264?.basic }),
-            ...mapStreamsArgs,
-            ...customTagsArgs,
-            ...customParamsArgs,
-            ...getPreserveMetadataArgs(),
-            ...(chaptersPath != null ? ['-map_chapters', String(chaptersInputIndex)] : (!preserveChapters ? ['-map_chapters', '-1'] : [])),
-            ...getMovFlags({ preserveMovData, movFastStart }),
-            ...getMatroskaFlags(),
-            '-ignore_unknown',
-            ...getExperimentalArgs(ffmpegExperimental),
-            // The clip's length alone ends the file (no `-shortest`): a sound shorter than the clip is padded above, and
-            // the text pictures are single frames the overlay holds.
-            '-t', segmentDuration.toFixed(5),
-            '-f', outFormat,
-            '-y', partialPath,
-          ];
+          const getFfmpegArgs = (useHardwareDecode: boolean, gpuFramesFormat: string | undefined) => {
+            const { filterGraph, videoOutputLabel } = getFilterGraph(gpuFramesFormat);
+            return [
+              '-hide_banner',
+              ...getMediaInputArgs(useHardwareDecode, gpuFramesFormat != null),
+              ...overlayInputArgs,
+              ...(chaptersPath != null ? getChaptersInputArgs(chaptersPath) : []),
+              '-filter_complex', filterGraph,
+              '-map', videoOutputLabel,
+              ...getRegularExportVideoArgs(gpuH264?.encoder, { basic: gpuH264?.basic }),
+              ...mapStreamsArgs,
+              ...customTagsArgs,
+              ...customParamsArgs,
+              ...getPreserveMetadataArgs(),
+              ...(chaptersPath != null ? ['-map_chapters', String(chaptersInputIndex)] : (!preserveChapters ? ['-map_chapters', '-1'] : [])),
+              ...getMovFlags({ preserveMovData, movFastStart }),
+              ...getMatroskaFlags(),
+              '-ignore_unknown',
+              ...getExperimentalArgs(ffmpegExperimental),
+              // The clip's length alone ends the file (no `-shortest`): a sound shorter than the clip is padded above, and
+              // the text pictures are single frames the overlay holds.
+              '-t', segmentDuration.toFixed(5),
+              '-f', outFormat,
+              '-y', partialPath,
+            ];
+          };
 
           try {
             await runWithGpuFallbacks({
               hardwareDecode,
-              run: async (useHardwareDecode) => {
-                const ffmpegArgs = getFfmpegArgs(useHardwareDecode);
-                appendFfmpegCommandLog(ffmpegArgs);
-                const result = await runFfmpegWithProgress({
-                  ffmpegArgs,
-                  duration: segmentDuration,
-                  onProgress: (progress) => onSingleProgress(index, progress),
-                });
-                logStdoutStderr(result);
-              },
+              run: async (useHardwareDecode) => runKeepingFramesOnGpu({
+                videoStream: videoFormat,
+                gpuFramesFormat: getGpuFramesFormat(useHardwareDecode),
+                run: async (gpuFramesFormat) => {
+                  const ffmpegArgs = getFfmpegArgs(useHardwareDecode, gpuFramesFormat);
+                  appendFfmpegCommandLog(ffmpegArgs);
+                  const result = await runFfmpegWithProgress({
+                    ffmpegArgs,
+                    duration: segmentDuration,
+                    onProgress: (progress) => onSingleProgress(index, progress),
+                  });
+                  logStdoutStderr(result);
+                },
+              }),
               onGpuEncoderFailed: async (error) => {
                 if (gpuH264 == null) return false;
                 console.warn(`${gpuH264.encoder} failed; continuing on the next encoder`, error);

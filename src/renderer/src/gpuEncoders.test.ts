@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   getAmfQualityPreset,
   getGpuFramesDownloadFormat,
+  getFrameDropFilter,
   getGpuFramesFilter,
   getHardwareDecodeArgs,
   getQsvPreset,
@@ -95,6 +96,18 @@ describe('frames kept on the GPU', () => {
   it('drops a sped-up clip to the export frame rate before copying', () => {
     expect(getGpuFramesFilter({ rate: 4, downloadFormat: 'nv12', outputFps: undefined })).toBe('fps=source_fps,hwdownload,format=nv12');
     expect(getGpuFramesFilter({ rate: 2, downloadFormat: 'p010', outputFps: 30 })).toBe('fps=30,hwdownload,format=p010');
+    // Frames copied as they're decoded: a sped-up clip drops the unkept ones before its crop, text and scale.
+    expect(getFrameDropFilter({ rate: 4, outputFps: undefined, duration: 10, keptFps: 60 })).toBe('fps=source_fps');
+    expect(getFrameDropFilter({ rate: 2, outputFps: 30, duration: 10, keptFps: 30 })).toBe('fps=30');
+    expect(getFrameDropFilter({ rate: 1, outputFps: 30, duration: 10, keptFps: 30 })).toBeUndefined();
+    expect(getFrameDropFilter({ rate: 0.5, outputFps: undefined, duration: 10, keptFps: 60 })).toBeUndefined();
+    // Under two frames at the kept rate (or that rate unknown), all go to the encoder, which keeps at least one.
+    expect(getFrameDropFilter({ rate: 16, outputFps: undefined, duration: 0.0125, keptFps: 30 })).toBeUndefined();
+    expect(getFrameDropFilter({ rate: 8, outputFps: undefined, duration: 0.125, keptFps: 2 })).toBeUndefined();
+    expect(getFrameDropFilter({ rate: 4, outputFps: undefined, duration: 10, keptFps: undefined })).toBeUndefined();
+    expect(shouldKeepFramesOnGpu({ clips: [{ rate: 16, duration: 0.0125 }], rotation: undefined, lowestFps: 30 })).toBe(false);
+    expect(shouldKeepFramesOnGpu({ clips: [{ rate: 8, duration: 0.125 }], rotation: undefined, lowestFps: 2 })).toBe(false);
+    expect(shouldKeepFramesOnGpu({ clips: [{ rate: 1, duration: 0.05 }], rotation: undefined, lowestFps: 30, mayLowerFps: true })).toBe(false);
   });
 
   it('is for sped-up exports of up to three clips, not turned', () => {
@@ -113,13 +126,23 @@ describe('frames kept on the GPU', () => {
     const clips = [{ rate: 4, duration: 1 / 30 }, { rate: 1, duration: 5 }];
     expect(shouldKeepFramesOnGpu({ clips, rotation: undefined, lowestFps: 30 })).toBe(false);
     expect(shouldKeepFramesOnGpu({ clips: [{ rate: 4, duration: 2 / 30 }, { rate: 1, duration: 1 / 30 }], rotation: undefined, lowestFps: 30 })).toBe(true);
-    // One clip has no join to move.
-    expect(shouldKeepFramesOnGpu({ clips: [{ rate: 4, duration: 1 / 30 }], rotation: undefined, lowestFps: 30 })).toBe(true);
+    // One clip has no join to move (but under two frames its frames all go to the encoder).
+    expect(shouldKeepFramesOnGpu({ clips: [{ rate: 4, duration: 2 / 30 }], rotation: undefined, lowestFps: 30 })).toBe(true);
+    expect(shouldKeepFramesOnGpu({ clips: [{ rate: 4, duration: 1 / 30 }], rotation: undefined, lowestFps: 30 })).toBe(false);
+    expect(shouldKeepFramesOnGpu({ clips: [{ rate: 4, duration: 5 }], rotation: undefined, lowestFps: undefined })).toBe(false);
     expect(shouldKeepFramesOnGpu({ clips: [{ rate: 4, duration: 5 }, { rate: 4, duration: 5 }], rotation: undefined, lowestFps: undefined })).toBe(false);
   });
 
   it('copies every frame of a clip at normal speed or slower', () => {
     expect(getGpuFramesFilter({ rate: 1, downloadFormat: 'nv12', outputFps: 30 })).toBe('hwdownload,format=nv12');
+    // A single clip lowered to 30 fps drops the other half on the GPU too; at its own rate it only copies.
+    expect(getGpuFramesFilter({ rate: 1, downloadFormat: 'nv12', outputFps: 30, dropToLoweredFps: true })).toBe('fps=30,hwdownload,format=nv12');
+    expect(getGpuFramesFilter({ rate: 1, downloadFormat: 'nv12', outputFps: undefined, dropToLoweredFps: true })).toBe('hwdownload,format=nv12');
+    expect(shouldKeepFramesOnGpu({ clips: [{ rate: 1, duration: 120 }], rotation: undefined, lowestFps: 30, mayLowerFps: true })).toBe(true);
+    expect(shouldKeepFramesOnGpu({ clips: [{ rate: 1, duration: 120 }], rotation: undefined, lowestFps: 30 })).toBe(false);
+    expect(shouldKeepFramesOnGpu({ clips: [{ rate: 1, duration: 120 }], rotation: 90, lowestFps: 30, mayLowerFps: true })).toBe(false);
+    // Joins at their own speed keep their exact path.
+    expect(shouldKeepFramesOnGpu({ clips: [{ rate: 1, duration: 60 }, { rate: 1, duration: 60 }], rotation: undefined, lowestFps: 30, mayLowerFps: true })).toBe(false);
     expect(getGpuFramesFilter({ rate: 0.5, downloadFormat: 'nv12', outputFps: undefined })).toBe('hwdownload,format=nv12');
   });
 });

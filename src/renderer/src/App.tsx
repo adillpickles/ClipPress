@@ -4503,6 +4503,7 @@ function App() {
         setExportWorking({ text: getCuttingText(segmentsToExport.length), detailText: withQuickExportLabel(undefined), phase: 'cutting' });
         // Read here, where they're known to be set: the closure below can't see that.
         const { index: videoStreamIndex, width: videoWidth, height: videoHeight } = textPicture;
+        const videoFormat: Pick<FFprobeStream, 'codec_name' | 'pix_fmt'> = textPicture;
         const cutWithTexts = (segments: typeof segmentsToExport, names: string[], onClipWritten: ((path: string) => void) | undefined) => cutMultipleWithTextOverlays({
           outputDir,
           segments,
@@ -4522,6 +4523,8 @@ function App() {
           chapters: chaptersToAdd,
           overlayClips,
           videoStreamIndex,
+          videoFormat,
+          sourceFps: getStreamFps(textPicture),
           videoWidth,
           videoHeight,
           encodeAllAudio: willMerge,

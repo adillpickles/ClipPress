@@ -39,7 +39,7 @@ import { UserFacingError } from '../errors';
 import { assertOutPathsNotSource } from './util/sourceProtection';
 import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } from './textOverlays';
 import createAsyncCache from './util/asyncCache';
-import { getEncoderSizeRules, getGpuEncoderInfo, getGpuFramesDownloadFormat, getGpuFramesFilter, getHardwareDecodeArgs, gpuEncoderLabels, gpuEncoders, isGpuEncoderAvailable, runWithGpuFallbacksCore, shouldKeepFramesOnGpu, shouldUseHardwareDecode, withoutGpuEncoders } from './gpuEncoders';
+import { getEncoderSizeRules, canDropFramesEarly, getFrameDropFilter, getGpuEncoderInfo, getGpuFramesDownloadFormat, getGpuFramesFilter, getHardwareDecodeArgs, gpuEncoderLabels, gpuEncoders, isGpuEncoderAvailable, runWithGpuFallbacksCore, shouldKeepFramesOnGpu, shouldUseHardwareDecode, withoutGpuEncoders } from './gpuEncoders';
 import type { GpuEncoderName } from './gpuEncoders';
 import { getTempWorkDir } from './util/tempFiles';
 import { getEncodersToRetest, isSavedEncoderCheck } from './savedEncoderCheck';
@@ -353,9 +353,18 @@ export async function runWithGpuFallbacks<T>(args: Omit<Parameters<typeof runWit
 const gpuFramesFailed = new Set<string>();
 
 /**
- * The format a sped-up export's frames are copied off the GPU in, when they can stay there until `fps` has dropped
- * the unkept ones (`getGpuFramesFilter`); undefined when they're copied off as they're decoded.
+ * The format an export's frames are copied off the GPU in, when they can stay there until `fps` has dropped the
+ * unkept ones (`getGpuFramesFilter`); undefined when they're copied off as they're decoded.
  */
+export function getKeptGpuFramesFormat({ videoStream, ...keep }: Parameters<typeof shouldKeepFramesOnGpu>[0] & {
+  videoStream: Pick<FFprobeStream, 'codec_name' | 'pix_fmt'>,
+}) {
+  if (!shouldKeepFramesOnGpu(keep)) return undefined;
+  if (gpuFramesFailed.has(`${videoStream.codec_name}/${videoStream.pix_fmt}`)) return undefined;
+  return getGpuFramesDownloadFormat(videoStream.pix_fmt);
+}
+
+/** {@link getKeptGpuFramesFormat} for a Fit a file size export. */
 function getGpuFramesFormat({ videoStream, clips, rotation, sourceFps }: {
   videoStream: Pick<FFprobeStream, 'codec_name' | 'pix_fmt'>,
   clips: { rate: number, duration: number }[],
@@ -364,13 +373,12 @@ function getGpuFramesFormat({ videoStream, clips, rotation, sourceFps }: {
 }) {
   // The export's frame rate is the source's, or lowered to 30 for some sizes.
   const lowestFps = sourceFps != null ? Math.min(sourceFps, targetLowFps) : undefined;
-  if (!shouldKeepFramesOnGpu({ clips, rotation, lowestFps })) return undefined;
-  if (gpuFramesFailed.has(`${videoStream.codec_name}/${videoStream.pix_fmt}`)) return undefined;
-  return getGpuFramesDownloadFormat(videoStream.pix_fmt);
+  const mayLowerFps = clips.length === 1 && sourceFps != null && sourceFps > targetLowFps + 0.5;
+  return getKeptGpuFramesFormat({ videoStream, clips, rotation, lowestFps, mayLowerFps });
 }
 
 /** Runs with the frames on the GPU when they can be, and if FFmpeg fails that way, once more with them copied off. */
-async function runKeepingFramesOnGpu<T>({ videoStream, gpuFramesFormat, run }: {
+export async function runKeepingFramesOnGpu<T>({ videoStream, gpuFramesFormat, run }: {
   videoStream: Pick<FFprobeStream, 'codec_name' | 'pix_fmt'>,
   gpuFramesFormat: string | undefined,
   run: (format: string | undefined) => Promise<T>,
@@ -593,7 +601,7 @@ function buildSegmentTextOverlayFilter({
   outputPlaybackRate,
   videoFilter,
   cropFilter,
-  gpuFramesFilter,
+  framesFilter,
 }: {
   videoStreamIndex: number,
   overlayAssets: PreparedTextOverlayAsset[],
@@ -603,13 +611,14 @@ function buildSegmentTextOverlayFilter({
   outputPlaybackRate: number,
   videoFilter: string | undefined,
   cropFilter: string | undefined,
-  gpuFramesFilter: string | undefined,
+  /** Right after `setpts`: the frames kept (`getGpuFramesFilter` or `getFrameDropFilter`). */
+  framesFilter: string | undefined,
 }) {
   if (overlayAssets.length === 0) return undefined;
 
   const graph: string[] = [];
   let currentLabel = '[v0]';
-  graph.push(`[0:${videoStreamIndex}]${[getVideoTimingFilter(outputPlaybackRate), gpuFramesFilter, cropFilter].filter(Boolean).join(',')}${currentLabel}`);
+  graph.push(`[0:${videoStreamIndex}]${[getVideoTimingFilter(outputPlaybackRate), framesFilter, cropFilter].filter(Boolean).join(',')}${currentLabel}`);
 
   overlayAssets.forEach((overlayAsset, index) => {
     const overlapWindow = getRelativeSegmentOverlapWindow({
@@ -709,11 +718,13 @@ async function resolveNextEncoder(strategy: SizeLimitedResolvedStrategy, resolve
   }
 }
 
-function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoProfile, overlayAssets, outputPlaybackRate, audioGainDb, videoWidth, videoHeight, gpuFramesFormat, mixedAudioTracks, addedFileCount }: {
+function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoProfile, keptFps, overlayAssets, outputPlaybackRate, audioGainDb, videoWidth, videoHeight, gpuFramesFormat, mixedAudioTracks, addedFileCount }: {
   segments: SegmentToExport[],
   videoStreamIndex: number,
   audioStreamIndex: number | undefined,
   videoProfile: SizeLimitedVideoTransformProfile,
+  /** The frame rate the export keeps (the lowered one, else the source's), if known. */
+  keptFps: number | undefined,
   overlayAssets?: PreparedTextOverlayAsset[] | undefined,
   outputPlaybackRate: number,
   audioGainDb?: number | undefined,
@@ -737,17 +748,27 @@ function getConcatFilter({ segments, videoStreamIndex, audioStreamIndex, videoPr
   });
   const gpuFrames = gpuFramesFormat != null ? { downloadFormat: gpuFramesFormat, outputFps: videoProfile.outputFps } : undefined;
   const { graph, labels } = buildSegmentConcatFilters({ segments, videoStreamIndex, audioStreamIndex, outputPlaybackRate, videoWidth, videoHeight, gpuFrames, mixedAudioTracks, addedInputs });
+  // One `fps` right after the join (so the joins stay exact) when the frames come off the GPU as they're decoded and a
+  // clip is sped up, or when the export lowers its frame rate under text: what the export doesn't keep skips the text
+  // and the scale. The text's times are the output's, so they're unchanged.
+  const anySpedUp = segments.some((segment) => getSegmentPlaybackRate(segment, outputPlaybackRate) > 1);
+  const joinedDuration = segments.reduce((sum, segment) => sum + getSegmentOutputDuration(segment, outputPlaybackRate), 0);
+  const joinedFramesFilter = canDropFramesEarly({ duration: joinedDuration, fps: keptFps }) && ((gpuFrames == null && anySpedUp) || (videoProfile.outputFps != null && mergedOverlayFilters.graph.length > 0))
+    ? `fps=${videoProfile.outputFps ?? 'source_fps'}`
+    : undefined;
   const needsVideoPostProcessing = mergedOverlayFilters.graph.length > 0 || videoFilter != null;
   const concatVideoLabel = needsVideoPostProcessing ? '[vconcat]' : '[v]';
+  const joinedVideoLabel = joinedFramesFilter != null ? '[vjoined]' : concatVideoLabel;
   // Mixed tracks had their volumes applied one by one, before the mix.
   const needsAudioPostProcessing = audioStreamIndex != null && mixedAudioTracks == null && !isNeutralAudioGain(audioGainDb);
   const concatAudioLabel = needsAudioPostProcessing ? '[aconcat]' : '[a]';
 
   if (audioStreamIndex == null) {
-    graph.push(`${labels}concat=n=${segments.length}:v=1:a=0${concatVideoLabel}`);
+    graph.push(`${labels}concat=n=${segments.length}:v=1:a=0${joinedVideoLabel}`);
   } else {
-    graph.push(`${labels}concat=n=${segments.length}:v=1:a=1${concatVideoLabel}${concatAudioLabel}`);
+    graph.push(`${labels}concat=n=${segments.length}:v=1:a=1${joinedVideoLabel}${concatAudioLabel}`);
   }
+  if (joinedFramesFilter != null) graph.push(`${joinedVideoLabel}${joinedFramesFilter}${concatVideoLabel}`);
 
   graph.push(...mergedOverlayFilters.graph);
   if (videoFilter != null) graph.push(`${mergedOverlayFilters.videoOutputLabel}${videoFilter}[v]`);
@@ -1289,8 +1310,10 @@ export async function exportSizeLimitedSegment({
             const baseVideoFilter = buildSizeLimitedVideoFilter({ videoProfile });
             const dimensions = getRotatedVideoDimensions({ width: videoStream.width!, height: videoStream.height!, rotation: sourceRotation ?? rotation });
             const cropFilter = getSegmentCropFilter(segment, dimensions.width, dimensions.height);
-            const gpuFramesFilter = gpuFramesFormat != null ? getGpuFramesFilter({ rate: segmentRate, downloadFormat: gpuFramesFormat, outputFps: videoProfile.outputFps }) : undefined;
-            const videoFilter = [getVideoTimingFilter(segmentRate), gpuFramesFilter, cropFilter, baseVideoFilter].filter(Boolean).join(',');
+            const framesFilter = gpuFramesFormat != null
+              ? getGpuFramesFilter({ rate: segmentRate, downloadFormat: gpuFramesFormat, outputFps: videoProfile.outputFps, dropToLoweredFps: true })
+              : getFrameDropFilter({ rate: segmentRate, outputFps: videoProfile.outputFps, duration: plannedDuration, keptFps: frame?.fps });
+            const videoFilter = [getVideoTimingFilter(segmentRate), framesFilter, cropFilter, baseVideoFilter].filter(Boolean).join(',');
             const segmentOverlayAssets = preparedOverlayAssets.filter((overlayAsset) => overlayAsset.start < segment.end && overlayAsset.end > segment.start);
             const overlayInputArgs = buildOverlayImageInputArgs(segmentOverlayAssets.map(({ imagePath }) => imagePath));
             const overlayFilter = buildSegmentTextOverlayFilter({
@@ -1302,7 +1325,7 @@ export async function exportSizeLimitedSegment({
               outputPlaybackRate: segmentRate,
               videoFilter: baseVideoFilter,
               cropFilter,
-              gpuFramesFilter,
+              framesFilter,
             });
             // The audio mix is a graph of its own, beside the text's (or the video's simple -vf); a first pass writes no
             // audio, so it sinks the mix there.
@@ -1617,6 +1640,7 @@ export async function exportSizeLimitedMerge({
               videoStreamIndex: videoStream.index,
               audioStreamIndex: audioStream?.index,
               videoProfile,
+              keptFps: frame?.fps,
               overlayAssets: preparedOverlayAssets,
               outputPlaybackRate,
               audioGainDb,
