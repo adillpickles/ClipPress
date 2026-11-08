@@ -541,7 +541,7 @@ function App() {
   const [unopenableShelfKeys, setUnopenableShelfKeys] = useState<ReadonlySet<string>>(new Set());
   const [selectedBatchFiles, setSelectedBatchFiles] = useState<string[]>([]);
 
-  const allUserSettings = useUserSettingsRoot();
+  const { root: allUserSettings, playbackVolume } = useUserSettingsRoot();
   const {
     captureFormat,
     keyframeCut,
@@ -558,7 +558,6 @@ function App() {
     askBeforeClose,
     enableImportChapters,
     enableAskForFileOpenAction,
-    playbackVolume,
     autoSaveProjectFile,
     wheelSensitivity,
     waveformHeight,

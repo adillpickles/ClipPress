@@ -396,7 +396,6 @@ export default function useUserSettingsRoot() {
     askBeforeClose,
     enableImportChapters,
     enableAskForFileOpenAction,
-    playbackVolume,
     autoSaveProjectFile,
     wheelSensitivity,
     waveformHeight,
@@ -503,7 +502,6 @@ export default function useUserSettingsRoot() {
     askBeforeClose,
     enableImportChapters,
     enableAskForFileOpenAction,
-    playbackVolume,
     autoSaveProjectFile,
     wheelSensitivity,
     waveformHeight,
@@ -593,7 +591,7 @@ export default function useUserSettingsRoot() {
     quickExportPresets,
   ]);
 
-  return useMemo(() => ({
+  const root = useMemo(() => ({
     settings,
 
     springAnimation,
@@ -720,6 +718,10 @@ export default function useUserSettingsRoot() {
     setSizeLimitCutMergedFileTemplate,
     setQuickExportPresets,
   }), [settings, springAnimation, customOutDir, setCustomOutDir, resetKeyBindings, resetAllSettings, toggleDarkMode, prefersReducedMotion, recentFiles, shelfExports, shelfOrder, clipsFolder]);
+
+  // The preview volume beside the rest, not in `settings`: dragging its slider changes it at every step, and every
+  // component that reads the settings would draw again with it. Only the player and the volume control need it.
+  return { root, playbackVolume };
 }
 
-export type UserSettingsRoot = ReturnType<typeof useUserSettingsRoot>;
+export type UserSettingsRoot = ReturnType<typeof useUserSettingsRoot>['root'];

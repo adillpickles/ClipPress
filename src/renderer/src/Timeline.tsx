@@ -21,6 +21,7 @@ import Button from './components/Button';
 import type { UseSegments } from './hooks/useSegments';
 import { isGestureModifierHeld } from './hooks/useTimelineScroll';
 import useGlidingSegments from './hooks/useGlidingSegments';
+import useStableHandlers from './hooks/useStableHandlers';
 import { getTextLaneRows, minTextOverlayDuration } from './textOverlays';
 import type { TextLaneRow } from './textOverlays';
 import SegmentRetimeBar from './components/SegmentRetimeBar';
@@ -375,6 +376,17 @@ function Timeline({
   }, [timelineMap]);
 
   const toLanePercent = useCallback((time: number) => (timelineMap.toDisplay(time) / laneDuration) * 100, [laneDuration, timelineMap]);
+
+  // The clip blocks' handlers stay the same between edits (App's change with the clips), so a trim re-draws only its clip.
+  const clipHandlers = useStableHandlers({
+    onSegClick: setCurrentSegIndex,
+    onEditSpeed: onEditSegmentSpeed,
+    onRemoveSpeed: onRemoveSegmentSpeed,
+    onToggleSpeedControls: onToggleSegmentSpeedControls,
+    onEditCrop: onEditSegmentCrop,
+    onEditVolume: onEditClipVolume,
+    onRemove: simpleMode ? onRemoveSegment : undefined,
+  });
 
   const calculateTimelinePos = useCallback((time: number | undefined) => (time !== undefined ? Math.min(timelineMap.toDisplay(time) / laneDuration, 1) : undefined), [laneDuration, timelineMap]);
   const calculateTimelinePercent = useCallback((time: number | undefined) => {
@@ -1071,7 +1083,7 @@ function Timeline({
                     key={seg.segId}
                     seg={drawnSegments[i] ?? seg}
                     segNum={i}
-                    onSegClick={setCurrentSegIndex}
+                    onSegClick={clipHandlers.onSegClick}
                     isActive={i === currentSegIndexSafe}
                     picked={pickedClipIds?.includes(seg.segId) ?? false}
                     toLanePercent={toLanePercent}
@@ -1080,16 +1092,16 @@ function Timeline({
                     formatTimecode={formatTimecode}
                     selected={selected}
                     speedControlsVisible={speedControlsSegmentIds.has(seg.segId)}
-                    onEditSpeed={onEditSegmentSpeed}
-                    onRemoveSpeed={onRemoveSegmentSpeed}
-                    onToggleSpeedControls={onToggleSegmentSpeedControls}
-                    onEditCrop={onEditSegmentCrop}
-                    onEditVolume={onEditClipVolume}
+                    onEditSpeed={clipHandlers.onEditSpeed}
+                    onRemoveSpeed={clipHandlers.onRemoveSpeed}
+                    onToggleSpeedControls={clipHandlers.onToggleSpeedControls}
+                    onEditCrop={clipHandlers.onEditCrop}
+                    onEditVolume={clipHandlers.onEditVolume}
                     filmTiles={filmTiles}
                     filmLoading={!filmstrip.done}
                     lanePx={lanePx}
                     onTrimHandleMouseDown={simpleMode ? onTrimHandleMouseDown : undefined}
-                    onRemove={simpleMode ? onRemoveSegment : undefined}
+                    onRemove={clipHandlers.onRemove}
                     removeKeys={removeSegmentKeys}
                     speedKeys={menuKeys?.changeSpeed}
                     cropKeys={menuKeys?.crop}
