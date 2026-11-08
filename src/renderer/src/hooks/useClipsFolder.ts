@@ -57,6 +57,9 @@ export function useClipsFolder({ folder, exports, caseInsensitive, active }: {
     if (folder == null || !active) return undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let firstChangeAt: number | undefined;
+    // Hidden (minimized, or behind a full-screen game while OBS records into the folder): nothing to show, so no
+    // listing or thumbnails every few seconds; it's listed once when the window shows again.
+    let changedWhileHidden = false;
     const listAgain = (_event: string, fileName: string | null) => {
       // Deeper than the listing looks: nothing it shows changed.
       if (fileName != null && fileName.split(/[\\/]/).length > clipsFolderDepth + 1) return;
@@ -65,6 +68,10 @@ export function useClipsFolder({ folder, exports, caseInsensitive, active }: {
       clearTimeout(timer);
       timer = setTimeout(() => {
         firstChangeAt = undefined;
+        if (document.hidden) {
+          changedWhileHidden = true;
+          return;
+        }
         setListCount((count) => count + 1);
       }, Math.min(settleMs, Math.max(0, firstChangeAt + maxSettleMs - now)));
     };
@@ -85,11 +92,18 @@ export function useClipsFolder({ folder, exports, caseInsensitive, active }: {
       setListCount((count) => count + 1);
       if (watchFailedRef.current) setWatchAttempt((attempt) => attempt + 1);
     };
+    const onVisibilityChange = () => {
+      if (document.hidden || !changedWhileHidden) return;
+      changedWhileHidden = false;
+      setListCount((count) => count + 1);
+    };
     window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       clearTimeout(timer);
       watcher?.close();
       window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [active, folder, watchAttempt]);
 

@@ -13,7 +13,6 @@ import isDev from './isDev';
 import { createWriteFileAtomically } from './util/atomicWrite';
 
 const { readFile, writeFile, rename, unlink } = window.require('fs/promises');
-const cueParser = window.require('cue-parser');
 const { basename, dirname, join } = window.require('path');
 
 const { dialog, getCurrentWindow } = window.require('@electron/remote');
@@ -54,7 +53,8 @@ async function loadEdl(path: string, fps: number) {
 }
 
 async function loadCue(path: string) {
-  return parseCuesheet(cueParser.parse(path));
+  // Required here, not at the top: with its encoding detection it took ~4 ms of every start, for CUE files only.
+  return parseCuesheet(window.require('cue-parser').parse(path));
 }
 
 async function loadSrt(path: string) {

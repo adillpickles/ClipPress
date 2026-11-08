@@ -216,7 +216,10 @@ export default ({ keyBindings, keyUpActions, getKeyboardAction, closeExportConfi
   }, []);
 
   const updateKeyboardLayout = useCallback(async () => {
-    setKeyboardLayoutMap(await navigator.keyboard.getLayoutMap());
+    const next = await navigator.keyboard.getLayoutMap();
+    // Asked again at every focus (the layout may have changed meanwhile): a new map each time, kept only when it
+    // differs, or every Alt+Tab back re-rendered the app and every key cap.
+    setKeyboardLayoutMap((previous) => (previous != null && previous.size === next.size && [...next].every(([code, key]) => previous.get(code) === key) ? previous : next));
   }, [setKeyboardLayoutMap]);
 
   useEffect(() => {

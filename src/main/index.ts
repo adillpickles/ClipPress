@@ -32,7 +32,6 @@ import './i18n.js';
 import type { ApiActionRequest, Config } from '../common/types.js';
 import { isSafeKey } from './objectKeys.js';
 import { isAllowedAppNavigation, isExternallyOpenableUrl } from './navigation.js';
-import { cleanUpdaterCacheOnce } from './updaterCache.js';
 import { getInstallationDir } from './installation.js';
 import * as ffmpeg from './ffmpeg.js';
 import * as compatPlayer from './compatPlayer.js';
@@ -223,6 +222,21 @@ function getSavedBounds() {
     options,
     isMaximized: bounds != null ? bounds.isMaximized : false,
   };
+}
+
+let preloaded = false;
+/**
+ * What the first FFmpeg run, the file log and the first MP4 open need, but not the window: loaded once the page has
+ * loaded, so it doesn't hold up the page's own start (which waits on this process for its synchronous calls). Every
+ * FFmpeg run awaits execa anyway, and log messages are kept until the file log loads.
+ */
+function preloadAfterFirstPage() {
+  if (preloaded) return;
+  preloaded = true;
+  ffmpeg.loadExeca().catch((err: unknown) => logger.error('Failed to load execa', err));
+  loadFileLogger().catch((err: unknown) => logger.error('Failed to load the file log', err));
+  // Every MP4 open asks it before its first picture: loaded now, not on the first open.
+  import('file-type/node').catch((err: unknown) => logger.warn('Failed to load file-type', err));
 }
 
 function createWindow() {
@@ -570,13 +584,16 @@ async function init() {
 
     ipcMain.on('renderer-ready', () => {
       rendererReady = true;
+      preloadAfterFirstPage();
       if (filesToOpen.length > 0) openFiles(filesToOpen);
       // An installed copy cleans up after its last update (updaterCache.ts) a moment after the start, whether or not
       // it checks for updates.
       // Only an installed copy: a portable one shares the folder and mustn't delete the installed copy's update.
       if (app.isPackaged && isWindows && !isStoreBuild && getInstallationDir() != null) {
         setTimeout(() => {
-          cleanUpdaterCacheOnce({ resourcesPath: process.resourcesPath, appName: app.getName(), runningVersion: app.getVersion() })
+          // Loaded only now: with semver it took ~11 ms of the start, before the window.
+          import('./updaterCache.js')
+            .then(({ cleanUpdaterCacheOnce }) => cleanUpdaterCacheOnce({ resourcesPath: process.resourcesPath, appName: app.getName(), runningVersion: app.getVersion() }))
             .then((cleaned) => { if (cleaned.length > 0) logger.info('Removed what the last update left behind', cleaned); })
             .catch(() => undefined);
         }, 5000).unref();
@@ -672,11 +689,8 @@ async function init() {
     }
 
     createWindow();
-    // Needed for the first FFmpeg run, but not to show the window.
-    ffmpeg.loadExeca().catch((err: unknown) => logger.error('Failed to load execa', err));
-    loadFileLogger().catch((err: unknown) => logger.error('Failed to load the file log', err));
-    // Every MP4 open asks it before its first picture: loaded now, not on the first open.
-    import('file-type/node').catch((err: unknown) => logger.warn('Failed to load file-type', err));
+    // If the page never says it's ready (it crashed or hung), these still load, so its errors reach the file log.
+    setTimeout(preloadAfterFirstPage, 5000).unref();
     // will also updateMenu and set about panel options
     await changeLanguage(language);
 

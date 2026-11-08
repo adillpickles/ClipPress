@@ -26,7 +26,19 @@ import { loadProbeFromDisk, saveProbe } from './timelineCacheIo';
 const { ffmpeg } = window.require('@electron/remote').require('./index.js');
 const { stat } = window.require('fs/promises');
 
-const { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, getFfmpegPath, getFfprobePath, setCustomFfPath, checkFfExists } = ffmpeg;
+const { mapTimesToSegments, detectSceneChanges, captureFrames, captureFrameToFile, captureFrameToClipboard, getFfCommandLine, runFfmpegConcat, runFfmpegWithProgress, getDuration, abortFfmpegs, getFfmpegPath, checkFfExists } = ffmpeg;
+
+// ffprobe's path changes only with Settings' FFmpeg folder (setCustomFfPath): asked of main once, not on every open
+// (a blocking call, which waits for main, and main is busiest just as a recording opens).
+let ffprobePath: string | undefined;
+function getFfprobePath(): string {
+  ffprobePath ??= ffmpeg.getFfprobePath();
+  return ffprobePath;
+}
+function setCustomFfPath(path: string | undefined) {
+  ffprobePath = undefined;
+  ffmpeg.setCustomFfPath(path);
+}
 
 type Runners = typeof ffmpeg.runWithCallbacks;
 type RunnerName = Parameters<Runners>[0];
@@ -492,7 +504,7 @@ function isSavedProbe(value: unknown): value is FileFfprobeMeta {
 // Settings) doesn't get an older one's answers.
 const ffprobeIdentities = new Map<string, Promise<string>>();
 function getFfprobeIdentity() {
-  const path: string = getFfprobePath();
+  const path = getFfprobePath();
   let identity = ffprobeIdentities.get(path);
   if (identity == null) {
     identity = stat(path).then(({ size, mtimeMs }: { size: number, mtimeMs: number }) => `${path}|${size}|${Math.round(mtimeMs)}`, () => path);

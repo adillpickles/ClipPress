@@ -23,6 +23,7 @@ import { nanoid } from 'nanoid';
 
 import useTimelineScroll from './hooks/useTimelineScroll';
 import useUserSettingsRoot from './hooks/useUserSettingsRoot';
+import { startLanguage } from './i18n';
 import useLastDefined from './hooks/useLastDefined';
 import useStaysMounted from './hooks/useStaysMounted';
 import useFfmpegOperations, {
@@ -370,9 +371,11 @@ const {
   dirname,
 } = window.require('path');
 
-const { pathToFileURL, lossyMode, isLinux } = window
+const { lossyMode, isLinux } = window
   .require('@electron/remote')
   .require('./index.js');
+// The page's own (not main's through remote, two blocking round trips each time the video's address is made).
+const { pathToFileURL } = window.require('url');
 
 const hevcPlaybackSupportedPromise = doesPlayerSupportHevcPlayback();
 // eslint-disable-next-line unicorn/prefer-top-level-await
@@ -869,8 +872,11 @@ function App() {
   const sizeLimitedCutMergedFileTemplateOrDefault = sizeLimitCutMergedFileTemplate ?? defaultSizeLimitedCutMergedFileTemplate;
   const mergedFileTemplateOrDefault = mergedFileTemplate ?? defaultMergedFileTemplate;
 
+  // The page starts in the saved language (i18n.ts): only a change switches it (a switch re-renders every text).
+  const pageLanguageRef = useRef(startLanguage);
   useEffect(() => {
-    i18n.changeLanguage(language ?? undefined).catch(console.error);
+    if (language !== pageLanguageRef.current) i18n.changeLanguage(language ?? undefined).catch(console.error);
+    pageLanguageRef.current = language;
     electron.ipcRenderer.send('setLanguage', language);
   }, [language]);
 
