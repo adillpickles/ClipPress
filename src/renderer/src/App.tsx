@@ -4703,8 +4703,9 @@ function App() {
         const generated = customSoundNames
           ? await generateSizeLimitedCustomCutFileNames(sizeLimitedCutFileTemplateOrDefault)
           : await generateCutFileNames(cutFileTemplateOrDefault);
-        // A name the user wrote is used as written (Overwrite decides), as Fit a file size does; clip names get a number.
-        cutFileNames = customSoundNames ? withSoundExt(generated.fileNames) : await keepClipNamesFree(withSoundExt(generated.fileNames));
+        // A name the user wrote is used as written (Overwrite decides), as Fit a file size does; clip names, and the
+        // default names a name that couldn't be used falls back to, get a number.
+        cutFileNames = customSoundNames && generated.problems.error == null ? withSoundExt(generated.fileNames) : await keepClipNamesFree(withSoundExt(generated.fileNames));
         if (generated.problems.error != null) {
           console.warn(
             'Output segments file name invalid, using default instead',

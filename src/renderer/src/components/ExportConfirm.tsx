@@ -5,7 +5,7 @@ import type {
   ReactNode,
   SetStateAction,
 } from 'react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FaExclamationTriangle,
   FaInfoCircle,
@@ -1629,11 +1629,12 @@ function ExportConfirm({
   // kept the other quality's text (and could write it into this quality's template).
   const nameEditorKey = isSizeLimited ? 'size-limited' : 'lossless';
 
-  // Faded picture settings (a sound file) can't be reached by keyboard or mouse either.
-  const pictureOnlyRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (pictureOnlyRef.current != null) pictureOnlyRef.current.inert = soundOnlyFileType != null;
-  }, [isSizeLimited, soundOnlyFileType]);
+  // Faded picture settings (a sound file) can't be reached by keyboard or mouse either; set on every mount (the sheet's
+  // contents unmount when it closes) and whenever it changes.
+  const pictureOnlyRef = useCallback((el: HTMLDivElement | null) => {
+    // eslint-disable-next-line no-param-reassign
+    if (el != null) el.inert = soundOnlyFileType != null;
+  }, [soundOnlyFileType]);
 
   const separateFileName = (
     separateAutoFileNames != null && !showSeparateNameEditor ? (
