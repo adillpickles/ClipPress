@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 
 import { keptByResetAllSettings } from './resetAllSettings.js';
 
-const configStore = readFileSync(join(__dirname, '../main/configStore.ts'), 'utf8');
-const userSettings = readFileSync(join(__dirname, '../renderer/src/hooks/useUserSettingsRoot.ts'), 'utf8');
+const configStore = readFileSync(join(process.cwd(), 'src/main/configStore.ts'), 'utf8');
+const userSettings = readFileSync(join(process.cwd(), 'src/renderer/src/hooks/useUserSettingsRoot.ts'), 'utf8');
 
 const defaultsBlock = configStore.slice(configStore.indexOf('const defaults: Config = {'), configStore.indexOf('\n};\n'));
 const settings = [...defaultsBlock.matchAll(/^ {2}(\w+):/gm)].map((match) => match[1]!);

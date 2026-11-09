@@ -4,6 +4,10 @@ import { join, resolve } from 'node:path';
 import {
   auditPackagedApp,
   bytesPerMib,
+  findLoadedPackages,
+  getDeclaredDependencies,
+  getPackagedModuleNames,
+  readAsarFiles,
   readAsarManifest,
 } from './packagedAppAudit.ts';
 
@@ -26,7 +30,8 @@ const resourcesDir = process.platform === 'darwin'
   ? join(unpackedDir.endsWith('.app') ? unpackedDir : join(unpackedDir, 'ClipPress.app'), 'Contents', 'Resources')
   : join(unpackedDir, 'resources');
 
-const manifest = await readAsarManifest(join(resourcesDir, 'app.asar'));
+const asarPath = join(resourcesDir, 'app.asar');
+const manifest = await readAsarManifest(asarPath);
 const resourceFileNames = await readdir(resourcesDir);
 
 // Windows keeps Electron's own files beside the exe, and its languages in `locales/`.
@@ -34,7 +39,15 @@ const appFileNames = process.platform === 'win32'
   ? [...await readdir(unpackedDir), ...(await readdir(join(unpackedDir, 'locales'))).map((name) => `locales/${name}`)]
   : undefined;
 
-const result = auditPackagedApp({ manifest, resourceFileNames, appFileNames, platform: process.platform });
+// What the built code loads, and what each packaged package depends on: anything else in node_modules is dead weight.
+const builtCode = manifest.entries.map(({ path }) => path).filter((path) => /^out\/(?:main|preload|renderer\/assets)\/.*\.c?js$/.test(path));
+const builtTexts = await readAsarFiles(asarPath, manifest, builtCode);
+const loadedByApp = [...new Set([...builtTexts].flatMap(([path, code]) => [...findLoadedPackages(code, { renderer: path.startsWith('out/renderer/') })]))];
+const packageNames = [...getPackagedModuleNames(manifest.entries)];
+const packageJsons = await readAsarFiles(asarPath, manifest, packageNames.map((name) => `node_modules/${name}/package.json`));
+const dependenciesByPackage = Object.fromEntries(packageNames.map((name) => [name, getDeclaredDependencies(packageJsons.get(`node_modules/${name}/package.json`)!)]));
+
+const result = auditPackagedApp({ manifest, resourceFileNames, appFileNames, dependencyGraph: { loadedByApp, dependenciesByPackage }, platform: process.platform });
 
 console.log(`app.asar: ${(result.asarBytes / bytesPerMib).toFixed(1)} MiB across ${result.packagedModuleCount} packages`);
 console.log('Largest packaged dependencies:');

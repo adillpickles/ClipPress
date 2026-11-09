@@ -3,6 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   auditPackagedApp,
   bytesPerMib,
+  findLoadedPackages,
+  findReachablePackages,
+  getDeclaredDependencies,
+  getPackageName,
   getPackagedModuleNames,
   maxAsarBytes,
   requiredChromiumFilesByPlatform,
@@ -56,7 +60,72 @@ describe('getPackagedModuleNames', () => {
   });
 });
 
+describe('getPackageName', () => {
+  it('reads a package from a module path', () => {
+    expect(getPackageName('@electron/remote/main/index.js')).toBe('@electron/remote');
+    expect(getPackageName('mime-types')).toBe('mime-types');
+    expect(getPackageName('a/b')).toBe('a');
+  });
+});
+
+describe('findLoadedPackages', () => {
+  it('finds what built main code imports and requires, without what Node and Electron provide', () => {
+    const code = 'import a from "@electron/remote/main/index.js"; import b from "node:fs"; import c from "electron"; const d = await import("late-pkg"); const e = require2("util"); const f = require$1("cjs-pkg"); const g = require("./local.js");';
+    expect(findLoadedPackages(code, { renderer: false })).toEqual(new Set(['@electron/remote', 'late-pkg', 'cjs-pkg']));
+  });
+
+  it('only counts window.require in the renderer', () => {
+    const code = 'window.require("mime-types"); window.require("path"); const text = require("not-this"); import x from "nor-this";';
+    expect(findLoadedPackages(code, { renderer: true })).toEqual(new Set(['mime-types']));
+  });
+});
+
+describe('getDeclaredDependencies', () => {
+  it('counts every kind a package can need at run time', () => {
+    expect(getDeclaredDependencies(JSON.stringify({ dependencies: { a: '1' }, optionalDependencies: { b: '1' }, peerDependencies: { c: '1', a: '1' }, devDependencies: { d: '1' } }))).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('findReachablePackages', () => {
+  it('follows dependencies from what the app loads', () => {
+    const reachable = findReachablePackages({
+      loadedByApp: ['a'],
+      dependenciesByPackage: { a: ['b', 'not-packaged'], b: ['a'], lonely: ['b'] },
+    });
+    expect(reachable).toEqual(new Set(['a', 'b']));
+  });
+});
+
 describe('auditPackagedApp', () => {
+  const graph = { loadedByApp: ['semver', '@electron/remote'], dependenciesByPackage: { semver: [], '@electron/remote': [] } };
+
+  it('passes when everything packaged can be loaded', () => {
+    expect(audit(healthyEntries, { dependencyGraph: graph }).problems).toEqual([]);
+  });
+
+  it('rejects a packaged package nothing can load', () => {
+    const result = audit([...healthyEntries, { path: 'node_modules/leftover/index.js', size: 1_000 }], {
+      dependencyGraph: { ...graph, dependenciesByPackage: { ...graph.dependenciesByPackage, leftover: [] } },
+    });
+    expect(result.problems).toHaveLength(1);
+    expect(result.problems[0]).toContain('"leftover"');
+    expect(result.problems[0]).toContain('build.files');
+  });
+
+  it('rejects an app that loads a package that was not packaged', () => {
+    const result = audit(healthyEntries, { dependencyGraph: { ...graph, loadedByApp: [...graph.loadedByApp, 'missing-pkg'] } });
+    expect(result.problems).toHaveLength(1);
+    expect(result.problems[0]).toContain('"missing-pkg"');
+  });
+
+  it('does not report a build-time package twice', () => {
+    const result = audit([...healthyEntries, { path: 'node_modules/electron/index.js', size: 1_000 }], {
+      dependencyGraph: { ...graph, dependenciesByPackage: { ...graph.dependenciesByPackage, electron: [] } },
+    });
+    expect(result.problems).toHaveLength(1);
+    expect(result.problems[0]).toContain('build-time-only');
+  });
+
   it('passes a correctly packaged app', () => {
     expect(audit(healthyEntries).problems).toEqual([]);
   });

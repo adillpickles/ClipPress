@@ -1,4 +1,5 @@
 import { open, stat } from 'node:fs/promises';
+import { builtinModules } from 'node:module';
 
 /**
  * Checks that the packaged app contains what it should and nothing it should not.
@@ -16,6 +17,8 @@ import { open, stat } from 'node:fs/promises';
 export interface AsarEntry {
   path: string,
   size: number,
+  /** Where the file's bytes start, after the header. */
+  offset?: number,
 }
 
 export interface AsarManifest {
@@ -23,11 +26,14 @@ export interface AsarManifest {
   fileBytes: number,
   /** Every file inside, with its uncompressed size. */
   entries: AsarEntry[],
+  /** Where the file contents start in the `.asar`. */
+  dataOffset?: number,
 }
 
 interface AsarHeaderNode {
   files?: Record<string, AsarHeaderNode>,
   size?: number,
+  offset?: string,
 }
 
 /**
@@ -50,7 +56,7 @@ export async function readAsarManifest(asarPath: string): Promise<AsarManifest> 
     const entries: AsarEntry[] = [];
     const walk = (node: AsarHeaderNode, prefixPath: string) => {
       if (node.files == null) {
-        entries.push({ path: prefixPath, size: node.size ?? 0 });
+        entries.push({ path: prefixPath, size: node.size ?? 0, ...(node.offset != null ? { offset: Number(node.offset) } : {}) });
         return;
       }
       for (const [name, child] of Object.entries(node.files)) {
@@ -59,7 +65,28 @@ export async function readAsarManifest(asarPath: string): Promise<AsarManifest> 
     };
     walk(header, '');
 
-    return { fileBytes: (await stat(asarPath)).size, entries };
+    // Two pickles: the first holds the second's size; the file contents follow the second.
+    return { fileBytes: (await stat(asarPath)).size, entries, dataOffset: 8 + prefix.readUInt32LE(4) };
+  } finally {
+    await handle.close();
+  }
+}
+
+/** The text of files inside an ASAR. */
+export async function readAsarFiles(asarPath: string, manifest: AsarManifest, paths: readonly string[]) {
+  const handle = await open(asarPath, 'r');
+  try {
+    const byPath = new Map(manifest.entries.map((entry) => [entry.path, entry]));
+    const texts = new Map<string, string>();
+    for (const path of paths) {
+      const entry = byPath.get(path);
+      if (entry?.offset == null || manifest.dataOffset == null) throw new Error(`${path} isn't readable in ${asarPath}`);
+      const bytes = Buffer.alloc(entry.size);
+      // eslint-disable-next-line no-await-in-loop
+      await handle.read(bytes, 0, entry.size, manifest.dataOffset + entry.offset);
+      texts.set(path, bytes.toString('utf8'));
+    }
+    return texts;
   } finally {
     await handle.close();
   }
@@ -82,6 +109,50 @@ export function getPackagedModuleNames(entries: readonly AsarEntry[]) {
 }
 
 export const bytesPerMib = 1024 * 1024;
+
+/** A bare module name's package: `a/b` is `a`, `@a/b/c` is `@a/b`. */
+export function getPackageName(moduleName: string) {
+  const [first, second] = moduleName.split('/');
+  return first!.startsWith('@') && second != null ? `${first}/${second}` : first!;
+}
+
+const isRuntimeProvided = (moduleName: string) => moduleName.startsWith('node:') || moduleName === 'electron' || moduleName === 'original-fs' || builtinModules.includes(moduleName);
+
+/** Packages a built file of the app loads itself (everything else it uses is bundled in). */
+export function findLoadedPackages(code: string, { renderer }: { renderer: boolean }) {
+  // The renderer's bundle has the word "require" in plenty of text; only window.require reaches Node there.
+  const pattern = renderer
+    ? /window\.require\(\s*["']([^"'.\s][^"'\s]*)["']\s*\)/g
+    : /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire[\d$]*\s*\(\s*)["']([^"'.\s][^"'\s]*)["']/g;
+  return new Set([...code.matchAll(pattern)].map((match) => match[1]!).filter((name) => !isRuntimeProvided(name)).map((name) => getPackageName(name)));
+}
+
+/** What a package needs at run time, as its package.json declares it. */
+export function getDeclaredDependencies(packageJsonText: string) {
+  const { dependencies, optionalDependencies, peerDependencies } = JSON.parse(packageJsonText) as Record<string, Record<string, string> | undefined>;
+  return [...new Set([...Object.keys(dependencies ?? {}), ...Object.keys(optionalDependencies ?? {}), ...Object.keys(peerDependencies ?? {})])];
+}
+
+export interface PackagedDependencyGraph {
+  /** Packages the built main, preload and renderer code load themselves. */
+  loadedByApp: readonly string[],
+  /** Every package at the top of the ASAR's node_modules, with what it depends on. */
+  dependenciesByPackage: Readonly<Record<string, readonly string[]>>,
+}
+
+/** Everything the app can load at run time: what it loads itself, and all those packages depend on. */
+export function findReachablePackages({ loadedByApp, dependenciesByPackage }: PackagedDependencyGraph) {
+  const reachable = new Set<string>();
+  const queue = [...loadedByApp];
+  while (queue.length > 0) {
+    const name = queue.pop()!;
+    if (!reachable.has(name) && dependenciesByPackage[name] != null) {
+      reachable.add(name);
+      queue.push(...dependenciesByPackage[name]);
+    }
+  }
+  return reachable;
+}
 
 /**
  * Build-time-only packages that must never be inside the app.
@@ -140,6 +211,8 @@ export interface PackagedAppAuditInput {
   resourceFileNames: readonly string[],
   /** Files in the app's own folder (next to its exe), with `locales/` ones as `locales/<name>`; only checked on Windows. */
   appFileNames?: readonly string[] | undefined,
+  /** Given, the ASAR's packages are checked against what the app can actually load. */
+  dependencyGraph?: PackagedDependencyGraph | undefined,
   platform: string,
 }
 
@@ -150,13 +223,29 @@ export interface PackagedAppAuditResult {
   largestModules: { name: string, bytes: number }[],
 }
 
-export function auditPackagedApp({ manifest, resourceFileNames, appFileNames, platform }: PackagedAppAuditInput): PackagedAppAuditResult {
+export function auditPackagedApp({ manifest, resourceFileNames, appFileNames, dependencyGraph, platform }: PackagedAppAuditInput): PackagedAppAuditResult {
   const problems: string[] = [];
   const moduleNames = getPackagedModuleNames(manifest.entries);
 
   for (const name of disallowedPackagedModules) {
     if (moduleNames.has(name)) {
       problems.push(`app.asar contains the build-time-only package "${name}". Check build.files in package.json.`);
+    }
+  }
+
+  if (dependencyGraph != null) {
+    const reachable = findReachablePackages(dependencyGraph);
+    for (const name of [...moduleNames].sort()) {
+      // Build-time packages are reported above.
+      if (!reachable.has(name) && !disallowedPackagedModules.includes(name)) {
+        problems.push(`app.asar contains "${name}", which nothing at run time can load. Exclude it in build.files in package.json.`);
+      }
+    }
+    for (const name of dependencyGraph.loadedByApp) {
+      // electron-devtools-installer is only imported in development.
+      if (!moduleNames.has(name) && !disallowedPackagedModules.includes(name)) {
+        problems.push(`The app loads "${name}", which isn't in app.asar: add it to dependencies in package.json.`);
+      }
     }
   }
 
