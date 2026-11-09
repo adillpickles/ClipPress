@@ -34,6 +34,16 @@ module.exports = {
       },
     },
     {
+      // Main's libraries are bundled into it (electron.vite.config.ts), so like the renderer's they're devDependencies.
+      files: ['./src/main/**/*.{js,cjs,mjs,jsx,ts,tsx,mts}', './src/common/**/*.{js,cjs,mjs,jsx,ts,tsx,mts}'],
+      rules: {
+        'import/no-extraneous-dependencies': ['error', {
+          devDependencies: true,
+          optionalDependencies: false,
+        }],
+      },
+    },
+    {
       files: ['./script/**/*.{js,cjs,mjs,jsx,ts,tsx,mts}', 'electron.vite.config.ts'],
       rules: {
         'import/no-extraneous-dependencies': ['error', {
