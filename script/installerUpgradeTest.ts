@@ -715,7 +715,7 @@ async function main() {
     });
 
     await step('An unpacked (portable-style) copy finds updates but never installs', async () => {
-      app = await launchApp(join(a.dir, 'win-unpacked', 'ClipPress.exe'));
+      app = await launchApp(join(b.dir, 'win-unpacked', 'ClipPress.exe'));
       const status = await app.updateStatus();
       assert.equal(status.supported, false);
       assert.equal(status.reason, 'portable');
