@@ -279,6 +279,9 @@ export function getRegularExportVideoArgs(encoder: GpuEncoderName | undefined, {
   }
 }
 
+/** Which sources count as "the same" when one fails on the GPU: a codec the card lacks, or a bit depth it can't handle. */
+export const getSourceFormatKey = ({ codec_name: codec, pix_fmt: format }: { codec_name?: string | undefined, pix_fmt?: string | undefined }) => `${codec}/${format}`;
+
 /**
  * Runs an export, recovering from GPU problems instead of failing it: first by retrying with CPU
  * decoding, then (when `onGpuEncoderFailed` agrees to switch) on the next encoder in line.

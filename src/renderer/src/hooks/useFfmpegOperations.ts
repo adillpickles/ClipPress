@@ -793,7 +793,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
           return gpu == null ? undefined : { ...gpu, basic: capabilities.basicSettingsOnly?.includes(gpu.capability) === true };
         };
         let gpuH264 = exportGpuAcceleration && fitsGpuH264 ? await pickGpuH264() : undefined;
-        const hardwareDecode = canUseHardwareDecode({ enabled: exportGpuAcceleration, inputCount: 1, width: videoWidth, height: videoHeight });
+        const hardwareDecode = canUseHardwareDecode({ videoStream: videoFormat, enabled: exportGpuAcceleration, inputCount: 1, width: videoWidth, height: videoHeight });
         // MP4 and MOV play at a constant frame rate, so a sped-up clip keeps only one frame in `rate`: those are picked
         // right after its speed (on the GPU when they can stay there, as Fit a file size does), and the crop, text and
         // the copy off the GPU skip the rest. Matroska keeps every frame (a variable frame rate), so it's left as it is.
@@ -895,6 +895,7 @@ function useFfmpegOperations({ filePath, treatInputFileModifiedTimeAsStart, trea
 
           try {
             await runWithGpuFallbacks({
+              videoStream: videoFormat,
               hardwareDecode,
               run: async (useHardwareDecode) => runKeepingFramesOnGpu({
                 videoStream: videoFormat,

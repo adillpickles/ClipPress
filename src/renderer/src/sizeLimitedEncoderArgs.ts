@@ -129,11 +129,11 @@ function getNvencMultipassArgs(strategy: SizeLimitedResolvedStrategy, { twoPass,
 }
 
 /**
- * Whether the encoder has a quality cap that `qualityCapOffset` relaxes: AV1 NVENC's `-cq`, and NVIDIA HEVC's own one
- * (it has no `-cq` until relaxed, then `-cq 1`).
+ * Whether the encoder has a quality cap that `qualityCapOffset` relaxes: AV1 NVENC's `-cq`, and NVIDIA HEVC's and
+ * H.264's own one (they have no `-cq` until relaxed, then `-cq 1`).
  */
 export function hasQualityCap(encoder: SizeLimitedResolvedStrategy['encoder']) {
-  return encoder === 'av1_nvenc' || encoder === 'hevc_nvenc';
+  return encoder === 'av1_nvenc' || encoder === 'hevc_nvenc' || encoder === 'h264_nvenc';
 }
 
 function resolveNvencCq({ baseCq, qualityCapOffset }: { baseCq: number, qualityCapOffset: number | undefined }) {
@@ -269,6 +269,8 @@ export function getResolvedVideoArgs({ strategy, videoBitrate, twoPass, passNumb
         // vbr_hq is deprecated: vbr with the multipass below makes the same file.
         '-rc', 'vbr',
         ...getNvencMultipassArgs(strategy, { twoPass, isFast: false }),
+        // Relaxed (see hevc_nvenc): without a quality target it stops well short of the size on quiet footage too.
+        ...(qualityCapOffset != null && qualityCapOffset > 0 ? ['-cq', '1'] : []),
         '-rc-lookahead', isFast ? '12' : '20',
         '-spatial-aq', '1',
         '-temporal-aq', '1',
@@ -412,6 +414,6 @@ export function getGpuProbeVideoArgs(encoder: GpuEncoderName, { nvencUhq = false
     nvencUhq,
   } as SizeLimitedResolvedStrategy;
   // NVIDIA HEVC's tuned settings include its relaxed quality target.
-  const qualityCapOffset = encoder === 'hevc_nvenc' ? 1 : undefined;
+  const qualityCapOffset = encoder === 'hevc_nvenc' || encoder === 'h264_nvenc' ? 1 : undefined;
   return getResolvedVideoArgs({ strategy, videoBitrate: 2_000_000, twoPass: false, videoProfile: { outputWidth: undefined, outputHeight: undefined, outputFps: 30 }, sourceFps: 30, outputPlaybackRate: 1, qualityCapOffset });
 }

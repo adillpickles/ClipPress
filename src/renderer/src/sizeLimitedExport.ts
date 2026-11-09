@@ -39,7 +39,7 @@ import { UserFacingError } from '../errors';
 import { assertOutPathsNotSource } from './util/sourceProtection';
 import { getOverlayFontSize, getRotatedVideoDimensions, renderTextOverlayPng } from './textOverlays';
 import createAsyncCache from './util/asyncCache';
-import { getEncoderSizeRules, canDropFramesEarly, getFrameDropFilter, getGpuEncoderInfo, getGpuFramesDownloadFormat, getGpuFramesFilter, getHardwareDecodeArgs, gpuEncoderLabels, gpuEncoders, isGpuEncoderAvailable, runWithGpuFallbacksCore, shouldKeepFramesOnGpu, shouldUseHardwareDecode, withoutGpuEncoders } from './gpuEncoders';
+import { getEncoderSizeRules, getSourceFormatKey, canDropFramesEarly, getFrameDropFilter, getGpuEncoderInfo, getGpuFramesDownloadFormat, getGpuFramesFilter, getHardwareDecodeArgs, gpuEncoderLabels, gpuEncoders, isGpuEncoderAvailable, runWithGpuFallbacksCore, shouldKeepFramesOnGpu, shouldUseHardwareDecode, withoutGpuEncoders } from './gpuEncoders';
 import type { GpuEncoderName } from './gpuEncoders';
 import { getTempWorkDir } from './util/tempFiles';
 import { getEncodersToRetest, isSavedEncoderCheck } from './savedEncoderCheck';
@@ -244,7 +244,8 @@ const pendingBasicSettingsGpuEncoders = new Set<GpuEncoderName>();
 /** NVIDIA HEVC's "ultra high quality" tuning failed in a real export: the tuned "hq" settings from then on. */
 let nvencUhqFailed = false;
 let pendingNvencUhqFailed = false;
-let hardwareDecodeFailed = false;
+/** Source formats the GPU failed to decode in a real export: only those are decoded on the CPU from then on. */
+const hardwareDecodeFailed = new Set<string>();
 
 export async function getSizeLimitedEncoderCapabilities(): Promise<SizeLimitedEncoderCapabilities> {
   const path = getFfmpegPath();
@@ -308,13 +309,14 @@ export function prefetchEncoderCapabilities() {
   getSizeLimitedEncoderCapabilities().catch((error: unknown) => console.warn('Could not check the encoders', error));
 }
 
-export function canUseHardwareDecode({ enabled, inputCount, width, height }: {
+export function canUseHardwareDecode({ enabled, inputCount, width, height, videoStream }: {
   enabled: boolean,
   inputCount: number,
   width: number | undefined,
   height: number | undefined,
+  videoStream: Pick<FFprobeStream, 'codec_name' | 'pix_fmt'>,
 }) {
-  return shouldUseHardwareDecode({ platform: process.platform, enabled: enabled && !hardwareDecodeFailed, inputCount, width, height });
+  return shouldUseHardwareDecode({ platform: process.platform, enabled: enabled && !hardwareDecodeFailed.has(getSourceFormatKey(videoStream)), inputCount, width, height });
 }
 
 /** FFmpeg exited with an error that was not a user cancel or a full disk: worth one more try another way. */
@@ -333,12 +335,14 @@ function keepPendingGpuDemotions() {
 }
 
 /** See {@link runWithGpuFallbacksCore}; failures that were not user cancels are retried. */
-export async function runWithGpuFallbacks<T>(args: Omit<Parameters<typeof runWithGpuFallbacksCore<T>>[0], 'isRetryableFailure' | 'onHardwareDecodeFailed'>) {
+export async function runWithGpuFallbacks<T>({ videoStream, ...args }: Omit<Parameters<typeof runWithGpuFallbacksCore<T>>[0], 'isRetryableFailure' | 'onHardwareDecodeFailed'> & {
+  videoStream: Pick<FFprobeStream, 'codec_name' | 'pix_fmt'>,
+}) {
   try {
     const result = await runWithGpuFallbacksCore({
       ...args,
       isRetryableFailure: isRetryableEncodeFailure,
-      onHardwareDecodeFailed: () => { hardwareDecodeFailed = true; },
+      onHardwareDecodeFailed: () => { hardwareDecodeFailed.add(getSourceFormatKey(videoStream)); },
     });
     keepPendingGpuDemotions();
     return result;
@@ -360,7 +364,7 @@ export function getKeptGpuFramesFormat({ videoStream, ...keep }: Parameters<type
   videoStream: Pick<FFprobeStream, 'codec_name' | 'pix_fmt'>,
 }) {
   if (!shouldKeepFramesOnGpu(keep)) return undefined;
-  if (gpuFramesFailed.has(`${videoStream.codec_name}/${videoStream.pix_fmt}`)) return undefined;
+  if (gpuFramesFailed.has(getSourceFormatKey(videoStream))) return undefined;
   return getGpuFramesDownloadFormat(videoStream.pix_fmt);
 }
 
@@ -392,7 +396,7 @@ export async function runKeepingFramesOnGpu<T>({ videoStream, gpuFramesFormat, r
   }
   const result = await run(undefined);
   // Only now is it clear the frames on the GPU were the problem (not, say, the encoder).
-  gpuFramesFailed.add(`${videoStream.codec_name}/${videoStream.pix_fmt}`);
+  gpuFramesFailed.add(getSourceFormatKey(videoStream));
   return result;
 }
 
@@ -1068,7 +1072,7 @@ async function resolveSizeLimitedPlan({
   const plan = planSizeLimitedEncode({ targetSizeMb, duration, hasAudio, strategy });
   // Elsewhere the relaxation would change nothing but skip the top-up. Checked again after a GPU encoder fallback.
   if (!hasQualityCap(strategy.encoder)) return { capabilities, strategy, plan };
-  return { capabilities, strategy, plan: relaxQualityCapForGenerousBudget(plan, getOutputPixelRate(plan.initialAttempt.videoBitrate), strategy.encoder) };
+  return { capabilities, strategy, plan: relaxQualityCapForGenerousBudget(plan, getOutputPixelRate(plan.initialAttempt.videoBitrate), strategy) };
 }
 
 /** The pixels an encode makes each second (its size and frame rate, else the source's), for judging a budget. */
@@ -1277,7 +1281,8 @@ export async function exportSizeLimitedSegment({
   let result: SizeLimitedExecutionResult;
   try {
     result = copied ?? await runWithGpuFallbacks({
-      hardwareDecode: canUseHardwareDecode({ enabled: gpuAcceleration, inputCount: 1, width: videoStream.width, height: videoStream.height }),
+      videoStream,
+      hardwareDecode: canUseHardwareDecode({ videoStream, enabled: gpuAcceleration, inputCount: 1, width: videoStream.width, height: videoStream.height }),
       onGpuEncoderFailed: async () => {
         const next = await resolveNextEncoder(strategy, resolvePlan);
         if (next == null) return false;
@@ -1598,7 +1603,8 @@ export async function exportSizeLimitedMerge({
   let result: SizeLimitedExecutionResult;
   try {
     result = await runWithGpuFallbacks({
-      hardwareDecode: canUseHardwareDecode({ enabled: gpuAcceleration, inputCount: segments.length, width: videoStream.width, height: videoStream.height }),
+      videoStream,
+      hardwareDecode: canUseHardwareDecode({ videoStream, enabled: gpuAcceleration, inputCount: segments.length, width: videoStream.width, height: videoStream.height }),
       onGpuEncoderFailed: async () => {
         const next = await resolveNextEncoder(strategy, resolvePlan);
         if (next == null) return false;

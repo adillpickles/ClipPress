@@ -9,6 +9,7 @@ import {
   getQsvPreset,
   maxGpuFramesClips,
   getRegularExportVideoArgs,
+  getSourceFormatKey,
   maxHardwareDecodePixels,
   pickGpuEncoder,
   runWithGpuFallbacksCore,
@@ -205,5 +206,12 @@ describe('runWithGpuFallbacksCore', () => {
       isRetryableFailure,
       onHardwareDecodeFailed: () => undefined,
     })).rejects.toBe(ffmpegError);
+  });
+});
+
+describe('getSourceFormatKey', () => {
+  it('tells a failing source format from other formats', () => {
+    expect(getSourceFormatKey({ codec_name: 'hevc', pix_fmt: 'yuv420p10le' })).toBe('hevc/yuv420p10le');
+    expect(getSourceFormatKey({ codec_name: 'hevc', pix_fmt: 'yuv420p' })).not.toBe(getSourceFormatKey({ codec_name: 'hevc', pix_fmt: 'yuv420p10le' }));
   });
 });
