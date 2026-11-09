@@ -78,7 +78,7 @@ The English text is the key (`t('…')`). After changing UI text, run
 
 ## Maintenance
 
-- Dependencies: FFmpeg (the [mifi/ffmpeg-builds](https://github.com/mifi/ffmpeg-builds)
+- Dependencies: FFmpeg (the [clippress-ffmpeg](https://github.com/adillpickles/clippress-ffmpeg)
   release in `package.json`'s download script), `electron` together with the
   `target`s in [electron.vite.config.ts](./electron.vite.config.ts),
   `@electron/remote`, and `yarn.lock`.

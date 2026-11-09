@@ -8,6 +8,11 @@ name: Installer upgrade test
 
 on:
   workflow_dispatch:
+    inputs:
+      from_release:
+        description: Start from this published release's own installer (a tag), so the first update is a real one
+        required: false
+        default: ''
   pull_request:
     paths:
       - '.github/workflows/installer-upgrade-test.yml'
@@ -60,10 +65,20 @@ jobs:
 
       # The same build packaged as three consecutive versions: the release's version and the two
       # after it. Only the version differs, as between two releases that change no updater code.
+      # With from_release, the first of the three is that release's real installer instead.
       - name: Package three consecutive versions
         shell: bash
+        env:
+          FROM_RELEASE: ${{ inputs.from_release }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           versions=$(node -e "const s=require('semver');const a=require('./package.json').version;const b=s.inc(a,'prerelease');console.log([a,b,s.inc(b,'prerelease')].join(' '))")
+          if [ -n "$FROM_RELEASE" ]; then
+            old_version="${FROM_RELEASE#v}"
+            mkdir -p "dist-upgrade/$old_version"
+            gh release download "$FROM_RELEASE" -p "ClipPress-Setup-$old_version.exe" -p latest.yml -D "dist-upgrade/$old_version"
+            versions=$(echo "$versions" | cut -d' ' -f1,2)
+          fi
           echo "Versions: $versions"
           for version in $versions; do
             npx electron-builder --win nsis --x64 --publish never -c.extraMetadata.version="$version" -c.directories.output="dist-upgrade/$version"

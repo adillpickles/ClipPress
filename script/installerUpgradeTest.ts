@@ -190,7 +190,8 @@ async function setTimeZone(id: string) {
 
 // --- Builds -------------------------------------------------------------------------------------
 
-interface Build { version: string, dir: string, installer: string, installerName: string, appAsarSha256: string }
+// A published release's own installer has no unpacked copy beside it to compare with.
+interface Build { version: string, dir: string, installer: string, installerName: string, appAsarSha256: string | undefined }
 
 async function findBuilds(): Promise<Build[]> {
   const versions = (await readdir(buildsDir)).filter((name) => semver.valid(name) != null).sort(semver.compare);
@@ -201,7 +202,8 @@ async function findBuilds(): Promise<Build[]> {
     const metadata = await readFile(join(dir, 'latest.yml'), 'utf8');
     assert.match(metadata, new RegExp(`^version: ${version.replaceAll('.', String.raw`\.`)}$`, 'm'));
     assert.ok(metadata.includes(`url: ${installerName}`));
-    return { version, dir, installer: join(dir, installerName), installerName, appAsarSha256: await sha256(join(dir, 'win-unpacked', 'resources', 'app.asar')) };
+    const appAsar = join(dir, 'win-unpacked', 'resources', 'app.asar');
+    return { version, dir, installer: join(dir, installerName), installerName, appAsarSha256: existsSync(appAsar) ? await sha256(appAsar) : undefined };
   }));
 }
 
@@ -427,7 +429,7 @@ async function waitForInstalled(build: Build) {
     if ((await registryVersion()) !== build.version) return undefined;
     if ((await installerProcesses()).length > 0) return undefined;
     if (!existsSync(join(installDir, 'resources', 'app.asar'))) return undefined;
-    return { appAsarMatches: (await sha256(join(installDir, 'resources', 'app.asar'))) === build.appAsarSha256 };
+    return { appAsarMatches: build.appAsarSha256 == null || (await sha256(join(installDir, 'resources', 'app.asar'))) === build.appAsarSha256 };
   }, 300_000, 2000);
 }
 

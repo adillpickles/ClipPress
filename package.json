@@ -10,7 +10,7 @@
     "clean": "node -e \"for (const dir of ['dist', 'out', 'common-ts-dist', 'main-ts-dist', 'icon-build']) require('node:fs').rmSync(dir, { recursive: true, force: true })\"",
     "start": "electron-vite preview",
     "dev": "electron-vite dev -w",
-    "download-ffmpeg-win32-x64": "mkdirp ffmpeg/win32-x64 && cd ffmpeg/win32-x64 && npx download-cli https://github.com/mifi/ffmpeg-builds/releases/download/9.0-2/ffmpeg-n9.0-latest-win64-gpl-shared-9.0.zip --out . --filename ffmpeg-ffprobe.zip && 7z x ffmpeg-ffprobe.zip && mkdirp lib && cd ffmpeg-n9.0-latest-win64-gpl-shared-9.0/bin && npx shx mv ffmpeg.exe ffprobe.exe *.dll ../../lib",
+    "download-ffmpeg-win32-x64": "mkdirp ffmpeg/win32-x64 && cd ffmpeg/win32-x64 && npx download-cli https://github.com/adillpickles/clippress-ffmpeg/releases/download/9.0.2-clippress.1/ffmpeg-n9.0.2-37-gae19868753-win64-gpl-shared.zip --out . --filename ffmpeg-ffprobe.zip && 7z x ffmpeg-ffprobe.zip && mkdirp lib && cd ffmpeg-n9.0.2-37-gae19868753-win64-gpl-shared/bin && npx shx mv ffmpeg.exe ffprobe.exe *.dll ../../lib",
     "download-ffmpeg-win32-arm64": "mkdirp ffmpeg/win32-arm64 && cd ffmpeg/win32-arm64 && npx download-cli https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n9.0-latest-winarm64-gpl-shared-9.0.zip --out . --filename ffmpeg-ffprobe.zip && 7z x ffmpeg-ffprobe.zip && mkdirp lib && cd ffmpeg-n9.0-latest-winarm64-gpl-shared-9.0/bin && npx shx mv ffmpeg.exe ffprobe.exe *.dll ../../lib",
     "build": "yarn generate-icon && node script/generateVersions.ts && electron-vite build",
     "tsc": "tsc --build",
