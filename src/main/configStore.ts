@@ -191,6 +191,19 @@ export function reset<T extends keyof Config>(key: T) {
   set(key, defaults[key]);
 }
 
+/** Several settings in one write: each set() rewrites the whole file, and "Reset all settings" names nearly all of them. */
+export function resetMany(keys: (keyof Config)[]) {
+  const resetKeys = new Set<string>(keys);
+  const next = Object.fromEntries([
+    ...Object.entries(store.store).filter(([key]) => !resetKeys.has(key)),
+    ...keys.filter((key) => defaults[key] !== undefined).map((key) => [key, defaults[key]]),
+  ]);
+  retrySettingsWrite(() => {
+    store.store = next;
+  });
+  if (keys.some((key) => key === 'enableUpdateCheck' || key === 'updateMode' || key === 'allowMultipleInstances')) updateSettingsEvents.dispatchEvent(new Event('change'));
+}
+
 async function tryCreateStore({ customStoragePath }: { customStoragePath: string | undefined }) {
   for (let i = 0; i < 5; i += 1) {
     try {

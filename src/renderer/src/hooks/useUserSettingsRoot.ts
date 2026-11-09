@@ -4,6 +4,7 @@ import type { Transition } from 'motion/react';
 
 import type { Config } from '../../../common/types.js';
 import getEffectiveSimpleMode from '../../../common/interfaceMode.js';
+import type { ResetByResetAllSettings } from '../../../common/resetAllSettings.js';
 
 import { errorToast } from '../swal';
 import isDev from '../isDev';
@@ -283,19 +284,21 @@ export default function useUserSettingsRoot() {
   }, []);
 
   /**
-   * Settings' "Reset all settings": everything the Settings screen sets, back to its default (configStore's), shortcuts
-   * included. Not what isn't set there: recent files, the clips list's order, the window, the theme. Where projects are
-   * kept is changed by Settings itself, which moves them.
+   * Settings' "Reset all settings": every setting back to its default (configStore's), wherever it's set, except
+   * keptByResetAllSettings. Where projects are kept is changed by Settings itself, which moves them.
    */
   const resetAllSettings = useCallback(() => {
-    const setters: { [K in keyof Config]?: (value: Config[K]) => void } = {
+    const setters: { [K in ResetByResetAllSettings]: (value: Config[K]) => void } = {
       language: setLanguage,
       clipsFolder: setClipsFolder,
+      // The start screen asks about the recorder's folder again.
+      clipsFolderOfferDismissed: setClipsFolderOfferDismissed,
       exportConfirmEnabled: setExportConfirmEnabled,
       hideOsNotifications: setHideOsNotifications,
       hideNotifications: setHideNotifications,
       askBeforeClose: setAskBeforeClose,
       enableAdvancedMode: setEnableAdvancedMode,
+      simpleMode: setSimpleMode,
       enableAskForFileOpenAction: setEnableAskForFileOpenAction,
       storeWindowBounds: setStoreWindowBounds,
       preferStrongColors: setPreferStrongColors,
@@ -332,9 +335,68 @@ export default function useUserSettingsRoot() {
       enableNativeHevc: setEnableNativeHevc,
       ffmpegHwaccel: setFfmpegHwaccel,
       allowMultipleInstances: setAllowMultipleInstances,
+      // Settings › Shortcuts: the mouse and the keyboard's seeking.
+      wheelSensitivity: setWheelSensitivity,
+      invertTimelineScroll: setInvertTimelineScroll,
+      keyboardNormalSeekSpeed: setKeyboardNormalSeekSpeed,
+      keyboardSeekSpeed2: setKeyboardSeekSpeed2,
+      keyboardSeekSpeed3: setKeyboardSeekSpeed3,
+      keyboardSeekAccFactor: setKeyboardSeekAccFactor,
+      mouseWheelZoomModifierKey: setMouseWheelZoomModifierKey,
+      mouseWheelFrameSeekModifierKey: setMouseWheelFrameSeekModifierKey,
+      mouseWheelKeyframeSeekModifierKey: setMouseWheelKeyframeSeekModifierKey,
+      segmentMouseModifierKey: setSegmentMouseModifierKey,
+      extraMouseModifierKeys: setExtraMouseModifierKeys,
+      // The export window's remembered choices, and advanced mode's own options.
+      exportEncodeMode: setExportEncodeMode,
+      sizeLimitMb: setSizeLimitMb,
+      sizeLimitControlMode: setSizeLimitControlMode,
+      sizeLimitPreset: setSizeLimitPreset,
+      sizeLimitSimpleResolution: setSizeLimitSimpleResolution,
+      sizeLimitSimpleResolutionTouched: setSizeLimitSimpleResolutionTouched,
+      sizeLimitSimpleFps: setSizeLimitSimpleFps,
+      sizeLimitSimpleFpsTouched: setSizeLimitSimpleFpsTouched,
+      sizeLimitAdvancedResolution: setSizeLimitAdvancedResolution,
+      sizeLimitAdvancedFps: setSizeLimitAdvancedFps,
+      sizeLimitAdvancedEncoder: setSizeLimitAdvancedEncoder,
+      sizeLimitAdvancedTwoPass: setSizeLimitAdvancedTwoPass,
+      sizeLimitAdvancedAv1CpuPreset: setSizeLimitAdvancedAv1CpuPreset,
+      sizeLimitAdvancedAv1NvencPreset: setSizeLimitAdvancedAv1NvencPreset,
+      sizeLimitAdvancedH264CpuPreset: setSizeLimitAdvancedH264CpuPreset,
+      sizeLimitAdvancedH264NvencPreset: setSizeLimitAdvancedH264NvencPreset,
+      sizeLimitAdvancedHevcCpuPreset: setSizeLimitAdvancedHevcCpuPreset,
+      sizeLimitAdvancedHevcNvencPreset: setSizeLimitAdvancedHevcNvencPreset,
+      sizeLimitSeparateNamingMode: setSizeLimitSeparateNamingMode,
+      sizeLimitMergedNamingMode: setSizeLimitMergedNamingMode,
+      sizeLimitCutFileTemplate: setSizeLimitCutFileTemplate,
+      sizeLimitCutMergedFileTemplate: setSizeLimitCutMergedFileTemplate,
+      autoMerge: setAutoMerge,
+      autoDeleteMergedSegments: setAutoDeleteMergedSegments,
+      segmentsToChapters: setSegmentsToChapters,
+      segmentsToChaptersOnly: setSegmentsToChaptersOnly,
+      enableSmartCut: setEnableSmartCut,
+      ffmpegExperimental: setFfmpegExperimental,
+      preserveChapters: setPreserveChapters,
+      preserveMetadata: setPreserveMetadata,
+      preserveMetadataOnMerge: setPreserveMetadataOnMerge,
+      preserveMovData: setPreserveMovData,
+      movFastStart: setMovFastStart,
+      avoidNegativeTs: setAvoidNegativeTs,
+      outSegTemplate: setCutFileTemplate,
+      mergedFileTemplate: setCutMergedFileTemplate,
+      mergedFilesTemplate: setMergedFileTemplate,
+      outFormatLocked: setOutFormatLocked,
+      safeOutputFileName: setSafeOutputFileName,
+      enableOverwriteOutput: setEnableOverwriteOutput,
+      outputFileNameMinZeroPadding: setOutputFileNameMinZeroPadding,
+      cutFromAdjustmentFrames: setCutFromAdjustmentFrames,
+      cutToAdjustmentFrames: setCutToAdjustmentFrames,
+      waveformMode: setWaveformMode,
+      thumbnailsEnabled: setThumbnailsEnabled,
+      keyframesEnabled: setKeyframesEnabled,
     };
-    const keys = Object.keys(setters) as (keyof Config)[];
-    keys.forEach((key) => configStore.reset(key));
+    const keys = Object.keys(setters) as ResetByResetAllSettings[];
+    configStore.resetMany(keys);
     const fresh = JSON.parse(configStore.getSnapshotJson()) as Config;
     keys.forEach((key) => (setters[key] as (value: unknown) => void)(fresh[key]));
   }, []);
