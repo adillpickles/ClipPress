@@ -559,6 +559,7 @@ const Segment = memo(({
 });
 
 function SegmentList({
+  filePath,
   width,
   fileDuration,
   formatTimecode,
@@ -610,6 +611,8 @@ function SegmentList({
   menuKeys?: ClipMenuKeys | undefined,
   /** The shortcut that shows and hides this panel, for its hint. */
   togglePanelKeys?: string | undefined,
+  /** The open recording. */
+  filePath: string,
   /** Shown or hidden by the user (not by opening a recording): it slides, and the editor widens or narrows with it. */
   animated: boolean,
   fileDuration: number | undefined,
@@ -1052,7 +1055,8 @@ function SegmentList({
         animate={{ width, marginLeft: '0rem', transition: reducedMotion ? { duration: 0 } : panelSlideTransition }}
         exit="hidden"
       >
-        <div className={styles['panel']} style={{ width, transition: darkModeTransition }}>
+        {/* A new recording starts the list afresh (scrolled to the top); the slot itself stays, so the layout doesn't jump. */}
+        <div key={filePath} className={styles['panel']} style={{ width, transition: darkModeTransition }}>
           <div className={`no-user-select ${styles['header']}`}>
             <div style={{ minWidth: 0 }}>
               <div className={styles['headerTitle']}>{simpleMode ? t('Clips') : t('Segments')}</div>

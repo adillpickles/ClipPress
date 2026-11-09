@@ -4,7 +4,7 @@ import type {
   FocusEventHandler,
   DragEventHandler,
 } from 'react';
-import { lazy, memo, Suspense, useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { Fragment, lazy, memo, Suspense, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { FaRegTimesCircle } from 'react-icons/fa';
 import { MdRotate90DegreesCcw } from 'react-icons/md';
 import { AnimatePresence, MotionConfig } from 'motion/react';
@@ -454,6 +454,10 @@ function App() {
   useEffect(() => () => clearTimeout(progressThrottle.current.timer), []);
   const [startTimeOffset, setStartTimeOffset] = useState(0);
   const [filePath, setFilePath] = useState<string>();
+  const openFilePathRef = useRef<string>();
+  useEffect(() => {
+    openFilePathRef.current = filePath;
+  }, [filePath]);
   // The open of filePath, for autosave. Set and cleared together with filePath.
   const [projectSession, setProjectSession] = useState<ProjectSession>();
   const [currentClipName, setCurrentClipName] = useState<string>();
@@ -2426,7 +2430,8 @@ function App() {
     return uri;
   }, [cacheBuster, effectiveFilePath]);
 
-  const resetState = useCallback(() => {
+  // Everything about the open recording except which one it is (see loadMedia, moving straight to another).
+  const resetFileState = useCallback(() => {
     console.log('State reset');
     // Saves the closing file's latest state, before it is reset below.
     endProjectSession();
@@ -2452,7 +2457,6 @@ function App() {
     setRotation(360);
     setProgress(undefined);
     setStartTimeOffset(0);
-    setFilePath(undefined);
     setProjectSession(undefined);
     setCurrentClipName(undefined);
     setRenamingSegId(undefined);
@@ -2500,6 +2504,11 @@ function App() {
     setSubtitlesByStreamId,
     setOutputPlaybackRateState,
   ]);
+
+  const resetState = useCallback(() => {
+    resetFileState();
+    setFilePath(undefined);
+  }, [resetFileState]);
 
   const showNotNativelySupportedMessage = useCallback(() => {
     showNotification({
@@ -5433,20 +5442,6 @@ function App() {
     [loadCutSegments, overlayClipsHistory, streamParamsHistory],
   );
 
-  const loadProjectIntoState = useCallback(
-    async ({
-      path,
-      mediaFilePath,
-    }: {
-      path: string;
-      mediaFilePath: string;
-    }) => {
-      const project = await loadLlcProject(path);
-      applyProjectState({ mediaFilePath, project });
-    },
-    [applyProjectState],
-  );
-
   const loadSubtitleTrackToSegments = useCallback(
     async (streamId: number) => {
       invariant(filePath != null);
@@ -5486,9 +5481,12 @@ function App() {
       let loadedProjectPath: string | undefined;
       // Other copies found holding the same edits ("Both" keeps two), which autosave then needn't write again.
       let sameCopyPaths: string[] = [];
+      // Read first and applied along with everything else about the file, so a move between recordings is one update.
+      let applyProject: (() => void) | undefined;
 
       async function loadProject(path: string) {
-        await loadProjectIntoState({ path, mediaFilePath: fp });
+        const project = await loadLlcProject(path);
+        applyProject = () => applyProjectState({ mediaFilePath: fp, project });
         loadedProjectPath = path;
       }
 
@@ -5503,6 +5501,20 @@ function App() {
         chapters: FFprobeChapter[];
         cod: string | undefined;
       }) {
+        // The unreadable file is set aside as a .replaced- backup, so the edits can still be recovered.
+        const reportUnreadableEdits = (err: unknown) => {
+          console.error('EDL load failed, but continuing', err);
+          errorToast(simpleMode
+            ? i18n.t("This recording's edits couldn't be read, so it opened without them. Their file is kept.")
+            : `${i18n.t('Failed to load segments')} (${err instanceof Error && err.message})`);
+        };
+        const applyOrReport = (apply: () => void) => () => {
+          try {
+            apply();
+          } catch (err) {
+            reportUnreadableEdits(err);
+          }
+        };
         try {
           // Where the setting saves first, then ClipPress's folder, the export folder and next to the recording.
           const storeEnv = getProjectStoreEnv();
@@ -5538,7 +5550,7 @@ function App() {
             // Reported below, and the recording opens without edits.
             if (opened == null) throw unreadable[0]?.error;
             if (unreadable.length > 0) getSwal().toast.fire({ icon: 'warning', timer: 10000, text: i18n.t('The newest copy of your edits couldn\'t be read, so an earlier copy was opened.') });
-            applyProjectState({ mediaFilePath: fp, project: opened.project });
+            applyProject = applyOrReport(() => applyProjectState({ mediaFilePath: fp, project: opened.project }));
             loadedProjectPath = opened.path;
             // Only its own: one in the export folder is named after its recording only, so it may be another's.
             const toRetire = getProjectCopiesToRetire(found.map(({ path }) => path).filter((path) => !unreadablePaths.includes(path)), projectFileLocation, savePaths, isWindows || isMac);
@@ -5555,15 +5567,11 @@ function App() {
                 && (await askForImportChapters({ simpleMode }))))
           ) {
             console.log('Convert chapters to segments', edl);
-            loadCutSegments({ segments: edl, append: false });
+            applyProject = applyOrReport(() => loadCutSegments({ segments: edl, append: false }));
           }
         } catch (err) {
           if (err instanceof DirectoryAccessDeclinedError) throw err;
-          console.error('EDL load failed, but continuing', err);
-          // The unreadable file is set aside as a .replaced- backup, so the edits can still be recovered.
-          errorToast(simpleMode
-            ? i18n.t("This recording's edits couldn't be read, so it opened without them. Their file is kept.")
-            : `${i18n.t('Failed to load segments')} (${err instanceof Error && err.message})`);
+          reportUnreadableEdits(err);
         }
       }
 
@@ -5659,16 +5667,27 @@ function App() {
         // BEGIN STATE UPDATES:
         if (isStale()) return;
 
-        resetState();
-        clearSegColorCounter();
-
-        if (existingHtml5FriendlyFile) {
+        const applyExistingHtml5FriendlyFile = () => {
+          if (existingHtml5FriendlyFile == null) return;
           console.log(
             'Found existing html5 friendly file',
             existingHtml5FriendlyFile.path,
           );
           setUsingDummyVideo(existingHtml5FriendlyFile.usingDummyVideo);
           setPreviewFilePath(existingHtml5FriendlyFile.path);
+        };
+
+        // Moving to another recording with nothing slow to do first (Next clip, a clip from the list): the editor stays
+        // until the new one replaces it in a single update, instead of passing through the start screen, whose lists
+        // would all start loading in the middle of this open. The closing recording stays editable, and saved, until then.
+        const movingStraightToAnother = openFilePathRef.current != null && openFilePathRef.current !== fp && !needsAutoHtml5ify;
+        if (movingStraightToAnother) {
+          videoRef.current?.pause();
+          saveProjectNow();
+        } else {
+          resetState();
+          clearSegColorCounter();
+          applyExistingHtml5FriendlyFile();
         }
 
         if (needsAutoHtml5ify) {
@@ -5701,6 +5720,14 @@ function App() {
           });
         }
         if (isStale()) return;
+
+        // Everything from here to setFilePath happens in one go, so React shows it as a single update.
+        if (movingStraightToAnother) {
+          resetFileState();
+          clearSegColorCounter();
+          applyExistingHtml5FriendlyFile();
+        }
+        applyProject?.();
 
         // throw new Error('test');
 
@@ -5805,6 +5832,9 @@ function App() {
       ensureWritableOutDir,
       customOutDir,
       resetState,
+      resetFileState,
+      saveProjectNow,
+      videoRef,
       clearSegColorCounter,
       setCopyStreamIdsForPath,
       setDetectedFileFormat,
@@ -5816,7 +5846,6 @@ function App() {
       showNotification,
       showPreviewFileLoadedMessage,
       showNotNativelySupportedMessage,
-      loadProjectIntoState,
       applyProjectState,
       whenProjectSaved,
       setRecentFiles,
@@ -7715,6 +7744,7 @@ function App() {
 
               {isFileOpened && (
                 <TopMenu
+                  key={filePath}
                   filePath={filePath}
                   currentClipName={currentClipName}
                   onCurrentClipNameChange={setCurrentClipName}
@@ -7806,7 +7836,7 @@ function App() {
                       </NoFileLoaded>
                     </div>
                   ) : (
-                    <>
+                    <Fragment key={filePath}>
                       <div
                         className={styles['previewCard']}
                         ref={videoContainerRef}
@@ -8153,13 +8183,14 @@ function App() {
                           hasVideo={hasVideo}
                         />
                       </div>
-                    </>
+                    </Fragment>
                   )}
                 </div>
 
                 <AnimatePresence custom={clipsPanelAnimated} onExitComplete={() => setClipsPanelGone(true)}>
                   {showRightBar && isFileOpened && filePath != null && (
                     <SegmentList
+                      filePath={filePath}
                       animated={clipsPanelAnimated}
                       width={rightBarWidth}
                       currentSegIndex={currentSegIndexSafe}
